@@ -41,6 +41,12 @@ namespace Nebula
         /// (<see cref="SessionReplacedMsg"/>). The gateway disconnects right after sending it.
         /// </summary>
         SessionReplaced = 8,
+        /// <summary>
+        /// Gateway -> client: the server removed this player (<see cref="KickedMsg"/>: a code and a reason). The
+        /// session is over and the gateway closes the link right after sending it; the client does not reconnect by
+        /// itself.
+        /// </summary>
+        Kicked = 9,
 
         // Entity replication (worker -> gateway -> clients)
         EntitySpawn = 10,
@@ -71,6 +77,12 @@ namespace Nebula
         /// ever sees it (<see cref="FocusHintFilter"/>).
         /// </summary>
         ClientFocusHint = 23,
+        /// <summary>
+        /// Client -> gateway: the player is leaving for good (<see cref="GoodbyeMsg"/>, protocol 23). The gateway ends
+        /// the session at once: the worker removes the pawn without waiting out
+        /// <see cref="NebulaConfig.SessionReclaimSeconds"/>, and the gateway closes the link.
+        /// </summary>
+        Goodbye = 24,
 
         // Gateway -> worker
         SpawnPlayer = 30,
@@ -99,6 +111,11 @@ namespace Nebula
         /// copy before relaying it, and sends it only to clients that negotiated 21 or later.
         /// </summary>
         EntityMaps = 38,
+        /// <summary>
+        /// Worker -> gateway: remove this player (<see cref="KickPlayerMsg"/>, protocol 23). The gateway tells the
+        /// client why (<see cref="Kicked"/>), closes the link and ends the session. Never forwarded to a client.
+        /// </summary>
+        KickPlayer = 39,
 
         // Worker <-> worker
         GhostSpawn = 40,
@@ -153,6 +170,12 @@ namespace Nebula
         /// <summary>No owning client: the authoritative worker drives the entity itself. Travels with the entity.</summary>
         /// <summary>No owning client; the authoritative worker drives the entity. Travels with it through ghosting and handover.</summary>
         ServerDriven = 2,
+        /// <summary>
+        /// The owning client is not connected: its link dropped and the worker is keeping the pawn for the reclaim
+        /// grace (<see cref="NetworkIdentity.IsOwnerConnected"/> is false). Travels with the entity through ghosting
+        /// and handover.
+        /// </summary>
+        OwnerDisconnected = 4,
     }
 
     /// <summary>Per-prefab interest hints that travel with a spawn (the standalone gateway has no prefabs to read them from).</summary>
@@ -167,14 +190,16 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 22;
+        public const ushort ProtocolVersion = 23;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 21, the window being one version wide. Protocol 22 added
-        /// forwarded token claims (<see cref="PlayerClaims"/>), which travel only between gateways and workers and
-        /// between workers, so nothing a client sends or receives changed. Protocols 18 to 20 are refused.
-        /// Gateway-to-worker and worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
+        /// The oldest client protocol the gateway accepts: 23, the same as <see cref="ProtocolVersion"/>. Before 1.0 a
+        /// protocol bump may close the window to the new version only, and protocol 23 (deliberate session endings, a
+        /// recovering join hold, the owner-connected flag) does: clients of 22 and older are refused with
+        /// <see cref="JoinRejectReason.ProtocolUnsupported"/> and must be rebuilt. Protocol 22 added forwarded token
+        /// claims (<see cref="PlayerClaims"/>), between gateways and workers only. Gateway-to-worker and
+        /// worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
         /// </summary>
-        public const ushort MinProtocolVersion = 21;
+        public const ushort MinProtocolVersion = 23;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -320,14 +345,55 @@ namespace Nebula
     public struct GatewayDrainingMsg
     {
         public ushort ReconnectWithinSeconds;
+        /// <summary>
+        /// The gateway is shutting down and knows of no other gateway to take its clients: the server as a whole is
+        /// going away, or restarting. The client still reconnects on its own schedule, and reports the end as
+        /// <c>DisconnectReason.ServerShutdown</c> rather than <c>DisconnectReason.GatewayDraining</c>.
+        /// </summary>
+        public bool ServerShutdown;
 
         public void Write(NetworkWriter w)
         {
             w.WriteByte((byte)MsgId.GatewayDraining);
             w.WriteUShort(ReconnectWithinSeconds);
+            w.WriteBool(ServerShutdown);
         }
 
-        public static GatewayDrainingMsg Read(NetworkReader r) => new GatewayDrainingMsg { ReconnectWithinSeconds = r.ReadUShort() };
+        public static GatewayDrainingMsg Read(NetworkReader r) => new GatewayDrainingMsg { ReconnectWithinSeconds = r.ReadUShort(), ServerShutdown = r.ReadBool() };
+    }
+
+    /// <summary>
+    /// Gateway -> client: the server removed this player (<see cref="MsgId.Kicked"/>, protocol 23). The session is
+    /// over: the worker removes the pawn, and the gateway closes the link right after sending this. The client
+    /// does not reconnect by itself.
+    /// </summary>
+    public struct KickedMsg
+    {
+        /// <summary>The game's own code for why, for the client's code to branch on. Nebula gives it no meaning; 0 when the server gave none.</summary>
+        public ushort Code;
+        /// <summary>Why, fit to show the player.</summary>
+        public string Reason;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.Kicked);
+            w.WriteUShort(Code);
+            w.WriteString(Reason ?? "");
+        }
+
+        public static KickedMsg Read(NetworkReader r) => new KickedMsg { Code = r.ReadUShort(), Reason = r.ReadString() ?? "" };
+    }
+
+    /// <summary>
+    /// Client -> gateway: the player is leaving for good (<see cref="MsgId.Goodbye"/>, protocol 23). No body. The
+    /// gateway ends the session at once, without the reclaim grace, and closes the link; that close is how the
+    /// client knows the goodbye arrived.
+    /// </summary>
+    public struct GoodbyeMsg
+    {
+        public void Write(NetworkWriter w) => w.WriteByte((byte)MsgId.Goodbye);
+
+        public static GoodbyeMsg Read(NetworkReader r) => new GoodbyeMsg();
     }
 
     /// <summary>Gateway -> client: the join was refused; <see cref="Reason"/> is fit to show the player. The gateway disconnects after sending it.</summary>
@@ -449,6 +515,12 @@ namespace Nebula
         /// appears, with no reconnect.
         /// </summary>
         AtCapacity = 5,
+        /// <summary>
+        /// The worker that held the player's pawn failed, and the gateway is placing the player again: the pawn
+        /// comes back from its last checkpoint, or fresh when it has none. The player was in the world a moment ago,
+        /// so say "getting you back in" rather than "starting the world".
+        /// </summary>
+        Recovering = 6,
     }
 
     /// <summary>
@@ -660,7 +732,8 @@ namespace Nebula
                 SceneId = id.SceneId,
                 OwnerClientId = id.OwnerClientId,
                 OwnerIdentity = id.OwnerIdentity,
-                Flags = (id.OwnerIsBot ? EntityFlags.OwnerIsBot : EntityFlags.None) | (id.IsServerDriven ? EntityFlags.ServerDriven : EntityFlags.None),
+                Flags = (id.OwnerIsBot ? EntityFlags.OwnerIsBot : EntityFlags.None) | (id.IsServerDriven ? EntityFlags.ServerDriven : EntityFlags.None)
+                        | (id.OwnerClientId != 0 && !id.IsOwnerConnected ? EntityFlags.OwnerDisconnected : EntityFlags.None),
                 Container = id.ContainerRef,
                 Epoch = id.Epoch,
                 OwnerWorkerIndex = NebulaRuntime.LocalWorkerIndex,
@@ -1533,20 +1606,57 @@ namespace Nebula
         }
     }
 
-    /// <summary>Gateway -> worker: the session is over (or the gateway gave up waiting for it to reconnect). Fenced by <see cref="Generation"/> like <see cref="SpawnPlayerMsg"/>.</summary>
+    /// <summary>
+    /// Gateway -> worker: the client's link ended, so the session waits for a reclaim, or the session is over
+    /// (<see cref="EndNow"/>). Fenced by <see cref="Generation"/> like <see cref="SpawnPlayerMsg"/>. A worker that has
+    /// handed the pawn on forwards it to the new owner.
+    /// </summary>
     public struct DespawnPlayerMsg
     {
         public ulong ClientId;
         public ulong Generation;
+        /// <summary>
+        /// The session is over and not waiting for a reclaim: the player said goodbye, or was kicked. The worker
+        /// removes the pawn now instead of keeping it for <see cref="NebulaConfig.SessionReclaimSeconds"/>.
+        /// </summary>
+        public bool EndNow;
 
         public void Write(NetworkWriter w)
         {
             w.WriteByte((byte)MsgId.DespawnPlayer);
             w.WriteULong(ClientId);
             w.WriteULong(Generation);
+            w.WriteBool(EndNow);
         }
 
-        public static DespawnPlayerMsg Read(NetworkReader r) => new DespawnPlayerMsg { ClientId = r.ReadULong(), Generation = r.ReadULong() };
+        public static DespawnPlayerMsg Read(NetworkReader r) => new DespawnPlayerMsg { ClientId = r.ReadULong(), Generation = r.ReadULong(), EndNow = r.ReadBool() };
+    }
+
+    /// <summary>
+    /// Worker -> gateway: remove this player (<see cref="MsgId.KickPlayer"/>, protocol 23), sent by
+    /// <c>NebulaWorker.Kick</c> to the gateway that speaks for the session. The gateway sends the client a
+    /// <see cref="KickedMsg"/> with the same code and reason, closes the link and ends the session. Fenced by
+    /// <see cref="Generation"/>: a gateway that has since claimed the session with a newer generation ignores it.
+    /// </summary>
+    public struct KickPlayerMsg
+    {
+        public ulong ClientId;
+        public ulong Generation;
+        /// <summary>The game's own code for why; passed to the client unchanged.</summary>
+        public ushort Code;
+        /// <summary>Why, fit to show the player.</summary>
+        public string Reason;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.KickPlayer);
+            w.WriteULong(ClientId);
+            w.WriteULong(Generation);
+            w.WriteUShort(Code);
+            w.WriteString(Reason ?? "");
+        }
+
+        public static KickPlayerMsg Read(NetworkReader r) => new KickPlayerMsg { ClientId = r.ReadULong(), Generation = r.ReadULong(), Code = r.ReadUShort(), Reason = r.ReadString() ?? "" };
     }
 
     /// <summary>

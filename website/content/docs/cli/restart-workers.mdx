@@ -1,0 +1,39 @@
+---
+title: "nebula restart-workers"
+description: "Restart a Nebula Cloud deployment's workers one at a time, to apply env changes"
+---
+
+To restart a Nebula Cloud deployment's workers one at a time, to apply env changes, run:
+
+```bash
+nebula restart-workers [--deployment name]
+```
+
+Replace every worker of a running Nebula Cloud deployment with a fresh one, one at a time, and follow the operation. A worker reads its environment variables once, when it starts, so this is how a `nebula env set` reaches the running workers without a new release. Each replacement is ready before the old worker hands its containers over, so players stay connected; the orchestrator and the gateways keep running. Parked workers in the idle pool are deleted rather than reused, since they started with the old values.
+
+If a replacement never becomes ready the operation fails and the workers not yet replaced keep running with the previous values.
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--org <slug>` | Cloud: organization slug (default from nebula.json). |
+| `--cloud-project <slug>` | Cloud: project slug inside the organization (default from nebula.json). |
+| `--deployment <name>` | Cloud: deployment name inside the project (default from nebula.json). |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | Run against another Nebula project instead of the current folder. |
+| `-v, --verbose` | Print stack traces and the commands the CLI runs. |
+| `-y, --yes` | Answer every confirmation with yes. |
+
+## Examples
+
+```bash
+nebula restart-workers
+nebula env set API_URL=https://api.example.com && nebula restart-workers
+```

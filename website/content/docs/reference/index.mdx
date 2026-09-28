@@ -158,6 +158,9 @@ Connect a player to the gateway, predict the local entity, and display replicate
 
 | Type | Summary |
 | --- | --- |
+| [DisconnectInfo](/docs/reference/client/disconnect-info) | Struct. How a client's connection ended: the typed Reason, a Message for logs and the player, and whether the client will try again by itself (WillRetry). |
+| [DisconnectReason](/docs/reference/client/disconnect-reason) | Enum. Why a client's connection to the gateway ended, or why an attempt to connect failed. |
+| [LocalPlayerLossCause](/docs/reference/client/local-player-loss-cause) | Enum. Why the local player's pawn went away while the client stayed connected (NebulaClient.LocalPlayerLost). |
 | [NebulaClient](/docs/reference/client/nebula-client) | Class. The game client. |
 | [NebulaTitleScreen](/docs/reference/client/nebula-title-screen) | Class. Optional IMGUI panel where a player enters the gateway address and a display name before connecting. |
 
@@ -314,6 +317,7 @@ Send reliable ordered or unreliable sequenced messages through LiteNetLib.
 | [LiteNetTransport](/docs/reference/transport/lite-net-transport) | Class. ITransport over LiteNetLib. |
 | [MultiTransport](/docs/reference/transport/multi-transport) | Class. Several transports behind one ITransport, so the gateway accepts native clients over UDP and browsers over WebRTC without caring which link a peer arrived on. |
 | [NebulaCrypto](/docs/reference/transport/nebula-crypto) | Static class. Provides random bytes, SHA-256 hashes, hash-based message authentication codes (HMAC), and key derivation for encrypted transport connections. |
+| [TransportDisconnectReason](/docs/reference/transport/transport-disconnect-reason) | Enum. Why a transport link closed, in terms that do not depend on the transport: carried by a TransportEvent.Kind.Disconnected event in TransportEvent.Reason. |
 | [TransportEvent](/docs/reference/transport/transport-event) | Struct. Stores the values used by transport event. |
 | [TransportIdentity](/docs/reference/transport/transport-identity) | Class. Holds the gateway's X.509 certificate, RSA private signing key, and public-key fingerprint for client pinning. |
 | [TransportSecurity](/docs/reference/transport/transport-security) | Static class. Reads encryption status and handshake errors through an ITransport reference. |
@@ -335,7 +339,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [ContainerOwnershipEntry](/docs/reference/protocol/container-ownership-entry) | Struct. Stores the values used by container ownership entry. |
 | [ContainerOwnershipMsg](/docs/reference/protocol/container-ownership-msg) | Static class. Carries the container ownership protocol message. |
 | [ContainerOwnershipUpdate](/docs/reference/protocol/container-ownership-update) | Struct. What one MsgId.ContainerOwnership message says: either the complete set of containers a client should know about (Full) or a change to it. |
-| [DespawnPlayerMsg](/docs/reference/protocol/despawn-player-msg) | Struct. Gateway -\> worker: the session is over (or the gateway gave up waiting for it to reconnect). |
+| [DespawnPlayerMsg](/docs/reference/protocol/despawn-player-msg) | Struct. Gateway -\> worker: the client's link ended, so the session waits for a reclaim, or the session is over (EndNow). |
 | [EndSessionMsg](/docs/reference/protocol/end-session-msg) | Struct. Worker -\> gateway: this gateway no longer speaks for the session, because the player connected again through another gateway (NebulaConfig.SingleSessionPerPlayer). |
 | [EntityDespawnMsg](/docs/reference/protocol/entity-despawn-msg) | Struct. Carries the entity despawn protocol message. |
 | [EntityExtentSource](/docs/reference/protocol/entity-extent-source) | Enum. Where an entity's extent comes from: the box, in the entity's own space, that the ghost band measures to each neighbouring container instead of the entity's root position (NetworkIdentity.ExtentSource). |
@@ -350,6 +354,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [EntitySyncMsg](/docs/reference/protocol/entity-sync-msg) | Struct. One entity's sync chunks for one tick (see SyncStateCodec). |
 | [EntityVarsMsg](/docs/reference/protocol/entity-vars-msg) | Struct. Carries the entity vars protocol message. |
 | [GatewayDrainingMsg](/docs/reference/protocol/gateway-draining-msg) | Struct. Gateway -\> client: the gateway is draining and will close this link. |
+| [GoodbyeMsg](/docs/reference/protocol/goodbye-msg) | Struct. Client -\> gateway: the player is leaving for good (MsgId.Goodbye, protocol 23). |
 | [HelloFlags](/docs/reference/protocol/hello-flags) | Enum. Lists the supported hello flags values. |
 | [HelloMsg](/docs/reference/protocol/hello-msg) | Struct. Carries the hello protocol message. |
 | [InstanceContainerInfo](/docs/reference/protocol/instance-container-info) | Class. Identifies a private container's simulation scope, content, and optional outward view. |
@@ -362,6 +367,8 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [JoinRejectedMsg](/docs/reference/protocol/join-rejected-msg) | Struct. Gateway -\> client: the join was refused; Reason is fit to show the player. |
 | [JoinState](/docs/reference/protocol/join-state) | Enum. How far a client's join has got. |
 | [JoinStatusMsg](/docs/reference/protocol/join-status-msg) | Struct. Gateway -\> client: the join's state and, while JoinState.Starting, a rough wait in seconds (0 = unknown) and why. |
+| [KickPlayerMsg](/docs/reference/protocol/kick-player-msg) | Struct. Worker -\> gateway: remove this player (MsgId.KickPlayer, protocol 23), sent by NebulaWorker.Kick to the gateway that speaks for the session. |
+| [KickedMsg](/docs/reference/protocol/kicked-msg) | Struct. Gateway -\> client: the server removed this player (MsgId.Kicked, protocol 23). |
 | [MsgId](/docs/reference/protocol/msg-id) | Enum. Wire message ids. |
 | [NetworkMapCache](/docs/reference/protocol/network-map-cache) | Class. The contents of an entity's maps kept as opaque bytes, by a party that relays them without knowing their types: the gateway, so a late joiner is sent the current contents (docs/replicated-collections.md D6). |
 | [NetworkMapCodec](/docs/reference/protocol/network-map-codec) | Static class. The wire and save format of NetworkMapBase contents (docs/replicated-collections.md D3). |

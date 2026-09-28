@@ -1,0 +1,44 @@
+---
+title: "KickedMsg"
+description: "Gateway -> client: the server removed this player (MsgId.Kicked, protocol 23)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct KickedMsg
+```
+
+Gateway -\> client: the server removed this player ([`MsgId.Kicked`](/docs/reference/protocol/msg-id#kicked), protocol 23). The session is over: the worker removes the pawn, and the gateway closes the link right after sending this. The client does not reconnect by itself.
+
+## Fields
+
+### Code [#code]
+
+```csharp
+public ushort Code;
+```
+
+The game's own code for why, for the client's code to branch on. Nebula gives it no meaning; 0 when the server gave none.
+
+### Reason [#reason]
+
+```csharp
+public string Reason;
+```
+
+Why, fit to show the player.
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static KickedMsg Read(NetworkReader r);
+```

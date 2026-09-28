@@ -92,6 +92,7 @@ autoscaling grow it towards `B`.
 | `SessionReclaimSeconds` | `30` | Keep a player's pawn this long after the player's link drops, so the player can reconnect (through any gateway of the mesh) with the same session and pawn. `0` despawns at once. See [Sessions and reconnection](/docs/guides/authentication#sessions-and-reconnection). |
 | `SingleSessionPerPlayer` | `true` | Gateways coordinate one connection per identity. A replacement waits for the previous gateway to acknowledge disconnection; admission fails if coordination is unavailable. Turn it off on every gateway to allow multiple sessions per identity. See [One connection per player](/docs/guides/authentication#one-connection-per-player). |
 | `GatewayDrainReconnectSeconds` | `10` | Tell the clients of a draining gateway that they have this long to reconnect before it closes their links. |
+| `GatewayShutdownDrainSeconds` | `0.5` s | When a gateway process stops, it first tells its clients that it is draining, or that the server is shutting down when no other gateway is serving, and waits up to this long for the notice to go out. It stops sooner once every client has hung up. `0` stops at once without telling anyone. See [Replace gateways and workers](/docs/deploy/upgrades#drain-and-replace-a-gateway). |
 | `GhostBandMargin` | `4` m | Create a ghost copy when an entity comes within this distance of a neighboring container. |
 | `HandoverHysteresis` | `0.35` m | Require an entity to move this far into a new container before transferring authority. |
 | `GhostLingerSeconds` | `2` | Keep a ghost copy for this long after it leaves the ghost band. |
@@ -177,6 +178,22 @@ See [Build an infinite runtime world](/docs/guides/infinite-runtime-world) for t
 | `InputLeadMarginTicks` | `2` | Add this many ticks to half the measured round-trip time when scheduling input. |
 | `InputLeadTargetTicks` | `3` | Keep client input this many ticks ahead when it arrives at the worker. |
 | `InputLeadMaxAdjustTicks` | `30` | Limit how far the client can increase its input lead. |
+
+### Client reconnection
+
+These fields control what a client does after its connection drops. See [Reconnect after a lost link or a draining gateway](/docs/guides/connecting-clients#reconnect-after-a-lost-link-or-a-draining-gateway).
+
+| Field | Default | What to set |
+| --- | --- | --- |
+| `ReconnectFirstDelaySeconds` | `1` s | Wait this long after a drop before the first reconnection attempt. |
+| `ReconnectBackoffFactor` | `2` | Make each later attempt wait this many times longer than the one before. Use `1` for a fixed delay. |
+| `ReconnectMaxDelaySeconds` | `2` s | Never wait longer than this between two attempts. With the defaults, the client retries after 1 s, then every 2 s. |
+| `ReconnectGiveUpSeconds` | `0` | Stop reconnecting this many seconds after the drop, and raise `NebulaClient.ReconnectGiveUp`. `0` never gives up. A value a little above `SessionReclaimSeconds` stops once the worker has let the pawn go. |
+| `ClientDisconnectTimeoutSeconds` | `8` s | Treat the link as lost after this long without a packet from the gateway. Lower values notice a dead gateway sooner, but drop players on a brief network stall. |
+| `ClientPingIntervalSeconds` | `0.5` s | Send the transport's keep-alive ping this often. Keep it well below the disconnect timeout. |
+| `ClientStallSeconds` | `2` s | Raise `NebulaClient.ServerStalled` after this long without state from the server while the player is in the world and the link is up. `0` turns the watch off. See [Notice a stalled server](/docs/guides/connecting-clients#notice-a-stalled-server). |
+
+The two transport settings apply to the UDP transport of desktop and mobile clients. A web build's WebRTC transport uses the browser's own timeouts.
 
 Nebula runs at 60 ticks per second. `NetworkTime.TickRate` is a constant, not a configuration field.
 

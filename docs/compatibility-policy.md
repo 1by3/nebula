@@ -40,6 +40,11 @@ Why one version and not three: every additive-only release has to be audited aga
 inside the window, and the suite can only carry a recording for so many of them. One step is enough to replace a
 fleet under live players, which is what the window is for.
 
+**Before 1.0 a bump may close the window to the new version only** (`MinProtocolVersion == ProtocolVersion`).
+Keeping an older client working costs version-gated sends and fallbacks in the gateway and client, and while
+Nebula is this early nobody depends on that; games rebuild their clients with each release. Protocol 23 does this:
+the window is 23..23, and its new messages and fields carry no gates for older peers.
+
 ## D2. Refusals say why, in a form the client can act on
 
 A client outside the window is now **refused with a message** rather than disconnected: `JoinRejectedMsg` with

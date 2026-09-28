@@ -242,6 +242,14 @@ public float GatewayDrainReconnectSeconds = 10f;
 
 When a gateway is asked to drain, how many seconds its clients are told they have to reconnect before it closes their links.
 
+### GatewayShutdownDrainSeconds [#gatewayshutdowndrainseconds]
+
+```csharp
+public float GatewayShutdownDrainSeconds = 0.5f;
+```
+
+When a gateway process stops (the host object is destroyed, the application quits, or the standalone gateway gets SIGTERM or Ctrl-C), it first tells its connected clients: that it is draining when another gateway is serving, or that the server is shutting down when none is. It then waits up to this many seconds for the notices to go out, returning as soon as every client has hung up, so clients reconnect at once rather than after the transport's timeout. 0 stops at once, without telling anyone.
+
 ### GameContentVersion [#gamecontentversion]
 
 ```csharp
@@ -883,6 +891,62 @@ public int InputLeadMaxAdjustTicks = 30;
 ```
 
 Upper bound on the adaptive input lead adjustment, in ticks.
+
+### ReconnectFirstDelaySeconds [#reconnectfirstdelayseconds]
+
+```csharp
+public float ReconnectFirstDelaySeconds = 1f;
+```
+
+Client: seconds to wait after the connection drops before the first reconnection attempt.
+
+### ReconnectBackoffFactor [#reconnectbackofffactor]
+
+```csharp
+public float ReconnectBackoffFactor = 2f;
+```
+
+How much longer each reconnection attempt waits than the one before. 1 keeps the delay fixed at [`ReconnectFirstDelaySeconds`](#reconnectfirstdelayseconds).
+
+### ReconnectMaxDelaySeconds [#reconnectmaxdelayseconds]
+
+```csharp
+public float ReconnectMaxDelaySeconds = 2f;
+```
+
+The longest the client waits between two reconnection attempts, in seconds.
+
+### ReconnectGiveUpSeconds [#reconnectgiveupseconds]
+
+```csharp
+public float ReconnectGiveUpSeconds = 0f;
+```
+
+Seconds after a drop at which the client stops reconnecting: it raises [`NebulaClient.ReconnectGaveUp`](/docs/reference/client/nebula-client#reconnectgaveup), sets [`NebulaClient.WantsConnection`](/docs/reference/client/nebula-client#wantsconnection) to false and stays [`NebulaClient.State.Disconnected`](/docs/reference/client/nebula-client#disconnected). 0, the default, never gives up. A value a little above [`SessionReclaimSeconds`](#sessionreclaimseconds) stops once the worker has let the pawn go.
+
+### ClientDisconnectTimeoutSeconds [#clientdisconnecttimeoutseconds]
+
+```csharp
+public float ClientDisconnectTimeoutSeconds = 8f;
+```
+
+Seconds without any packet from the gateway after which the client's transport declares the link lost and the client starts reconnecting. Lower detects a dead gateway sooner; too low drops players on a brief network stall. Must be well above [`ClientPingIntervalSeconds`](#clientpingintervalseconds).
+
+### ClientPingIntervalSeconds [#clientpingintervalseconds]
+
+```csharp
+public float ClientPingIntervalSeconds = 0.5f;
+```
+
+Seconds between the keep-alive pings the client's transport sends, which also measure the round trip.
+
+### ClientStallSeconds [#clientstallseconds]
+
+```csharp
+public float ClientStallSeconds = 2f;
+```
+
+Seconds without any state from the server (entity state, owner state, variables, RPCs, spawns) after which a client that is in the world raises [`NebulaClient.ServerStalled`](/docs/reference/client/nebula-client#serverstalled), while its link to the gateway is still up: the worker simulating the player has stopped without the orchestrator having declared it dead yet. It raises [`NebulaClient.ServerResumed`](/docs/reference/client/nebula-client#serverresumed) when state arrives again. 0 turns the watch off. The watch assumes the server sends state continuously, as it does for a predicted pawn; a world that can go quiet for longer needs a higher value, or 0.
 
 ### NetworkPrefabs [#networkprefabs]
 

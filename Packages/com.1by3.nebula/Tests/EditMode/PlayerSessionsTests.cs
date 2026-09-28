@@ -120,5 +120,98 @@ namespace Nebula.Tests
             Assert.IsTrue(sessions.TryGet(7, out var s));
             Assert.AreEqual(PlayerSessions.OrphanKind.None, s.Orphan, "only a release is kept; a lost link is not news the sender lacked");
         }
+
+        [Test]
+        public void AnEndedSessionIsHandedBackOnTheNextPassWhateverTheGrace()
+        {
+            var sessions = new PlayerSessions();
+            sessions.Register(7, 1, G1);
+            sessions.Register(8, 1, G1);
+            Assert.IsTrue(sessions.End(7, 1, 100));
+            Assert.IsTrue(sessions.Release(8, 1, 100));
+            Assert.IsTrue(sessions.TryGet(7, out var s));
+            Assert.AreEqual(PlayerSessions.OrphanKind.Ended, s.Orphan);
+            Assert.IsTrue(s.Released, "an end is a release too: the same gateway coming back does not renew it");
+            Assert.AreEqual(0, PlayerSessions.ReclaimRemaining(s, 100, Grace));
+            sessions.GatewayReturned(G1);
+            CollectionAssert.AreEqual(new[] { 7UL }, Expire(sessions, 100), "no grace for a player who left on purpose");
+            CollectionAssert.IsEmpty(Expire(sessions, 101), "a plain release still waits");
+        }
+
+        [Test]
+        public void AStaleEndChangesNothing()
+        {
+            var sessions = new PlayerSessions();
+            sessions.Register(7, 2, G1);
+            Assert.IsFalse(sessions.End(7, 1, 100), "the player came back since: the end is about an older connection");
+            Assert.IsTrue(sessions.TryGet(7, out var s));
+            Assert.AreEqual(PlayerSessions.OrphanKind.None, s.Orphan);
+        }
+
+        [Test]
+        public void AnEndHeardBeforeTheHandoverIsNotUndoneByIt()
+        {
+            // The gateway followed the pawn to its new worker before the handover arrived, and the player left.
+            var sessions = new PlayerSessions();
+            Assert.IsTrue(sessions.End(7, 1, 100));
+            sessions.Adopt(7, 1, G1, PlayerSessions.OrphanKind.None, 0, 100, Grace);
+            Assert.IsTrue(sessions.TryGet(7, out var s));
+            Assert.AreEqual(PlayerSessions.OrphanKind.Ended, s.Orphan);
+            CollectionAssert.AreEqual(new[] { 7UL }, Expire(sessions, 100));
+        }
+
+        [Test]
+        public void AnEndWhosePawnIsNotHereYetOutlivesTheNextPasses()
+        {
+            // The end reached this worker before the handover carrying the pawn did.
+            var sessions = new PlayerSessions();
+            Assert.IsTrue(sessions.End(7, 1, 100));
+            var expired = new List<ulong>();
+            sessions.Expire(100, Grace, expired, id => false);
+            sessions.Expire(101, Grace, expired, id => false);
+            CollectionAssert.IsEmpty(expired, "no pawn here yet: the end waits for it");
+
+            sessions.Adopt(7, 1, G1, PlayerSessions.OrphanKind.None, 0, 101, Grace);
+            Assert.IsTrue(sessions.TryGet(7, out var s));
+            Assert.AreEqual(PlayerSessions.OrphanKind.Ended, s.Orphan, "the handover does not revive it");
+            sessions.Expire(101, Grace, expired, id => id == 7);
+            CollectionAssert.AreEqual(new[] { 7UL }, expired, "and it goes as soon as the pawn is here");
+        }
+
+        [Test]
+        public void AnEndWhosePawnNeverArrivesIsForgottenAfterTheGrace()
+        {
+            var sessions = new PlayerSessions();
+            sessions.End(7, 1, 100);
+            var expired = new List<ulong>();
+            sessions.Expire(100 + Grace - 1, Grace, expired, id => false);
+            CollectionAssert.IsEmpty(expired);
+            sessions.Expire(100 + Grace, Grace, expired, id => false);
+            CollectionAssert.AreEqual(new[] { 7UL }, expired);
+
+            // With no grace at all, it still waits long enough for a handover in flight.
+            var none = new PlayerSessions();
+            none.End(8, 1, 100);
+            var gone = new List<ulong>();
+            none.Expire(100 + PlayerSessions.EndedWithoutPawnSeconds - 1, 0, gone, id => false);
+            CollectionAssert.IsEmpty(gone);
+            none.Expire(100 + PlayerSessions.EndedWithoutPawnSeconds, 0, gone, id => false);
+            CollectionAssert.AreEqual(new[] { 8UL }, gone);
+        }
+
+        [Test]
+        public void AnEndedSessionAdoptedWithItsPawnIsStillEnded()
+        {
+            var sessions = new PlayerSessions();
+            sessions.Adopt(7, 1, G1, PlayerSessions.OrphanKind.Ended, 0, 100, Grace);
+            Assert.IsTrue(sessions.TryGet(7, out var s));
+            Assert.AreEqual(PlayerSessions.OrphanKind.Ended, s.Orphan);
+            CollectionAssert.AreEqual(new[] { 7UL }, Expire(sessions, 100));
+            // A newer claim (the player back as the same session) renews even an ended one.
+            sessions.End(9, 1, 100);
+            Assert.AreEqual(PlayerSessions.Claim.Reclaimed, sessions.Register(9, 2, G1));
+            Assert.IsTrue(sessions.TryGet(9, out var renewed));
+            Assert.AreEqual(PlayerSessions.OrphanKind.None, renewed.Orphan);
+        }
     }
 }

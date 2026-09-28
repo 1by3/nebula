@@ -11,6 +11,16 @@ public sealed class NebulaClient : MonoBehaviour, IRpcSink
 
 The game client. Talks only to the gateway, sends inputs, receives snapshots tagged (tick, epoch, owner) and predicts its own player. It is never a party to the handover protocol: which worker produced a snapshot is metadata used for epoch filtering and the debug overlay, nothing else.
 
+## Fields
+
+### DefaultLeaveTimeoutSeconds [#defaultleavetimeoutseconds]
+
+```csharp
+public const float DefaultLeaveTimeoutSeconds = 0.5f;
+```
+
+How long [`Leave`](#leave) waits, by default, for the gateway to confirm the goodbye.
+
 ## Properties
 
 ### Config [#config]
@@ -285,6 +295,54 @@ public string LastError { get; } = "";
 
 Last connection failure or disconnect reason, for connection UI. Empty while healthy.
 
+### SecondsSinceServerState [#secondssinceserverstate]
+
+```csharp
+public float SecondsSinceServerState { get; }
+```
+
+Seconds since state last arrived from the server: entity state, owner state, variables, maps, RPCs, spawns or despawns, anything a worker produced. 0 before the first state since the client joined, and while it is not in the world. A healthy server sends the local player's own pawn state every tick, so anything above a few tenths of a second is worth noticing; see [`ServerStalled`](#serverstalled).
+
+### IsServerStalled [#isserverstalled]
+
+```csharp
+public bool IsServerStalled { get; }
+```
+
+True between [`ServerStalled`](#serverstalled) and [`ServerResumed`](#serverresumed).
+
+### LastDisconnect [#lastdisconnect]
+
+```csharp
+public DisconnectInfo LastDisconnect { get; } = new DisconnectInfo(DisconnectReason.Unknown, "", false);
+```
+
+How the last connection, or the last attempt to connect, ended: the same value [`Disconnected`](#disconnected) carried, updated by every failed retry too. [`DisconnectReason.Unknown`](/docs/reference/client/disconnect-reason#unknown) with an empty message before the first disconnect.
+
+### IsReconnecting [#isreconnecting]
+
+```csharp
+public bool IsReconnecting { get; }
+```
+
+True while the client is reconnecting after losing a connection it had been welcomed on, or after its gateway asked it to move: from the drop until the next welcome ([`Reconnected`](#reconnected)), until it gives up ([`ReconnectGaveUp`](#reconnectgaveup)), or until the connection ends for good (a refusal, a replaced session, [`Disconnect`](#disconnect)). [`ConnectionState`](#connectionstate) keeps moving between Disconnected, Connecting and Connected meanwhile. False while a first connection is still being attempted.
+
+### ReconnectAttempt [#reconnectattempt]
+
+```csharp
+public int ReconnectAttempt { get; }
+```
+
+How many reconnection attempts the client has started in the current outage (1 during the first). 0 when not reconnecting.
+
+### ReconnectElapsedSeconds [#reconnectelapsedseconds]
+
+```csharp
+public float ReconnectElapsedSeconds { get; }
+```
+
+Seconds since the connection dropped, while [`IsReconnecting`](#isreconnecting); 0 otherwise.
+
 ### WantsConnection [#wantsconnection]
 
 ```csharp
@@ -300,6 +358,14 @@ public bool ConnectsAutomatically { get; }
 ```
 
 Whether the client connected on its own at startup because the command line supplied the connection (`-nebula-gateway`, `-nebula-bot`, or `-nebula-connect`). Connection UI such as [`NebulaTitleScreen`](/docs/reference/client/nebula-title-screen) stays hidden when this is true.
+
+### IsLeaving [#isleaving]
+
+```csharp
+public bool IsLeaving { get; }
+```
+
+True from [`Leave`](#leave) until the gateway has confirmed the goodbye or the timeout has passed; see [`LeaveFinished`](#leavefinished).
 
 ## Events
 
@@ -369,7 +435,7 @@ The join's state changed: (state, estimated seconds). Raised on the main thread.
 public event Action<int> GatewayDraining;
 ```
 
-The gateway is draining and asked the client to reconnect (it does so by itself, with its session token); the argument is the seconds it was given.
+The gateway is draining and asked the client to reconnect (it does so by itself, with its session token); the argument is the seconds it was given. Raised after [`Disconnected`](#disconnected) and [`Reconnecting`](#reconnecting), with the client already `State.Disconnected`.
 
 ### SessionReplaced [#sessionreplaced]
 
@@ -378,6 +444,70 @@ public event Action<string> SessionReplaced;
 ```
 
 This player connected again somewhere else and that newer connection took the session and the pawn ([`NebulaConfig.SingleSessionPerPlayer`](/docs/reference/core/nebula-config#singlesessionperplayer)). The client has left the world and does not reconnect by itself: show the reason (the argument, also in [`LastError`](#lasterror)) and let the player choose to take the session back with [`Connect`](#connect). Raised on the main thread.
+
+### Disconnected [#disconnected]
+
+```csharp
+public event Action<DisconnectInfo> Disconnected;
+```
+
+The connection to the gateway ended, or the first attempt to connect failed. The argument says why ([`DisconnectInfo.Reason`](/docs/reference/client/disconnect-info#reason)), with a readable message, and whether the client will try again by itself ([`DisconnectInfo.WillRetry`](/docs/reference/client/disconnect-info#willretry)). Raised once per outage: attempts that fail again while the client retries update [`LastDisconnect`](#lastdisconnect) without raising it. It is raised again, with [`DisconnectInfo.WillRetry`](/docs/reference/client/disconnect-info#willretry) false, when the client stops trying: a refusal, a replaced session, or [`Disconnect`](#disconnect). Raised on the main thread, after [`ConnectionStateChanged`](#connectionstatechanged).
+
+### Reconnecting [#reconnecting]
+
+```csharp
+public event Action Reconnecting;
+```
+
+The client lost a connection it had been welcomed on, or its gateway is draining, and it has started reconnecting: [`IsReconnecting`](#isreconnecting) is now true. Raised once per outage, after [`Disconnected`](#disconnected). Show a "reconnecting" message rather than the main menu.
+
+### Reconnected [#reconnected]
+
+```csharp
+public event Action<bool> Reconnected;
+```
+
+A reconnection succeeded: the gateway welcomed the client again. The argument is [`SessionReclaimed`](#sessionreclaimed): true when the same session and pawn came back, false when the worker had already let the pawn go and the player starts afresh. Raised on the main thread, after [`ConnectionStateChanged`](#connectionstatechanged).
+
+### ReconnectGaveUp [#reconnectgaveup]
+
+```csharp
+public event Action ReconnectGaveUp;
+```
+
+The client stopped reconnecting after [`NebulaConfig.ReconnectGiveUpSeconds`](/docs/reference/core/nebula-config#reconnectgiveupseconds): [`WantsConnection`](#wantsconnection) is false, [`ConnectionState`](#connectionstate) is `State.Disconnected`, and [`Disconnected`](#disconnected) has been raised with [`DisconnectInfo.WillRetry`](/docs/reference/client/disconnect-info#willretry) false and the reason of the last failure. Call [`Connect`](#connect) to try again.
+
+### LocalPlayerLost [#localplayerlost]
+
+```csharp
+public event Action<NetworkIdentity, LocalPlayerLossCause> LocalPlayerLost;
+```
+
+The local player's pawn was despawned while the connection stayed up. The cause says whether the worker that simulated it failed ([`LocalPlayerLossCause.WorkerLost`](/docs/reference/client/local-player-loss-cause#workerlost): the gateway is placing the player again and [`LocalPlayerSpawned`](#localplayerspawned) follows) or the server removed it ([`LocalPlayerLossCause.Despawned`](/docs/reference/client/local-player-loss-cause#despawned)). Raised after [`EntityDespawned`](#entitydespawned), while the pawn's object still exists; [`LocalPlayer`](#localplayer) is already null. Not raised when the connection ends: the whole world is cleared then, and [`Disconnected`](#disconnected) says why.
+
+### ServerStalled [#serverstalled]
+
+```csharp
+public event Action ServerStalled;
+```
+
+No state has arrived from the server for [`NebulaConfig.ClientStallSeconds`](/docs/reference/core/nebula-config#clientstallseconds) while the client is in the world and its link is up: the worker simulating the player has probably stopped. Entities stand still until state arrives again ([`ServerResumed`](#serverresumed)) or the mesh recovers the player. Show a "server not responding" notice rather than disconnecting. Raised on the main thread.
+
+### ServerResumed [#serverresumed]
+
+```csharp
+public event Action ServerResumed;
+```
+
+A stall reported by [`ServerStalled`](#serverstalled) is over. Raised exactly once after each [`ServerStalled`](#serverstalled): when state arrives again, or when the client stops watching because the join went back to [`JoinState.Starting`](/docs/reference/protocol/join-state#starting) (a recovery) or the connection ended. Check [`Join`](#join) and [`ConnectionState`](#connectionstate) to tell which.
+
+### LeaveFinished [#leavefinished]
+
+```csharp
+public event Action<bool> LeaveFinished;
+```
+
+A [`Leave`](#leave) is over. True when the gateway confirmed the goodbye (it closed the link) and the session has ended; false when there was no connection to say goodbye on, or the gateway did not answer in time, in which case the server treats the player as disconnected and ends the session after the reclaim grace. Raised on the main thread.
 
 ## Methods
 
@@ -395,7 +525,7 @@ Withdraw the focus hint: interest returns to the pawn. Going quiet is not enough
 public void AbsoluteFocusHint(out double x, out double y, out double z);
 ```
 
-[`FocusHint`](#focushint) in absolute world coordinates: the frame position plus this process's floating origin, in double, exactly as a worker resolves its own entities (`WorkerInterest.ToAbsolute`). Without a world definition the origin never moves and the two spaces are the same. All zero when there is no hint.
+[`FocusHint`](#focushint) in absolute world coordinates: the frame position with the floating origin of the local pawn's scope added back, in double, exactly as a worker resolves its own entities (`WorkerInterest.ToAbsolute`). A scoped chunk grid moves its own origin, not the public one, so the hint is converted through the scope's frame (`docs/scope-frames.md` D4b, NEB-338). Without a world definition or a scope frame the origin never moves and the two spaces are the same. All zero when there is no hint.
 
 ### SetContentAnchor [#setcontentanchor]
 
@@ -445,7 +575,27 @@ Drop the saved anonymous identity: the next connection without an [`AuthToken`](
 public void Disconnect();
 ```
 
-Leave the gateway and stop reconnecting. The client stays idle until the next [`Connect`](#connect) or [`ConnectTo`](#connectto).
+Leave the gateway and stop reconnecting. The client stays idle until the next [`Connect`](#connect) or [`ConnectTo`](#connectto). To the server this looks like a lost link: the worker keeps the pawn for [`NebulaConfig.SessionReclaimSeconds`](/docs/reference/core/nebula-config#sessionreclaimseconds) so the player can come back to it. Use [`Leave`](#leave) when the player is leaving for good.
+
+### Leave [#leave]
+
+```csharp
+public void Leave(float timeoutSeconds = DefaultLeaveTimeoutSeconds);
+```
+
+Leave the world for good: the player chose to quit, or to go back to the menu. Unlike [`Disconnect`](#disconnect), the session ends at once instead of waiting out [`NebulaConfig.SessionReclaimSeconds`](/docs/reference/core/nebula-config#sessionreclaimseconds): the client sends a goodbye, the worker calls [`NebulaGameMode.OnPlayerDespawn`](/docs/reference/core/nebula-game-mode#onplayerdespawn) and removes the pawn (a persistent pawn keeps its record), and other players stop seeing it. The session token is cleared, so the next [`Connect`](#connect) starts a new session.
+
+The client is `State.Disconnected` when this returns and raises [`Disconnected`](#disconnected) with [`DisconnectReason.ClientRequested`](/docs/reference/client/disconnect-reason#clientrequested), but it keeps the link open until the gateway closes it, which is how it knows the goodbye arrived, or until `timeoutSeconds` has passed. [`IsLeaving`](#isleaving) is true until then, and [`LeaveFinished`](#leavefinished) says which it was. Before quitting, wait for it: `yield return client.LeaveAndWait();` then `Application.Quit()`. A goodbye that does not arrive costs nothing but the grace: the server treats the player as disconnected.
+
+With no welcomed connection there is nobody to say goodbye to: it acts like [`Disconnect`](#disconnect) and raises [`LeaveFinished`](#leavefinished) with false at once.
+
+### LeaveAndWait [#leaveandwait]
+
+```csharp
+public System.Collections.IEnumerator LeaveAndWait(float timeoutSeconds = DefaultLeaveTimeoutSeconds);
+```
+
+[`Leave`](#leave), then wait until the gateway has confirmed the goodbye or `timeoutSeconds` has passed. Run it as a coroutine before quitting: `yield return client.LeaveAndWait(); Application.Quit();`. The client keeps polling its transport in `Update` meanwhile, so the frame loop must keep running.
 
 ### Find [#find]
 

@@ -115,6 +115,15 @@ namespace Nebula
         public bool SingleSessionPerPlayer = true;
         [Tooltip("When a gateway is asked to drain, how many seconds its clients are told they have to reconnect before it closes their links.")]
         public float GatewayDrainReconnectSeconds = 10f;
+        /// <summary>
+        /// When a gateway process stops (the host object is destroyed, the application quits, or the standalone
+        /// gateway gets SIGTERM or Ctrl-C), it first tells its connected clients: that it is draining when another
+        /// gateway is serving, or that the server is shutting down when none is. It then waits up to this many
+        /// seconds for the notices to go out, returning as soon as every client has hung up, so clients reconnect at
+        /// once rather than after the transport's timeout. 0 stops at once, without telling anyone.
+        /// </summary>
+        [Tooltip("When a gateway process stops, it tells its clients (draining, or the server is shutting down) and waits up to this many seconds for the notice to go out, less if every client hangs up first. 0 = stop at once without telling anyone.")]
+        public float GatewayShutdownDrainSeconds = 0.5f;
         [Tooltip("The game's content version. Clients announce this value when joining. A gateway with a nonzero value checks the client's version against MinGameContentVersion..GameContentVersion. A gateway value of 0 disables the check. -nebula-content-version overrides.")]
         public uint GameContentVersion = 0;
         [Tooltip("The oldest game content version a gateway admits, when GameContentVersion is set. 0 = exact match: only clients carrying GameContentVersion may join. -nebula-min-content-version overrides.")]
@@ -300,6 +309,49 @@ namespace Nebula
         public int InputLeadTargetTicks = 3;
         [Tooltip("Upper bound on the adaptive input lead adjustment, in ticks.")]
         public int InputLeadMaxAdjustTicks = 30;
+
+        [Header("Client reconnection")]
+        /// <summary>
+        /// Seconds the client waits after its connection drops before the first reconnection attempt. Each later
+        /// attempt waits <see cref="ReconnectBackoffFactor"/> times longer than the one before, up to
+        /// <see cref="ReconnectMaxDelaySeconds"/>. The defaults (1 s, ×2, 2 s) retry after 1 s, then every 2 s.
+        /// </summary>
+        [Tooltip("Client: seconds to wait after the connection drops before the first reconnection attempt.")]
+        public float ReconnectFirstDelaySeconds = 1f;
+        /// <summary>How much longer each reconnection attempt waits than the one before. 1 keeps the delay fixed at <see cref="ReconnectFirstDelaySeconds"/>.</summary>
+        [Tooltip("Client: each reconnection attempt waits this many times longer than the one before (1 = a fixed delay), up to ReconnectMaxDelaySeconds.")]
+        public float ReconnectBackoffFactor = 2f;
+        /// <summary>The longest the client waits between two reconnection attempts, in seconds.</summary>
+        [Tooltip("Client: the longest wait between two reconnection attempts, in seconds.")]
+        public float ReconnectMaxDelaySeconds = 2f;
+        /// <summary>
+        /// Seconds after a drop at which the client stops reconnecting: it raises <see cref="NebulaClient.ReconnectGaveUp"/>,
+        /// sets <see cref="NebulaClient.WantsConnection"/> to false and stays <see cref="NebulaClient.State.Disconnected"/>.
+        /// 0, the default, never gives up. A value a little above <see cref="SessionReclaimSeconds"/> stops once the
+        /// worker has let the pawn go.
+        /// </summary>
+        [Tooltip("Client: seconds after a drop at which the client stops reconnecting and raises ReconnectGaveUp. 0 = never give up. A little above SessionReclaimSeconds stops once the pawn is gone.")]
+        public float ReconnectGiveUpSeconds = 0f;
+        /// <summary>
+        /// Seconds without any packet from the gateway after which the client's transport declares the link lost
+        /// and the client starts reconnecting. Lower detects a dead gateway sooner; too low drops players on a
+        /// brief network stall. Must be well above <see cref="ClientPingIntervalSeconds"/>.
+        /// </summary>
+        [Tooltip("Client: seconds without a packet from the gateway before the link counts as lost (LiteNetLib's disconnect timeout). Lower notices a dead gateway sooner; too low drops players on a brief stall.")]
+        public float ClientDisconnectTimeoutSeconds = 8f;
+        /// <summary>Seconds between the keep-alive pings the client's transport sends, which also measure the round trip.</summary>
+        [Tooltip("Client: seconds between the transport's keep-alive pings, which also measure the round-trip time.")]
+        public float ClientPingIntervalSeconds = 0.5f;
+        /// <summary>
+        /// Seconds without any state from the server (entity state, owner state, variables, RPCs, spawns) after which
+        /// a client that is in the world raises <see cref="NebulaClient.ServerStalled"/>, while its link to the
+        /// gateway is still up: the worker simulating the player has stopped without the orchestrator having declared
+        /// it dead yet. It raises <see cref="NebulaClient.ServerResumed"/> when state arrives again. 0 turns the
+        /// watch off. The watch assumes the server sends state continuously, as it does for a predicted pawn; a
+        /// world that can go quiet for longer needs a higher value, or 0.
+        /// </summary>
+        [Tooltip("Client: seconds without any state from the server, while the link is up and the player is in the world, before NebulaClient.ServerStalled is raised. 0 = off. Assumes the server sends state continuously (a predicted pawn does).")]
+        public float ClientStallSeconds = 2f;
 
         [Header("Prefabs")]
         [Tooltip("Every prefab that can be spawned over the network. The index is the prefab id on the wire.")]

@@ -372,6 +372,14 @@ public void StopDraining();
 
 Cancel a drain (the fleet changed its mind): new clients are accepted again.
 
+### Kick [#kick]
+
+```csharp
+public bool Kick(ulong clientId, ushort code, string reason);
+```
+
+Remove a player: the client is sent the `code` and `reason` ([`KickedMsg`](/docs/reference/protocol/kicked-msg)), the link is closed a moment later, and the session ends at once: the worker that owns the pawn despawns it without waiting out the reclaim grace, calling `NebulaGameMode.OnPlayerDespawn` first. The code is the game's own; Nebula passes it through. Returns false when no welcomed client of this gateway has `clientId`. A kick is not a ban: the player may connect again as a new session.
+
 ### IsEntityCached [#isentitycached]
 
 ```csharp

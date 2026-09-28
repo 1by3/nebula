@@ -1,0 +1,65 @@
+---
+title: "DisconnectInfo"
+description: "How a client's connection ended: the typed Reason, a Message for logs and the player, and whether the client will try again by itself (WillRetry)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Client/DisconnectInfo.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Client/DisconnectInfo.cs)</div>
+
+```csharp
+public readonly struct DisconnectInfo
+```
+
+How a client's connection ended: the typed [`Reason`](#reason), a [`Message`](#message) for logs and the player, and whether the client will try again by itself ([`WillRetry`](#willretry)).
+
+## Constructors
+
+### DisconnectInfo [#disconnectinfo]
+
+```csharp
+public DisconnectInfo(DisconnectReason reason, string message, bool willRetry);
+public DisconnectInfo(DisconnectReason reason, string message, bool willRetry, ushort code);
+```
+
+A disconnect with a server `code` ([`Code`](#code)).
+
+## Fields
+
+### Reason [#reason]
+
+```csharp
+public readonly DisconnectReason Reason;
+```
+
+Why the connection ended.
+
+### Message [#message]
+
+```csharp
+public readonly string Message;
+```
+
+A readable description, the same text as [`NebulaClient.LastError`](/docs/reference/client/nebula-client#lasterror) when the client set one.
+
+### WillRetry [#willretry]
+
+```csharp
+public readonly bool WillRetry;
+```
+
+True when the client keeps trying to connect; false when it has stopped and waits for [`NebulaClient.Connect`](/docs/reference/client/nebula-client#connect).
+
+### Code [#code]
+
+```csharp
+public readonly ushort Code;
+```
+
+For [`DisconnectReason.Kicked`](/docs/reference/client/disconnect-reason#kicked): the code the server gave, a number of the game's own that Nebula passes through unchanged. 0 for every other reason, and when the server gave none.
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

@@ -17,7 +17,10 @@ public sealed class LiteNetTransport : ITransport, INetEventListener
 
 ```csharp
 public LiteNetTransport(string name);
+public LiteNetTransport(string name, int disconnectTimeoutMs, int pingIntervalMs);
 ```
+
+A transport whose links end after `disconnectTimeoutMs` without a packet from the remote, and that sends a keep-alive ping every `pingIntervalMs`. The ping interval is kept to at least 10 ms and the timeout to at least twice the ping interval.
 
 ## Fields
 
@@ -27,7 +30,39 @@ public LiteNetTransport(string name);
 public const string ConnectionKey = "nebula-v1";
 ```
 
+### DefaultDisconnectTimeoutMs [#defaultdisconnecttimeoutms]
+
+```csharp
+public const int DefaultDisconnectTimeoutMs = 8000;
+```
+
+The disconnect timeout a transport gets when none is given: 8 s without a packet ends a link.
+
+### DefaultPingIntervalMs [#defaultpingintervalms]
+
+```csharp
+public const int DefaultPingIntervalMs = 500;
+```
+
+The keep-alive ping interval a transport gets when none is given.
+
 ## Properties
+
+### DisconnectTimeoutMs [#disconnecttimeoutms]
+
+```csharp
+public int DisconnectTimeoutMs { get; }
+```
+
+Milliseconds without a packet from the remote after which a link ends with [`TransportDisconnectReason.Timeout`](/docs/reference/transport/transport-disconnect-reason#timeout).
+
+### PingIntervalMs [#pingintervalms]
+
+```csharp
+public int PingIntervalMs { get; }
+```
+
+Milliseconds between keep-alive pings.
 
 ### Name [#name]
 

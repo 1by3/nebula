@@ -248,6 +248,13 @@ MonoBehaviour:
   InputLeadMarginTicks: 2
   InputLeadTargetTicks: 3
   InputLeadMaxAdjustTicks: 30
+  ReconnectFirstDelaySeconds: 1
+  ReconnectBackoffFactor: 2
+  ReconnectMaxDelaySeconds: 2
+  ReconnectGiveUpSeconds: 0
+  ClientDisconnectTimeoutSeconds: 8
+  ClientPingIntervalSeconds: 0.5
+  ClientStallSeconds: 2
   NetworkPrefabs: []
 ";
 }

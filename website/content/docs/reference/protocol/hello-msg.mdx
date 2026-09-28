@@ -16,7 +16,7 @@ Carries the hello protocol message.
 ### ProtocolVersion [#protocolversion]
 
 ```csharp
-public const ushort ProtocolVersion = 22;
+public const ushort ProtocolVersion = 23;
 ```
 
 The wire protocol version used by this build.
@@ -24,10 +24,10 @@ The wire protocol version used by this build.
 ### MinProtocolVersion [#minprotocolversion]
 
 ```csharp
-public const ushort MinProtocolVersion = 21;
+public const ushort MinProtocolVersion = 23;
 ```
 
-The oldest client protocol the gateway accepts: 21, the window being one version wide. Protocol 22 added forwarded token claims ([`PlayerClaims`](/docs/reference/protocol/player-claims)), which travel only between gateways and workers and between workers, so nothing a client sends or receives changed. Protocols 18 to 20 are refused. Gateway-to-worker and worker-to-worker connections require [`ProtocolVersion`](#protocolversion) exactly.
+The oldest client protocol the gateway accepts: 23, the same as [`ProtocolVersion`](#protocolversion). Before 1.0 a protocol bump may close the window to the new version only, and protocol 23 (deliberate session endings, a recovering join hold, the owner-connected flag) does: clients of 22 and older are refused with [`JoinRejectReason.ProtocolUnsupported`](/docs/reference/protocol/join-reject-reason#protocolunsupported) and must be rebuilt. Protocol 22 added forwarded token claims ([`PlayerClaims`](/docs/reference/protocol/player-claims)), between gateways and workers only. Gateway-to-worker and worker-to-worker connections require [`ProtocolVersion`](#protocolversion) exactly.
 
 ### Role [#role]
 

@@ -2,16 +2,17 @@ using System.Text;
 
 namespace Nebula.ServiceTests;
 
-// Frozen protocol-20 oracle: do not replace literals or readers with production protocol types.
-// Protocol 20 changed no frame layout this replay reads: it added audience bits to sync chunk flags and a Cleared
-// chunk, both inside sync payloads this oracle does not inspect, so this is the protocol-19 oracle with its version
-// literals raised.
+// Frozen protocol-23 oracle: do not replace literals or readers with production protocol types.
+// Protocols 21 to 23 changed no frame layout this replay reads: 21 added a message (EntityMaps, 38), which lands in
+// UninspectedMessageIds, and a trailing maps field in the spawn body, which the spawn reader leaves unread; 22 and 23 added
+// messages and fields the handshake and snapshot stream do not carry. So this is the protocol-20 oracle with its
+// version literals raised.
 // Covers the public-container handshake, spawn and transform stream exercised by the replay.
 // Instance containers, game-defined variable/sync payload contents, RPCs and other message IDs
-// are not compatibility claims made by this fixture. Like the protocol-20 client, unknown
+// are not compatibility claims made by this fixture. Like the protocol-23 client, unknown
 // message IDs and optional trailing bytes are ignored inside their bounded frame. Known but
 // uncovered instance-container payloads fail explicitly instead of guessing their framing.
-internal sealed class Protocol20GatewayDecoder
+internal sealed class Protocol23GatewayDecoder
 {
     internal ulong ClientId;
     internal string Identity = "";
@@ -28,7 +29,7 @@ internal sealed class Protocol20GatewayDecoder
 
     private void Read(byte[] frame, int depth)
     {
-        if (depth > 8) throw new InvalidDataException("protocol-20 batch nesting limit");
+        if (depth > 8) throw new InvalidDataException("protocol-23 batch nesting limit");
         using var r = new Cursor(frame);
         byte id = r.Byte();
         switch (id)
@@ -41,8 +42,8 @@ internal sealed class Protocol20GatewayDecoder
                 if (Identity.Length == 0 || r.Text().Length == 0 || r.Text().Length == 0)
                     throw new InvalidDataException("missing handshake identity or tokens");
                 r.Bool();
-                NegotiatedVersion = r.Remaining == 0 ? (ushort)20 : r.U16();
-                if (NegotiatedVersion != 20) throw new InvalidDataException("gateway did not negotiate protocol 20");
+                NegotiatedVersion = r.Remaining == 0 ? (ushort)23 : r.U16();
+                if (NegotiatedVersion != 23) throw new InvalidDataException("gateway did not negotiate protocol 23");
                 Welcomes++;
                 break;
             case 5: // JoinStatus
@@ -97,7 +98,7 @@ internal sealed class Protocol20GatewayDecoder
                 {
                     r.U16(); string container = r.Text();
                     r.U16(); r.Text(); r.U64(); r.Text();
-                    if (r.Bool()) throw new InvalidDataException("instance containers are outside the protocol-20 replay coverage");
+                    if (r.Bool()) throw new InvalidDataException("instance containers are outside the protocol-23 replay coverage");
                     if (r.Bool()) r.Floats(6);
                     Containers.Add(container);
                 }
@@ -112,7 +113,7 @@ internal sealed class Protocol20GatewayDecoder
                 UninspectedMessageIds.Add(id);
                 break;
         }
-        // Dispatch in the protocol-20 client discards the remainder of each bounded message.
+        // Dispatch in the protocol-23 client discards the remainder of each bounded message.
         // Additive fields/new messages are safe; required fields and declared batch lengths above
         // must still be complete, and the caller asserts the expected handshake/state semantics.
     }
@@ -130,12 +131,12 @@ internal sealed class Protocol20GatewayDecoder
         internal bool Bool()
         {
             byte value = Byte();
-            if (value > 1) throw new InvalidDataException("invalid protocol-20 boolean/flags");
+            if (value > 1) throw new InvalidDataException("invalid protocol-23 boolean/flags");
             return value != 0;
         }
         internal byte[] Bytes(int length)
         {
-            if (length > Remaining) throw new EndOfStreamException("truncated protocol-20 field");
+            if (length > Remaining) throw new EndOfStreamException("truncated protocol-23 field");
             return reader.ReadBytes(length);
         }
         internal string Text()
@@ -152,7 +153,7 @@ internal sealed class Protocol20GatewayDecoder
         private float Float()
         {
             float value = reader.ReadSingle();
-            if (!float.IsFinite(value)) throw new InvalidDataException("non-finite protocol-20 transform");
+            if (!float.IsFinite(value)) throw new InvalidDataException("non-finite protocol-23 transform");
             return value;
         }
         internal float[] Axes(ushort fields, int shift)
@@ -162,7 +163,7 @@ internal sealed class Protocol20GatewayDecoder
                 if ((fields & (1 << (shift + i))) != 0)
                 {
                     values[i] = (fields & 2048) != 0 ? (float)BitConverter.UInt16BitsToHalf(U16()) : Float();
-                    if (!float.IsFinite(values[i])) throw new InvalidDataException("non-finite protocol-20 transform");
+                    if (!float.IsFinite(values[i])) throw new InvalidDataException("non-finite protocol-23 transform");
                 }
             return values;
         }

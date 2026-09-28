@@ -11,6 +11,16 @@ public sealed class PlayerSessions
 
 A worker's view of which gateway currently speaks for each player session, and how new that claim is. Every session ([`WelcomeMsg.ClientId`](/docs/reference/protocol/welcome-msg#clientid)) is claimed by a gateway through [`SpawnPlayerMsg`](/docs/reference/protocol/spawn-player-msg) with a connection generation; a later claim with a higher generation moves the session to that gateway (the client reconnected elsewhere), and anything an older gateway says about the session afterwards (a despawn, inputs) is stale and ignored. When a gateway link is lost its sessions are orphaned: kept for a grace period so the same or another gateway can reclaim them, then handed back to the caller to despawn. Plain C#, no Unity or transport types: the worker feeds it gateway keys (id + incarnation) and a clock.
 
+## Fields
+
+### EndedWithoutPawnSeconds [#endedwithoutpawnseconds]
+
+```csharp
+public const double EndedWithoutPawnSeconds = 10;
+```
+
+How long, at least, an ended session is kept when the caller does not hold its pawn: long enough for a handover that was in flight when the end arrived to land, so the end is still here to remove the pawn.
+
 ## Properties
 
 ### Count [#count]
@@ -73,6 +83,14 @@ public bool Release(ulong id, ulong generation, double now);
 
 A gateway says the session's link ended. True when that is current news: the session becomes an orphan and [`Expire`](#expire) hands it back after the grace unless a claim renews it. False when a newer claim exists elsewhere, so the release is stale and must be ignored. An unknown session is treated as current.
 
+### End [#end]
+
+```csharp
+public bool End(ulong id, ulong generation, double now);
+```
+
+A gateway says the session is over, not merely disconnected: the player said goodbye or was kicked. Like [`Release`](#release), and fenced the same way, but [`Expire`](#expire) hands the session back on its next pass instead of after the grace. Returns false for a stale end (a newer claim exists elsewhere).
+
 ### Accept [#accept]
 
 ```csharp
@@ -107,9 +125,10 @@ The same gateway (same incarnation) is back: its sessions are no longer orphans,
 
 ```csharp
 public void Expire(double now, double graceSeconds, List<ulong> expired);
+public void Expire(double now, double graceSeconds, List<ulong> expired, Func<ulong, bool> holdsPawn);
 ```
 
-Drop every orphan older than `graceSeconds` and list its id, so the caller despawns the pawn.
+Drop every orphan older than `graceSeconds`, and every ended session, and list its id, so the caller despawns the pawn. Every ended session counts as one whose pawn the caller holds.
 
 ## Nested types
 
@@ -157,6 +176,14 @@ public bool Released;
 
 The orphan is a release: the gateway said the client's link ended. Only a newer claim renews it. An orphan that is not released only lost its gateway's link to this worker, and the same gateway coming back renews it too ([`GatewayReturned`](#gatewayreturned)).
 
+##### Ended [#ended]
+
+```csharp
+public bool Ended;
+```
+
+The session is over and waits for nobody: the player said goodbye or was kicked ([`End`](#end)). Always a release too. [`Expire`](#expire) hands it back at once, whatever the grace.
+
 ##### OrphanedAt [#orphanedat]
 
 ```csharp
@@ -188,6 +215,7 @@ Why a session is waiting for a reclaim. Carried in a handover ([`AuthorityTransf
 | <span id="none"></span>`None` | `0` | A gateway speaks for the session. |
 | <span id="released"></span>`Released` | `1` | The gateway said the client's link ended ([`PlayerSessions.Release`](/docs/reference/protocol/player-sessions#release)). |
 | <span id="gatewaylost"></span>`GatewayLost` | `2` | The gateway's link to the worker dropped ([`PlayerSessions.GatewayLost`](/docs/reference/protocol/player-sessions#gatewaylost)). |
+| <span id="ended"></span>`Ended` | `3` | The session is over: the player said goodbye or was kicked ([`PlayerSessions.End`](/docs/reference/protocol/player-sessions#end)). The pawn is removed as soon as the worker that owns it hears of it, with no reclaim grace. |
 
 ### Claim [#claim]
 

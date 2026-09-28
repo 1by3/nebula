@@ -23,7 +23,7 @@ namespace Nebula
             for (int i = 0; i < transports.Length; i++)
             {
                 int index = i;
-                _forwarders[i] = ev => _handler?.Invoke(new TransportEvent(ev.Type, Outer(ev.PeerId, index), ev.Data));
+                _forwarders[i] = ev => _handler?.Invoke(new TransportEvent(ev.Type, Outer(ev.PeerId, index), ev.Data, ev.Reason));
             }
         }
 

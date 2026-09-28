@@ -1,6 +1,6 @@
 ---
 title: "DespawnPlayerMsg"
-description: "Gateway -> worker: the session is over (or the gateway gave up waiting for it to reconnect)."
+description: "Gateway -> worker: the client's link ended, so the session waits for a reclaim, or the session is over (EndNow)."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
@@ -9,7 +9,7 @@ description: "Gateway -> worker: the session is over (or the gateway gave up wai
 public struct DespawnPlayerMsg
 ```
 
-Gateway -\> worker: the session is over (or the gateway gave up waiting for it to reconnect). Fenced by [`Generation`](#generation) like [`SpawnPlayerMsg`](/docs/reference/protocol/spawn-player-msg).
+Gateway -\> worker: the client's link ended, so the session waits for a reclaim, or the session is over ([`EndNow`](#endnow)). Fenced by [`Generation`](#generation) like [`SpawnPlayerMsg`](/docs/reference/protocol/spawn-player-msg). A worker that has handed the pawn on forwards it to the new owner.
 
 ## Fields
 
@@ -24,6 +24,14 @@ public ulong ClientId;
 ```csharp
 public ulong Generation;
 ```
+
+### EndNow [#endnow]
+
+```csharp
+public bool EndNow;
+```
+
+The session is over and not waiting for a reclaim: the player said goodbye, or was kicked. The worker removes the pawn now instead of keeping it for [`NebulaConfig.SessionReclaimSeconds`](/docs/reference/core/nebula-config#sessionreclaimseconds).
 
 ## Methods
 

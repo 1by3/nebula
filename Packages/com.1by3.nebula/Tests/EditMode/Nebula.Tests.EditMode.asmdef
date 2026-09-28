@@ -6,7 +6,8 @@
         "UnityEditor.TestRunner",
         "Nebula.Runtime",
         "Nebula.World",
-        "Nebula.Editor"
+        "Nebula.Editor",
+        "LiteNetLib"
     ],
     "includePlatforms": [
         "Editor"

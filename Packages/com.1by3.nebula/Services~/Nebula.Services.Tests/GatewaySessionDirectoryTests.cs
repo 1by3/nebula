@@ -41,6 +41,31 @@ public class GatewaySessionDirectoryTests
         Assert.That(store.LoadSession("player"), Is.Null);
     }
 
+    /// <summary>
+    /// A session that ended on purpose (a goodbye or a kick, NEB-354) keeps nothing for a reclaim: the entry goes,
+    /// from memory and from storage, where a release keeps the route for 24 hours. The player's next claim is a new
+    /// session under the id it proposes, granted at once.
+    /// </summary>
+    [Test]
+    public void AnEndedSessionIsForgottenAndTheNextClaimIsANewSession()
+    {
+        var store = new Store();
+        var directory = new GatewaySessionDirectory(_ => true) { Store = store };
+        var request = Claim("a", "first", 11);
+        Assert.That(directory.Handle(request).Status, Is.EqualTo("granted"));
+        request.Operation = "reserve";
+        request.Worker = "w1";
+        directory.Handle(request);
+        request.Operation = "end";
+        Assert.That(directory.Handle(request).Status, Is.EqualTo("ok"));
+        Assert.That(store.LoadSession("player"), Is.Null, "nothing is kept for a reclaim");
+
+        var next = directory.Handle(Claim("b", "second", 12));
+        Assert.That(next.Status, Is.EqualTo("granted"), "the next sign-in does not wait for anyone");
+        Assert.That(next.Session.SessionId, Is.EqualTo(12UL), "and it is a new session");
+        Assert.That(next.Session.Worker, Is.Empty, "with no reserved route to the old pawn's worker");
+    }
+
     [Test]
     public void CoordinatorRestartCannotForgetAnExistingConnection()
     {

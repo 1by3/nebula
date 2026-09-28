@@ -52,3 +52,19 @@ public static string DevSaves(string projectRoot);
 ```
 
 The folder [`DevSaveFile`](#devsavefile) is in.
+
+### PortOffsetFile [#portoffsetfile]
+
+```csharp
+public static string PortOffsetFile(string projectRoot);
+```
+
+This checkout's own port offset for the dev loop: `<root>/UserSettings/NebulaEditorPortOffset.txt`, holding one whole number. `UserSettings` is per checkout and not committed, so two copies of a project (git worktrees, for example) can each press Play at once without changing the shared [`NebulaConfig`](/docs/reference/core/nebula-config).
+
+### PortOffset [#portoffset]
+
+```csharp
+public static int PortOffset(NebulaConfig config, string projectRoot);
+```
+
+The offset both sides of the dev loop add to the configured ports: the number in [`PortOffsetFile`](#portoffsetfile) when it holds one, otherwise [`NebulaConfig.EditorPortOffset`](/docs/reference/core/nebula-config#editorportoffset). A game that runs its own local services beside the dev loop can use it to move their ports by the same amount.

@@ -24,20 +24,38 @@ namespace Nebula
         private Action<TransportEvent> _handler;
         private long _oversized;
 
-        public LiteNetTransport(string name)
+        /// <summary>The disconnect timeout a transport gets when none is given: 8 s without a packet ends a link.</summary>
+        public const int DefaultDisconnectTimeoutMs = 8000;
+        /// <summary>The keep-alive ping interval a transport gets when none is given.</summary>
+        public const int DefaultPingIntervalMs = 500;
+
+        public LiteNetTransport(string name) : this(name, DefaultDisconnectTimeoutMs, DefaultPingIntervalMs) { }
+
+        /// <summary>
+        /// A transport whose links end after <paramref name="disconnectTimeoutMs"/> without a packet from the
+        /// remote, and that sends a keep-alive ping every <paramref name="pingIntervalMs"/>. The ping interval is
+        /// kept to at least 10 ms and the timeout to at least twice the ping interval.
+        /// </summary>
+        public LiteNetTransport(string name, int disconnectTimeoutMs, int pingIntervalMs)
         {
             Name = name;
+            int ping = Math.Max(10, pingIntervalMs);
             _net = new NetManager(this)
             {
                 ChannelsCount = 2,
                 UnsyncedEvents = false,
                 AutoRecycle = true,
                 IPv6Enabled = false,
-                DisconnectTimeout = 8000,
+                DisconnectTimeout = Math.Max(ping * 2, disconnectTimeoutMs),
                 UpdateTime = 5,
-                PingInterval = 500,
+                PingInterval = ping,
             };
         }
+
+        /// <summary>Milliseconds without a packet from the remote after which a link ends with <see cref="TransportDisconnectReason.Timeout"/>.</summary>
+        public int DisconnectTimeoutMs => _net.DisconnectTimeout;
+        /// <summary>Milliseconds between keep-alive pings.</summary>
+        public int PingIntervalMs => _net.PingInterval;
 
         public string Name { get; }
         public bool IsRunning => _net.IsRunning;
@@ -124,10 +142,38 @@ namespace Nebula
             _handler?.Invoke(new TransportEvent(TransportEvent.Kind.Connected, peer.Id, default));
         }
 
-        void INetEventListener.OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
+        void INetEventListener.OnPeerDisconnected(NetPeer peer, LiteNetLib.DisconnectInfo disconnectInfo)
         {
             _peers.Remove(peer.Id);
-            _handler?.Invoke(new TransportEvent(TransportEvent.Kind.Disconnected, peer.Id, default));
+            _handler?.Invoke(TransportEvent.Disconnected(peer.Id, ReasonOf(disconnectInfo.Reason, disconnectInfo.SocketErrorCode)));
+        }
+
+        /// <summary>LiteNetLib's reason for a closed link, in the transport-neutral terms of <see cref="TransportDisconnectReason"/>.</summary>
+        internal static TransportDisconnectReason ReasonOf(LiteNetLib.DisconnectReason reason, SocketError socketError = SocketError.Success)
+        {
+            switch (reason)
+            {
+                case LiteNetLib.DisconnectReason.Timeout: return TransportDisconnectReason.Timeout;
+                case LiteNetLib.DisconnectReason.NetworkUnreachable: return TransportDisconnectReason.NetworkUnreachable;
+                // ConnectionFailed: every connect attempt went unanswered. UnknownHost: the name did not resolve.
+                case LiteNetLib.DisconnectReason.ConnectionFailed:
+                case LiteNetLib.DisconnectReason.HostUnreachable:
+                case LiteNetLib.DisconnectReason.UnknownHost:
+                    return socketError == SocketError.NetworkUnreachable || socketError == SocketError.NetworkDown
+                        ? TransportDisconnectReason.NetworkUnreachable
+                        : TransportDisconnectReason.HostUnreachable;
+                // Reconnect: the remote accepted a new connection from this endpoint. PeerNotFound: the remote no
+                // longer knows this link, typically because it restarted.
+                case LiteNetLib.DisconnectReason.RemoteConnectionClose:
+                case LiteNetLib.DisconnectReason.Reconnect:
+                case LiteNetLib.DisconnectReason.PeerNotFound:
+                    return TransportDisconnectReason.ClosedByRemote;
+                case LiteNetLib.DisconnectReason.DisconnectPeerCalled: return TransportDisconnectReason.LocalRequest;
+                case LiteNetLib.DisconnectReason.ConnectionRejected:
+                case LiteNetLib.DisconnectReason.InvalidProtocol:
+                    return TransportDisconnectReason.Rejected;
+                default: return TransportDisconnectReason.Unknown;
+            }
         }
 
         void INetEventListener.OnNetworkError(IPEndPoint endPoint, SocketError socketError)

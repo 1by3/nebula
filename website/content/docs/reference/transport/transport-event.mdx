@@ -17,7 +17,10 @@ Stores the values used by transport event.
 
 ```csharp
 public TransportEvent(Kind type, int peerId, ArraySegment<byte> data);
+public TransportEvent(Kind type, int peerId, ArraySegment<byte> data, TransportDisconnectReason reason);
 ```
+
+An event that carries why its link closed (`reason`), for `Kind.Disconnected`.
 
 ## Fields
 
@@ -38,6 +41,24 @@ public readonly int PeerId;
 ```csharp
 public readonly ArraySegment<byte> Data;
 ```
+
+### Reason [#reason]
+
+```csharp
+public readonly TransportDisconnectReason Reason;
+```
+
+Why the link closed, for a `Kind.Disconnected` event; [`TransportDisconnectReason.Unknown`](/docs/reference/transport/transport-disconnect-reason#unknown) otherwise.
+
+## Methods
+
+### Disconnected [#disconnected]
+
+```csharp
+public static TransportEvent Disconnected(int peerId, TransportDisconnectReason reason);
+```
+
+A `Kind.Disconnected` event for `peerId` that says why the link closed.
 
 ## Nested types
 

@@ -19,3 +19,4 @@ Lists the supported entity flags values.
 | <span id="none"></span>`None` | `0` |  |
 | <span id="ownerisbot"></span>`OwnerIsBot` | `1` | The owning client is a bot. Travels with the entity through ghosting and handover. |
 | <span id="serverdriven"></span>`ServerDriven` | `2` | No owning client: the authoritative worker drives the entity itself. Travels with the entity. |
+| <span id="ownerdisconnected"></span>`OwnerDisconnected` | `4` | The owning client is not connected: its link dropped and the worker is keeping the pawn for the reclaim grace ([`NetworkIdentity.IsOwnerConnected`](/docs/reference/core/network-identity#isownerconnected) is false). Travels with the entity through ghosting and handover. |

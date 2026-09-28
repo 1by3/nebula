@@ -99,7 +99,9 @@ namespace Nebula
 
         private void DrawConnecting()
         {
-            string state = Client.ConnectionState switch
+            string state = Client.IsReconnecting && Client.ConnectionState != NebulaClient.State.InGame
+                ? $"reconnecting, attempt {Mathf.Max(1, Client.ReconnectAttempt)} ({Client.ReconnectElapsedSeconds:0} s)..."
+                : Client.ConnectionState switch
             {
                 NebulaClient.State.Connecting => "connecting...",
                 NebulaClient.State.Connected => "connected, waiting for the world...",

@@ -19,9 +19,6 @@ namespace Nebula
     /// </summary>
     public sealed partial class NebulaGateway
     {
-        /// <summary>The first client protocol that understands a <see cref="SyncStateCodec.ChunkFlags.Cleared"/> chunk.</summary>
-        internal const ushort SyncClearedProtocol = 20;
-
         private struct SyncChunk
         {
             public byte Index;
@@ -308,8 +305,6 @@ namespace Nebula
                     bool now = IsAudienceMember(audience, index, client.ClientId, rec.OwnerClientId, rec.AudienceSets);
                     if (was && !now)
                     {
-                        // A client of protocol 19 cannot read the notice; it simply stops receiving the state.
-                        if (client.ProtocolVersion < SyncClearedProtocol) continue;
                         SyncStateCodec.WriteRawChunk(_syncEnvelope, index, SyncStateCodec.ChunkFlags.Cleared | SyncStateCodec.FlagsOf(audience), default);
                         cleared++;
                     }

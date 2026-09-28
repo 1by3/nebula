@@ -2162,6 +2162,10 @@ namespace Nebula
             }
             e.SetAuthority(true);
             PhysicsIslands.CheckOnAuthority(e);
+            // The owner's connection as this worker sees it: a drop or a return the previous owner did not hear of is
+            // this worker's to report. Before the inherited ghosts are resumed, so the spawns that open them carry it,
+            // and the gateways hear of it in the announcement at the end.
+            SyncOwnerConnected(e, announce: false);
             // Inherit the previous owner's subscribers. The new owner opens each ordered stream with a snapshot,
             // including for motionless entities that will never emit another pose update.
             if (msg.GhostWorkers != null)
@@ -2282,6 +2286,7 @@ namespace Nebula
             e.OwnerClaims = msg.OwnerClientId != 0 && msg.OwnerClaims != null ? msg.OwnerClaims : PlayerClaims.Empty;
             e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
             e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
+            e.SetOwnerConnected((msg.Flags & EntityFlags.OwnerDisconnected) == 0);
             e.OwnerWorkerIndex = msg.OwnerWorkerIndex;
             // The cohesion group travels with the entity, so this worker expands the same group the previous owner
             // did when it hands the entity on (docs/cohesion-hints.md, D3).
@@ -2610,6 +2615,7 @@ namespace Nebula
 
         private void OnSpawnPlayer(Peer gateway, SpawnPlayerMsg msg)
         {
+            if (_heldKicks.Count > 0 && RefuseKickedClaim(gateway, msg)) return;
             var claim = _sessions.Register(msg.ClientId, msg.Generation, gateway.Key, out string lostBy);
             if (claim == PlayerSessions.Claim.Stale)
             {
@@ -2631,6 +2637,8 @@ namespace Nebula
             {
                 if (existing.HasAuthority)
                 {
+                    // The player is back within the grace (or was never away): tell the game and every copy.
+                    SyncOwnerConnected(existing);
                     // Re-announce; the gateway may have lost track of it.
                     SendSpawn(gateway, EntitySpawnMsg.From(existing, _scratch, forGateway: true), MsgId.EntitySpawn);
                     // A new connection for the same session: what it is in the audience of starts from a fresh
@@ -2666,7 +2674,9 @@ namespace Nebula
 
         private void OnDespawnPlayer(Peer gateway, DespawnPlayerMsg msg)
         {
-            if (!_sessions.Release(msg.ClientId, msg.Generation, Time.unscaledTime))
+            // A goodbye or a kick ends the session; a lost link only releases it for the reclaim grace.
+            bool current = msg.EndNow ? _sessions.End(msg.ClientId, msg.Generation, Time.unscaledTime) : _sessions.Release(msg.ClientId, msg.Generation, Time.unscaledTime);
+            if (!current)
             {
                 NebulaLog.Info($"stale despawn of session {msg.ClientId} from gateway {gateway.Id} (generation {msg.Generation}); the session moved on");
                 return;
@@ -2686,14 +2696,199 @@ namespace Nebula
                     return;
                 }
                 // Not ours, and not handed on by us: the pawn may be on its way here (the gateway followed the
-                // redirect before the handover arrived). The release is kept for the grace so the handover cannot
-                // undo it; ExpireSessions forgets it if nothing arrives.
+                // redirect before the handover arrived), or still being created. The release is kept for the grace,
+                // and an end at least as long (PlayerSessions.EndedWithoutPawnSeconds), so the handover cannot undo
+                // it; ExpireSessions forgets it if nothing arrives, and removes a pawn that arrives for an ended session.
+                return;
+            }
+            if (msg.EndNow)
+            {
+                // The player left on purpose: nobody is coming back for this pawn.
+                NebulaLog.Info($"session {msg.ClientId} ended (the player left or was removed); despawning {e}");
+                DespawnPlayer(msg.ClientId);
                 return;
             }
             // The pawn stays for the reclaim grace (SessionReclaimSeconds): the player may be reconnecting, here or
             // through another gateway. ExpireSessions despawns it when nobody came back.
             if (Config.SessionReclaimSeconds <= 0) DespawnPlayer(msg.ClientId);
+            else SyncOwnerConnected(e);
         }
+
+        /// <summary>
+        /// Bring a pawn's <see cref="NetworkIdentity.IsOwnerConnected"/> in line with its session on this worker and,
+        /// when it changes, tell every copy (the gateways that hear of the pawn, the workers holding a ghost) and the
+        /// game (<see cref="NebulaGameMode.OnPlayerDisconnected"/>, <see cref="NebulaGameMode.OnPlayerReconnected"/>).
+        /// Only the worker that owns the pawn decides. A session that ended on purpose is not a disconnection: the
+        /// pawn is removed on the next pass without the hook. <paramref name="announce"/> false leaves the gateways'
+        /// announcement to the caller (a handover announces the pawn anyway); ghost workers are told either way.
+        /// </summary>
+        private void SyncOwnerConnected(NetworkIdentity e, bool announce = true)
+        {
+            if (e == null || !e.HasAuthority || e.OwnerClientId == 0) return;
+            bool orphaned = _sessions.TryGet(e.OwnerClientId, out var session) && session.Orphaned;
+            if (orphaned && session.Ended) return;
+            bool connected = !orphaned;
+            if (e.IsOwnerConnected == connected) return;
+            e.SetOwnerConnected(connected);
+            NebulaLog.Info($"session {e.OwnerClientId}: player {(connected ? "reconnected to" : "disconnected from")} {e}");
+            if (announce) AnnounceOwnerConnection(e);
+            else AnnounceOwnerConnectionToGhosts(e);
+            try
+            {
+                if (connected) _gameMode?.OnPlayerReconnected(this, e);
+                else _gameMode?.OnPlayerDisconnected(this, e);
+            }
+            catch (Exception ex) { NebulaLog.Error($"{(connected ? "OnPlayerReconnected" : "OnPlayerDisconnected")} threw for {e}: {ex}"); }
+        }
+
+        /// <summary><see cref="SyncOwnerConnected"/> for every pawn this worker owns: a gateway's link came or went.</summary>
+        private void SyncOwnersConnected()
+        {
+            _ownerSyncScratch.Clear();
+            foreach (var e in _players.Values) if (e != null && e.HasAuthority) _ownerSyncScratch.Add(e);
+            for (int i = 0; i < _ownerSyncScratch.Count; i++) SyncOwnerConnected(_ownerSyncScratch[i]);
+            _ownerSyncScratch.Clear();
+        }
+
+        private readonly List<NetworkIdentity> _ownerSyncScratch = new List<NetworkIdentity>();
+
+        /// <summary>
+        /// Announce the pawn again, in place, so every copy reads the new <see cref="EntityFlags.OwnerDisconnected"/>:
+        /// the gateways that hear of it relay it to their clients, and each ghost worker applies it to its ghost.
+        /// </summary>
+        private void AnnounceOwnerConnection(NetworkIdentity e)
+        {
+            SendSpawnToMask(e, PublishMaskOf(e));
+            AnnounceOwnerConnectionToGhosts(e);
+        }
+
+        /// <summary>The ghost half of <see cref="AnnounceOwnerConnection"/>: a GhostSpawn, in place, to every worker holding a ghost.</summary>
+        private void AnnounceOwnerConnectionToGhosts(NetworkIdentity e)
+        {
+            if (!_ghostTargets.TryGetValue(e.NetId, out var targets) || targets.Count == 0) return;
+            foreach (var target in targets.Keys)
+                if (_workerPeersById.TryGetValue(target, out var peer)) SendSpawn(peer, EntitySpawnMsg.From(e, _scratch), MsgId.GhostSpawn);
+        }
+
+        /// <summary>
+        /// Remove a player from the game: the client is told why (<paramref name="code"/>, a number of the game's own
+        /// that Nebula passes through unchanged, and <paramref name="reason"/>, fit to show the player), its link is
+        /// closed, and the session ends at once, with no reclaim grace. The pawn is despawned the way a player who
+        /// left is (<see cref="NebulaGameMode.OnPlayerDespawn"/>, then the despawn; a persistent pawn keeps its
+        /// record). The client raises <see cref="NebulaClient.Disconnected"/> with
+        /// <see cref="DisconnectReason.Kicked"/> and does not reconnect by itself.
+        /// <para>
+        /// Call it on any worker that knows the session: the one that owns the pawn, or one the pawn was handed
+        /// on from. The worker tells the gateway that speaks for the session, which ends the session wherever the
+        /// pawn is now. When that gateway cannot be told right now (its link to this worker is down, or the player is
+        /// away), the session still ends here at once and the kick is held for the reclaim grace: it is sent when
+        /// that gateway links again, and a claim of the session through any gateway in that time is answered with
+        /// the kick instead of a pawn. Returns false when this worker has no session for <paramref name="clientId"/>
+        /// and does not own its pawn (a worker that holds only a ghost of the pawn cannot kick). A kick is
+        /// not a ban: the player can connect again, as a new session. Keep a ban list in your own admission code
+        /// (<see cref="NebulaAdmission"/>, or your sign-in service).
+        /// </para>
+        /// </summary>
+        public bool Kick(ulong clientId, ushort code, string reason)
+        {
+            if (clientId == 0) return false;
+            bool known = _sessions.TryGet(clientId, out var session);
+            var pawn = FindPlayer(clientId);
+            // A ghost of a pawn another worker owns is not enough: only the owner, or a worker the pawn was handed on
+            // from, knows which gateway speaks for the player.
+            if (!known && (pawn == null || !pawn.HasAuthority)) return false;
+            reason = reason ?? "";
+            NebulaLog.Info($"kicking session {clientId} (code {code}): {reason}");
+            ulong generation = known ? session.Generation : 0;
+            if (known && !session.Orphaned && GatewayByKey(session.Gateway) is Peer gateway) SendKick(gateway, clientId, generation, code, reason);
+            else
+            {
+                // Nobody can be told now: the gateway's link to this worker is down, or the player is away. Hold the
+                // kick for the grace, so the gateway hears of it when it links again and a reclaim cannot bring the
+                // player back in the meantime.
+                _heldKicks[clientId] = new HeldKick
+                {
+                    Gateway = known ? session.Gateway : "", Generation = generation, Code = code, Reason = reason, Since = Time.unscaledTime,
+                };
+                NebulaLog.Info($"kick of session {clientId} held until its gateway can be told");
+            }
+            // The session ends here as well, so the kick holds even if the gateway never hears of it.
+            if (pawn != null && pawn.HasAuthority)
+            {
+                DespawnPlayer(clientId);
+                return true;
+            }
+            _pendingPlayerSpawns.Remove(clientId);
+            _sessions.End(clientId, generation, Time.unscaledTime);
+            if (pawn != null && _handedOff.TryGetValue(pawn.NetId, out var to) && _workerPeersById.TryGetValue(to, out var next))
+            {
+                // The pawn moved on: its new owner ends the session there.
+                _sessions.Remove(clientId);
+                _writer.Reset();
+                new DespawnPlayerMsg { ClientId = clientId, Generation = generation, EndNow = true }.Write(_writer);
+                Send(next, Delivery.ReliableOrdered);
+            }
+            return true;
+        }
+
+        /// <summary>A kick nobody could be told of yet (<see cref="Kick(ulong, ushort, string)"/>), by session.</summary>
+        private sealed class HeldKick
+        {
+            public string Gateway;
+            public ulong Generation;
+            public ushort Code;
+            public string Reason;
+            public double Since;
+        }
+
+        private readonly Dictionary<ulong, HeldKick> _heldKicks = new Dictionary<ulong, HeldKick>();
+
+        private void SendKick(Peer gateway, ulong clientId, ulong generation, ushort code, string reason)
+        {
+            _writer.Reset();
+            new KickPlayerMsg { ClientId = clientId, Generation = generation, Code = code, Reason = reason }.Write(_writer);
+            Send(gateway, Delivery.ReliableOrdered);
+        }
+
+        /// <summary>A gateway linked here: tell it of the kicks held for sessions it spoke for.</summary>
+        private void DeliverHeldKicks(Peer gateway)
+        {
+            foreach (var kv in _heldKicks)
+                if (kv.Value.Gateway == gateway.Key) SendKick(gateway, kv.Key, kv.Value.Generation, kv.Value.Code, kv.Value.Reason);
+        }
+
+        /// <summary>
+        /// A gateway claims a session this worker kicked while nobody could be told: the kick goes to that gateway,
+        /// at the claim's generation, instead of a pawn. True when the claim was answered that way.
+        /// </summary>
+        private bool RefuseKickedClaim(Peer gateway, SpawnPlayerMsg msg)
+        {
+            if (!_heldKicks.TryGetValue(msg.ClientId, out var held) || msg.Generation < held.Generation) return false;
+            NebulaLog.Info($"session {msg.ClientId} was kicked while away; telling gateway {gateway.Id} instead of spawning a pawn");
+            _heldKicks.Remove(msg.ClientId);
+            _sessions.Register(msg.ClientId, msg.Generation, gateway.Key);
+            _sessions.End(msg.ClientId, msg.Generation, Time.unscaledTime);
+            SendKick(gateway, msg.ClientId, msg.Generation, held.Code, held.Reason);
+            return true;
+        }
+
+        /// <summary>Forget held kicks older than the grace: by then the session they were about is over anyway.</summary>
+        private void ExpireHeldKicks(double now)
+        {
+            if (_heldKicks.Count == 0) return;
+            double keep = Math.Max(Config.SessionReclaimSeconds, PlayerSessions.EndedWithoutPawnSeconds);
+            _scratchIds.Clear();
+            foreach (var kv in _heldKicks) if (now - kv.Value.Since >= keep) _scratchIds.Add(kv.Key);
+            for (int i = 0; i < _scratchIds.Count; i++) _heldKicks.Remove(_scratchIds[i]);
+            _scratchIds.Clear();
+        }
+
+        /// <summary>
+        /// <see cref="Kick(ulong, ushort, string)"/> the player who owns <paramref name="player"/>. False for an entity
+        /// no client owns.
+        /// </summary>
+        public bool Kick(NetworkIdentity player, ushort code, string reason) =>
+            player != null && player.OwnerClientId != 0 && Kick(player.OwnerClientId, code, reason);
 
         /// <summary>What a replaced connection is told, here and at the gateway.</summary>
         private const string SingleSessionReason = "this player connected again somewhere else";
@@ -2736,10 +2931,14 @@ namespace Nebula
         }
 
         /// <summary>Sessions nobody reclaimed within <see cref="NebulaConfig.SessionReclaimSeconds"/> (their gateway went away, or their client left) lose their pawn.</summary>
+        /// <summary>Whether this worker owns a session's pawn, for <see cref="PlayerSessions.Expire(double, double, List{ulong}, Func{ulong, bool})"/>.</summary>
+        private Func<ulong, bool> _holdsPawn;
+
         private void ExpireSessions(double now)
         {
             _expiredSessions.Clear();
-            _sessions.Expire(now, Config.SessionReclaimSeconds, _expiredSessions);
+            ExpireHeldKicks(now);
+            _sessions.Expire(now, Config.SessionReclaimSeconds, _expiredSessions, _holdsPawn ??= id => FindPlayer(id) is NetworkIdentity p && p != null && p.HasAuthority);
             foreach (var id in _expiredSessions)
             {
                 if (FindPlayer(id) is NetworkIdentity e && e.HasAuthority) NebulaLog.Info($"session {id} was not reclaimed; despawning {e}");
@@ -3108,6 +3307,7 @@ namespace Nebula
                 foreach (var g in _gateways) if (g.Key == peer.Key) stillHere = true;
                 if (!stillHere) _sessions.GatewayLost(peer.Key, Time.unscaledTime);
                 NebulaLog.Warn($"gateway {peer.Id} disconnected" + (stillHere ? "" : "; its players' pawns are kept for " + Config.SessionReclaimSeconds + " s"));
+                if (!stillHere && Config.SessionReclaimSeconds > 0) SyncOwnersConnected();
             }
             else if (peer.Role == PeerRole.Worker)
             {
@@ -3165,6 +3365,8 @@ namespace Nebula
                     peer.Key = PlayerSessions.GatewayKey(hello.Id, hello.Incarnation);
                     _gateways.Add(peer);
                     _sessions.GatewayReturned(peer.Key);
+                    SyncOwnersConnected();
+                    DeliverHeldKicks(peer);
                     // Nothing is announced here beyond the always-relevant entities and the pawns of the sessions
                     // this gateway speaks for: it is told what it subscribes, and it has not subscribed yet.
                     AddGatewayLink(peer);

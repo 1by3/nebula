@@ -91,6 +91,11 @@ namespace Nebula
             public ushort JoinEstimate;
             /// <summary>Why the join is being held, as the client was last told (<see cref="JoinHoldReason"/>).</summary>
             public JoinHoldReason JoinReason;
+            /// <summary>
+            /// The client's pawn was lost to a worker failure and the gateway is placing it again: a hold is reported as
+            /// <see cref="JoinHoldReason.Recovering"/> rather than as the world starting, until the client is joined again.
+            /// </summary>
+            public bool Recovering;
             public float NextSpawnAttempt;
             /// <summary>
             /// When the gateway first found itself unable to place this client's pawn (no record, or a record
@@ -779,6 +784,10 @@ namespace Nebula
         private void OnDestroy()
 #endif
         {
+            // Tell the connected clients first, so they reconnect at once instead of waiting out the transport's
+            // timeout (NebulaConfig.GatewayShutdownDrainSeconds).
+            try { DrainForShutdown(); }
+            catch (Exception e) { NebulaLog.Warn($"shutdown drain failed: {e.Message}"); }
             if (ControlPlane != null)
             {
                 ControlPlane.Changed -= OnControlPlaneChanged;
@@ -789,9 +798,58 @@ namespace Nebula
             }
             _transport?.Dispose();
             if (SessionCoordinator != null)
+            {
+                // Releases queued by clients that left during the drain would otherwise never be sent.
+                foreach (var release in _sessionReleases)
+                    if (!release.InFlight) SessionCoordinator.SessionRequest(release.Request, _ => { });
+                _sessionReleases.Clear();
                 foreach (var client in _sessionClients.Values)
                     SessionCoordinator.SessionRequest(SessionRequestFor(client, "release"), _ => { });
+            }
             _oidc?.Dispose();
+        }
+
+        /// <summary>
+        /// The process is about to stop: tell every connected client, then give the notices
+        /// <see cref="NebulaConfig.GatewayShutdownDrainSeconds"/> to go out, returning early once every client has
+        /// hung up. A client of a gateway that has another gateway to go to is told the gateway is draining; with
+        /// no other gateway serving, a protocol-22 client is told the server is shutting down. Either way it
+        /// reconnects with its session token, and its worker keeps the pawn for the reclaim grace. Blocks the
+        /// calling thread for at most that long; does nothing when the setting is 0 or nobody is connected.
+        /// </summary>
+        private void DrainForShutdown()
+        {
+            float seconds = Config != null ? Config.GatewayShutdownDrainSeconds : 0f;
+            if (_transport == null || !IsListening || !(seconds > 0f) || !AnyClientConnected()) return;
+            bool elsewhere = AnotherGatewayIsServing();
+            NebulaLog.Warn($"gateway {GatewayId} shutting down: telling {_clientsById.Count} client(s) " +
+                           (elsewhere ? "to reconnect to another gateway" : "the server is shutting down") + $", waiting up to {seconds:0.##} s");
+            SendDrainNotice(serverShutdown: !elsewhere);
+            foreach (var c in _clientsById.Values) FlushReliable(c);
+            _transport.Flush();
+            double until = _clock.Elapsed.TotalSeconds + Math.Min(seconds, 30f);
+            while (_clock.Elapsed.TotalSeconds < until && AnyClientConnected())
+            {
+                System.Threading.Thread.Sleep(5);
+                // Clients that hang up are let go as on any lost link: their workers keep the pawns for the grace.
+                _transport.Poll(HandleTransportEvent);
+                _transport.Flush();
+            }
+        }
+
+        private bool AnyClientConnected()
+        {
+            foreach (var c in _clientsById.Values) if (c.Welcomed && c.DisconnectAt == 0) return true;
+            return false;
+        }
+
+        /// <summary>Does the control plane list another gateway that is up and not draining, for this gateway's clients to move to?</summary>
+        private bool AnotherGatewayIsServing()
+        {
+            if (ControlPlane == null || !ControlPlane.IsConnected) return false;
+            foreach (var g in ControlPlane.Gateways)
+                if (g.GatewayId != GatewayId && g.Stats.Ready && !g.Stats.Draining && !g.DrainRequested) return true;
+            return false;
         }
 
 #if NEBULA_SERVICE
@@ -937,11 +995,20 @@ namespace Nebula
         public void Drain()
         {
             if (Draining) return;
+            SendDrainNotice(serverShutdown: false);
+        }
+
+        /// <summary>
+        /// Refuse new clients and send every welcomed one a <see cref="GatewayDrainingMsg"/>, saying the server is
+        /// shutting down when <paramref name="serverShutdown"/>.
+        /// </summary>
+        private void SendDrainNotice(bool serverShutdown)
+        {
             Draining = true;
             ushort within = (ushort)Mathf.Clamp(Mathf.RoundToInt(Config.GatewayDrainReconnectSeconds), 1, ushort.MaxValue);
             NebulaLog.Warn($"gateway {GatewayId} draining: {_clientsById.Count} client(s) told to reconnect within {within} s");
             _writer.Reset();
-            new GatewayDrainingMsg { ReconnectWithinSeconds = within }.Write(_writer);
+            new GatewayDrainingMsg { ReconnectWithinSeconds = within, ServerShutdown = serverShutdown }.Write(_writer);
             _toDrop.Clear();
             foreach (var c in _clientsById.Values)
             {
@@ -1102,6 +1169,7 @@ namespace Nebula
                 case MsgId.EntityState: OnEntityState(w, EntitySyncMsg.Read(r)); break;
                 case MsgId.OwnerState: OnOwnerState(w, r); break;
                 case MsgId.EndSession: OnEndSession(EndSessionMsg.Read(r)); break;
+                case MsgId.KickPlayer: OnKickPlayer(w, KickPlayerMsg.Read(r)); break;
                 case MsgId.InterestResync: OnInterestResync(w, InterestResyncMsg.Read(r)); break;
                 case MsgId.EntityForget: OnEntityForget(w, EntityForgetMsg.Read(r)); break;
                 case MsgId.EntityRedirect: OnEntityRedirect(w, EntityRedirectMsg.Read(r)); break;
@@ -1145,14 +1213,13 @@ namespace Nebula
             {
                 var rec = _entities[netId];
                 ulong owner = rec.OwnerClientId;
-                ForgetEntity(netId);
                 if (owner != 0 && _clientsById.TryGetValue(owner, out var c) && c.PawnNetId == netId)
                 {
-                    c.PawnNetId = 0;
-                    c.InterestDirty = true;
-                    SendJoinStatus(c, JoinState.Starting);
+                    // Before the despawn, so the client knows why its pawn is going when the despawn arrives.
+                    BeginRecovery(c);
                     c.NextSpawnAttempt = Time.unscaledTime + 1f; // give the orchestrator a moment to reassign
                 }
+                ForgetEntity(netId);
             }
             // The link is gone, so whatever the worker believed about our subscription is gone with it; the
             // replacement (or the same worker coming back) gets a Full snapshot on its next Hello.
@@ -1297,13 +1364,10 @@ namespace Nebula
             for (int i = rec.Observers.Count - 1; i >= 0; i--)
             {
                 var client = rec.Observers[i];
-                if (!client.Welcomed || client.ProtocolVersion < MapsProtocolVersion) continue;
+                if (!client.Welcomed) continue;
                 AppendReliable(client, segment);
             }
         }
-
-        /// <summary>The first protocol that has <see cref="MsgId.EntityMaps"/>.</summary>
-        internal const ushort MapsProtocolVersion = 21;
 
         private void OnEntityState(WorkerConn w, EntitySyncMsg msg)
         {
@@ -1777,6 +1841,7 @@ namespace Nebula
                     break;
                 }
                 case MsgId.ClientFocusHint: OnClientFocusHint(c, ClientFocusHintMsg.Read(r)); break;
+                case MsgId.Goodbye: OnGoodbye(c); break;
                 case MsgId.Ping:
                 {
                     var ping = PingMsg.Read(r);
@@ -1799,8 +1864,12 @@ namespace Nebula
         private void SendJoinStatus(ClientConn c, JoinState state, JoinHoldReason reason = JoinHoldReason.None)
         {
             ushort estimate = state == JoinState.Starting ? (ushort)Mathf.Clamp(ControlPlane.GetSettingInt(MeshSettings.BootSeconds, 0), 0, ushort.MaxValue) : (ushort)0;
+            if (state == JoinState.Joined) c.Recovering = false;
             if (state != JoinState.Starting) reason = JoinHoldReason.None;
             else if (reason == JoinHoldReason.None) reason = JoinHoldReason.WorldStarting;
+            // A player on its way back from a worker failure is recovering, not waiting for the world, unless something
+            // more specific (a full target, a retiring scope) is holding it.
+            if (reason == JoinHoldReason.WorldStarting && c.Recovering) reason = JoinHoldReason.Recovering;
             if (c.Join == state && c.JoinEstimate == estimate && c.JoinReason == reason) return;
             c.Join = state;
             c.JoinEstimate = estimate;
@@ -1810,6 +1879,20 @@ namespace Nebula
             Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             if (state == JoinState.Starting)
                 NebulaLog.Info($"client {c.ClientId} '{c.Name}' is waiting ({reason})" + (estimate > 0 ? $", about {estimate} s" : ""));
+        }
+
+        /// <summary>
+        /// The client's pawn is gone with the worker that held it: tell the client it is being placed again
+        /// (<see cref="JoinHoldReason.Recovering"/>) before anything despawns the pawn, so it can tell a recovery from
+        /// the server removing its pawn. Anything already queued for the client goes out first.
+        /// </summary>
+        private void BeginRecovery(ClientConn c)
+        {
+            c.PawnNetId = 0;
+            c.InterestDirty = true;
+            c.Recovering = true;
+            FlushReliable(c);
+            SendJoinStatus(c, JoinState.Starting);
         }
 
         // ---------------------------------------------------------------------------------------- authentication
@@ -2090,11 +2173,7 @@ namespace Nebula
             if (!c.Welcomed) return;
             // The worker keeps the pawn for SessionReclaimSeconds in case the client comes back (here or elsewhere);
             // the despawn carries the generation so a gateway that has since claimed the session is not undone.
-            WorkerConn w = null;
-            if (c.PawnNetId != 0 && _entities.TryGetValue(c.PawnNetId, out var rec))
-                _workersByIndex.TryGetValue(rec.OwnerWorkerIndex, out w);
-            else if (!string.IsNullOrEmpty(c.SpawnWorkerId))
-                _workersById.TryGetValue(c.SpawnWorkerId, out w);
+            var w = SessionWorkerOf(c);
             if (w != null)
             {
                 _writer.Reset();
@@ -2102,6 +2181,86 @@ namespace Nebula
                 Send(w.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
                 if (Config.SessionReclaimSeconds > 0) _recentlyLost.Add(new KeyValuePair<ulong, float>(c.ClientId, Time.unscaledTime));
             }
+        }
+
+        // ---------------------------------------------------------------------------------------- deliberate endings
+
+        /// <summary>
+        /// The client said goodbye: the player is leaving for good. End the session now, with no reclaim grace, and
+        /// close the link at once; the close is how the client learns its goodbye arrived.
+        /// </summary>
+        private void OnGoodbye(ClientConn c)
+        {
+            NebulaLog.Info($"client {c.ClientId} '{c.Name}' said goodbye; ending the session");
+            EndSessionNow(c, null);
+            _transport.Disconnect(c.PeerId);
+        }
+
+        /// <summary>
+        /// Remove a player: the client is sent the <paramref name="code"/> and <paramref name="reason"/>
+        /// (<see cref="KickedMsg"/>), the link is closed a moment later, and the session ends at once: the worker
+        /// that owns the pawn despawns it without waiting out the reclaim grace, calling
+        /// <c>NebulaGameMode.OnPlayerDespawn</c> first. The code is the game's own; Nebula passes it through.
+        /// Returns false when no welcomed client of this gateway has
+        /// <paramref name="clientId"/>. A kick is not a ban: the player may connect again as a new session.
+        /// </summary>
+        public bool Kick(ulong clientId, ushort code, string reason)
+        {
+            if (!_clientsById.TryGetValue(clientId, out var c) || !c.Welcomed || c.DisconnectAt != 0) return false;
+            KickClient(c, code, reason ?? "", null);
+            return true;
+        }
+
+        /// <summary>A worker asked for a kick (<see cref="KickPlayerMsg"/>), unless the session has moved on since.</summary>
+        private void OnKickPlayer(WorkerConn from, KickPlayerMsg msg)
+        {
+            if (!_clientsById.TryGetValue(msg.ClientId, out var c) || !c.Welcomed || c.DisconnectAt != 0) return;
+            if (c.Generation > msg.Generation) return; // the player came back since the worker last heard of it
+            KickClient(c, msg.Code, msg.Reason ?? "", from);
+        }
+
+        private void KickClient(ClientConn c, ushort code, string reason, WorkerConn kickedBy)
+        {
+            NebulaLog.Warn($"client {c.ClientId} '{c.Name}' removed (code {code}): {reason}");
+            FlushReliable(c); // anything already queued goes out first
+            _writer.Reset();
+            new KickedMsg { Code = code, Reason = reason }.Write(_writer);
+            Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+            _transport.Flush();
+            EndSessionNow(c, kickedBy);
+            _closingPeers.Add(new KeyValuePair<int, float>(c.PeerId, Time.unscaledTime + 0.5f));
+        }
+
+        /// <summary>
+        /// Forget the client and end its session everywhere, with no reclaim grace: the session directory forgets
+        /// it (the player's next sign-in is a new session, and never waits for this one), and the worker that owns
+        /// the pawn, or was asked to spawn it, removes it (<see cref="DespawnPlayerMsg.EndNow"/>). A worker that has
+        /// already ended it (<paramref name="except"/>) is not told again.
+        /// </summary>
+        private void EndSessionNow(ClientConn c, WorkerConn except)
+        {
+            QueueSessionRelease(c, c.Welcomed ? "end" : "cancel");
+            _clientsByPeer.Remove(c.PeerId);
+            _clientsById.Remove(c.ClientId);
+            _recentlyLost.RemoveAll(kv => kv.Key == c.ClientId);
+            ForgetClientInterest(c);
+            if (!c.Welcomed) return;
+            var w = SessionWorkerOf(c);
+            if (w == null || w == except) return;
+            _writer.Reset();
+            new DespawnPlayerMsg { ClientId = c.ClientId, Generation = c.Generation, EndNow = true }.Write(_writer);
+            Send(w.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+        }
+
+        /// <summary>The worker that holds the client's pawn, or the one asked to spawn it; null when neither is linked.</summary>
+        private WorkerConn SessionWorkerOf(ClientConn c)
+        {
+            WorkerConn w = null;
+            if (c.PawnNetId != 0 && _entities.TryGetValue(c.PawnNetId, out var rec))
+                _workersByIndex.TryGetValue(rec.OwnerWorkerIndex, out w);
+            else if (!string.IsNullOrEmpty(c.SpawnWorkerId))
+                _workersById.TryGetValue(c.SpawnWorkerId, out w);
+            return w;
         }
 
         private void SendClaim(ClientConn c, WorkerConn worker, ContainerRef container)

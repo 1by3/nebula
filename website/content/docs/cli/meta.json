@@ -26,6 +26,8 @@
     "rollback",
     "---Other---",
     "version",
-    "help"
+    "help",
+    "---More---",
+    "restart-workers"
   ]
 }

@@ -240,7 +240,7 @@ namespace Nebula
         public event Action<JoinRejectedMsg> JoinRefused;
         /// <summary>The join's state changed: (state, estimated seconds). Raised on the main thread.</summary>
         public event Action<JoinState, int> JoinStateChanged;
-        /// <summary>The gateway is draining and asked the client to reconnect (it does so by itself, with its session token); the argument is the seconds it was given.</summary>
+        /// <summary>The gateway is draining and asked the client to reconnect (it does so by itself, with its session token); the argument is the seconds it was given. Raised after <see cref="Disconnected"/> and <see cref="Reconnecting"/>, with the client already <see cref="State.Disconnected"/>.</summary>
         public event Action<int> GatewayDraining;
         /// <summary>
         /// This player connected again somewhere else and that newer connection took the session and the pawn
@@ -249,6 +249,58 @@ namespace Nebula
         /// take the session back with <see cref="Connect"/>. Raised on the main thread.
         /// </summary>
         public event Action<string> SessionReplaced;
+        /// <summary>
+        /// The connection to the gateway ended, or the first attempt to connect failed. The argument says why
+        /// (<see cref="DisconnectInfo.Reason"/>), with a readable message, and whether the client will try again by
+        /// itself (<see cref="DisconnectInfo.WillRetry"/>). Raised once per outage: attempts that fail again while the
+        /// client retries update <see cref="LastDisconnect"/> without raising it. It is raised again, with
+        /// <see cref="DisconnectInfo.WillRetry"/> false, when the client stops trying: a refusal, a replaced session,
+        /// or <see cref="Disconnect"/>. Raised on the main thread, after <see cref="ConnectionStateChanged"/>.
+        /// </summary>
+        public event Action<DisconnectInfo> Disconnected;
+        /// <summary>
+        /// The client lost a connection it had been welcomed on, or its gateway is draining, and it has started
+        /// reconnecting: <see cref="IsReconnecting"/> is now true. Raised once per outage, after
+        /// <see cref="Disconnected"/>. Show a "reconnecting" message rather than the main menu.
+        /// </summary>
+        public event Action Reconnecting;
+        /// <summary>
+        /// A reconnection succeeded: the gateway welcomed the client again. The argument is
+        /// <see cref="SessionReclaimed"/>: true when the same session and pawn came back, false when the worker
+        /// had already let the pawn go and the player starts afresh. Raised on the main thread, after
+        /// <see cref="ConnectionStateChanged"/>.
+        /// </summary>
+        public event Action<bool> Reconnected;
+        /// <summary>
+        /// The client stopped reconnecting after <see cref="NebulaConfig.ReconnectGiveUpSeconds"/>:
+        /// <see cref="WantsConnection"/> is false, <see cref="ConnectionState"/> is <see cref="State.Disconnected"/>,
+        /// and <see cref="Disconnected"/> has been raised with <see cref="DisconnectInfo.WillRetry"/> false and the
+        /// reason of the last failure. Call <see cref="Connect"/> to try again.
+        /// </summary>
+        public event Action ReconnectGaveUp;
+        /// <summary>
+        /// The local player's pawn was despawned while the connection stayed up. The cause says whether the worker
+        /// that simulated it failed (<see cref="LocalPlayerLossCause.WorkerLost"/>: the gateway is placing the player
+        /// again and <see cref="LocalPlayerSpawned"/> follows) or the server removed it
+        /// (<see cref="LocalPlayerLossCause.Despawned"/>). Raised after <see cref="EntityDespawned"/>, while the pawn's
+        /// object still exists; <see cref="LocalPlayer"/> is already null. Not raised when the connection ends: the
+        /// whole world is cleared then, and <see cref="Disconnected"/> says why.
+        /// </summary>
+        public event Action<NetworkIdentity, LocalPlayerLossCause> LocalPlayerLost;
+        /// <summary>
+        /// No state has arrived from the server for <see cref="NebulaConfig.ClientStallSeconds"/> while the client is
+        /// in the world and its link is up: the worker simulating the player has probably stopped. Entities stand
+        /// still until state arrives again (<see cref="ServerResumed"/>) or the mesh recovers the player. Show a
+        /// "server not responding" notice rather than disconnecting. Raised on the main thread.
+        /// </summary>
+        public event Action ServerStalled;
+        /// <summary>
+        /// A stall reported by <see cref="ServerStalled"/> is over. Raised exactly once after each
+        /// <see cref="ServerStalled"/>: when state arrives again, or when the client stops watching because the join
+        /// went back to <see cref="JoinState.Starting"/> (a recovery) or the connection ended. Check
+        /// <see cref="Join"/> and <see cref="ConnectionState"/> to tell which.
+        /// </summary>
+        public event Action ServerResumed;
 
         private ITransport _transport;
         private int _gatewayPeer = -1;
@@ -332,6 +384,56 @@ namespace Nebula
 
         /// <summary>Last connection failure or disconnect reason, for connection UI. Empty while healthy.</summary>
         public string LastError { get; private set; } = "";
+        /// <summary>
+        /// Seconds since state last arrived from the server: entity state, owner state, variables, maps, RPCs, spawns
+        /// or despawns, anything a worker produced. 0 before the first state since the client joined, and while it
+        /// is not in the world. A healthy server sends the local player's own pawn state every tick, so anything above
+        /// a few tenths of a second is worth noticing; see <see cref="ServerStalled"/>.
+        /// </summary>
+        public float SecondsSinceServerState => ConnectionState == State.InGame && _hasServerState ? Math.Max(0f, Now - _lastServerStateAt) : 0f;
+        /// <summary>True between <see cref="ServerStalled"/> and <see cref="ServerResumed"/>.</summary>
+        public bool IsServerStalled { get; private set; }
+        /// <summary>When state last arrived from the server; see <see cref="SecondsSinceServerState"/>.</summary>
+        private float _lastServerStateAt;
+        /// <summary>State has arrived since the client joined: the stall watch has something to measure from.</summary>
+        private bool _hasServerState;
+        /// <summary>
+        /// How the last connection, or the last attempt to connect, ended: the same value <see cref="Disconnected"/>
+        /// carried, updated by every failed retry too. <see cref="DisconnectReason.Unknown"/> with an empty message
+        /// before the first disconnect.
+        /// </summary>
+        public DisconnectInfo LastDisconnect { get; private set; } = new DisconnectInfo(DisconnectReason.Unknown, "", false);
+        /// <summary>
+        /// True while the client is reconnecting after losing a connection it had been welcomed on, or after its
+        /// gateway asked it to move: from the drop until the next welcome (<see cref="Reconnected"/>), until it gives
+        /// up (<see cref="ReconnectGaveUp"/>), or until the connection ends for good (a refusal, a replaced session,
+        /// <see cref="Disconnect"/>). <see cref="ConnectionState"/> keeps moving between Disconnected, Connecting and
+        /// Connected meanwhile. False while a first connection is still being attempted.
+        /// </summary>
+        public bool IsReconnecting { get; private set; }
+        /// <summary>How many reconnection attempts the client has started in the current outage (1 during the first). 0 when not reconnecting.</summary>
+        public int ReconnectAttempt => IsReconnecting ? _retries : 0;
+        /// <summary>Seconds since the connection dropped, while <see cref="IsReconnecting"/>; 0 otherwise.</summary>
+        public float ReconnectElapsedSeconds => IsReconnecting ? Math.Max(0f, Now - _reconnectStartedAt) : 0f;
+        /// <summary>The current outage has been reported through <see cref="Disconnected"/>; failed retries are not reported again.</summary>
+        private bool _outageReported;
+        /// <summary>Retries dialled since the connection dropped or the game asked to connect; what the backoff counts.</summary>
+        private int _retries;
+        /// <summary>The client was welcomed since the game last asked it to connect, so a drop is a reconnection, not a failed first connection.</summary>
+        private bool _hadSession;
+        private float _reconnectStartedAt;
+        /// <summary>Replaces <c>Time.unscaledTime</c> for the reconnect schedule, so a test can move time by hand.</summary>
+        internal Func<float> ClockForTests;
+        private float Now => ClockForTests != null ? ClockForTests() : Time.unscaledTime;
+        private ReconnectBackoff Backoff => Config == null ? ReconnectBackoff.Default
+            : new ReconnectBackoff(Config.ReconnectFirstDelaySeconds, Config.ReconnectBackoffFactor, Config.ReconnectMaxDelaySeconds, Config.ReconnectGiveUpSeconds);
+        /// <summary>
+        /// Why the gateway said it is about to close the link (a refusal it asked the client to retry, say), so the
+        /// transport's Disconnected that follows is reported with that reason instead of a bare "closed by server".
+        /// </summary>
+        private bool _hasAnnouncedEnd;
+        private DisconnectReason _announcedReason;
+        private string _announcedMessage = "";
         /// <summary>Whether the client is trying to be connected (set by <see cref="Connect"/>/<see cref="ConnectTo"/>, cleared by <see cref="Disconnect"/>).</summary>
         public bool WantsConnection { get; private set; }
         /// <summary>
@@ -362,7 +464,8 @@ namespace Nebula
             // DTLS already encrypts, so the encryption setting does not apply to this transport.
             _transport = new WebRtcClientTransport("client");
 #else
-            ITransport udp = new LiteNetTransport("client");
+            ITransport udp = new LiteNetTransport("client", Milliseconds(config.ClientDisconnectTimeoutSeconds, LiteNetTransport.DefaultDisconnectTimeoutMs),
+                Milliseconds(config.ClientPingIntervalSeconds, LiteNetTransport.DefaultPingIntervalMs));
             if (CommandLine.GetBool("nebula-encrypt", config.ClientEncryption))
                 udp = EncryptedTransport.ForClient(udp, new ClientEncryption { Fingerprint = CommandLine.Get("nebula-gateway-fingerprint", config.GatewayFingerprint) });
             _transport = udp;
@@ -374,6 +477,9 @@ namespace Nebula
             ContainerRegistry.RuntimeRegistered += OnLateContainerRegistered;
             if (connectNow) Connect();
         }
+
+        private static int Milliseconds(float seconds, int fallback)
+            => float.IsNaN(seconds) || seconds <= 0f ? fallback : (int)Math.Min(int.MaxValue / 2, Math.Round(seconds * 1000.0));
 
         private static string DefaultPlayerName()
         {
@@ -396,14 +502,24 @@ namespace Nebula
             Config.GatewayPort = port;
             if (ConnectionState != State.Disconnected) Disconnect();
             LastError = "";
+            _outageReported = false; // a new address: its first failure is news even if the old one was failing
+            _retries = 0;
             Connect();
         }
 
         public void Connect()
         {
+            if (IsLeaving) FinishLeave(false);
+            if (!WantsConnection)
+            {
+                // A fresh start by the game, not a retry.
+                _outageReported = false;
+                _retries = 0;
+            }
             WantsConnection = true;
             if (ConnectionState != State.Disconnected) return;
             SetState(State.Connecting);
+            _hasAnnouncedEnd = false;
             _gatewayPeer = _transport.Connect(Config.GatewayAddress, Config.GatewayPort);
             NebulaLog.Info($"connecting to gateway {Config.GatewayAddress}:{Config.GatewayPort} as '{PlayerName}'");
         }
@@ -433,17 +549,156 @@ namespace Nebula
             try { PlayerPrefs.DeleteKey(StoredTokenPref); PlayerPrefs.Save(); } catch { }
         }
 
-        /// <summary>Leave the gateway and stop reconnecting. The client stays idle until the next <see cref="Connect"/> or <see cref="ConnectTo"/>.</summary>
+        /// <summary>
+        /// Leave the gateway and stop reconnecting. The client stays idle until the next <see cref="Connect"/> or
+        /// <see cref="ConnectTo"/>. To the server this looks like a lost link: the worker keeps the pawn for
+        /// <see cref="NebulaConfig.SessionReclaimSeconds"/> so the player can come back to it. Use <see cref="Leave"/>
+        /// when the player is leaving for good.
+        /// </summary>
         public void Disconnect()
         {
-            WantsConnection = false;
-            if (_gatewayPeer >= 0)
+            bool active = WantsConnection || ConnectionState != State.Disconnected;
+            if (IsLeaving) FinishLeave(false);
+            EndConnection();
+            if (active) ReportDisconnect(DisconnectReason.ClientRequested, "the client disconnected", false);
+        }
+
+        /// <summary>How long <see cref="Leave"/> waits, by default, for the gateway to confirm the goodbye.</summary>
+        public const float DefaultLeaveTimeoutSeconds = 0.5f;
+
+        /// <summary>
+        /// Leave the world for good: the player chose to quit, or to go back to the menu. Unlike
+        /// <see cref="Disconnect"/>, the session ends at once instead of waiting out
+        /// <see cref="NebulaConfig.SessionReclaimSeconds"/>: the client sends a goodbye, the worker calls
+        /// <see cref="NebulaGameMode.OnPlayerDespawn"/> and removes the pawn (a persistent pawn keeps its record), and
+        /// other players stop seeing it. The session token is cleared, so the next <see cref="Connect"/> starts a new
+        /// session.
+        /// <para>
+        /// The client is <see cref="State.Disconnected"/> when this returns and raises <see cref="Disconnected"/> with
+        /// <see cref="DisconnectReason.ClientRequested"/>, but it keeps the link open until the gateway closes it,
+        /// which is how it knows the goodbye arrived, or until <paramref name="timeoutSeconds"/> has passed.
+        /// <see cref="IsLeaving"/> is true until then, and <see cref="LeaveFinished"/> says which it was. Before
+        /// quitting, wait for it: <c>yield return client.LeaveAndWait();</c> then <c>Application.Quit()</c>. A goodbye
+        /// that does not arrive costs nothing but the grace: the server treats the player as disconnected.
+        /// </para>
+        /// <para>
+        /// With no welcomed connection there is nobody to say goodbye to: it acts like <see cref="Disconnect"/> and
+        /// raises <see cref="LeaveFinished"/> with false at once.
+        /// </para>
+        /// </summary>
+        public void Leave(float timeoutSeconds = DefaultLeaveTimeoutSeconds)
+        {
+            if (IsLeaving) return;
+            bool active = WantsConnection || ConnectionState != State.Disconnected;
+            bool goodbye = _transport != null && _gatewayPeer >= 0 && ConnectionState == State.InGame;
+            if (goodbye)
             {
-                try { _transport.Disconnect(_gatewayPeer); } catch { }
+                _writer.Reset();
+                new GoodbyeMsg().Write(_writer);
+                _transport.Send(_gatewayPeer, Delivery.ReliableOrdered, _writer.ToSegment());
+                _transport.Flush();
+                // The link stays open until the gateway closes it: the close is the acknowledgement.
+                _leavingPeer = _gatewayPeer;
                 _gatewayPeer = -1;
+                _leaveDeadline = Now + Math.Max(0f, float.IsNaN(timeoutSeconds) ? 0f : timeoutSeconds);
+                NebulaLog.Info("leaving: goodbye sent");
             }
+            // The session is over on the server; a token for it would only bring back an empty session.
+            SessionToken = "";
+            EndConnection();
+            if (active) ReportDisconnect(DisconnectReason.ClientRequested, "the player left", false);
+            if (!goodbye) RaiseLeaveFinished(false);
+        }
+
+        /// <summary>
+        /// <see cref="Leave"/>, then wait until the gateway has confirmed the goodbye or
+        /// <paramref name="timeoutSeconds"/> has passed. Run it as a coroutine before quitting:
+        /// <c>yield return client.LeaveAndWait(); Application.Quit();</c>. The client keeps polling its transport in
+        /// <c>Update</c> meanwhile, so the frame loop must keep running.
+        /// </summary>
+        public System.Collections.IEnumerator LeaveAndWait(float timeoutSeconds = DefaultLeaveTimeoutSeconds)
+        {
+            Leave(timeoutSeconds);
+            while (IsLeaving) yield return null;
+        }
+
+        /// <summary>
+        /// True from <see cref="Leave"/> until the gateway has confirmed the goodbye or the timeout has passed; see
+        /// <see cref="LeaveFinished"/>.
+        /// </summary>
+        public bool IsLeaving => _leavingPeer >= 0;
+
+        /// <summary>
+        /// A <see cref="Leave"/> is over. True when the gateway confirmed the goodbye (it closed the link) and the
+        /// session has ended; false when there was no connection to say goodbye on, or the gateway did not answer in
+        /// time, in which case the server treats the player as disconnected and ends the session after the reclaim
+        /// grace. Raised on the main thread.
+        /// </summary>
+        public event Action<bool> LeaveFinished;
+
+        /// <summary>The link a goodbye was sent on, kept open until the gateway closes it or the leave times out; -1 when not leaving.</summary>
+        private int _leavingPeer = -1;
+        private float _leaveDeadline;
+
+        /// <summary>End a <see cref="Leave"/>: close the link if the gateway has not, and say how it went.</summary>
+        private void FinishLeave(bool confirmed)
+        {
+            if (_leavingPeer < 0) return;
+            if (!confirmed)
+            {
+                try { _transport?.Disconnect(_leavingPeer); } catch { }
+                NebulaLog.Warn("leaving: the gateway did not confirm the goodbye in time; closing the link");
+            }
+            else NebulaLog.Info("leaving: the gateway ended the session");
+            _leavingPeer = -1;
+            RaiseLeaveFinished(confirmed);
+        }
+
+        private void RaiseLeaveFinished(bool confirmed)
+        {
+            try { LeaveFinished?.Invoke(confirmed); }
+            catch (Exception e) { NebulaLog.Error($"LeaveFinished handler threw: {e}"); }
+        }
+
+        /// <summary>Stop wanting a connection, close the link, clear the world and move to <see cref="State.Disconnected"/>.</summary>
+        private void EndConnection()
+        {
+            WantsConnection = false;
+            IsReconnecting = false;
+            _hadSession = false;
+            DropGatewayLink();
             ClearWorld();
             SetState(State.Disconnected);
+        }
+
+        /// <summary>
+        /// Record how the connection ended and raise <see cref="Disconnected"/>, unless this is a retry failing again
+        /// in an outage already reported. A handler that throws is logged and does not break the client.
+        /// </summary>
+        private void ReportDisconnect(DisconnectReason reason, string message, bool willRetry, ushort code = 0)
+        {
+            var info = new DisconnectInfo(reason, message, willRetry, code);
+            LastDisconnect = info;
+            if (willRetry && _outageReported) return;
+            _outageReported = willRetry;
+            try { Disconnected?.Invoke(info); }
+            catch (Exception e) { NebulaLog.Error($"Disconnected handler threw: {e}"); }
+        }
+
+        /// <summary>The gateway said why it is about to close the link; report that reason when the link closes.</summary>
+        private void AnnounceEnd(DisconnectReason reason, string message)
+        {
+            _hasAnnouncedEnd = true;
+            _announcedReason = reason;
+            _announcedMessage = message ?? "";
+        }
+
+        /// <summary>Close the link to the gateway, if there is one, without touching the state or the world.</summary>
+        private void DropGatewayLink()
+        {
+            if (_gatewayPeer < 0) return;
+            try { _transport?.Disconnect(_gatewayPeer); } catch { }
+            _gatewayPeer = -1;
         }
 
         private void OnDestroy()
@@ -463,6 +718,114 @@ namespace Nebula
             ConnectionStateChanged?.Invoke(s);
         }
 
+        // ---------------------------------------------------------------------------------------- reconnection
+
+        /// <summary>Give up when the give-up time has passed, and otherwise dial the next attempt when it is due.</summary>
+        internal void TickConnection()
+        {
+            if (IsLeaving && Now >= _leaveDeadline) FinishLeave(false);
+            if (IsReconnecting && Backoff.ShouldGiveUp(Now - _reconnectStartedAt))
+            {
+                GiveUpReconnecting();
+                return;
+            }
+            if (ConnectionState != State.Disconnected || !WantsConnection || Now < _nextConnectAttempt) return;
+            _retries++;
+            // Only a fallback: the attempt's own failure schedules the next one.
+            _nextConnectAttempt = Now + Backoff.DelayAfter(_retries);
+            if (IsReconnecting) NebulaLog.Info($"reconnecting: attempt {_retries}, {ReconnectElapsedSeconds:0.#} s since the drop");
+            Connect();
+        }
+
+        /// <summary>A drop the client will retry: schedule the attempt, and enter the reconnecting state if the client had a session.</summary>
+        private void ScheduleRetry(float delaySeconds)
+        {
+            _nextConnectAttempt = Now + delaySeconds;
+            if (IsReconnecting || !_hadSession) return;
+            IsReconnecting = true;
+            _reconnectStartedAt = Now;
+            _retries = 0;
+        }
+
+        private void RaiseReconnectingIfNew(bool wasReconnecting)
+        {
+            if (wasReconnecting || !IsReconnecting) return;
+            try { Reconnecting?.Invoke(); }
+            catch (Exception e) { NebulaLog.Error($"Reconnecting handler threw: {e}"); }
+        }
+
+        // ---------------------------------------------------------------------------------------- stall watch
+
+        /// <summary>
+        /// Raise <see cref="ServerStalled"/> once state has been missing for <see cref="NebulaConfig.ClientStallSeconds"/>.
+        /// The watch runs only while the client is in the world (<see cref="JoinState.Joined"/>) and has had state
+        /// since it joined, so a join in progress, and a client in a scope that sends nothing, never look stalled.
+        /// </summary>
+        internal void TickStallWatch()
+        {
+            float limit = Config != null ? Config.ClientStallSeconds : 0f;
+            bool watching = limit > 0f && ConnectionState == State.InGame && Join == JoinState.Joined && _hasServerState;
+            if (!watching)
+            {
+                EndStall();
+                return;
+            }
+            if (IsServerStalled || Now - _lastServerStateAt < limit) return;
+            IsServerStalled = true;
+            NebulaLog.Warn($"no state from the server for {Now - _lastServerStateAt:0.0} s; the server may have stalled");
+            try { ServerStalled?.Invoke(); }
+            catch (Exception e) { NebulaLog.Error($"ServerStalled handler threw: {e}"); }
+        }
+
+        /// <summary>State arrived from the server: restart the stall clock, and end a stall.</summary>
+        private void NoteServerState()
+        {
+            _lastServerStateAt = Now;
+            _hasServerState = true;
+            EndStall();
+        }
+
+        private void EndStall()
+        {
+            if (!IsServerStalled) return;
+            IsServerStalled = false;
+            NebulaLog.Info("state from the server again");
+            try { ServerResumed?.Invoke(); }
+            catch (Exception e) { NebulaLog.Error($"ServerResumed handler threw: {e}"); }
+        }
+
+        /// <summary>Messages carrying something a worker produced: what the stall watch counts as server state.</summary>
+        private static bool IsServerState(MsgId id)
+        {
+            switch (id)
+            {
+                case MsgId.EntitySpawn:
+                case MsgId.EntityDespawn:
+                case MsgId.EntityVars:
+                case MsgId.EntityMaps:
+                case MsgId.EntityRpc:
+                case MsgId.WorldState:
+                case MsgId.EntityState:
+                case MsgId.OwnerState:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private void GiveUpReconnecting()
+        {
+            float elapsed = ReconnectElapsedSeconds;
+            var last = LastDisconnect;
+            EndConnection();
+            string cause = last.Message.EndsWith(" (retrying)") ? last.Message.Substring(0, last.Message.Length - " (retrying)".Length) : last.Message;
+            LastError = $"gave up reconnecting after {elapsed:0} s" + (cause.Length > 0 ? $": {cause}" : "");
+            NebulaLog.Warn(LastError);
+            ReportDisconnect(last.Reason, LastError, false);
+            try { ReconnectGaveUp?.Invoke(); }
+            catch (Exception e) { NebulaLog.Error($"ReconnectGaveUp handler threw: {e}"); }
+        }
+
         // ---------------------------------------------------------------------------------------- frame loop
 
         private void Update()
@@ -470,11 +833,8 @@ namespace Nebula
             if (_transport == null) return; // not initialised (a stray component), or torn down
             _transport.Poll(HandleTransportEvent);
 
-            if (ConnectionState == State.Disconnected && WantsConnection && Time.unscaledTime >= _nextConnectAttempt)
-            {
-                _nextConnectAttempt = Time.unscaledTime + 2f;
-                Connect();
-            }
+            TickConnection();
+            TickStallWatch();
             if (ConnectionState == State.Disconnected || ConnectionState == State.Connecting) return;
             _frames++;
             float frameMs = Time.unscaledDeltaTime * 1000f;
@@ -721,19 +1081,51 @@ namespace Nebula
                     _transport.Send(_gatewayPeer, Delivery.ReliableOrdered, _writer.ToSegment());
                     break;
                 case TransportEvent.Kind.Disconnected:
+                {
+                    // The gateway closing the link a goodbye was sent on is its acknowledgement.
+                    if (_leavingPeer >= 0 && ev.PeerId == _leavingPeer)
+                    {
+                        _leavingPeer = -1;
+                        NebulaLog.Info("leaving: the gateway ended the session");
+                        RaiseLeaveFinished(true);
+                        break;
+                    }
+                    // Only the current link's close counts: a link this client already dropped (a drain, a
+                    // refusal, Disconnect) or an encrypted link's second report of the same close is old news.
+                    if (_gatewayPeer < 0 || ev.PeerId != _gatewayPeer) break;
+                    _gatewayPeer = -1;
                     if (!WantsConnection) break; // we hung up ourselves
-                    string security = TransportSecurity.ErrorOf(_transport);
-                    LastError = !string.IsNullOrEmpty(security)
-                        ? $"encrypted connection refused: {security}"
-                        : ConnectionState == State.Connecting
-                        ? $"could not reach {Config.GatewayAddress}:{Config.GatewayPort} (retrying)"
-                        : "disconnected from gateway (retrying)";
-                    NebulaLog.Warn(LastError);
+                    DisconnectReason reason;
+                    if (_hasAnnouncedEnd)
+                    {
+                        reason = _announcedReason;
+                        LastError = _announcedMessage;
+                        _hasAnnouncedEnd = false;
+                    }
+                    else
+                    {
+                        reason = DisconnectInfo.FromTransport(ev.Reason, ConnectionState != State.Connecting);
+                        string security = TransportSecurity.ErrorOf(_transport);
+                        LastError = !string.IsNullOrEmpty(security)
+                            ? $"encrypted connection refused: {security}"
+                            : ConnectionState == State.Connecting
+                            ? $"could not reach {Config.GatewayAddress}:{Config.GatewayPort} (retrying)"
+                            : "disconnected from gateway (retrying)";
+                    }
+                    NebulaLog.Warn($"{LastError} [{reason}]");
                     ClearWorld();
+                    bool wasReconnecting = IsReconnecting;
+                    ScheduleRetry(Backoff.DelayAfter(IsReconnecting || !_hadSession ? _retries : 0));
                     SetState(State.Disconnected);
-                    _nextConnectAttempt = Time.unscaledTime + 1f;
+                    ReportDisconnect(reason, LastError, true);
+                    RaiseReconnectingIfNew(wasReconnecting);
                     break;
+                }
                 case TransportEvent.Kind.Data:
+                    // Only the current link speaks for the world: a link this client has dropped (a drain, a refusal,
+                    // a kick, Leave) may still deliver what was in flight, and it must not rebuild a world the client
+                    // cleared, or change its join, in a client that is now Disconnected or on its next link.
+                    if (ev.PeerId != _gatewayPeer) break;
                     _packetsIn++;
                     _bytesIn += ev.Data.Count;
                     _reader.Set(ev.Data);
@@ -746,6 +1138,7 @@ namespace Nebula
         private void Dispatch(NetworkReader r)
         {
             var id = (MsgId)r.ReadByte();
+            if (IsServerState(id)) NoteServerState();
             switch (id)
             {
                 case MsgId.InstancePrepare:
@@ -762,7 +1155,10 @@ namespace Nebula
                     // Handlers reset _reader for nested payloads, so the envelope is walked with its own reader.
                     _batchReader.Set(r.ReadSegment(r.Remaining));
                     int n = _batchReader.ReadUShort();
-                    for (int i = 0; i < n; i++)
+                    // A message that ends the link (a drain notice, a refusal, a kick) ends the batch with it: what
+                    // follows it belongs to the link the client has just dropped.
+                    int link = _gatewayPeer;
+                    for (int i = 0; i < n && _gatewayPeer == link; i++)
                     {
                         var seg = _batchReader.ReadSegment(_batchReader.ReadUShort());
                         _reader.Set(seg);
@@ -783,24 +1179,32 @@ namespace Nebula
                     // A gateway that does not write the field speaks exactly the protocol this build sent it.
                     NegotiatedProtocolVersion = w.NegotiatedVersion != 0 ? w.NegotiatedVersion : HelloMsg.ProtocolVersion;
                     NoteServerTick(w.ServerTick);
+                    _outageReported = false;
+                    _retries = 0;
+                    _hadSession = true;
+                    bool reconnected = IsReconnecting;
+                    IsReconnecting = false;
                     SetState(State.InGame);
                     NebulaLog.Info($"welcome: clientId={ClientId} identity={(Identity.Length > 12 ? Identity.Substring(0, 12) : Identity)} serverTick={w.ServerTick}" + (w.Reclaimed ? " (session reclaimed)" : ""));
+                    if (reconnected)
+                    {
+                        try { Reconnected?.Invoke(w.Reclaimed); }
+                        catch (Exception e) { NebulaLog.Error($"Reconnected handler threw: {e}"); }
+                    }
                     break;
                 }
                 case MsgId.JoinRejected:
                 {
                     var rejected = JoinRejectedMsg.Read(r);
-                    JoinRejectReason = rejected.Code;
-                    JoinRejectSaturation = rejected.Saturation;
-                    ServerProtocolWindow = (rejected.SupportedMinVersion, rejected.SupportedMaxVersion);
-                    ServerContentVersion = rejected.ServerContentVersion;
+                    // A refusal the client does not retry ends the connection here, whether or not the gateway has
+                    // closed the link yet: the Disconnected the transport reports afterwards is one we asked for.
+                    bool stops = false;
                     if (rejected.Code == JoinRejectReason.ProtocolUnsupported || rejected.Code == JoinRejectReason.ContentVersionMismatch || rejected.Code == JoinRejectReason.EncryptionRequired)
                     {
                         // Build or encryption settings must change before retrying. Keep the saved identity:
                         // the gateway refused the connection before checking those credentials.
                         LastError = "cannot join: " + rejected.Reason;
-                        WantsConnection = false;
-                        NebulaLog.Warn(LastError);
+                        stops = true;
                     }
                     else if (rejected.Code == JoinRejectReason.AtCapacity || rejected.Code == JoinRejectReason.Denied)
                     {
@@ -808,8 +1212,7 @@ namespace Nebula
                         // would hammer a destination that is already full. The game decides what happens next -
                         // a queue, another instance, a different scope - which is the whole point of the typed code.
                         LastError = "join refused: " + rejected.Reason;
-                        WantsConnection = false;
-                        NebulaLog.Warn(LastError);
+                        stops = true;
                     }
                     else if (rejected.Retry)
                     {
@@ -817,7 +1220,8 @@ namespace Nebula
                         // load balancer hands the retry to another gateway.
                         LastError = "gateway unavailable: " + rejected.Reason + " (retrying)";
                         NebulaLog.Warn(LastError);
-                        _nextConnectAttempt = Time.unscaledTime + 1f;
+                        _nextConnectAttempt = Now + 1f;
+                        AnnounceEnd(DisconnectReason.JoinRefused, LastError);
                     }
                     else if (_presentedStoredToken)
                     {
@@ -825,12 +1229,31 @@ namespace Nebula
                         // players were turned off): start over as a new player rather than loop on the same token.
                         NebulaLog.Warn($"gateway rejected the saved identity token ({rejected.Reason}); reconnecting for a new identity");
                         ForgetStoredToken();
+                        AnnounceEnd(DisconnectReason.JoinRefused, $"the saved identity was refused ({rejected.Reason}); reconnecting as a new player");
                     }
                     else
                     {
                         LastError = "join rejected: " + rejected.Reason;
+                        stops = true;
+                    }
+                    if (stops)
+                    {
                         WantsConnection = false;
+                        IsReconnecting = false;
+                        _hadSession = false;
                         NebulaLog.Warn(LastError);
+                        // Before the refusal's fields are set: clearing the world resets the join's state.
+                        DropGatewayLink();
+                        ClearWorld();
+                    }
+                    JoinRejectReason = rejected.Code;
+                    JoinRejectSaturation = rejected.Saturation;
+                    ServerProtocolWindow = (rejected.SupportedMinVersion, rejected.SupportedMaxVersion);
+                    ServerContentVersion = rejected.ServerContentVersion;
+                    if (stops)
+                    {
+                        SetState(State.Disconnected);
+                        ReportDisconnect(DisconnectReason.JoinRefused, LastError, false);
                     }
                     JoinRejected?.Invoke(rejected.Reason);
                     JoinRefused?.Invoke(rejected);
@@ -845,7 +1268,8 @@ namespace Nebula
                     LastError = replaced.Reason;
                     NebulaLog.Warn("left the world: " + replaced.Reason);
                     SessionToken = "";
-                    Disconnect();
+                    EndConnection();
+                    ReportDisconnect(DisconnectReason.SessionReplaced, replaced.Reason, false);
                     try { SessionReplaced?.Invoke(replaced.Reason); }
                     catch (Exception e) { NebulaLog.Error($"SessionReplaced handler threw: {e}"); }
                     break;
@@ -853,22 +1277,60 @@ namespace Nebula
                 case MsgId.GatewayDraining:
                 {
                     var draining = GatewayDrainingMsg.Read(r);
+                    bool wasReconnecting = IsReconnecting;
+                    if (draining.ServerShutdown)
+                    {
+                        // The whole server is going away (or restarting): reconnect on the normal schedule, keeping
+                        // the session token, so a server that comes back in time gives the pawn back.
+                        LastError = "the server is shutting down (retrying)";
+                        NebulaLog.Warn("the server is shutting down; reconnecting with the session token");
+                        DropGatewayLink();
+                        ClearWorld();
+                        ScheduleRetry(Backoff.DelayAfter(0));
+                        SetState(State.Disconnected);
+                        ReportDisconnect(DisconnectReason.ServerShutdown, LastError, true);
+                        RaiseReconnectingIfNew(wasReconnecting);
+                        break;
+                    }
                     // Reconnect now, keeping the session token: the next gateway reclaims the session and the pawn.
                     NebulaLog.Warn($"gateway is draining; reconnecting within {draining.ReconnectWithinSeconds} s with the session token");
-                    GatewayDraining?.Invoke(draining.ReconnectWithinSeconds);
-                    if (_gatewayPeer >= 0) { try { _transport.Disconnect(_gatewayPeer); } catch { } _gatewayPeer = -1; }
+                    DropGatewayLink();
                     ClearWorld();
+                    ScheduleRetry(0.2f);
                     SetState(State.Disconnected);
-                    _nextConnectAttempt = Time.unscaledTime + 0.2f;
+                    ReportDisconnect(DisconnectReason.GatewayDraining, "the gateway is draining; reconnecting with the session token", true);
+                    RaiseReconnectingIfNew(wasReconnecting);
+                    // Last, once the client is in the state it reports: a handler may call Connect or Disconnect.
+                    try { GatewayDraining?.Invoke(draining.ReconnectWithinSeconds); }
+                    catch (Exception e) { NebulaLog.Error($"GatewayDraining handler threw: {e}"); }
+                    break;
+                }
+                case MsgId.Kicked:
+                {
+                    var kicked = KickedMsg.Read(r);
+                    // The session is over and the server does not want this player back now: no retry, and no session
+                    // token to come back with. The identity token is kept; a kick is not a refused sign-in.
+                    LastError = string.IsNullOrEmpty(kicked.Reason) ? "removed by the server" : kicked.Reason;
+                    NebulaLog.Warn($"removed by the server (code {kicked.Code}): {LastError}");
+                    SessionToken = "";
+                    EndConnection();
+                    ReportDisconnect(DisconnectReason.Kicked, LastError, false, kicked.Code);
                     break;
                 }
                 case MsgId.JoinStatus:
                 {
                     var j = JoinStatusMsg.Read(r);
                     if (j.State == Join && j.EstimatedSeconds == JoinEstimatedSeconds && j.Reason == JoinHoldReason) break;
+                    if (j.State == JoinState.Joined && Join != JoinState.Joined)
+                    {
+                        // The stall watch starts afresh with every join: the first state after it arms it.
+                        _hasServerState = false;
+                        _lastServerStateAt = Now;
+                    }
                     Join = j.State;
                     JoinEstimatedSeconds = j.EstimatedSeconds;
                     JoinHoldReason = j.Reason;
+                    if (Join != JoinState.Joined) EndStall();
                     if (Join == JoinState.Starting)
                         NebulaLog.Info($"the join is held ({j.Reason})" + (JoinEstimatedSeconds > 0 ? $", about {JoinEstimatedSeconds} s" : ""));
                     else if (Join == JoinState.Joined) NebulaLog.Info("joined the world");
@@ -1004,6 +1466,7 @@ namespace Nebula
                 e.OwnerIdentity = msg.OwnerIdentity ?? "";
                 e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
                 e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
+                e.SetOwnerConnected((msg.Flags & EntityFlags.OwnerDisconnected) == 0);
                 if (container != e.Container) e.SetContainer(container);
                 if (msg.Vars != null && msg.Vars.Length > 0)
                 {
@@ -1049,6 +1512,7 @@ namespace Nebula
             e.OwnerIdentity = msg.OwnerIdentity ?? "";
             e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
             e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
+            e.SetOwnerConnected((msg.Flags & EntityFlags.OwnerDisconnected) == 0);
             e.OwnerWorkerIndex = msg.OwnerWorkerIndex;
             e.HasAuthority = false;
             e.IsLocalPlayer = msg.OwnerClientId != 0 && msg.OwnerClientId == ClientId;
@@ -1111,10 +1575,19 @@ namespace Nebula
             }
             if (msg.Epoch < e.Epoch) return;
             _entities.Remove(msg.NetId);
-            if (LocalPlayer == e) LocalPlayer = null;
+            bool wasLocal = LocalPlayer == e;
+            if (wasLocal) LocalPlayer = null;
             EvacuateCarried(e);
             e.InvokeDespawn();
             EntityDespawned?.Invoke(e);
+            if (wasLocal)
+            {
+                // The gateway says it is placing the player again before it despawns a pawn lost with its worker.
+                var cause = Join == JoinState.Starting && JoinHoldReason == JoinHoldReason.Recovering ? LocalPlayerLossCause.WorkerLost : LocalPlayerLossCause.Despawned;
+                NebulaLog.Info($"local player lost ({cause})");
+                try { LocalPlayerLost?.Invoke(e, cause); }
+                catch (Exception ex) { NebulaLog.Error($"LocalPlayerLost handler threw: {ex}"); }
+            }
             if (e.IsSceneEntity) e.Unbind(); // the object belongs to its scene
             else if (Application.isPlaying) Destroy(e.gameObject);
             else DestroyImmediate(e.gameObject); // edit-mode tests and editor tooling
@@ -1395,7 +1868,8 @@ namespace Nebula
                 e.InvokeDespawn();
                 EntityDespawned?.Invoke(e);
                 if (e.IsSceneEntity) e.Unbind();
-                else Destroy(e.gameObject);
+                else if (Application.isPlaying) Destroy(e.gameObject);
+                else DestroyImmediate(e.gameObject); // edit-mode tests and editor tooling
             }
             _entities.Clear();
             _viewSeq.Clear();
@@ -1404,6 +1878,8 @@ namespace Nebula
             _pendingByCarrier.Clear();
             LocalPlayer = null;
             _hasRenderOffset = false;
+            _hasServerState = false;
+            EndStall();
             if (Join != JoinState.None)
             {
                 Join = JoinState.None;

@@ -42,10 +42,9 @@ public class ConformanceNetworkMapTests
 
     private static Fleet Mesh() => new(1, workers: 1, world: f => { for (int i = 0; i < 4; i++) f.Assign("c" + i, "w1"); });
 
-    private static FakeClient Join(Fleet fleet, string name, ushort version = 0)
+    private static FakeClient Join(Fleet fleet, string name)
     {
         var client = fleet.Connect(0, name);
-        if (version != 0) client.AnnounceVersion = version;
         Assert.That(fleet.Run(() => client.Join == JoinState.Joined), Is.True, $"{name} should get a pawn");
         return client;
     }
