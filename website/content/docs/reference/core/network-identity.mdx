@@ -385,6 +385,14 @@ public NetworkMotionState Motion { get; } = new NetworkMotionState();
 public NetworkTransform RootTransform { get; }
 ```
 
+### UpdateGap [#updategap]
+
+```csharp
+public UpdateGapDelay UpdateGap { get; } = new UpdateGapDelay();
+```
+
+On a client, how far apart this entity's state arrives and the extra render delay that buys it ([`NebulaConfig.SlowUpdateMaxDelayTicks`](/docs/reference/core/nebula-config#slowupdatemaxdelayticks)): an entity sent slower than the render delay is drawn that much further behind, so it interpolates across its own gap. [`UpdateGapDelay.DelayTicks`](/docs/reference/core/update-gap-delay#delayticks) is 0 for an entity sent every tick or two.
+
 ### Behaviours [#behaviours]
 
 ```csharp

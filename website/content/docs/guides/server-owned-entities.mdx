@@ -163,6 +163,8 @@ config.InterestBackgroundTiers = RelevanceTierBands.Of(nearRadius: 25f, farRadiu
 
 Only the gateway reads these settings. A mesh whose config sets none of them behaves as before.
 
+A client draws a character sent less often than every few ticks later than other entities, by the gap between its updates, so the character moves smoothly between them instead of standing still and jumping. At two updates a second that is up to half a second (`NebulaConfig.SlowUpdateMaxDelayTicks`, 30 ticks by default). A shorter gap costs less delay: a character in a band with divisor `6` or `20` is drawn at most 4 or 22 ticks later than a player. See [Interpolation modes](/docs/guides/network-transform#interpolation-modes).
+
 ## Send far clients less of a behavior's sync state
 
 A behavior that replicates through `WriteSyncState`, such as a swarm's member positions or an animation's blend values, is sent to every client that holds the entity each time it changes, however far away. To send it to far clients at the rate of the entity's distance tier instead, override `SyncDistanceRating`:

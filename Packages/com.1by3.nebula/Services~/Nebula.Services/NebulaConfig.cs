@@ -121,6 +121,7 @@ namespace Nebula
         public RelevanceTierBands InterestLowTiers;
         public RelevanceTierBands InterestBackgroundTiers;
         public int InterpolationDelayTicks = 3;
+        public int SlowUpdateMaxDelayTicks = 30;
         public int InputLeadMarginTicks = 2;
         public int InputLeadTargetTicks = 3;
         public int InputLeadMaxAdjustTicks = 30;
