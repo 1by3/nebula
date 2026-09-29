@@ -27,6 +27,30 @@ namespace Nebula
     }
 
     /// <summary>
+    /// Whether a behavior's sync state reaches far clients less often, following the entity's distance tier as its
+    /// transform does (<c>NetworkBehaviour.SyncDistanceRating</c>, <c>docs/server-owned-entities.md</c> D11).
+    /// Configuration, not state: declare it on the behavior. Nothing is lost, only coalesced: once the state stops
+    /// changing, one reliable keyframe reaches every client that holds the entity.
+    /// </summary>
+    public enum SyncDistanceRating : byte
+    {
+        /// <summary>Every chunk to every client that holds the entity, whatever its distance. The default, and what Nebula always did.</summary>
+        Off = 0,
+        /// <summary>
+        /// For a behavior that writes deltas. A client in the entity's every-update band gets every chunk; a client
+        /// further away gets only keyframes (at most one every <c>NetworkIdentity.SyncKeyframeInterval</c> ticks), one
+        /// per window of its rate, and none where its rate is none. Once a client has missed a delta it gets no more
+        /// deltas until its next keyframe.
+        /// </summary>
+        Keyframes = 1,
+        /// <summary>
+        /// For a behavior whose every write is its whole state: the worker asks for <c>full</c> every time, so every
+        /// chunk is a keyframe and a far client gets one per window of its rate, exactly as the entity's transform.
+        /// </summary>
+        WholeState = 2,
+    }
+
+    /// <summary>
     /// Envelope shared by the per-tick sync stream (EntityState/GhostSyncState messages) and the spawn snapshot:
     /// <c>[count]{[behaviourIndex][flags][len:ushort][chunk]}</c>. Each chunk is bounded so a behaviour that reads too
     /// much or too little cannot corrupt its neighbours. Kept free of NetworkIdentity so the gateway can cache
@@ -57,6 +81,20 @@ namespace Nebula
             /// The client calls <c>NetworkBehaviour.OnSyncStateCleared</c> instead of <c>ReadSyncState</c>.
             /// </summary>
             Cleared = 1 << 3,
+            /// <summary>
+            /// Worker to gateway: the behavior's state follows the entity's distance tier
+            /// (<see cref="SyncDistanceRating"/>, <c>docs/server-owned-entities.md</c> D11). The gateway sends such a
+            /// chunk to a client beyond its every-update band only as a keyframe, one per window of the client's rate.
+            /// Clients ignore the bit.
+            /// </summary>
+            DistanceRated = 1 << 4,
+            /// <summary>
+            /// Worker to gateway, with <see cref="DistanceRated"/> and <see cref="Full"/>, on the reliable stream: the
+            /// keyframe a rated behavior writes once it has stopped changing. The gateway sends it to every client that
+            /// holds the entity, whatever its distance, so a coalesced client ends with the latest state. Clients
+            /// ignore the bit.
+            /// </summary>
+            Settled = 1 << 5,
         }
 
         public delegate void ChunkVisitor(byte behaviourIndex, ChunkFlags flags, ArraySegment<byte> chunk);

@@ -117,6 +117,9 @@ namespace Nebula
         public float InterestFarRadius = 80f;
         public int InterestMidDivisor = 4;
         public int InterestFarDivisor = 12;
+        public RelevanceTierBands InterestHighTiers;
+        public RelevanceTierBands InterestLowTiers;
+        public RelevanceTierBands InterestBackgroundTiers;
         public int InterpolationDelayTicks = 3;
         public int InputLeadMarginTicks = 2;
         public int InputLeadTargetTicks = 3;

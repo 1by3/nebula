@@ -52,7 +52,8 @@ public class ServerOwnedBandwidthTests
     public void Cleanup() { if (Directory.Exists(_directory)) Directory.Delete(_directory, true); }
 
     /// <summary>What one crowd scenario cost the client standing in the middle of it.</summary>
-    public readonly record struct Result(int Replicas, double BytesPerSecond, double EntriesPerSecond, double MessagesPerSecond)
+    public readonly record struct Result(int Replicas, double BytesPerSecond, double EntriesPerSecond, double MessagesPerSecond,
+        double PlayerEntriesPerSecond = 0, double SyncMessagesPerSecond = 0)
     {
         public double KilobitsPerSecond => BytesPerSecond * 8 / 1000;
     }
@@ -69,7 +70,8 @@ public class ServerOwnedBandwidthTests
     public static Result RunCrowd(int walking, int idle, int updateInterval = 1, FakeWorker.RecoveryMode recovery = FakeWorker.RecoveryMode.EveryThirtyTicks,
         Action<NebulaConfig>? configure = null, double seconds = 4.0, int seed = 359,
         int light = 0, int lightInterval = 1, RelevancePriority lightPriority = RelevancePriority.Normal, bool lightWalking = true,
-        RelevancePriority priority = RelevancePriority.Normal, TransformFields? fields = null)
+        RelevancePriority priority = RelevancePriority.Normal, TransformFields? fields = null,
+        bool player = false, int swarms = 0, int swarmBytes = 200, bool swarmRated = false)
     {
         using var fleet = new Fleet(1, configure: configure);
         var worker = fleet.Worker;
@@ -100,13 +102,46 @@ public class ServerOwnedBandwidthTests
             }
         }
 
+        // Another player 40 m away: a Normal entity updated every tick, circling on the spot so it stays in the
+        // middle band. Whatever the crowd's tiers, it should keep the global middle band's rate.
+        const ulong PlayerId = 499_999;
+        if (player)
+        {
+            var spot = new Vector3(40, 0, 0);
+            worker.Spawn(PlayerId, spot, priority: RelevancePriority.Normal);
+            worker.Walk(PlayerId, new Vector3(1.5f, 0, 0), radius: 2f).Centre = spot;
+            total++;
+        }
+
+        // Swarms: Low walkers updated every 6 ticks, each carrying its members' state as a sync blob of
+        // swarmBytes written whole on every update (SyncDistanceRating.WholeState when rated).
+        var swarmIds = new List<ulong>();
+        var blob = new byte[swarmBytes];
+        for (int i = 0; i < swarms; i++)
+        {
+            double r = 110.0 * Math.Sqrt(random.NextDouble());
+            double a = random.NextDouble() * Math.PI * 2;
+            ulong netId = (ulong)(490_000 + i);
+            worker.Spawn(netId, new Vector3((float)(r * Math.Cos(a)), 0, (float)(r * Math.Sin(a))), priority: RelevancePriority.Low);
+            worker.Walk(netId, new Vector3(1.5f, 0, 0), radius: 110f, updateInterval: updateInterval).Centre = centre;
+            swarmIds.Add(netId);
+            total++;
+        }
+        var swarmFlags = SyncStateCodec.ChunkFlags.Full | (swarmRated ? SyncStateCodec.ChunkFlags.DistanceRated : SyncStateCodec.ChunkFlags.None);
+
         var clock = Stopwatch.StartNew();
         uint published = 0;
         void Step()
         {
             uint due = (uint)(clock.Elapsed.TotalSeconds * 60) + 1;
             if (due > published + 2) published = due - 2; // never more than two catch-up ticks, as a worker
-            while (published < due) worker.PublishWalkers(++published);
+            while (published < due)
+            {
+                worker.PublishWalkers(++published);
+                foreach (var id in swarmIds)
+                    if ((published + (uint)(id % (ulong)updateInterval)) % (uint)updateInterval == 0)
+                        worker.SendSync(id, reliable: false, published, 0, (1, swarmFlags, blob));
+            }
             fleet.Pump();
             Thread.Sleep(1);
         }
@@ -114,11 +149,14 @@ public class ServerOwnedBandwidthTests
         // Settle: the spawns land and the interest set fills.
         var settle = Stopwatch.StartNew();
         while (settle.Elapsed.TotalSeconds < 2.0 || client.Replicas.Count < total * 0.98) { Step(); if (settle.Elapsed.TotalSeconds > 15) break; }
-        long bytes = client.BytesIn, entries = client.StatesReceived, messages = client.MessagesIn;
+        long bytes = client.BytesIn, entries = client.StatesReceived, messages = client.MessagesIn, syncs = client.SyncStatesReceived;
+        client.StatesOf.TryGetValue(PlayerId, out int playerEntries);
         var window = Stopwatch.StartNew();
         while (window.Elapsed.TotalSeconds < seconds) Step();
         double s = window.Elapsed.TotalSeconds;
-        return new Result(client.Replicas.Count, (client.BytesIn - bytes) / s, (client.StatesReceived - entries) / s, (client.MessagesIn - messages) / s);
+        client.StatesOf.TryGetValue(PlayerId, out int playerAfter);
+        return new Result(client.Replicas.Count, (client.BytesIn - bytes) / s, (client.StatesReceived - entries) / s, (client.MessagesIn - messages) / s,
+            (playerAfter - playerEntries) / s, (client.SyncStatesReceived - syncs) / s);
     }
 
     private static void Record(string label, int walking, int idle, int interval, object recovery, Result r)
@@ -234,6 +272,67 @@ public class ServerOwnedBandwidthTests
         Record("sample tiers, yaw only, half +1000 background walking", 200, 0, 6, settled, r);
         Assert.That(r.Replicas, Is.EqualTo(1201));
         Assert.That(r.KilobitsPerSecond, Is.LessThanOrEqualTo(100.0), "200 active and 1,000 light entities in view within 100 kbit/s");
+    }
+
+    private static void RecordWithPlayer(string label, int walking, int interval, Result r)
+    {
+        _report?.Row(walking, 1000, interval, "settled", label, r.Replicas, r.BytesPerSecond, r.KilobitsPerSecond, r.EntriesPerSecond, r.MessagesPerSecond);
+        TestContext.Out.WriteLine($"[scale:synthetic] {label}: replicas={r.Replicas} {r.BytesPerSecond:0} B/s ({r.KilobitsPerSecond:0} kbit/s), {r.EntriesPerSecond:0} entries/s, " +
+            $"player at 40 m {r.PlayerEntriesPerSecond:0.0} entries/s, {r.SyncMessagesPerSecond:0} sync messages/s");
+    }
+
+    /// <summary>The crowd tiers of docs/server-owned-entities.md D10, set for the crowd's priorities only.</summary>
+    private static void CrowdPriorityTiers(NebulaConfig c)
+    {
+        c.InterestLowTiers = RelevanceTierBands.Of(nearRadius: 25f, farRadius: 60f, nearDivisor: 1, midDivisor: 30, farDivisor: 120);
+        c.InterestBackgroundTiers = RelevanceTierBands.Of(nearRadius: 25f, farRadius: 60f, nearDivisor: 30, midDivisor: 0, farDivisor: 0);
+    }
+
+    /// <summary>
+    /// Distance tiers per priority (docs/server-owned-entities.md D10): 200 active walkers at
+    /// <see cref="RelevancePriority.Low"/> updated every 6 ticks and 1,000 light ones at
+    /// <see cref="RelevancePriority.Background"/> every 60, with another player, a <see cref="RelevancePriority.Normal"/>
+    /// entity updated every tick 40 m away. Global crowd tiers slow the player with the crowd; tiers for the crowd's
+    /// priorities alone do not. The last rows add 20 swarms whose members travel as a 200-byte sync blob every 6 ticks,
+    /// without and with distance-rated sync state (D11).
+    /// </summary>
+    [Test]
+    public void WithPriorityTiers()
+    {
+        const FakeWorker.RecoveryMode settled = FakeWorker.RecoveryMode.OnceSettled;
+        var yawHalf = TransformFields.Position | TransformFields.RotationY | TransformFields.Half;
+        Result Run(Action<NebulaConfig>? configure, TransformFields? fields = null, int swarms = 0, bool swarmRated = false) =>
+            RunCrowd(200, 0, updateInterval: 6, recovery: settled, configure: configure, priority: RelevancePriority.Low,
+                light: 1000, lightInterval: 60, lightPriority: RelevancePriority.Background, lightWalking: true, fields: fields,
+                player: true, swarms: swarms, swarmRated: swarmRated);
+
+        var r = Run(null);
+        RecordWithPlayer("default tiers, Low + Background", 200, 6, r);
+        Assert.That(r.Replicas, Is.EqualTo(1202));
+        Assert.That(r.PlayerEntriesPerSecond, Is.InRange(13.5, 16.5), "the default middle band: every 4th tick");
+
+        Action<NebulaConfig> globalCrowd = c => { c.InterestNearRadius = 25f; c.InterestFarRadius = 60f; c.InterestMidDivisor = 30; c.InterestFarDivisor = 120; };
+        r = Run(globalCrowd);
+        RecordWithPlayer("global crowd tiers, Low + Background", 200, 6, r);
+        Assert.That(r.PlayerEntriesPerSecond, Is.LessThan(3.0), "global crowd tiers slow the player 40 m away to 2 a second");
+
+        r = Run(CrowdPriorityTiers);
+        RecordWithPlayer("crowd tiers for Low and Background only", 200, 6, r);
+        Assert.That(r.Replicas, Is.EqualTo(1202));
+        Assert.That(r.PlayerEntriesPerSecond, Is.InRange(13.5, 16.5), "the player keeps the global middle band's rate");
+
+        r = Run(CrowdPriorityTiers, yawHalf);
+        RecordWithPlayer("crowd tiers for Low and Background only, yaw only, half", 200, 6, r);
+        Assert.That(r.Replicas, Is.EqualTo(1202));
+        Assert.That(r.PlayerEntriesPerSecond, Is.InRange(13.5, 16.5), "the player keeps the global middle band's rate");
+        Assert.That(r.KilobitsPerSecond, Is.LessThanOrEqualTo(100.0), "200 active and 1,000 light entities in view within 100 kbit/s, a player unaffected");
+
+        r = Run(CrowdPriorityTiers, yawHalf, swarms: 20, swarmRated: false);
+        RecordWithPlayer("the same + 20 swarms, 200-byte sync blob every 6 ticks, unrated", 200, 6, r);
+        var unrated = r;
+        r = Run(CrowdPriorityTiers, yawHalf, swarms: 20, swarmRated: true);
+        RecordWithPlayer("the same + 20 swarms, 200-byte sync blob every 6 ticks, distance-rated", 200, 6, r);
+        Assert.That(r.SyncMessagesPerSecond, Is.LessThan(unrated.SyncMessagesPerSecond / 2), "rated sync state reaches far clients at their tier's rate");
     }
 
     /// <summary>Idle entities cost nothing once spawned: 200 walking among 1,000 standing still.</summary>

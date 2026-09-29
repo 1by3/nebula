@@ -214,7 +214,14 @@ namespace Nebula
         }
 
         /// <summary>Something changed on it that the per-entity publish pass must send (variables, maps, sync state, audiences, priority).</summary>
-        internal bool HasPendingChanges => VarsDirty || MapsDirty || SyncDirty || AudienceChangedThisTick || RelevanceDirty;
+        internal bool HasPendingChanges => VarsDirty || MapsDirty || SyncDirty || AudienceChangedThisTick || RelevanceDirty || SyncSettlesPending > 0;
+
+        /// <summary>
+        /// Distance-rated sync behaviors that changed and have not yet sent the reliable keyframe they owe once they
+        /// settle (<see cref="NetworkBehaviour.SyncDistanceRating"/>). Keeps a sleeping entity in the publish pass
+        /// until it has.
+        /// </summary>
+        internal int SyncSettlesPending;
 
         /// <summary>The priority changed on the authority and the gateways that hold the entity have not been told yet.</summary>
         internal bool RelevanceDirty;
@@ -777,6 +784,12 @@ namespace Nebula
         /// </summary>
         public const uint SyncKeyframeInterval = 30;
 
+        /// <summary>
+        /// Ticks a distance-rated sync behavior (<see cref="NetworkBehaviour.SyncDistanceRating"/>) must go without a
+        /// change before it sends the reliable keyframe every client that holds the entity is given, near or far.
+        /// </summary>
+        public const uint SyncSettleTicks = SyncKeyframeInterval;
+
         public PredictedBehaviourBase Predicted { get; private set; }
         public RemoteInterpolator Interpolator { get; internal set; }
 
@@ -1000,7 +1013,8 @@ namespace Nebula
             _history = null;
             SyncAudienceGeneration = 0;
             AudienceChangedThisTick = false;
-            foreach (var b in SyncBehaviours) ResetAudience(b);
+            foreach (var b in SyncBehaviours) { ResetAudience(b); b.SyncSettlePending = false; b.SyncSettleWrittenThisTick = false; }
+            SyncSettlesPending = 0;
             ClearDirty();
         }
 
@@ -1077,6 +1091,12 @@ namespace Nebula
                 b.Audience = audience;
                 if (audience == SyncAudience.Custom) HasCustomAudience = true;
                 if (audience != SyncAudience.Everyone) HasRestrictedAudience = true;
+                // Also configuration, read once (docs/server-owned-entities.md D11). The root transform has its own
+                // stream, rated by the gateway already.
+                var rating = SyncDistanceRating.Off;
+                try { rating = b.SyncDistanceRating; }
+                catch (Exception ex) { NebulaLog.Error($"SyncDistanceRating on {b.GetType().Name} of {name} threw: {ex.Message}; using Off"); }
+                b.DistanceRating = b == RootTransform ? SyncDistanceRating.Off : rating;
             }
             SyncBehaviours = sync.ToArray();
         }
@@ -1247,6 +1267,18 @@ namespace Nebula
             {
                 var b = SyncBehaviours[i];
                 if (b.SyncDirty) b.OnSyncStateSent();
+                // A rated behavior owes one reliable keyframe once it stops changing (D11): a change that went out
+                // opens the debt, the settle keyframe pays it.
+                if (b.SyncSettleWrittenThisTick)
+                {
+                    b.SyncSettleWrittenThisTick = false;
+                    if (b.SyncSettlePending) { b.SyncSettlePending = false; SyncSettlesPending--; }
+                }
+                else if (b.SyncDirty && b.SyncWrittenThisTick && b.DistanceRating != SyncDistanceRating.Off && !b.SyncSettlePending)
+                {
+                    b.SyncSettlePending = true;
+                    SyncSettlesPending++;
+                }
                 b.SyncDirty = false;
                 // Only now, after every destination got this tick's chunk, does the stream count as opened.
                 if (b.SyncWrittenThisTick) { b.SyncEverSent = true; b.SyncWrittenThisTick = false; b.AudienceKeyframe = false; }
@@ -1448,14 +1480,31 @@ namespace Nebula
             {
                 var b = SyncBehaviours[i];
                 if (b == RootTransform) continue; // batched spatial stream, not opaque component chunks
-                if (b.SyncDelivery != delivery) continue;
                 if (forGateway && b.Audience == SyncAudience.WorkersOnly) continue;
-                bool keyframe = keyframeTick || !b.SyncEverSent || b.AudienceKeyframe || (b is NetworkTransform && delivery == Delivery.ReliableOrdered);
-                bool send = b.SyncDirty || (keyframe && delivery == Delivery.Sequenced);
+                var rating = b.DistanceRating;
+                var ratedFlag = rating != SyncDistanceRating.Off ? SyncStateCodec.ChunkFlags.DistanceRated : SyncStateCodec.ChunkFlags.None;
+                // A rated behavior that changed and has been still for SyncSettleTicks sends one reliable keyframe,
+                // whatever its own delivery, and the gateway gives it to every holder (D11). Decided from state only
+                // ClearDirty advances, so every destination of this tick gets it.
+                if (b.SyncSettlePending && !b.SyncDirty && tick - b.SyncLastChangeTick >= SyncSettleTicks)
+                {
+                    if (delivery != Delivery.ReliableOrdered) continue;
+                    SyncStateCodec.WriteChunk(writer, b.BehaviourIndex,
+                        SyncStateCodec.ChunkFlags.Full | SyncStateCodec.ChunkFlags.Settled | ratedFlag | SyncStateCodec.FlagsOf(b.Audience), b, true);
+                    b.SyncWrittenThisTick = true;
+                    b.SyncSettleWrittenThisTick = true;
+                    n++;
+                    continue;
+                }
+                if (b.SyncDelivery != delivery) continue;
+                bool periodic = keyframeTick || !b.SyncEverSent || b.AudienceKeyframe || (b is NetworkTransform && delivery == Delivery.ReliableOrdered);
+                bool send = b.SyncDirty || (periodic && delivery == Delivery.Sequenced);
                 if (!send) continue;
-                var flags = (keyframe ? SyncStateCodec.ChunkFlags.Full : SyncStateCodec.ChunkFlags.None) | SyncStateCodec.FlagsOf(b.Audience);
+                bool keyframe = periodic || rating == SyncDistanceRating.WholeState;
+                var flags = (keyframe ? SyncStateCodec.ChunkFlags.Full : SyncStateCodec.ChunkFlags.None) | ratedFlag | SyncStateCodec.FlagsOf(b.Audience);
                 SyncStateCodec.WriteChunk(writer, b.BehaviourIndex, flags, b, keyframe);
                 b.SyncWrittenThisTick = true;
+                if (b.SyncDirty) b.SyncLastChangeTick = tick;
                 n++;
             }
             if (n == 0) { writer.Rewind(rewind); return 0; }
@@ -1637,7 +1686,8 @@ namespace Nebula
             if (HasAuthority == authority) return;
             HasAuthority = authority;
             // A new authority (new epoch) opens its stream with keyframes so the gateway cache and ghosts restart clean.
-            if (authority) foreach (var b in SyncBehaviours) { b.SyncEverSent = false; b.SyncWrittenThisTick = false; b.SyncDirty = true; SyncDirty = true; }
+            if (authority) foreach (var b in SyncBehaviours) { b.SyncEverSent = false; b.SyncWrittenThisTick = false; b.SyncDirty = true; SyncDirty = true; b.SyncSettlePending = false; b.SyncSettleWrittenThisTick = false; }
+            if (authority) SyncSettlesPending = 0;
             // A new authority asks its own pawns: the answer can differ from the previous worker's (docs/sync-audience.md D7).
             if (authority) foreach (var b in SyncBehaviours) if (b.Audience == SyncAudience.Custom) b.AudienceDirty = true;
             // Dormancy belongs to the authority: a copy that becomes a ghost is not asleep (docs/server-owned-entities.md §6).

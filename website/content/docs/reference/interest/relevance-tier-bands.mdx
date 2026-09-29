@@ -1,0 +1,89 @@
+---
+title: "RelevanceTierBands"
+description: "A priority's own distance tiers (NebulaConfig.InterestLowTiers and its siblings, docs/server-owned-entities.md D10): two radii and a divisor for each of the three bands they make."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/RelevanceTiers.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/RelevanceTiers.cs)</div>
+
+```csharp
+[System.Serializable]
+public struct RelevanceTierBands
+```
+
+A priority's own distance tiers ([`NebulaConfig.InterestLowTiers`](/docs/reference/core/nebula-config#interestlowtiers) and its siblings, `docs/server-owned-entities.md` D10): two radii and a divisor for each of the three bands they make. When [`Override`](#override) is false the priority keeps the shift of the global tiers that [`RelevancePriority`](/docs/reference/interest/relevance-priority) describes, and the other fields are ignored, so a config that sets none of this behaves exactly as before.
+
+A divisor is ticks per update window, as everywhere in the tiers: 1 is every update the worker sends, 4 one update in each window of 4 ticks, and 0 none at all (the client keeps the entity where it was last told, and is still sent its reliable entries).
+
+## Fields
+
+### Override [#override]
+
+```csharp
+public bool Override;
+```
+
+Use these bands for the priority instead of shifting the global ones.
+
+### NearRadius [#nearradius]
+
+```csharp
+public float NearRadius;
+```
+
+Metres from a client's nearest focus within which an entity is in the near band.
+
+### FarRadius [#farradius]
+
+```csharp
+public float FarRadius;
+```
+
+Metres within which it is in the middle band; beyond it, the far band.
+
+### NearDivisor [#neardivisor]
+
+```csharp
+public int NearDivisor;
+```
+
+Ticks per update window in the near band (1 = every update, 0 = none).
+
+### MidDivisor [#middivisor]
+
+```csharp
+public int MidDivisor;
+```
+
+Ticks per update window in the middle band (0 = none).
+
+### FarDivisor [#fardivisor]
+
+```csharp
+public int FarDivisor;
+```
+
+Ticks per update window in the far band, and for a client with no focus in the entity's space (0 = none).
+
+## Methods
+
+### Of [#of]
+
+```csharp
+public static RelevanceTierBands Of(float nearRadius, float farRadius, int nearDivisor, int midDivisor, int farDivisor);
+```
+
+Bands set explicitly ([`Override`](#override) true).
+
+### DivisorOf [#divisorof]
+
+```csharp
+public int DivisorOf(int band);
+```
+
+The divisor of distance band `band` ([`RelevanceTiers.Near`](/docs/reference/interest/relevance-tiers#near), [`RelevanceTiers.Middle`](/docs/reference/interest/relevance-tiers#middle), [`RelevanceTiers.Far`](/docs/reference/interest/relevance-tiers#far)).
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

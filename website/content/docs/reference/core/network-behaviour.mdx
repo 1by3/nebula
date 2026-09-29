@@ -112,6 +112,16 @@ public virtual Delivery SyncDelivery { get; }
 
 Delivery for this behaviour's sync chunks. Unreliable (sequenced) is right for transforms: a lost delta is healed by the next keyframe. Reliable is right for anything a receiver must not miss (animator triggers).
 
+### SyncDistanceRating [#syncdistancerating]
+
+```csharp
+public virtual SyncDistanceRating SyncDistanceRating { get; }
+```
+
+Whether this behaviour's sync state follows the entity's distance tier for far clients, as its transform does (`docs/server-owned-entities.md` D11). The default, `SyncDistanceRating.Off`, sends every chunk to every client that holds the entity. `Keyframes` (a behaviour that writes deltas) sends a client beyond the entity's every-update band only keyframes, one per window of its rate; `WholeState` (a behaviour whose every write is complete, so Nebula always asks for `full`) sends it one chunk per window. Either way, once the state has not changed for [`NetworkIdentity.SyncSettleTicks`](/docs/reference/core/network-identity#syncsettleticks) ticks, one reliable keyframe reaches every client that holds the entity, so a far client is never left with anything but the latest state. Only the rate changes: the audience ([`SyncAudience`](/docs/reference/core/sync-audience)) still decides who gets it at all.
+
+Override it with a constant: Nebula reads it once, when the entity is spawned or instantiated. It suits state that is continuous, where a far client only needs the gist: a swarm's member offsets, an animation's blend values. It does not suit events a client must see each of (a trigger); keep those in an RPC or a behaviour that is not rated. It has no effect on the root [`NetworkTransform`](/docs/reference/core/network-transform), which the gateway rates already, or on [`NetworkVariable<T>`](/docs/reference/core/network-variable)s.
+
 ### SyncAudience [#syncaudience]
 
 ```csharp

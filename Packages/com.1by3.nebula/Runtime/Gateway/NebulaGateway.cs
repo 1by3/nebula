@@ -152,6 +152,12 @@ namespace Nebula
             public NetworkWriter Reliable;
             public int ReliableSlot = -1;
             public ushort ReliableCount;
+            /// <summary>
+            /// Per entity, the distance-rated behaviours (bit = behaviour index) whose deltas this client has missed:
+            /// it gets no more of their deltas until it has had a keyframe (docs/server-owned-entities.md D11). Null
+            /// until the client first misses one.
+            /// </summary>
+            public Dictionary<ulong, ulong> SyncBehind;
         }
 
         /// <summary>Flush a client's reliable batch once it holds this many bytes (ReliableOrdered fragments above the MTU, so this is about latency, not size).</summary>
@@ -241,6 +247,15 @@ namespace Nebula
             public uint AudienceGeneration;
             /// <summary>The newest tick of sync state relayed for this entity: what a <see cref="SyncStateCodec.ChunkFlags.Cleared"/> notice is stamped with.</summary>
             public uint LastSyncTick;
+            /// <summary>Behaviour indices (below 64) whose chunks came flagged <see cref="SyncStateCodec.ChunkFlags.DistanceRated"/>.</summary>
+            public ulong RatedBehaviours;
+            /// <summary>
+            /// Per stream (0 reliable, 1 sequenced), the tick of the last message that carried a rated keyframe, when
+            /// <see cref="HasRatedKeyframeTick"/>: what a far client's keyframe window is measured from, as
+            /// <see cref="PreviousStateTick"/> is for its transform.
+            /// </summary>
+            public readonly uint[] RatedKeyframeTick = new uint[2];
+            public readonly bool[] HasRatedKeyframeTick = new bool[2];
 
             public void SeedKeyframes(byte[] state, uint generation)
             {
@@ -1300,6 +1315,9 @@ namespace Nebula
                 // cell it landed in). The row has to be there before the spawn that names it, or the client
                 // cannot resolve the frame and holds the entity where it was - for its own pawn, for ever.
                 if (containerChanged) SendOwnershipForContainerChange(rec);
+                // The spawn carries a keyframe of every behaviour: nobody is behind on its rated state any more.
+                if (rec.RatedBehaviours != 0)
+                    for (int o = rec.Observers.Count - 1; o >= 0; o--) rec.Observers[o].SyncBehind?.Remove(rec.NetId);
                 if (rec.Audiences == null)
                 {
                     _writer.Reset();
@@ -1383,10 +1401,10 @@ namespace Nebula
             if (HoldBehind(msg.NetId, msg.Epoch, new HeldUpdate { Kind = HeldKind.Sync, Sync = msg, Worker = w.Index })) return;
             if (!_entities.TryGetValue(msg.NetId, out var rec) || msg.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) return;
             // Remember keyframes so a late joiner's spawn carries the newest full state of each behaviour, and note
-            // which chunks only some clients may have.
-            bool restricted = ParseSyncChunks(rec, msg);
+            // which chunks only some clients may have, and which follow the entity's distance tier.
+            bool restricted = ParseSyncChunks(rec, msg, out bool rated, out bool ratedKeyframe);
             if (msg.Tick > rec.LastSyncTick) rec.LastSyncTick = msg.Tick;
-            if (!restricted)
+            if (!restricted && !rated)
             {
                 // Everything in it is for everyone: relayed as it came, which is what it cost before audiences.
                 msg.AudienceGeneration = 0;
@@ -1395,7 +1413,13 @@ namespace Nebula
                 BroadcastEntity(rec, msg.Delivery);
                 return;
             }
-            BroadcastSyncFiltered(rec, msg);
+            BroadcastSyncFiltered(rec, msg, rated);
+            if (ratedKeyframe)
+            {
+                int stream = msg.Reliable ? 0 : 1;
+                rec.RatedKeyframeTick[stream] = msg.Tick;
+                rec.HasRatedKeyframeTick[stream] = true;
+            }
         }
 
         private void OnEntityRpc(WorkerConn w, EntityRpcMsg msg)
@@ -1603,10 +1627,18 @@ namespace Nebula
         /// the client's own pawn always gets every update (it is what reconciliation compares against). Reliable
         /// entries never come here: they reach every observer.
         /// </summary>
-        private bool WantsThisTick(EntityRecord rec, in EntityStateEntry entry, uint tick, ClientConn c)
+        private bool WantsThisTick(EntityRecord rec, in EntityStateEntry entry, uint tick, ClientConn c) =>
+            RelevanceTiers.StartsWindow(tick, rec.HasPreviousStateTick, rec.PreviousStateTick, rec.NetId, DivisorFor(rec, c));
+
+        /// <summary>
+        /// Ticks per update window for <paramref name="c"/> and this entity: its priority's tiers
+        /// (<see cref="InterestSettings.TiersFor"/>, a priority's own when the config overrides them) at the distance
+        /// from the client's nearest focus in the entity's space. 1 for the client's own pawn; <see cref="RelevanceTiers.Quiet"/> is none.
+        /// </summary>
+        private int DivisorFor(EntityRecord rec, ClientConn c)
         {
             // A client with no pawn has PawnNetId 0, which must not make every record match "this is my pawn".
-            if (c.PawnNetId != 0 && rec.NetId == c.PawnNetId) return true;
+            if (c.PawnNetId != 0 && rec.NetId == c.PawnNetId) return 1;
             // Distance is measured from the client's cached foci to the record's cached absolute position: no
             // container walk, no transform maths, per (entity, observer) pair.
             double best = double.MaxValue;
@@ -1618,9 +1650,8 @@ namespace Nebula
                     double d2 = foci[i].SqrDistanceTo(rec.AbsX, rec.AbsY, rec.AbsZ);
                     if (d2 < best) best = d2;
                 }
-            int band = RelevanceTiers.BandOf(best, _interest.NearRadius, _interest.FarRadius);
-            int divisor = RelevanceTiers.Divisor(rec.Priority, band, _interest.MidDivisor, _interest.FarDivisor);
-            return RelevanceTiers.StartsWindow(tick, rec.HasPreviousStateTick, rec.PreviousStateTick, rec.NetId, divisor);
+            int p = (int)rec.Priority;
+            return RelevanceTiers.DivisorAt(in _tiers[p < _tiers.Length ? p : 0], best);
         }
 
         private bool TryGetPawnPosition(ClientConn c, out Vector3 position)

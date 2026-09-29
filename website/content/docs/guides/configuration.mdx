@@ -174,6 +174,7 @@ See [Build an infinite runtime world](/docs/guides/infinite-runtime-world) for t
 | `InterestFarRadius` | `80` m | Use the middle update rate between the near and far distances. |
 | `InterestMidDivisor` | `4` | Forward available unreliable root updates on every fourth tick in the middle band. Use `1` to forward each available update. |
 | `InterestFarDivisor` | `12` | Forward available unreliable root updates on every twelfth tick beyond the far distance. Clients without a pawn also use this filter. |
+| `InterestHighTiers`, `InterestLowTiers`, `InterestBackgroundTiers` | `Override` off | Give entities of that relevance priority their own near and far distances and divisors (`0` sends no updates in a band) instead of the four settings above, shifted. `Normal` entities always use the four settings above. See [Set the distance tiers for a crowd](/docs/guides/server-owned-entities#set-the-distance-tiers-for-a-crowd). |
 | `InterpolationDelayTicks` | `3` | Render remote entities at least this many ticks behind the latest received state. The client adds the lateness it measures on the slowest worker's stream (up to 6 ticks; `NebulaClient.RenderDelayTicks` shows the total). |
 | `InputLeadMarginTicks` | `2` | Add this many ticks to half the measured round-trip time when scheduling input. |
 | `InputLeadTargetTicks` | `3` | Keep client input this many ticks ahead when it arrives at the worker. |
