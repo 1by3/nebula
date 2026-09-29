@@ -1,0 +1,5 @@
+{
+    "name": "Nebula.Samples.ServerOwnedBoarding",
+    "references": ["Nebula.Runtime"],
+    "autoReferenced": true
+}
