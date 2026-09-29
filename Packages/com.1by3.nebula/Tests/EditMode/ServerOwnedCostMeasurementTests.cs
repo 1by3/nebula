@@ -60,6 +60,29 @@ namespace Nebula.Tests
         }
 
         /// <summary>
+        /// The issue's worker target (docs/server-owned-entities.md §5): 150 active walkers updated every
+        /// <paramref name="activeInterval"/> ticks plus 1,500 walkers of a lighter tier updated every
+        /// <paramref name="lightInterval"/> ticks, all on one worker.
+        /// </summary>
+        [Test]
+        public void TargetMix([Values(1, 6)] int activeInterval, [Values(30, 60)] int lightInterval)
+        {
+            using var crowd = new CrowdMesh();
+            var box = (min: new Vector2(-250f, -250f), max: new Vector2(-30f, 250f));
+            foreach (var e in crowd.SpawnWalkers(crowd.W1, 150, -240f, -40f, 1.5f, box.min, box.max)) e.UpdateInterval = activeInterval;
+            foreach (var e in crowd.SpawnWalkers(crowd.W1, 1500, -240f, -40f, 1.5f, box.min, box.max))
+            {
+                e.UpdateInterval = lightInterval;
+                e.RelevancePriority = RelevancePriority.Background;
+            }
+            crowd.Run(Warmup);
+            var w = crowd.Measure(Measured);
+            string scenario = $"target-150x{activeInterval}+1500x{lightInterval}";
+            Rows.Add(CrowdMesh.CsvRow(scenario, 1650, w));
+            Debug.Log(CrowdMesh.CsvRow(scenario, 1650, w));
+        }
+
+        /// <summary>
         /// 50 entities spawned in one frame: how many messages and bytes the worker hands the gateway for them
         /// (one reliable <c>EntitySpawn</c> each; the transport may still pack several into one datagram).
         /// </summary>

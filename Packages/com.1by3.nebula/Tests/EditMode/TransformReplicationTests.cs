@@ -299,7 +299,9 @@ namespace Nebula.Tests
             a.transform.position = new Vector3(9, 0, 0);
             Assert.IsTrue(a.RootTransform.CaptureRoot(2, out _)); // drop this update
             Assert.IsFalse(a.RootTransform.CaptureRoot(3, out _));
-            uint repairTick = 1 + NetworkIdentity.SyncKeyframeInterval;
+            // The recovery is counted from the last change (tick 2), not from the first one (NEB-359).
+            Assert.IsFalse(a.RootTransform.CaptureRoot(1 + NetworkTransform.SettleTicks, out _));
+            uint repairTick = 2 + NetworkTransform.SettleTicks;
             Assert.IsTrue(a.RootTransform.CaptureRoot(repairTick, out var repair));
             Assert.IsTrue(repair.Reliable, "also bypasses distance-tier tick filtering");
             b.ReceiveState(repairTick, 2, Wire(repair, out _));

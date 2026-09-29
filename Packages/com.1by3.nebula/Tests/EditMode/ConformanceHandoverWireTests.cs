@@ -227,6 +227,52 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void AnUpdateIntervalRidesAfterTheExtentSection()
+        {
+            // docs/server-owned-entities.md D1: a lighter-tier entity keeps its interval on the next worker.
+            var msg = Loaded();
+            var w = new NetworkWriter(512);
+            msg.Write(w);
+            int plain = w.Length;
+
+            msg.UpdateInterval = 12;
+            w = new NetworkWriter(512);
+            msg.Write(w);
+            Assert.AreEqual(plain + 1 + 1 + 4 + 25 + 1, w.Length,
+                "crossing, an empty session section and an empty extent section come first, then the interval");
+            var back = RoundTrip(msg, out int remaining);
+            Assert.AreEqual(0, remaining);
+            Assert.AreEqual(12, back.UpdateInterval);
+            Assert.IsFalse(back.CarriesExtent, "the extent section is there only to reach the interval: nothing is carried");
+            Assert.AreEqual(EntityExtentSource.None, back.ExtentSource);
+
+            // Beside a real extent, a crossing and an orphaned session.
+            msg.CarriesExtent = true;
+            msg.ExtentSource = EntityExtentSource.Explicit;
+            msg.ExtentCenter = new Vector3(1f, 2f, 3f);
+            msg.ExtentSize = new Vector3(4f, 5f, 6f);
+            msg.Crossing = true;
+            msg.SessionOrphan = PlayerSessions.OrphanKind.Released;
+            msg.SessionReclaimRemaining = 2f;
+            back = RoundTrip(msg, out remaining);
+            Assert.AreEqual(0, remaining);
+            Assert.AreEqual(12, back.UpdateInterval);
+            Assert.IsTrue(back.CarriesExtent);
+            Assert.AreEqual(EntityExtentSource.Explicit, back.ExtentSource);
+            Assert.AreEqual(msg.ExtentSize, back.ExtentSize);
+            Assert.IsTrue(back.Crossing);
+            Assert.AreEqual(PlayerSessions.OrphanKind.Released, back.SessionOrphan);
+
+            // An interval of 1, the default, adds no bytes, and reads back as absent (0, which means 1).
+            msg = Loaded();
+            msg.UpdateInterval = 1;
+            w = new NetworkWriter(512);
+            msg.Write(w);
+            Assert.AreEqual(plain, w.Length);
+            Assert.AreEqual(0, RoundTrip(msg, out _).UpdateInterval);
+        }
+
+        [Test]
         public void NullBlobsAndListsReadBackEmptyNotNull()
         {
             var msg = Loaded();

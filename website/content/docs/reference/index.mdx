@@ -460,6 +460,8 @@ Keep the control plane and saved entities in SQLite or PostgreSQL from the stand
 | [RegionSubscription](/docs/reference/interest/region-subscription) | Static class. The shared arithmetic of the region-subscription protocol: a set's fingerprint. |
 | [RegionSubscriptionReceiver](/docs/reference/interest/region-subscription-receiver) | Class. The worker's end of one gateway link's subscription: the region set it filters that gateway's traffic with. |
 | [RegionSubscriptionSender](/docs/reference/interest/region-subscription-sender) | Class. The gateway's end of one worker link's subscription: what this gateway wants from that worker, and the messages that get the worker there. |
+| [RelevancePriority](/docs/reference/interest/relevance-priority) | Enum. How much an entity's transform updates matter to the clients that hold it, relative to its distance from them (NetworkIdentity.RelevancePriority, docs/server-owned-entities.md D3). |
+| [RelevanceTiers](/docs/reference/interest/relevance-tiers) | Static class. The arithmetic of RelevancePriority: pure, shared by the gateway, the worker and the tests. |
 
 ## Persistence
 

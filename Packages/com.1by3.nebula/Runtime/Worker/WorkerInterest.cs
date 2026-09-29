@@ -464,6 +464,8 @@ namespace Nebula
                     InterestAddAndAnnounce(e, null);
                     continue;
                 }
+                // Rebucketed on its update ticks only (NetworkIdentity.UpdateInterval): it is not moved in between.
+                if (!e.DueThisTick) continue;
                 // A carrier change is rare but real (a pawn boards a ship, a crate is dropped off one): re-link
                 // before deciding the key. Boarding rebuckets the entity into the carrier's region there and
                 // then, so it is a publication in its own right, not just a link.

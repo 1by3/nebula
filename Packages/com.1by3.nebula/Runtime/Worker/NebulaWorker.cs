@@ -1063,6 +1063,8 @@ namespace Nebula
             TickCount++;
             _costMeter.CountTick();
             float dt = NetworkTime.TickInterval;
+            // Which entities update on this tick (NetworkIdentity.UpdateInterval), decided once for every pass below.
+            for (int i = 0; i < _authoritative.Count; i++) _authoritative[i]?.BeginTick(tick, dt);
             UpdateInstancePreparations();
             ContainerRegistry.RefreshCaches();
             // Interior colliders of every physics frame follow their sources (a ramp lowering, a door opening).
@@ -1101,13 +1103,16 @@ namespace Nebula
                     int d = e.Container != null ? e.Container.NestingDepth : 0;
                     if (d > depth) { deeper = true; continue; }
                     if (d < depth) continue;
+                    // Not one of its update ticks: a lighter-tier entity is left alone (docs/server-owned-entities.md D1).
+                    if (!e.DueThisTick) continue;
                     var behaviours = e.Behaviours;
+                    float delta = e.UpdateDelta;
                     // Two stopwatch reads per entity per tick, so what a container costs is measured rather than
                     // guessed from what is standing in it (docs/cost-telemetry.md, D5).
                     long simStart = Stopwatch.GetTimestamp();
                     for (int b = 0; b < behaviours.Length; b++)
                     {
-                        try { behaviours[b].NetworkTick(tick, dt); }
+                        try { behaviours[b].NetworkTick(tick, delta); }
                         catch (Exception ex) { NebulaLog.Error($"NetworkTick on {e} threw: {ex}"); }
                     }
                     _costMeter.AddSimulation(e.Container, Stopwatch.GetTimestamp() - simStart);
@@ -1155,6 +1160,8 @@ namespace Nebula
             foreach (var e in _scratchEntities)
             {
                 if (!e.HasAuthority) continue; // handed over as the contents of a carrier earlier in this pass
+                // Its container and owner are checked on its update ticks only (NetworkIdentity.UpdateInterval).
+                if (!e.DueThisTick) continue;
                 _gameMode?.PrepareSpatialFrame(e);
                 InstanceBoundary.Tick(this, e);
                 // A carrier never resolves into a container it carries: its own box (its origin is inside it), nor
@@ -1213,7 +1220,7 @@ namespace Nebula
             }
             ProfContainers.End();
 
-            foreach (var e in _authoritative) e.PrepareReplication(tick);
+            foreach (var e in _authoritative) e.PrepareReplication(tick, e.DueThisTick);
             // Who may see each Custom behaviour, decided before anything of this tick is written to anyone.
             EvaluateSyncAudiences(tick);
 
@@ -1614,6 +1621,8 @@ namespace Nebula
                     int d = c.NestingDepth;
                     if (d > depth) { deeper = true; continue; }
                     if (d < depth) continue;
+                    // Measured on its update ticks only; the ghosts it has linger for its interval as well (below).
+                    if (!e.DueThisTick) continue;
                     var pos = e.transform.position;
                     Dictionary<string, float> targets = null;
                     ContainerRegistry.NeighborsOf(c, _neighborScratch);
@@ -1643,6 +1652,7 @@ namespace Nebula
             foreach (var list in _ghostByWorker.Values) { list.Clear(); _ghostListPool.Push(list); }
             _ghostByWorker.Clear();
             _scratchIds.Clear();
+            float linger = Config.GhostLingerSeconds;
             foreach (var kv in _ghostTargets)
             {
                 var e = Find(kv.Key);
@@ -1650,7 +1660,7 @@ namespace Nebula
                 _scratchStrings.Clear();
                 foreach (var t in kv.Value)
                 {
-                    if (GhostTargetExpired(authoritative, _workerPeersById.ContainsKey(t.Key), now, t.Value, Config.GhostLingerSeconds)) _scratchStrings.Add(t.Key);
+                    if (GhostTargetExpired(authoritative, _workerPeersById.ContainsKey(t.Key), now, t.Value, linger + UpdateSpanSeconds(e))) _scratchStrings.Add(t.Key);
                     else if (_workerPeersById.TryGetValue(t.Key, out var live) && live.HelloReceived) Index(t.Key, e);
                 }
                 foreach (var w in _scratchStrings)
@@ -1832,6 +1842,14 @@ namespace Nebula
                 if (x.IsDynamic) return x;
             return null;
         }
+
+        /// <summary>
+        /// The seconds between two band checks of <paramref name="e"/> beyond one tick: an entity checked only every
+        /// <see cref="NetworkIdentity.UpdateInterval"/> ticks refreshes its ghosts' band timestamps that much less
+        /// often, so their linger is lengthened by as much, or a slow entity's ghost would lapse between two checks.
+        /// </summary>
+        internal static float UpdateSpanSeconds(NetworkIdentity e) =>
+            e != null && e.UpdateInterval > 1 ? (e.UpdateInterval - 1) * NetworkTime.TickInterval : 0f;
 
         /// <summary>
         /// Whether a ghost target has lapsed: the entity is not ours any more, the peer holding it is gone, or it
@@ -2043,6 +2061,8 @@ namespace Nebula
                 GhostWorkers = ghostWorkers.ToArray(),
                 InterestGateways = InterestGatewayKeys(followMask),
                 Crossing = e == _crossingEntity,
+                // The next authority updates it as often as this one did (docs/server-owned-entities.md D1).
+                UpdateInterval = (byte)e.UpdateInterval,
             };
             if (e.ExtentChangedAtRuntime)
             {
@@ -2130,6 +2150,9 @@ namespace Nebula
                 e.Predicted.ReadPendingInputs(_reader);
             }
             if (msg.CarriesExtent) e.ApplyCarriedExtent(msg.ExtentSource, new Bounds(msg.ExtentCenter, msg.ExtentSize));
+            // Its update interval comes with it, and its first tick here is an update tick whatever the phase was.
+            e.UpdateInterval = msg.UpdateInterval == 0 ? 1 : msg.UpdateInterval;
+            e.ResetUpdatePhase();
             if (msg.HandoverState != null && msg.HandoverState.Length > 0)
             {
                 _reader.Set(new ArraySegment<byte>(msg.HandoverState));
@@ -2297,6 +2320,8 @@ namespace Nebula
             // The cost weight travels with the entity, so a boss costs the same on the worker it hands over to
             // (docs/cost-telemetry.md, D4). Zero is valid; a negative value means the field was absent.
             if (msg.CostWeight >= 0f) e.ApplyCarriedCostWeight(msg.CostWeight);
+            // And its relevance priority, so the next authority announces it to gateways with the same one.
+            e.ApplyCarriedPriority(RelevanceTiers.PriorityOf(msg.InterestFlags));
             var container = ContainerRegistry.Resolve(msg.Container);
             if (container == null && msg.Container.MayArriveLater)
             {
@@ -2543,6 +2568,13 @@ namespace Nebula
             {
                 var e = _authoritative[i];
                 ulong mask = MaskOfEntity(e.NetId);
+                if (e.RelevanceDirty)
+                {
+                    // Its priority changed: the gateways that have it take the new one from a fresh spawn, which they
+                    // apply in place (docs/server-owned-entities.md D3).
+                    e.RelevanceDirty = false;
+                    SendSpawnToMask(e, mask);
+                }
                 if (e.VarsDirty && (mask != 0 || _unmaskedGateways.Count > 0))
                 {
                     _scratch.Reset();

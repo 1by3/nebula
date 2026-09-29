@@ -1,11 +1,14 @@
 # Many server-owned entities — measurements and design (NEB-359)
 
-Status: measurements landed (this document, §1–§2). Relevance tiers and dormancy follow in their own changes (§4).
+Status: measurements (§1–§3) and relevance tiers (§5, protocol 24) landed. Dormancy follows in its own change (§4).
 Harness: `Tests/EditMode/CrowdMesh.cs` (two real workers), `Tests/EditMode/ServerOwnedCostMeasurementTests.cs`
 (`[Explicit]`, writes `Logs/scale/editor-server-owned.csv`), `Services~/Nebula.Services.Tests/ServerOwnedBandwidthTests.cs`
 (`[Category("Scale")]` + `Soak`, writes `Logs/scale/synthetic-server-owned-bandwidth.csv`). Conformance scenario 34
 (`ConformanceCrowdSeamTests`). Related: `docs/scale-suite.md`, `docs/interest-management.md` §4 (rate tiers),
-`docs/entity-extents.md` (the ghost band).
+`docs/entity-extents.md` (the ghost band). User guide: `website/content/docs/guides/server-owned-entities.mdx`. Sample:
+`Samples~/ServerOwnedCrowd`. Relevance tiers: `Runtime/Interest/RelevanceTiers.cs`, `NetworkIdentity.UpdateInterval`,
+`NetworkIdentity.RelevancePriority`; tests `RelevanceTiersTests` (both places), `RelevanceTierWorkerTests`,
+conformance scenario 35 (`ConformanceRelevanceTierTests`, service tests).
 
 ## 0. Problem
 
@@ -131,7 +134,7 @@ receiving worker's copy has only what the stream and the handover gave it.
 
 ## 4. What follows, and what does not
 
-Built in separate changes, each with its own tests, sample and user guide:
+Built in separate changes, each with its own tests, sample and user guide (relevance tiers: §5):
 
 - **Relevance tiers** — a per-entity update interval on the worker (the lighter tier: simulated, checked and
   published every N ticks, staggered), a per-entity relevance priority the gateway uses to pick each client's rate
@@ -150,7 +153,124 @@ Not built, because the numbers do not ask for it:
   neighbours per tick). General, and worth doing, but the lighter tier removes the same cost for the entities that
   are numerous, so it is left for its own change.
 
-## 5. Running the measurements
+## 5. Relevance tiers (built)
+
+### D1. The lighter tier is an update interval on the worker
+
+`NetworkIdentity.UpdateInterval` (ticks, 1..255, default 1; `SetUpdateRate(hz)` rounds a rate to it) says how often
+the worker that has authority updates the entity. On its update ticks it is everything it always was; on the
+others the worker leaves it alone in every per-entity pass of the tick:
+
+| Pass | On a tick that is not an update tick |
+|---|---|
+| `NetworkTick` of its behaviours | not called; the next call gets the time since the last one as `deltaTime` |
+| container resolution, crossing a frame, the owner check and handover | not checked |
+| the ghost band's seam test | not made; its ghosts' linger is lengthened by the interval, so they do not lapse between checks |
+| the interest index (rebucketing) | not moved |
+| the root transform entry | not captured, unless a teleport is waiting; a change of container or epoch is still published at once |
+
+Which ticks are update ticks is decided once per tick (`NetworkIdentity.BeginTick`) and read by every pass, so the
+passes agree. Entities with the same interval are spread over it by net id (`(tick + netId % n) % n == 0`), and a
+gap as long as the interval is always an update, so an entity that has just arrived by spawn or handover, or whose
+interval changed, updates on its next tick and then falls into its slot. State history is still recorded every
+tick (it is cheap and keeps `StateAt` continuous). Variables, maps, RPCs, sync-channel behaviours and audiences are
+still sent when they change: they are event-driven, and a game that changes them in `NetworkTick` changes them on
+update ticks anyway. The interval travels with a handover (a trailing byte in `AuthorityTransfer`, protocol 24).
+
+*Why the whole update and not only the send rate:* §1.1 says the send is not what costs a worker; capturing,
+resolving and seam-testing every entity every tick is. An entity updated every 30 ticks costs a thirtieth of that.
+
+### D2. The recovery entry is sent once an entity settles
+
+`NetworkTransform.CaptureRoot` schedules its reliable recovery entry `SettleTicks` (30) after the **last** change,
+and sends it only on a tick with no change: every change pushes it back. An entity that keeps moving sends none;
+one that stops sends one, where it came to rest. That is the entry the mechanism exists for (an unreliable final
+entry may be lost and nothing would resend it), and it is also what a client whose distance tier skipped the last
+unreliable entries needs. Tests: `TransformReplicationTests.LostFinalUpdateGetsReliableRecoveryThenIdleCostsNothing`
+(now counted from the last change), `RelevanceTierWorkerTests.AMovingRootSendsOneRecoveryEntryOnlyOnceItHasSettled`.
+
+### D3. A relevance priority per entity, applied by the gateway per client
+
+`NetworkIdentity.RelevancePriority` shifts the gateway's distance tiers for that entity, for every client:
+
+| Priority | Near (≤ `InterestNearRadius`) | Middle (≤ `InterestFarRadius`) | Far |
+|---|---|---|---|
+| `High` | every update | every update | `InterestMidDivisor` |
+| `Normal` (default) | every update | `InterestMidDivisor` | `InterestFarDivisor` |
+| `Low` | `InterestMidDivisor` | `InterestFarDivisor` | `InterestFarDivisor` |
+| `Background` | `InterestMidDivisor` | none | none |
+
+"None" is the ability to stop sending to a client without despawning the entity there: the client keeps the
+replica where it was last told, and is still sent every reliable entry (where it came to rest, D2; a teleport; a
+change of container), so it is never left somewhere the entity was not. A client's own pawn is always sent every
+update. The priority rides in bits 1–2 of the spawn's `interest_flags` (protocol 24), so the standalone gateway
+needs no prefab; a change on the authority re-announces the entity to the gateways that have it (an in-place
+spawn), so it is meant to change with an entity's role, not per tick. It travels with ghost spawns and handovers
+in the same flags.
+
+### D4. A client's rate is one entry per window, not "ticks divisible by the divisor"
+
+The gateway used to send an unreliable entry to a client when `(tick + netId % d) % d == 0`. That only works when
+the worker sends every tick: an entity sent every 6 ticks to a client with `d = 4` matched on no tick at all for
+some net ids and was frozen on that client. The rule is now `RelevanceTiers.StartsWindow`: send the first entry of
+the entity that falls in a new window of `d` ticks (windows staggered by net id), measured against the tick of the
+entity's previous entry, which the gateway keeps per record. For an every-tick entity it sends exactly what the old
+rule did; for an entity sent every `n` ticks it sends `min(1/n, 1/d)` of them. Tests: `RelevanceTiersTests`
+(every net id, intervals 1, 6 and 30 against windows 4, 12 and 60), conformance scenario 35.
+
+### D5. Protocol 24, additive for clients
+
+The handover gains a trailing update section (one byte, written only when the interval is above 1; an extent
+section written only to reach it says "none" with source byte `0xFF`), and the spawn's interest flags gain the
+priority bits. Nothing a client reads changed: a protocol-23 client ignores the flag bits. The window is 23..24.
+Workers and gateways must still match exactly.
+
+### After: what the same crowds cost now
+
+Worker (layer `editor`, one worker, everything walking at 1.5 m/s):
+
+| Scenario | Tick avg / p95 / max (ms) | To the gateway | Entries/s |
+|---|---|---:|---:|
+| 150 every tick + 1,500 every 30 ticks | **1.46** / 1.59 / 4.44 | 563 kB/s | 12,000 |
+| 150 every tick + 1,500 every 60 ticks | 1.38 / 1.59 / 6.65 | 493 kB/s | 10,500 |
+| 150 every 6 ticks + 1,500 every 30 ticks | 0.95 / 1.12 / 3.37 | 211 kB/s | 4,500 |
+| 150 every 6 ticks + 1,500 every 60 ticks | **0.79** / 1.06 / 4.85 | 141 kB/s | 3,000 |
+| the sample: 1,000 wanderers across two workers (150 every 6 ticks, 850 every 60 at `Background`) | 0.32 and 0.29 | 57 + 53 kB/s | 2,348 |
+
+against 7–7.6 ms for 1,650 every-tick entities before (§2 point 1). The sample's crowd handed 1.9 walkers a second
+across the seam and held 74 ghosts.
+
+Client (layer `synthetic`, 200 active walkers updated every 6 ticks around the client, recovery once settled):
+
+| Also in view | Gateway tiers | Entry | kbit/s | Entries/s |
+|---|---|---|---:|---:|
+| — | default | default (46 B) | 608 | 1,558 |
+| 1,000 `Background` standing | default | default | 609 | 1,559 |
+| 1,000 `Background` walking, every 30 ticks | default | default | 664 | 1,706 |
+| 1,000 `Background` walking, every 30 ticks | crowd: near 25 m, every 20th tick to 60 m, every 60th beyond | default | 210 | 499 |
+| the same | crowd | yaw only, no velocity (32 B) | 154 | 503 |
+| the same | crowd | yaw only, half floats (24 B) | 121 | 501 |
+| 1,000 `Background` walking, every 60 ticks | sample: near 25 m, every 30th tick to 60 m, every 120th beyond | yaw only, half floats | **87** | 323 |
+
+The last row is the issue's client target (at most 100 kbit/s with about 200 active and 1,000 light entities in
+view, the rate falling off with distance) and is asserted by `ServerOwnedBandwidthTests.WithRelevanceTiers`. It
+needs all three levers: the worker's interval, the gateway's tiers set for a crowd, and entries that carry only
+what a walker needs. What is left is mostly the entry itself: 16 of its 24 bytes are the net id, epoch, container
+and field mask (§4, compact encoding). Bytes are application payload; a datagram's UDP and IP headers come on top.
+
+### What a game does
+
+- Give every server-owned character an `UpdateInterval` that matches what it is doing: every tick or every few
+  for the ones near players or in combat, 30–60 for the rest. Change it when the character's situation changes.
+- Give the numerous ones `RelevancePriority.Background` (or `Low`), and the few that matter from afar `High`.
+- Move by the `deltaTime` `NetworkTick` is given, and carry everything `NetworkTick` reads in
+  `WriteHandoverState`/`ReadHandoverState` (§3).
+- Sync only the transform fields a character needs on its root `NetworkTransform` (yaw only, no velocity, half
+  floats where the container is small enough).
+- Set the gateway's distance tiers for the game's own mix (`InterestNearRadius`, `InterestFarRadius`,
+  `InterestMidDivisor`, `InterestFarDivisor`).
+
+## 6. Running the measurements
 
 - Editor layer: `Unity -batchmode -projectPath <checkout> -runTests -testPlatform EditMode -testFilter
   Nebula.Tests.ServerOwnedCostMeasurementTests -testResults <file>`; the tests are `[Explicit]`, so an ordinary run

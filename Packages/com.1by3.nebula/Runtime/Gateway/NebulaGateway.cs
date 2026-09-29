@@ -195,6 +195,14 @@ namespace Nebula
             public uint LastStateTick;
             public bool HasStateTick;
             /// <summary>
+            /// The tick of the state entry before the newest one, when <see cref="HasPreviousStateTick"/>: what a
+            /// client's rate window is measured from (<see cref="RelevanceTiers.StartsWindow"/>).
+            /// </summary>
+            public uint PreviousStateTick;
+            public bool HasPreviousStateTick;
+            /// <summary>From the spawn's interest flags (<see cref="NetworkIdentity.RelevancePriority"/>): how each client's rate is picked.</summary>
+            public RelevancePriority Priority;
+            /// <summary>
             /// Absolute world position, cached and refreshed only when a pose or container changes. Interest asks
             /// for it several times per client per second; resolving the container chain each time would put the
             /// cost back into the loop interest management exists to take it out of.
@@ -1272,6 +1280,7 @@ namespace Nebula
             // InterestSettings.Validate guarantees is a real ceiling (>= InterestRadius > 0) and never "off".
             rec.RelevanceRadius = Math.Min(msg.RelevanceRadius, _interest.MaxRadius);
             rec.AlwaysRelevant = (msg.InterestFlags & EntityInterestFlags.AlwaysRelevant) != 0;
+            rec.Priority = RelevanceTiers.PriorityOf(msg.InterestFlags);
             rec.InterestGroup = msg.InterestGroup;
             IndexEntity(rec);
             if (msg.OwnerClientId != 0 && _clientsById.TryGetValue(msg.OwnerClientId, out var c))
@@ -1490,6 +1499,8 @@ namespace Nebula
             if (entry.Epoch < rec.Epoch) { _wsStale++; return false; }
             if (rec.OwnerWorkerIndex != w.Index) { _wsWrongOwner++; return false; }
             if (entry.Epoch == rec.Epoch && rec.HasStateTick && tick <= rec.LastStateTick) return false;
+            rec.HasPreviousStateTick = rec.HasStateTick;
+            rec.PreviousStateTick = rec.LastStateTick;
             rec.HasStateTick = true;
             rec.LastStateTick = tick;
             rec.Epoch = entry.Epoch;
@@ -1582,11 +1593,15 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Interest management, by distance from the client's pawn: every tick nearby, every few ticks at mid range,
-        /// a trickle far away (the client's interpolator bridges the gaps; see NebulaConfig). The rate is spread by
-        /// net id so a reduced-rate tier still sends a steady stream rather than a burst every Nth tick. A client
-        /// with no pawn yet (spectating the title screen) gets the far rate for everything; the client's own pawn
-        /// always gets every tick (it is what reconciliation compares against).
+        /// Interest management, by distance from the client's foci and the entity's priority: every update nearby,
+        /// one update per few ticks at mid range, a trickle far away, and none at all for a background entity
+        /// beyond the near band (the client's interpolator bridges the gaps; see <see cref="RelevanceTiers"/>). A
+        /// client sends one entry per window of its rate, the first entry of the entity that falls in a new window,
+        /// so the rate composes with a worker that sends the entity only every few ticks
+        /// (<see cref="NetworkIdentity.UpdateInterval"/>); the windows are staggered by net id so a reduced-rate tier
+        /// is a steady stream rather than a burst. A client with no focus in the entity's space gets the far rate;
+        /// the client's own pawn always gets every update (it is what reconciliation compares against). Reliable
+        /// entries never come here: they reach every observer.
         /// </summary>
         private bool WantsThisTick(EntityRecord rec, in EntityStateEntry entry, uint tick, ClientConn c)
         {
@@ -1603,12 +1618,9 @@ namespace Nebula
                     double d2 = foci[i].SqrDistanceTo(rec.AbsX, rec.AbsY, rec.AbsZ);
                     if (d2 < best) best = d2;
                 }
-            int divisor;
-            if (best == double.MaxValue) divisor = _interest.FarDivisor;
-            else if (best <= (double)_interest.NearRadius * _interest.NearRadius) return true;
-            else divisor = best <= (double)_interest.FarRadius * _interest.FarRadius ? _interest.MidDivisor : _interest.FarDivisor;
-            if (divisor <= 1) return true;
-            return (tick + (uint)(rec.NetId % (ulong)divisor)) % (uint)divisor == 0;
+            int band = RelevanceTiers.BandOf(best, _interest.NearRadius, _interest.FarRadius);
+            int divisor = RelevanceTiers.Divisor(rec.Priority, band, _interest.MidDivisor, _interest.FarDivisor);
+            return RelevanceTiers.StartsWindow(tick, rec.HasPreviousStateTick, rec.PreviousStateTick, rec.NetId, divisor);
         }
 
         private bool TryGetPawnPosition(ClientConn c, out Vector3 position)

@@ -62,19 +62,26 @@ public class ServerOwnedBandwidthTests
     /// server-owned entities, spread evenly over a disc of 110 m (inside the 120 m interest radius) and measure
     /// what it is sent over <paramref name="seconds"/>.
     /// </summary>
+    /// <param name="light">
+    /// Entities of a lighter tier, placed after the others: walking at <paramref name="lightInterval"/> with
+    /// <paramref name="lightPriority"/>, or standing when <paramref name="lightWalking"/> is false.
+    /// </param>
     public static Result RunCrowd(int walking, int idle, int updateInterval = 1, FakeWorker.RecoveryMode recovery = FakeWorker.RecoveryMode.EveryThirtyTicks,
-        Action<NebulaConfig>? configure = null, double seconds = 4.0, int seed = 359)
+        Action<NebulaConfig>? configure = null, double seconds = 4.0, int seed = 359,
+        int light = 0, int lightInterval = 1, RelevancePriority lightPriority = RelevancePriority.Normal, bool lightWalking = true,
+        RelevancePriority priority = RelevancePriority.Normal, TransformFields? fields = null)
     {
         using var fleet = new Fleet(1, configure: configure);
         var worker = fleet.Worker;
         worker.Recovery = recovery;
+        if (fields.HasValue) worker.WalkerFields = fields.Value;
         var centre = Vector3.zero;
         worker.PawnPlacement = _ => centre;
         var client = fleet.Connect(0, "watcher");
         Assert.That(fleet.Run(() => client.Join == JoinState.Joined, seconds: 10), Is.True, "the client joins");
 
         var random = new Random(seed);
-        int total = walking + idle;
+        int total = walking + idle + light;
         for (int i = 0; i < total; i++)
         {
             // Even over the disc's area, so the share in each distance tier is the share of its area.
@@ -82,11 +89,13 @@ public class ServerOwnedBandwidthTests
             double a = random.NextDouble() * Math.PI * 2;
             var local = new Vector3((float)(r * Math.Cos(a)), 0, (float)(r * Math.Sin(a)));
             ulong netId = (ulong)(500_000 + i);
-            worker.Spawn(netId, local);
-            if (i < walking)
+            bool isLight = i >= walking + idle;
+            worker.Spawn(netId, local, priority: isLight ? lightPriority : priority);
+            if (i < walking || (isLight && lightWalking))
             {
                 double heading = random.NextDouble() * Math.PI * 2;
-                var walker = worker.Walk(netId, new Vector3((float)Math.Cos(heading), 0, (float)Math.Sin(heading)) * 1.5f, radius: 110f, updateInterval: updateInterval);
+                var walker = worker.Walk(netId, new Vector3((float)Math.Cos(heading), 0, (float)Math.Sin(heading)) * 1.5f, radius: 110f,
+                    updateInterval: isLight ? lightInterval : updateInterval);
                 walker.Centre = centre;
             }
         }
@@ -112,7 +121,7 @@ public class ServerOwnedBandwidthTests
         return new Result(client.Replicas.Count, (client.BytesIn - bytes) / s, (client.StatesReceived - entries) / s, (client.MessagesIn - messages) / s);
     }
 
-    private static void Record(string label, int walking, int idle, int interval, FakeWorker.RecoveryMode recovery, Result r)
+    private static void Record(string label, int walking, int idle, int interval, object recovery, Result r)
     {
         _report?.Row(walking, idle, interval, recovery, label, r.Replicas, r.BytesPerSecond, r.KilobitsPerSecond, r.EntriesPerSecond, r.MessagesPerSecond);
         TestContext.Out.WriteLine($"[scale:synthetic] {label} walking={walking} idle={idle} interval={interval} recovery={recovery}: replicas={r.Replicas} {r.BytesPerSecond:0} B/s ({r.KilobitsPerSecond:0} kbit/s), {r.EntriesPerSecond:0} entries/s, {r.MessagesPerSecond:0} messages/s");
@@ -179,6 +188,52 @@ public class ServerOwnedBandwidthTests
         Action<NebulaConfig> stretched = c => { c.InterestNearRadius = 20f; c.InterestFarRadius = 60f; c.InterestMidDivisor = 30; c.InterestFarDivisor = 60; };
         Record("stretched", 200, 0, 1, FakeWorker.RecoveryMode.EveryThirtyTicks, RunCrowd(200, 0, configure: stretched));
         Record("stretched", 200, 0, 1, FakeWorker.RecoveryMode.OnceSettled, RunCrowd(200, 0, recovery: FakeWorker.RecoveryMode.OnceSettled, configure: stretched));
+    }
+
+    /// <summary>
+    /// The same crowds with relevance tiers (docs/server-owned-entities.md §5): the recovery entry once settled, as
+    /// <c>NetworkTransform</c> now sends it, active walkers updated 10 times a second
+    /// (<see cref="NetworkIdentity.UpdateInterval"/> 6), and the lighter tier as <see cref="RelevancePriority.Background"/>
+    /// updated twice a second, walking or standing. The last rows add the gateway's far tiers stretched as a game
+    /// with a crowd would set them.
+    /// </summary>
+    [Test]
+    public void WithRelevanceTiers()
+    {
+        const FakeWorker.RecoveryMode settled = FakeWorker.RecoveryMode.OnceSettled;
+        var r = RunCrowd(200, 0, updateInterval: 6, recovery: settled);
+        Record("default", 200, 0, 6, settled, r);
+
+        r = RunCrowd(200, 0, updateInterval: 6, recovery: settled, light: 1000, lightInterval: 30, lightPriority: RelevancePriority.Background, lightWalking: false);
+        Record("default +1000 background idle", 200, 0, 6, settled, r);
+        Assert.That(r.Replicas, Is.EqualTo(1201));
+
+        r = RunCrowd(200, 0, updateInterval: 6, recovery: settled, light: 1000, lightInterval: 30, lightPriority: RelevancePriority.Background, lightWalking: true);
+        Record("default +1000 background walking", 200, 0, 6, settled, r);
+        Assert.That(r.Replicas, Is.EqualTo(1201));
+
+        // The gateway's tiers set for a crowd rather than a firefight: a 25 m near band, 3 updates a second to 60 m,
+        // one beyond.
+        Action<NebulaConfig> crowd = c => { c.InterestNearRadius = 25f; c.InterestFarRadius = 60f; c.InterestMidDivisor = 20; c.InterestFarDivisor = 60; };
+        r = RunCrowd(200, 0, updateInterval: 6, recovery: settled, configure: crowd, light: 1000, lightInterval: 30, lightPriority: RelevancePriority.Background, lightWalking: true);
+        Record("crowd tiers +1000 background walking", 200, 0, 6, settled, r);
+        Assert.That(r.Replicas, Is.EqualTo(1201));
+
+        // And entries a walker needs: yaw only, no velocity (32 bytes), then the same in half floats (24 bytes).
+        var yaw = TransformFields.Position | TransformFields.RotationY;
+        r = RunCrowd(200, 0, updateInterval: 6, recovery: settled, configure: crowd, light: 1000, lightInterval: 30, lightPriority: RelevancePriority.Background, lightWalking: true, fields: yaw);
+        Record("crowd tiers, yaw only +1000 background walking", 200, 0, 6, settled, r);
+
+        r = RunCrowd(200, 0, updateInterval: 6, recovery: settled, configure: crowd, light: 1000, lightInterval: 30, lightPriority: RelevancePriority.Background, lightWalking: true, fields: yaw | TransformFields.Half);
+        Record("crowd tiers, yaw only, half +1000 background walking", 200, 0, 6, settled, r);
+
+        // The configuration the sample ships (docs/server-owned-entities.md §5): two updates a second to 60 m, one
+        // every two seconds beyond, and the background crowd updated once a second.
+        Action<NebulaConfig> sample = c => { c.InterestNearRadius = 25f; c.InterestFarRadius = 60f; c.InterestMidDivisor = 30; c.InterestFarDivisor = 120; };
+        r = RunCrowd(200, 0, updateInterval: 6, recovery: settled, configure: sample, light: 1000, lightInterval: 60, lightPriority: RelevancePriority.Background, lightWalking: true, fields: yaw | TransformFields.Half);
+        Record("sample tiers, yaw only, half +1000 background walking", 200, 0, 6, settled, r);
+        Assert.That(r.Replicas, Is.EqualTo(1201));
+        Assert.That(r.KilobitsPerSecond, Is.LessThanOrEqualTo(100.0), "200 active and 1,000 light entities in view within 100 kbit/s");
     }
 
     /// <summary>Idle entities cost nothing once spawned: 200 walking among 1,000 standing still.</summary>

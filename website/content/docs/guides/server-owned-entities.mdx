@@ -1,0 +1,143 @@
+---
+title: Run crowds of server-owned entities
+description: Keep hundreds of server-driven characters per worker within a tick budget and a client's bandwidth, with update intervals, relevance priorities and gateway distance tiers.
+---
+
+A server-owned entity is one no client owns: a townsperson, a trader, a patrol, an animal. A worker simulates it, and it crosses [worker seams](/docs/concepts/containers-and-handover) like any other entity. This page shows how to run hundreds of them on each worker without spending a player's worth of tick time and bandwidth on each one.
+
+By default Nebula updates every entity on every tick (60 times a second) and sends it to nearby clients at that rate. That suits a player in a firefight, not a crowd. Three settings change it:
+
+- **Update interval** (`NetworkIdentity.UpdateInterval`): how often the worker updates the entity.
+- **Relevance priority** (`NetworkIdentity.RelevancePriority`): how much its updates matter to clients, relative to its distance from them.
+- **Distance tiers** (`NebulaConfig.InterestNearRadius`, `InterestFarRadius`, `InterestMidDivisor`, `InterestFarDivisor`): the rates the gateway sends at, by distance.
+
+## Spawn server-owned entities
+
+Spawn each character on a worker with `NebulaWorker.SpawnServerDriven`. The container does not have to be one the worker owns: Nebula hands the entity to the container's owner on the next tick. Wait for `NebulaWorker.MeshReady` before spawning into another worker's container.
+
+```csharp title="CrowdSpawner.cs"
+var identity = NetworkPrefabs.Instantiate(NetworkPrefabs.IdOf(WalkerPrefab), position, Quaternion.identity, container.transform);
+identity.UpdateInterval = 60;                                // one update a second
+identity.RelevancePriority = RelevancePriority.Background;   // updated only near a client
+worker.SpawnServerDriven(identity, container);
+```
+
+`WalkerPrefab` is your own character prefab: a `NetworkIdentity`, a root `NetworkTransform`, and your behavior.
+
+## Carry what the character needs across a seam
+
+When a character walks into a container another worker owns, the new worker takes it over with only what the transform stream and the handover give it. Write everything your `NetworkTick` reads in `WriteHandoverState`, and read it back in `ReadHandoverState`: a target, a path index, a timer, a random seed.
+
+```csharp title="Walker.cs"
+public sealed class Walker : NetworkBehaviour
+{
+    public float Speed = 1.4f;
+    private Vector3 _target;
+    private float _wait;
+
+    public override void NetworkTick(uint tick, float deltaTime)
+    {
+        if (_wait > 0f) { _wait -= deltaTime; return; }
+        var step = Vector3.MoveTowards(transform.position, _target, Speed * deltaTime);
+        transform.position = step;
+    }
+
+    public override void WriteHandoverState(NetworkWriter writer)
+    {
+        writer.WriteVector3(_target);
+        writer.WriteFloat(_wait);
+    }
+
+    public override void ReadHandoverState(NetworkReader reader)
+    {
+        _target = reader.ReadVector3();
+        _wait = reader.ReadFloat();
+    }
+}
+```
+
+Move by the `deltaTime` that `NetworkTick` is given. With an update interval, that is the time since the entity's previous update, so the character covers the same ground at any interval.
+
+## Update a character less often
+
+`NetworkIdentity.UpdateInterval` is the number of ticks between two updates of the entity on the worker that has authority over it. `1`, the default, is every tick. `6` is 10 updates a second, `60` is one. `SetUpdateRate(10f)` sets it from a rate. The maximum is `255` ticks, a little over four seconds.
+
+On the ticks between two updates, the worker leaves the entity alone:
+
+| Work | Between updates |
+| --- | --- |
+| `NetworkTick` of its behaviors | Not called. |
+| Container, handover and ghost checks | Not made. |
+| Root transform updates | Not sent. A teleport and a change of container still go out on the next tick. |
+
+`NetworkVariable`s, maps, RPCs and sync-channel behaviors such as `NetworkAnimator` are still sent when they change. Characters with the same interval are spread over its ticks, so a crowd does not update all at once. The interval travels with the entity when it is handed to another worker.
+
+Set it on the worker that has authority, at spawn or at any time after. A game usually gives characters near players or in combat a short interval and the rest a long one, and changes it as their situation changes.
+
+## Tell clients which characters matter
+
+`NetworkIdentity.RelevancePriority` shifts the gateway's distance tiers for an entity, for every client:
+
+| Priority | Within `InterestNearRadius` | Up to `InterestFarRadius` | Beyond |
+| --- | --- | --- | --- |
+| `High` | every update | every update | `InterestMidDivisor` |
+| `Normal` (default) | every update | `InterestMidDivisor` | `InterestFarDivisor` |
+| `Low` | `InterestMidDivisor` | `InterestFarDivisor` | `InterestFarDivisor` |
+| `Background` | `InterestMidDivisor` | none | none |
+
+"Every update" is every update the worker sends, after the update interval. A divisor of N is at most one update in each window of N ticks.
+
+"None" stops a client's updates without despawning the entity on that client. The client keeps it where it was last told. It still receives the entity's reliable updates: the pose the entity comes to rest at, a teleport, and a change of container. Use `Background` for the many characters that matter only up close, and `High` for the few that matter from far away. A client's own pawn always receives every update.
+
+A priority change on the authority announces the entity to the gateways again, so change it when a character's role changes, not on every tick.
+
+## Send only the fields a character needs
+
+A root `NetworkTransform` with its defaults sends 46 bytes an update: position, a rotation of three angles, and velocity. A character that turns only about its vertical axis needs less:
+
+| Setting | Change | Saves |
+| --- | --- | --- |
+| `SyncRotAngleX`, `SyncRotAngleZ` | off | 8 bytes |
+| `SyncVelocity` | off, if your clients do not extrapolate | 6 bytes |
+| `UseHalfFloatPrecision` | on, if your containers are a few hundred meters across or smaller | 8 bytes |
+
+With all three, an update is 24 bytes. See [NetworkTransform](/docs/guides/network-transform).
+
+## Set the distance tiers for a crowd
+
+The default tiers send nearby entities every tick. For a world of characters rather than a firefight, slow them down in `NebulaConfig`:
+
+| Setting | Default | Crowd example |
+| --- | --- | --- |
+| `InterestNearRadius` | 30 m | 25 m |
+| `InterestFarRadius` | 80 m | 60 m |
+| `InterestMidDivisor` | 4 | 30 |
+| `InterestFarDivisor` | 12 | 120 |
+
+These settings apply to every entity on the mesh, players included. A player's own pawn always receives every update.
+
+## What it costs
+
+Measured on a Windows development machine, in the Editor:
+
+| Worker | Tick time |
+| --- | --- |
+| 1,650 walkers updated every tick | about 7 ms |
+| 150 walkers updated every 6 ticks, 1,500 every 60 ticks | about 0.8 ms |
+
+| A client among 200 active and 1,000 background walkers | Traffic |
+| --- | --- |
+| Default settings (active walkers every tick) | about 1.1 Mbit/s |
+| Active every 6 ticks, background every 60 ticks, crowd tiers, 24-byte updates | about 87 kbit/s |
+
+Traffic counts the application data only, not UDP and IP headers.
+
+## Try the sample
+
+The **Server-owned crowd** sample in the package (`Samples~/ServerOwnedCrowd`) spawns a thousand walkers in two tiers. Import it from the Package Manager. `CrowdSpawner` gives each walker its interval and priority, and `CrowdWalker` carries its state across seams.
+
+## Limits
+
+- The update interval slows a character's own updates. It does not slow your code outside `NetworkTick`, such as `Update` or coroutines.
+- A `Background` character that keeps walking is shown to distant clients where it last came to rest, until it stops again or they come within `InterestNearRadius`.
+- The distance tiers are the same for every client. A per-client choice, such as occlusion, belongs in a [gateway extension](/docs/guides/gateway-extensions) interest policy, which decides who holds an entity, not its rate.

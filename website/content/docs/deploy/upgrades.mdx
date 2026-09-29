@@ -11,13 +11,13 @@ A **mesh** is the group of processes running one game world. Its **gateway** acc
 
 | Connection | Current requirement |
 | --- | --- |
-| Native or browser client to gateway | Protocol `23` only: `HelloMsg.MinProtocolVersion` and `HelloMsg.ProtocolVersion` are both `23`. |
+| Native or browser client to gateway | Protocols `23` and `24`: `HelloMsg.MinProtocolVersion` is `23` and `HelloMsg.ProtocolVersion` is `24`. |
 | Gateway to worker, worker to worker | Exact protocol match. |
 
 The gateway records the client's accepted protocol version and returns it in `Welcome.negotiated_version`. A client outside the supported range receives `ProtocolUnsupported`.
 
 <Callout type="warn" title="Protocol changes need a separate rollout plan">
-A gateway of this version accepts clients of protocol 23 only. Protocol 22 added [forwarded token claims](/docs/guides/authentication#forward-token-claims-to-workers), between gateways and workers. Protocol 23 added deliberate session endings (a client's goodbye with `NebulaClient.Leave`, a server's kick, a notice that the server is shutting down), a recovering join hold and the owner-connected flag. Before 1.0 a protocol change may close the window to the new version, and this one does: a gateway of this version refuses clients built with protocol 22 or older, which includes clients of the `0.1.0-beta.0` release. Rebuild and ship those clients together with the servers. Replacing a gateway with one that uses a different protocol also prevents it from communicating with existing workers. These drain procedures do not provide a rolling upgrade across incompatible server protocols; plan a coordinated restart or a separate compatible mesh.
+A gateway of this version accepts clients of protocols 23 and 24. Protocol 24 added [relevance tiers](/docs/guides/server-owned-entities) and changed nothing a client reads, so clients built with protocol 23 keep working with it. Gateways and workers of a mesh must still run the same protocol. Protocol 22 added [forwarded token claims](/docs/guides/authentication#forward-token-claims-to-workers), between gateways and workers. Protocol 23 added deliberate session endings (a client's goodbye with `NebulaClient.Leave`, a server's kick, a notice that the server is shutting down), a recovering join hold and the owner-connected flag. Before 1.0 a protocol change may close the window to the new version, and protocol 23 did: a gateway of this version refuses clients built with protocol 22 or older, which includes clients of the `0.1.0-beta.0` release. Rebuild and ship those clients together with the servers. Replacing a gateway with one that uses a different protocol also prevents it from communicating with existing workers. These drain procedures do not provide a rolling upgrade across incompatible server protocols; plan a coordinated restart or a separate compatible mesh.
 </Callout>
 
 ### Configure game content compatibility

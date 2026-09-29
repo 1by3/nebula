@@ -1,17 +1,19 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 23, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 24, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 23. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 24. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `23`. Every `Hello` carries the version its sender speaks.
+The current protocol version is `24`. Every `Hello` carries the version its sender speaks.
 
-A gateway accepts clients of protocol 23 only: `HelloMsg.MinProtocolVersion` and `HelloMsg.ProtocolVersion` are both `23`. Gateway-to-worker and worker-to-worker connections MUST match protocol `23` exactly. Before 1.0 a protocol change may close the client window to the new version, and protocol 23 does.
+A gateway accepts clients of protocols 23 and 24: `HelloMsg.MinProtocolVersion` is `23` and `HelloMsg.ProtocolVersion` is `24`. Gateway-to-worker and worker-to-worker connections MUST match protocol `24` exactly. Before 1.0 a protocol change may close the client window to the new version; protocol 23 did, and protocol 24 does not.
+
+Protocol 24 added [relevance tiers](/docs/guides/server-owned-entities). Nothing a client reads changed. The spawn body's `interest_flags` carry the entity's relevance priority in bits 1 and 2, and `AuthorityTransfer` gains a trailing update section with the entity's update interval.
 
 Protocol 22 added forwarded token claims (see [Forward token claims to workers](/docs/guides/authentication#forward-token-claims-to-workers)). Nothing a client sends or receives changed. Between gateways and workers, `SpawnPlayer` gains a trailing `claims` section. Between workers, `EntitySpawnBody` gains a trailing `owner_claims` section, which the entity body nested in `AuthorityTransfer` always carries, so the layout of `AuthorityTransfer` changed.
 
@@ -131,7 +133,7 @@ Positions and rotations are relative to this container unless a behavior's docum
 | `EntityFlags.ServerDriven` | 2 | The entity has no client owner and is driven by a worker. |
 | `EntityFlags.OwnerDisconnected` | 4 | The owning client is disconnected and the worker is keeping the entity for the reclaim grace. The worker announces the entity again, in place, when the bit changes. |
 
-Unknown flag bits are reserved. A version 23 sender MUST write them as zero.
+Unknown flag bits are reserved. A version 24 sender MUST write them as zero.
 
 ## Message registry
 
@@ -185,7 +187,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 49 | `AuthorityRpcReply` | `W-W` | Reliable ordered | [`AuthorityCallReply`](#authority-calls) |
 | 50 | `GhostMaps` | `W-W` | Reliable ordered | [`EntityMapsBody`](#replicated-maps) |
 
-IDs not listed in this table are reserved. A version 23 sender MUST NOT use them.
+IDs not listed in this table are reserved. A version 24 sender MUST NOT use them.
 
 ## Message layouts
 
@@ -283,7 +285,7 @@ EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
 
 `cost_weight` is what the game says the entity costs to simulate, as a multiplier on its category weight in `CostWeights` (see [Container cost](/docs/guides/orchestrator-and-dashboard#container-cost)). It travels so the worker an entity hands over to reports the same cost for it. `0` means "no opinion": the receiver keeps the weight it already has.
 
-`relevance_radius`, `interest_flags` and `interest_group` come from the entity's prefab and tell a gateway that has no prefabs how to scope the entity: `relevance_radius` is how far clients hear about it in meters (`0` means the mesh default, and the gateway clamps the value to `InterestMaxRadius`), `interest_flags` bit 0 (`AlwaysRelevant`) puts it in every client's set, and `interest_group` is a number a game's interest policy may filter on. Other flag bits are reserved.
+`relevance_radius`, `interest_flags` and `interest_group` come from the entity's prefab and tell a gateway that has no prefabs how to scope the entity: `relevance_radius` is how far clients hear about it in meters (`0` means the mesh default, and the gateway clamps the value to `InterestMaxRadius`), `interest_flags` bit 0 (`AlwaysRelevant`) puts it in every client's set, bits 1 and 2 hold the entity's relevance priority (`0` Normal, `1` High, `2` Low, `3` Background) that the gateway uses to pick each client's update rate, and `interest_group` is a number a game's interest policy may filter on. Other flag bits are reserved. A client ignores the priority bits.
 
 `cohesion_group` is the entity's [cohesion group](/docs/guides/cohesion), or `0` for none: the game's declaration that every entity carrying the same non-zero value is simulated by one worker and moves between workers as a unit. Nebula only carries the number; the ids are the game's own. Because the field travels in `EntitySpawn`, `GhostSpawn` and `AuthorityTransfer`, every process holding a copy of the entity knows the group.
 
@@ -553,7 +555,9 @@ AuthorityTransfer :=
   u16 interest_gateway_count,
   string interest_gateway_key[interest_gateway_count],
   [u8 crossing,
-   [u8 session_orphan, f32 session_reclaim_remaining]]
+   [u8 session_orphan, f32 session_reclaim_remaining,
+    [u8 extent_source, vec3 extent_center, vec3 extent_size,
+     [u8 update_interval]]]]
 ```
 
 `crossing` is an optional trailing byte. The sender writes it when it is `1`, and also, as `0`, when the session section follows. It means the sender is handing the entity over for a [physics frame](/docs/guides/physics-frames) crossing that it may not perform itself, because the receiver simulates the frame's carrier. The entity's pose is still in the sender's coordinates. The receiver crosses it on its next tick and does not hand it back for a short hold (30 ticks), so a lagging copy of the frame on the sender cannot return it at once.
@@ -563,6 +567,12 @@ AuthorityTransfer :=
 `session_generation` and `session_gateway` describe the owner's session as the sender knew it: the connection generation and the gateway key `<gateway_id>#<incarnation>` of the gateway that holds the session, so the receiving worker accepts input from that gateway at once. They are `0` and empty for an entity no client owns.
 
 The optional session section is written only when the owner's session is waiting to be reclaimed on the sender. `session_orphan` is `1` when the gateway reported that the client disconnected, `2` when the gateway's link to the sender dropped, and `3` when the session is over (a `DespawnPlayer` with `end_now`), in which case the receiver removes the pawn as soon as it holds it. `session_reclaim_remaining` is the number of seconds left of the `SessionReclaimSeconds` grace on the sender. It is a duration, not a timestamp, because the two workers' clocks differ. The receiving worker keeps the session waiting for that long, then removes the pawn unless the player has reconnected. For `2`, a receiver that has a link to the same gateway treats the session as connected. A receiver treats a message that ends before the section as a connected session.
+
+The optional extent section carries an [extent](/docs/concepts/containers-and-handover#ghost-a-large-entity-by-its-extent) the entity was given at runtime: `extent_source` is `0` (none), `1` (explicit box) or `2` (colliders), and the box is in the entity's local space. A sender that writes the section only to reach the update section writes `extent_source` `255` and zero vectors, and the receiver keeps its own copy's extent.
+
+The optional update section carries the entity's `UpdateInterval`, in ticks (`2` to `255`). The sender writes it when the interval is above `1`, and writes the sections before it as empty. A receiver that reads no update section sets the interval to `1`.
+
+A writer includes each optional section when it, or any section after it, holds something. A reader stops at the end of the message and treats every section it did not read as empty.
 
 The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 20. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
 
