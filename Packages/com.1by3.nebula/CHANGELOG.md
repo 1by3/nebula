@@ -4,6 +4,8 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-beta.1] - 2026-09-29
+
 Wire protocol 24, and the window is 23..24. Protocol 24 (relevance tiers) changes nothing a client reads, so clients of protocol 23 keep working; gateways and workers of a mesh must still run the same build. Protocol 23 closed the window to itself: a gateway admits no client older than 23, including clients of `0.1.0-beta.0`, with `ProtocolUnsupported`. Rebuild clients against this version. Before 1.0 a protocol bump may close the window to the new version, and this release does (`docs/compatibility-policy.md`). Protocol 21 added replicated maps, protocol 22 forwarded token claims, and protocol 23 deliberate session endings, a recovering join hold and the owner-connected flag; none of the three was released under a tag. Gateways and workers of a mesh must still run the same build.
 
 ### Added

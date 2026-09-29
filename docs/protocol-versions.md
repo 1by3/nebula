@@ -36,10 +36,7 @@ Protocol numbers are read from `HelloMsg.ProtocolVersion` at each release tag (`
 | v0.1.0-alpha.30 | 18 | scoped worlds and interaction contracts; **the floor the policy starts from** |
 | v0.1.0-alpha.31 – alpha.32 | 19 | `DynamicContainer` folded into `Container` (NEB-264, `docs/container-tree.md` D21); **not additive**, so the minimum is 19 too |
 | v0.1.0-beta.0 | 20 | sync audiences (NEB-321, `docs/sync-audience.md` D10); **additive**, so the minimum stays 19 |
-| (none) | 21 | replicated maps (NEB-335, `docs/replicated-collections.md` D12); **additive**, and the window moved to 20..21; never released under a tag |
-| (none) | 22 | forwarded token claims (NEB-357); nothing a client sees changed, and the window moved to 21..22; never released under a tag |
-| (none) | 23 | deliberate session endings, recovering hold, owner-connected flag (NEB-354, NEB-355, NEB-356); the window is **closed to 23..23** (pre-1.0, see `docs/compatibility-policy.md` D1) |
-| unreleased | 24 | relevance tiers (NEB-359, `docs/server-owned-entities.md` D5); **additive** for clients, so the window is 23..24 |
+| v0.1.0-beta.1 | 24 | relevance tiers (NEB-359, `docs/server-owned-entities.md` D5); **additive** for clients, so the window is 23..24. 21 (replicated maps, NEB-335), 22 (forwarded token claims, NEB-357) and 23 (deliberate session endings, recovering hold, owner-connected flag, NEB-354 to NEB-356; **closes the window to 23..23**, pre-1.0, see `docs/compatibility-policy.md` D1) were never released under a tag |
 
 Every step in that table was breaking, because until now there was no window to be additive inside: a gateway
 required an exact match, and `HelloMsg.Write` could not even announce a version other than the one it was built
