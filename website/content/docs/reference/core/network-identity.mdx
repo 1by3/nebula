@@ -86,6 +86,14 @@ public const uint SyncKeyframeInterval = 30;
 
 Every this many ticks a dirty sync behavior writes a keyframe instead of a delta, and an unreliable one writes a keyframe whether it is dirty or not. Keyframes heal lost packets and are what the gateway hands to late joiners.
 
+### SyncSettleTicks [#syncsettleticks]
+
+```csharp
+public const uint SyncSettleTicks = SyncKeyframeInterval;
+```
+
+Ticks a distance-rated sync behavior ([`NetworkBehaviour.SyncDistanceRating`](/docs/reference/core/network-behaviour#syncdistancerating)) must go without a change before it sends the reliable keyframe every client that holds the entity is given, near or far.
+
 ## Properties
 
 ### UpdateInterval [#updateinterval]

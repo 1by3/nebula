@@ -71,6 +71,22 @@ public static int Divisor(RelevancePriority priority, int band, int midDivisor, 
 
 Ticks per update window for an entity of `priority` in distance band `band`: 1 is every update, [`Quiet`](#quiet) is none (see [`RelevancePriority`](/docs/reference/interest/relevance-priority)).
 
+### Resolve [#resolve]
+
+```csharp
+public static RelevanceTierBands Resolve(RelevancePriority priority, in RelevanceTierBands own, float nearRadius, float farRadius, int midDivisor, int farDivisor);
+```
+
+The bands a priority uses under the global tiers `nearRadius`, `farRadius`, `midDivisor` and `farDivisor`: the priority's own when it has an [`RelevanceTierBands.Override`](/docs/reference/interest/relevance-tier-bands#override), otherwise the global ones shifted as [`Divisor`](#divisor) says. [`RelevancePriority.Normal`](/docs/reference/interest/relevance-priority#normal) always uses the global tiers: they are its tiers.
+
+### DivisorAt [#divisorat]
+
+```csharp
+public static int DivisorAt(in RelevanceTierBands bands, double sqrDistance);
+```
+
+Ticks per update window for a client at squared distance `sqrDistance` from an entity whose priority resolved to `bands` ([`Resolve`](#resolve)); [`Quiet`](#quiet) is none.
+
 ### StartsWindow [#startswindow]
 
 ```csharp

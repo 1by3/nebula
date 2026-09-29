@@ -169,6 +169,30 @@ public int MidDivisor;
 public int FarDivisor;
 ```
 
+### HighTiers [#hightiers]
+
+```csharp
+public RelevanceTierBands HighTiers;
+```
+
+[`RelevancePriority.High`](/docs/reference/interest/relevance-priority#high)'s own distance tiers; without an override it gets the global tiers shifted one better (see [`TiersFor`](#tiersfor)).
+
+### LowTiers [#lowtiers]
+
+```csharp
+public RelevanceTierBands LowTiers;
+```
+
+[`RelevancePriority.Low`](/docs/reference/interest/relevance-priority#low)'s own distance tiers; without an override, the global tiers one worse.
+
+### BackgroundTiers [#backgroundtiers]
+
+```csharp
+public RelevanceTierBands BackgroundTiers;
+```
+
+[`RelevancePriority.Background`](/docs/reference/interest/relevance-priority#background)'s own distance tiers; without an override, the middle band's rate near and none beyond.
+
 ### ClientLoadRadiusCells [#clientloadradiuscells]
 
 ```csharp
@@ -228,6 +252,14 @@ public float EvalInterval { get; }
 Seconds between two evaluations of one client.
 
 ## Methods
+
+### TiersFor [#tiersfor]
+
+```csharp
+public RelevanceTierBands TiersFor(RelevancePriority priority);
+```
+
+The distance tiers an entity of `priority` is sent by: its own when the config overrides them ([`HighTiers`](#hightiers), [`LowTiers`](#lowtiers), [`BackgroundTiers`](#backgroundtiers)), otherwise the global ones ([`NearRadius`](#nearradius), [`FarRadius`](#farradius), [`MidDivisor`](#middivisor), [`FarDivisor`](#fardivisor)) shifted as [`RelevancePriority`](/docs/reference/interest/relevance-priority) describes. [`RelevancePriority.Normal`](/docs/reference/interest/relevance-priority#normal) is always the global tiers.
 
 ### NearCells [#nearcells]
 

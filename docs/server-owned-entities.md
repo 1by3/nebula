@@ -1,6 +1,6 @@
 # Many server-owned entities — measurements and design (NEB-359)
 
-Status: measurements (§1–§3), relevance tiers (§5) and dormancy (§6) landed; protocol 24.
+Status: measurements (§1–§3), relevance tiers (§5), dormancy (§6), and distance tiers per priority with distance-rated sync state (§7) landed; protocol 24 (§7 needed no bump).
 Harness: `Tests/EditMode/CrowdMesh.cs` (two real workers), `Tests/EditMode/ServerOwnedCostMeasurementTests.cs`
 (`[Explicit]`, writes `Logs/scale/editor-server-owned.csv`), `Services~/Nebula.Services.Tests/ServerOwnedBandwidthTests.cs`
 (`[Category("Scale")]` + `Soak`, writes `Logs/scale/synthetic-server-owned-bandwidth.csv`). Conformance scenario 34
@@ -9,7 +9,9 @@ Harness: `Tests/EditMode/CrowdMesh.cs` (two real workers), `Tests/EditMode/Serve
 `Samples~/ServerOwnedCrowd`. Relevance tiers: `Runtime/Interest/RelevanceTiers.cs`, `NetworkIdentity.UpdateInterval`,
 `NetworkIdentity.RelevancePriority`; tests `RelevanceTiersTests` (both places), `RelevanceTierWorkerTests`,
 conformance scenario 35 (`ConformanceRelevanceTierTests`, service tests). Dormancy: `NetworkIdentity.Sleep`, `Wake`,
-`IsDormant`, `SleepWhenUnobserved`; conformance scenario 36 (`ConformanceDormancyTests`).
+`IsDormant`, `SleepWhenUnobserved`; conformance scenario 36 (`ConformanceDormancyTests`). Tiers per priority and rated sync
+state: `NebulaConfig.InterestHighTiers`/`InterestLowTiers`/`InterestBackgroundTiers` (`RelevanceTierBands`),
+`NetworkBehaviour.SyncDistanceRating`; conformance scenario 38 (`ConformancePriorityTierTests`), `SyncDistanceRatingTests`.
 
 ## 0. Problem
 
@@ -271,7 +273,9 @@ and field mask (§4, compact encoding). Bytes are application payload; a datagra
 - Sync only the transform fields a character needs on its root `NetworkTransform` (yaw only, no velocity, half
   floats where the container is small enough).
 - Set the gateway's distance tiers for the game's own mix (`InterestNearRadius`, `InterestFarRadius`,
-  `InterestMidDivisor`, `InterestFarDivisor`).
+  `InterestMidDivisor`, `InterestFarDivisor`), and give the crowd's priorities tiers of their own, so players keep
+  theirs (§7, D10).
+- Rate the sync state of behaviours a far client needs only the gist of (§7, D11).
 
 ## 6. Dormancy (built)
 
@@ -345,7 +349,107 @@ scenario 36 (`ConformanceDormancyTests`, 4 tests), `ConformanceHandoverWireTests
 - A sleeping entity that does not wake on interest stays asleep however close a player comes: `Wake` is the
   game's to call.
 
-## 7. Running the measurements
+## 7. Distance tiers per priority, and distance-rated sync state (built)
+
+A game measured the gap §5 left (200 NPCs in one client's view, each with `UpdateInterval` 2–6 and
+`RelevancePriority.Low`): 535 kbit/s with the default tiers, 295 in a camp scene. Crowd tiers (near 25 m, every 30th tick
+to 60 m, every 120th beyond) would have brought it to 116–144 kbit/s, but the tiers were one global setting, so they
+would also have slowed every player and ship beyond 25 m to 2 Hz. And a swarm, one entity carrying its members' offsets
+as sync state, was sent that state as often to a client 100 m away as to one beside it: sync state was not rated by
+distance at all.
+
+### D10. A priority can have tiers of its own
+
+`NebulaConfig.InterestHighTiers`, `InterestLowTiers` and `InterestBackgroundTiers` are `RelevanceTierBands`: `Override`,
+`NearRadius`, `FarRadius`, and a divisor per band, `NearDivisor`, `MidDivisor`, `FarDivisor` (ticks per update window, as
+everywhere in the tiers; 0 is none). With `Override` off, the default, the priority keeps the shift of the global tiers
+in D3, so a config that sets none of this sends exactly what it did. `Normal` has no override: the global tiers
+(`InterestNearRadius`, `InterestFarRadius`, `InterestMidDivisor`, `InterestFarDivisor`) are its tiers, which is what lets
+a game slow a crowd and not its players.
+
+`InterestSettings.TiersFor(priority)` resolves a priority's bands (`RelevanceTiers.Resolve`: its own, or the shifted
+global ones), and the gateway resolves all four once, when it reads its config. Per client and entry it picks the
+bands by the record's priority and takes the divisor at the client's distance (`RelevanceTiers.DivisorAt`); the window
+rule (D4) and the client's own pawn (always every update) are unchanged. `InterestSettings.Validate` repairs an
+override's fields as it does the global ones (radii not negative, in order, inside `InterestRadius`; divisors not
+negative), naming the field, e.g. `InterestLowTiers.FarRadius`. The fields are exported to the standalone services with
+the rest of the config.
+
+Nothing on the wire changed: the priority already rides the spawn's interest flags (D3), and only the gateway reads the
+tiers.
+
+### D11. Sync state can follow the entity's tier
+
+`NetworkBehaviour.SyncDistanceRating` (configuration, read once at spawn like `SyncAudience`):
+
+| Value | For a behaviour that | A client in the every-update band | A client further away |
+|---|---|---|---|
+| `Off` (default) | — | every chunk | every chunk |
+| `Keyframes` | writes deltas | every chunk | keyframes only, one per window of its rate |
+| `WholeState` | writes its whole state every time (the worker passes `full: true`; every chunk is flagged `Full`) | every chunk | one chunk per window of its rate |
+
+"Every-update band" is the band whose divisor is 1 for the entity's priority at that client's distance; the client's own
+pawn is always in it. A rated chunk carries `SyncStateCodec.ChunkFlags.DistanceRated` (bit 4), so the standalone gateway
+needs no prefab.
+
+**Why keyframes only.** A delta is relative to the state before it; a client that skipped one cannot apply the next.
+So the gateway keeps, per client and entity, a bit per rated behaviour (the first 64 behaviours; later ones are sent as
+if unrated) that says the client has missed a chunk. A client that is behind gets no delta until a keyframe has caught
+it up; a client beyond its every-update band gets only keyframes, and only the one that opens a new window of its
+rate (`RelevanceTiers.StartsWindow`, measured from the previous message that carried a rated keyframe, per stream).
+The bit is cleared by any keyframe the client is sent, by a spawn the worker sends in place (a handover), and when the
+entity leaves the client's set; a spawn from the gateway's cache marks the client behind on each rated behaviour whose
+cached keyframe is older than the newest sync state relayed, since the deltas after it are not in the spawn.
+
+**Nothing is lost, only coalesced.** A rated behaviour that has written a chunk while dirty owes one keyframe once it
+settles: `NetworkIdentity.SyncSettleTicks` (30) after its last change, on a tick it is not dirty, the worker writes a
+`Full | Settled | DistanceRated` chunk on the reliable stream, whatever the behaviour's own delivery (a sequenced
+behaviour's settle is not also written on the sequenced stream). A change pushes it back, as the recovery entry of D2.
+The gateway sends a `Settled` chunk to every client that holds the entity, near or far or quiet, and it clears the
+client's missed bit. So a far client ends with the latest state once the state stops changing, and a client that comes
+closer while it still changes gets the next keyframe (at most `SyncKeyframeInterval` ticks for a sequenced behaviour,
+which writes one then whether dirty or not; for a reliable one, the next keyframe it writes while dirty, or its settle)
+and every chunk after it. The debt is decided from state `ClearDirty` advances, so every destination of a tick is
+written the same chunks; a sleeping entity stays in the publish pass until its settle has gone
+(`NetworkIdentity.SyncSettlesPending`).
+
+**What it is not for.** Events a client must see each of (an animator trigger) are lost to a far client by design:
+keep them in an RPC or an unrated behaviour. `NetworkVariable`s are not rated: a variables message is the whole
+variable block, sent reliably on each change, and rating it would need the gateway to hold and flush a pending copy
+per client; a game with high-rate state puts it in sync state. The root `NetworkTransform` has its own stream, rated by
+D3/D10 already, and ignores the setting.
+
+**On the wire.** Two chunk-flag bits, meaningful to the gateway only; clients and ghost workers read `Full` and
+`Cleared` as before and ignore them, and the gateway's cached keyframes keep only the audience bits. No protocol bump:
+a protocol-24 gateway relays rated chunks to everyone as it always did, and a new gateway with an older worker sees no
+rated chunk. Workers and gateways of a mesh must still run the same build.
+
+### What it costs now
+
+Client (layer `synthetic`, `ServerOwnedBandwidthTests.WithPriorityTiers`): 200 active walkers at `Low` updated every 6
+ticks and 1,000 at `Background` every 60, walking, recovery once settled, plus another player: a `Normal` entity updated
+every tick, 40 m from the client (the middle band of the default tiers).
+
+| Tiers | Entry | kbit/s | Entries/s | The player's entries/s |
+|---|---|---:|---:|---:|
+| default | default (46 B) | 455 | 1,150 | 14.9 |
+| global crowd tiers (near 25 m, every 30th tick to 60 m, every 120th beyond) | default | 87 | 168 | **2.0** |
+| `InterestLowTiers` 25 m / 60 m, 1 / 30 / 120; `InterestBackgroundTiers` 25 m / 60 m, 30 / 0 / 0 | default | 150 | 340 | 15.0 |
+| the same | yaw only, half floats (24 B) | **90** | 340 | **15.0** |
+| the same + 20 swarms at `Low`, a 200-byte sync blob every 6 ticks, unrated | yaw only, half | 459 | 365 (+200 sync messages/s) | 14.9 |
+| the same + 20 swarms, `WholeState` | yaw only, half | **139** | 364 (+24 sync messages/s) | 15.0 |
+
+The fourth row is the issue's client target (at most 100 kbit/s with about 200 active and 1,000 light entities in view)
+with a player unaffected, asserted by the test. The global crowd tiers are cheaper because they also slow `Low` inside
+25 m (the shift makes its near band the middle divisor); a game that wants that sets `NearDivisor` above 1. The swarm
+rows are the second gap: rated, a far client gets one 200-byte blob every 30 or 120 ticks instead of ten a second.
+Tests: conformance scenario 38 (`ConformancePriorityTierTests`, 4 tests: rates per priority and band with `Normal`
+unchanged, the shift without overrides, rated sync state per band with its settle keyframe, a client coming closer),
+`SyncDistanceRatingTests` (the worker: flags, whole state, the settle keyframe, a sequenced behaviour settling reliably,
+a sleeper staying in the publish pass, the root transform), `RelevanceTiersTests` and `InterestSettingsTests` (both
+places).
+
+## 8. Running the measurements
 
 - Editor layer: `Unity -batchmode -projectPath <checkout> -runTests -testPlatform EditMode -testFilter
   Nebula.Tests.ServerOwnedCostMeasurementTests -testResults <file>`; the tests are `[Explicit]`, so an ordinary run

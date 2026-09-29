@@ -89,6 +89,8 @@ Lists the supported chunk flags values.
 | <span id="audiencecustom"></span>`AudienceCustom` | `3 << 1` | See `AudienceOwner`: the chunk is for the member set the authority sent ([`SyncAudienceMsg`](/docs/reference/protocol/sync-audience-msg)). |
 | <span id="audiencemask"></span>`AudienceMask` | `3 << 1` | The two audience bits. |
 | <span id="cleared"></span>`Cleared` | `1 << 3` | Gateway to client, protocol 20 and later: this client left the behavior's audience. The chunk is empty. The client calls `NetworkBehaviour.OnSyncStateCleared` instead of `ReadSyncState`. |
+| <span id="distancerated"></span>`DistanceRated` | `1 << 4` | Worker to gateway: the behavior's state follows the entity's distance tier ([`SyncDistanceRating`](/docs/reference/core/sync-distance-rating), `docs/server-owned-entities.md` D11). The gateway sends such a chunk to a client beyond its every-update band only as a keyframe, one per window of the client's rate. Clients ignore the bit. |
+| <span id="settled"></span>`Settled` | `1 << 5` | Worker to gateway, with `DistanceRated` and `Full`, on the reliable stream: the keyframe a rated behavior writes once it has stopped changing. The gateway sends it to every client that holds the entity, whatever its distance, so a coalesced client ends with the latest state. Clients ignore the bit. |
 
 ### ChunkVisitor [#chunkvisitor]
 

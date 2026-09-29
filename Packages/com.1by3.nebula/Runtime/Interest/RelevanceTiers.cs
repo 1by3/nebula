@@ -16,6 +16,12 @@ namespace Nebula
     /// have slowed. "None" stops a client's updates without despawning the entity there: the client keeps it where it
     /// was last told, and still receives its reliable entries (where it came to rest, a teleport, a container change).
     /// A client's own pawn is always sent every update.
+    /// <para>
+    /// That table is the shift a priority gets by default. <see cref="High"/>, <see cref="Low"/> and
+    /// <see cref="Background"/> can instead have tiers of their own (<see cref="NebulaConfig.InterestHighTiers"/>,
+    /// <see cref="NebulaConfig.InterestLowTiers"/>, <see cref="NebulaConfig.InterestBackgroundTiers"/>), so a crowd can be
+    /// slowed while players, at <see cref="Normal"/>, keep the global tiers.
+    /// </para>
     /// </summary>
     public enum RelevancePriority : byte
     {
@@ -30,6 +36,49 @@ namespace Nebula
         /// where the entity comes to rest. For the many entities that matter only up close: townsfolk, ambient life.
         /// </summary>
         Background = 3,
+    }
+
+    /// <summary>
+    /// A priority's own distance tiers (<see cref="NebulaConfig.InterestLowTiers"/> and its siblings,
+    /// <c>docs/server-owned-entities.md</c> D10): two radii and a divisor for each of the three bands they make. When
+    /// <see cref="Override"/> is false the priority keeps the shift of the global tiers that
+    /// <see cref="RelevancePriority"/> describes, and the other fields are ignored, so a config that sets none of
+    /// this behaves exactly as before.
+    /// <para>
+    /// A divisor is ticks per update window, as everywhere in the tiers: 1 is every update the worker sends, 4 one
+    /// update in each window of 4 ticks, and 0 none at all (the client keeps the entity where it was last told, and
+    /// is still sent its reliable entries).
+    /// </para>
+    /// </summary>
+    [System.Serializable]
+    public struct RelevanceTierBands
+    {
+        /// <summary>Use these bands for the priority instead of shifting the global ones.</summary>
+        public bool Override;
+        /// <summary>Metres from a client's nearest focus within which an entity is in the near band.</summary>
+        public float NearRadius;
+        /// <summary>Metres within which it is in the middle band; beyond it, the far band.</summary>
+        public float FarRadius;
+        /// <summary>Ticks per update window in the near band (1 = every update, 0 = none).</summary>
+        public int NearDivisor;
+        /// <summary>Ticks per update window in the middle band (0 = none).</summary>
+        public int MidDivisor;
+        /// <summary>Ticks per update window in the far band, and for a client with no focus in the entity's space (0 = none).</summary>
+        public int FarDivisor;
+
+        /// <summary>Bands set explicitly (<see cref="Override"/> true).</summary>
+        public static RelevanceTierBands Of(float nearRadius, float farRadius, int nearDivisor, int midDivisor, int farDivisor) => new RelevanceTierBands
+        {
+            Override = true, NearRadius = nearRadius, FarRadius = farRadius,
+            NearDivisor = nearDivisor, MidDivisor = midDivisor, FarDivisor = farDivisor,
+        };
+
+        /// <summary>The divisor of distance band <paramref name="band"/> (<see cref="RelevanceTiers.Near"/>, <see cref="RelevanceTiers.Middle"/>, <see cref="RelevanceTiers.Far"/>).</summary>
+        public int DivisorOf(int band) => band == RelevanceTiers.Near ? NearDivisor : band == RelevanceTiers.Middle ? MidDivisor : FarDivisor;
+
+        public override string ToString() => Override
+            ? $"near {NearRadius} m /{NearDivisor}, to {FarRadius} m /{MidDivisor}, beyond /{FarDivisor}"
+            : "the global tiers, shifted";
     }
 
     /// <summary>The arithmetic of <see cref="RelevancePriority"/>: pure, shared by the gateway, the worker and the tests.</summary>
@@ -80,6 +129,37 @@ namespace Nebula
                 case RelevancePriority.Background: return band == Near ? mid : Quiet;
                 default: return band == Near ? 1 : band == Middle ? mid : far;
             }
+        }
+
+        /// <summary>
+        /// The bands a priority uses under the global tiers <paramref name="nearRadius"/>, <paramref name="farRadius"/>,
+        /// <paramref name="midDivisor"/> and <paramref name="farDivisor"/>: the priority's own when it has an
+        /// <see cref="RelevanceTierBands.Override"/>, otherwise the global ones shifted as
+        /// <see cref="Divisor(RelevancePriority, int, int, int)"/> says. <see cref="RelevancePriority.Normal"/> always
+        /// uses the global tiers: they are its tiers.
+        /// </summary>
+        public static RelevanceTierBands Resolve(RelevancePriority priority, in RelevanceTierBands own, float nearRadius, float farRadius, int midDivisor, int farDivisor)
+        {
+            if (own.Override && priority != RelevancePriority.Normal) return own;
+            return new RelevanceTierBands
+            {
+                Override = false,
+                NearRadius = nearRadius,
+                FarRadius = farRadius,
+                NearDivisor = Divisor(priority, Near, midDivisor, farDivisor),
+                MidDivisor = Divisor(priority, Middle, midDivisor, farDivisor),
+                FarDivisor = Divisor(priority, Far, midDivisor, farDivisor),
+            };
+        }
+
+        /// <summary>
+        /// Ticks per update window for a client at squared distance <paramref name="sqrDistance"/> from an entity whose
+        /// priority resolved to <paramref name="bands"/> (<see cref="Resolve"/>); <see cref="Quiet"/> is none.
+        /// </summary>
+        public static int DivisorAt(in RelevanceTierBands bands, double sqrDistance)
+        {
+            int d = bands.DivisorOf(BandOf(sqrDistance, bands.NearRadius, bands.FarRadius));
+            return d < 0 ? 1 : d;
         }
 
         /// <summary>

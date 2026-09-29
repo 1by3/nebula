@@ -31,6 +31,11 @@ does, and which ones are active, are game decisions (`docs/server-owned-entities
    | `InterestMidDivisor` | 4 | 30 |
    | `InterestFarDivisor` | 12 | 120 |
 
+   These apply to every entity, players included. In a game with players, leave them at their defaults and give the
+   crowd's priorities tiers of their own instead: `InterestBackgroundTiers` for the light walkers and, if you give the
+   active ones `RelevancePriority.Low`, `InterestLowTiers` (`docs/server-owned-entities.md` §7, and "Set the distance
+   tiers for a crowd" in the guide).
+
 With those settings and the defaults above, a thousand walkers across two workers cost each worker about 0.3 ms a
 tick in the Editor, and a client standing among 200 active and 1,000 light walkers is sent about 87 kbit/s
 (`docs/server-owned-entities.md` §5).

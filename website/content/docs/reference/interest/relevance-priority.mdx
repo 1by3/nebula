@@ -19,6 +19,8 @@ How much an entity's transform updates matter to the clients that hold it, relat
 
 "Every update" is every update the worker sends, which [`NetworkIdentity.UpdateInterval`](/docs/reference/core/network-identity#updateinterval) may already have slowed. "None" stops a client's updates without despawning the entity there: the client keeps it where it was last told, and still receives its reliable entries (where it came to rest, a teleport, a container change). A client's own pawn is always sent every update.
 
+That table is the shift a priority gets by default. `High`, `Low` and `Background` can instead have tiers of their own ([`NebulaConfig.InterestHighTiers`](/docs/reference/core/nebula-config#interesthightiers), [`NebulaConfig.InterestLowTiers`](/docs/reference/core/nebula-config#interestlowtiers), [`NebulaConfig.InterestBackgroundTiers`](/docs/reference/core/nebula-config#interestbackgroundtiers)), so a crowd can be slowed while players, at `Normal`, keep the global tiers.
+
 ## Members
 
 | Name | Value | Description |
