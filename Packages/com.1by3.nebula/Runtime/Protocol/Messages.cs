@@ -185,18 +185,21 @@ namespace Nebula
         None = 0,
         /// <summary>The entity is in every client's set, whatever the distance (<see cref="NetworkIdentity.AlwaysRelevant"/>).</summary>
         AlwaysRelevant = 1,
+        // Bits 1-2 carry the entity's RelevancePriority (protocol 24; RelevanceTiers.PriorityMask). A sender that sets
+        // none sends Normal, which is what every entity was before them.
     }
 
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 23;
+        public const ushort ProtocolVersion = 24;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 23, the same as <see cref="ProtocolVersion"/>. Before 1.0 a
-        /// protocol bump may close the window to the new version only, and protocol 23 (deliberate session endings, a
-        /// recovering join hold, the owner-connected flag) does: clients of 22 and older are refused with
-        /// <see cref="JoinRejectReason.ProtocolUnsupported"/> and must be rebuilt. Protocol 22 added forwarded token
-        /// claims (<see cref="PlayerClaims"/>), between gateways and workers only. Gateway-to-worker and
+        /// The oldest client protocol the gateway accepts: 23, one below <see cref="ProtocolVersion"/>. Protocol 24
+        /// (relevance tiers, <c>docs/server-owned-entities.md</c>) changes nothing a client reads: the spawn's interest
+        /// flags gain priority bits a client ignores, and the handover gains a trailing update section between
+        /// workers. Protocol 23 (deliberate session endings, a recovering join hold, the owner-connected flag) closed
+        /// the window to itself, so clients of 22 and older are refused with
+        /// <see cref="JoinRejectReason.ProtocolUnsupported"/> and must be rebuilt. Gateway-to-worker and
         /// worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
         /// </summary>
         public const ushort MinProtocolVersion = 23;
@@ -744,7 +747,7 @@ namespace Nebula
                 Vars = vars,
                 State = state,
                 RelevanceRadius = id.RelevanceRadius,
-                InterestFlags = id.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None,
+                InterestFlags = RelevanceTiers.WithPriority(id.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None, id.RelevancePriority),
                 InterestGroup = id.InterestGroup,
                 CohesionGroup = id.CohesionGroup,
                 CostWeight = id.EffectiveCostWeight,
@@ -1739,6 +1742,15 @@ namespace Nebula
         public Vector3 ExtentCenter;
         /// <summary>Size of the extent box in the entity's local space.</summary>
         public Vector3 ExtentSize;
+        /// <summary>
+        /// The entity's <see cref="NetworkIdentity.UpdateInterval"/> (protocol 24), a trailing optional section after
+        /// the extent section, written when it is above 1. 0 when absent, which the receiver reads as 1. A sender
+        /// that writes it with no extent to carry writes the extent section as "none" (<see cref="NoExtent"/>).
+        /// </summary>
+        public byte UpdateInterval;
+
+        /// <summary>The extent section's source byte when the section is there only to reach the ones after it.</summary>
+        private const byte NoExtent = 0xFF;
 
         public void Write(NetworkWriter w)
         {
@@ -1756,14 +1768,17 @@ namespace Nebula
             bool orphan = SessionOrphan != PlayerSessions.OrphanKind.None;
             // Each trailing section is written when it or any section after it holds something, so a reader that
             // knows fewer sections stops where it always did and one that knows more reads their "none" values.
-            if (Crossing || orphan || CarriesExtent) w.WriteByte(Crossing ? (byte)1 : (byte)0);
-            if (!orphan && !CarriesExtent) return;
+            bool update = UpdateInterval > 1;
+            if (Crossing || orphan || CarriesExtent || update) w.WriteByte(Crossing ? (byte)1 : (byte)0);
+            if (!orphan && !CarriesExtent && !update) return;
             w.WriteByte((byte)SessionOrphan);
             w.WriteFloat(orphan ? SessionReclaimRemaining : 0f);
-            if (!CarriesExtent) return;
-            w.WriteByte((byte)ExtentSource);
-            w.WriteVector3(ExtentCenter);
-            w.WriteVector3(ExtentSize);
+            if (!CarriesExtent && !update) return;
+            w.WriteByte(CarriesExtent ? (byte)ExtentSource : NoExtent);
+            w.WriteVector3(CarriesExtent ? ExtentCenter : Vector3.zero);
+            w.WriteVector3(CarriesExtent ? ExtentSize : Vector3.zero);
+            if (!update) return;
+            w.WriteByte(UpdateInterval);
         }
 
         public static AuthorityTransferMsg Read(NetworkReader r)
@@ -1787,11 +1802,14 @@ namespace Nebula
             }
             if (r.Remaining > 0)
             {
-                msg.CarriesExtent = true;
-                msg.ExtentSource = (EntityExtentSource)r.ReadByte();
+                byte source = r.ReadByte();
+                msg.CarriesExtent = source != NoExtent;
+                msg.ExtentSource = msg.CarriesExtent ? (EntityExtentSource)source : default;
                 msg.ExtentCenter = r.ReadVector3();
                 msg.ExtentSize = r.ReadVector3();
+                if (!msg.CarriesExtent) msg.ExtentCenter = msg.ExtentSize = Vector3.zero;
             }
+            if (r.Remaining > 0) msg.UpdateInterval = r.ReadByte();
             return msg;
         }
 

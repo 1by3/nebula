@@ -17,6 +17,7 @@
     "guides/network-behaviour",
     "guides/network-map",
     "guides/spawning",
+    "guides/server-owned-entities",
     "guides/scene-entities",
     "guides/rpcs",
     "guides/serialization",

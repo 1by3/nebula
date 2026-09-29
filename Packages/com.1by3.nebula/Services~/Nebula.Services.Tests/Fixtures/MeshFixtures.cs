@@ -28,6 +28,8 @@ public sealed class FakeWorker : IDisposable
         public float RelevanceRadius;
         public bool AlwaysRelevant;
         public byte InterestGroup;
+        /// <summary>Carried in the spawn's interest flags, as a worker sends <see cref="NetworkIdentity.RelevancePriority"/>.</summary>
+        public RelevancePriority Priority;
         public ulong Region;
         public InterestPlacement Placement;
         /// <summary>The entity's variables as its spawn carries them: the last block <see cref="SendVars"/> sent.</summary>
@@ -154,12 +156,13 @@ public sealed class FakeWorker : IDisposable
     // ------------------------------------------------------------------------------------------- content
 
     /// <summary>Add an authoritative entity and publish it to whoever already subscribes where it sits.</summary>
-    public Entity Spawn(ulong netId, Vector3 local, ContainerRef? container = null, ulong owner = 0, float relevanceRadius = 0, bool alwaysRelevant = false, byte group = 0)
+    public Entity Spawn(ulong netId, Vector3 local, ContainerRef? container = null, ulong owner = 0, float relevanceRadius = 0, bool alwaysRelevant = false, byte group = 0,
+        RelevancePriority priority = RelevancePriority.Normal)
     {
         var e = new Entity
         {
             NetId = netId, Local = local, Container = container ?? PawnContainer, OwnerClientId = owner,
-            RelevanceRadius = relevanceRadius, AlwaysRelevant = alwaysRelevant, InterestGroup = group,
+            RelevanceRadius = relevanceRadius, AlwaysRelevant = alwaysRelevant, InterestGroup = group, Priority = priority,
         };
         _entities[netId] = e;
         // Passengers may already name this id as their carrier: until it existed they sat on their own
@@ -478,6 +481,12 @@ public sealed class FakeWorker : IDisposable
 
     public readonly Dictionary<ulong, Walker> Walkers = new();
     public RecoveryMode Recovery = RecoveryMode.EveryThirtyTicks;
+    /// <summary>
+    /// The fields each walker entry carries, as a root <c>NetworkTransform</c>'s settings select them: by default
+    /// position, Euler rotation and velocity (46 bytes). A game that syncs only yaw, no velocity, or half floats
+    /// sends less (docs/server-owned-entities.md §5).
+    /// </summary>
+    public TransformFields WalkerFields = TransformFields.Position | TransformFields.Rotation | TransformFields.Velocity;
     private readonly List<(Entity Entity, bool Reliable)> _walkerEntries = new();
     private readonly NetworkWriter _walkerBatch = new();
 
@@ -531,7 +540,7 @@ public sealed class FakeWorker : IDisposable
                 var entry = new EntityStateEntry
                 {
                     NetId = e.NetId, Epoch = e.Epoch, Container = e.Container,
-                    Fields = TransformFields.Position | TransformFields.Rotation | TransformFields.Velocity | (reliable ? TransformFields.Reliable : 0),
+                    Fields = WalkerFields | (reliable ? TransformFields.Reliable : 0),
                     LocalPosition = e.Local, LocalRotation = Quaternion.identity, LocalScale = Vector3.one, Velocity = w.Velocity,
                 };
                 if (reliable)
@@ -982,7 +991,7 @@ public sealed class FakeWorker : IDisposable
             Epoch = e.Epoch, Container = e.Container, LocalPosition = e.Local,
             LocalRotation = Quaternion.identity, LocalScale = Vector3.one,
             RelevanceRadius = e.RelevanceRadius,
-            InterestFlags = e.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None,
+            InterestFlags = RelevanceTiers.WithPriority(e.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None, e.Priority),
             InterestGroup = e.InterestGroup, Vars = e.Vars, State = e.State,
             AudienceGeneration = e.AudienceGeneration, Audience = e.Audience, Maps = e.Maps,
         }.Write(_w, MsgId.EntitySpawn);
@@ -1101,6 +1110,8 @@ public sealed class FakeClient : IDisposable
     /// <summary>The last packet this client could not parse, if any. A test that loses messages looks here first.</summary>
     public string LastError = "";
     public long BytesIn;
+    /// <summary>World-state entries received per entity, and how many of them came reliable (docs/server-owned-entities.md).</summary>
+    public readonly Dictionary<ulong, int> StatesOf = new(), ReliableStatesOf = new();
     /// <summary>Transport messages received (one reliable batch or one sequenced world-state packet each).</summary>
     public long MessagesIn;
 
@@ -1295,7 +1306,14 @@ public sealed class FakeClient : IDisposable
             case MsgId.WorldState:
             {
                 WorldStateMsg.ReadHeader(r, out _, out _, out ushort count);
-                for (int i = 0; i < count; i++) { var entry = EntityStateEntry.Read(r); Note(entry.NetId); Named(entry.NetId, entry.Container); StatesReceived++; }
+                for (int i = 0; i < count; i++)
+                {
+                    var entry = EntityStateEntry.Read(r);
+                    Note(entry.NetId); Named(entry.NetId, entry.Container); StatesReceived++;
+                    StatesOf.TryGetValue(entry.NetId, out int n);
+                    StatesOf[entry.NetId] = n + 1;
+                    if (entry.Reliable) { ReliableStatesOf.TryGetValue(entry.NetId, out int k); ReliableStatesOf[entry.NetId] = k + 1; }
+                }
                 break;
             }
             case MsgId.EntityVars:

@@ -66,7 +66,7 @@ Thresholds compare against what was last sent, not the previous tick's value, so
 
 Nebula represents root position and rotation in the container frame. World-space child updates also travel in container-local coordinates; local-space child updates use their parent frame. Buffered samples retain their container reference so passengers follow a moving carrier. `SetState` and `Teleport` accept world values unless `InLocalSpace` is enabled.
 
-Root transforms send only when selected values cross a threshold, followed by a reliable recovery sample within 30 ticks. Recovery bypasses distance filtering, so a lost or filtered final update cannot leave an object at its old pose. Once settled, the root stops sending. Unreliable child transforms still send periodic keyframes. Reliable child updates carry complete selected state so late joiners receive the latest values.
+Root transforms send only when selected values cross a threshold. Once a root has not changed for 30 ticks (`NetworkTransform.SettleTicks`), it sends one reliable recovery sample with the pose it came to rest at, and then stops sending. A root that keeps moving sends no recovery samples. Recovery bypasses distance filtering, so a lost or filtered final update cannot leave an object at its old pose. On an entity with an [update interval](/docs/guides/server-owned-entities), the root is captured only on its update ticks; a teleport still goes out on the next tick. Unreliable child transforms still send periodic keyframes. Reliable child updates carry complete selected state so late joiners receive the latest values.
 
 ### Precision
 
@@ -209,7 +209,7 @@ Between keyframes an unreliable transform sends deltas; a lost delta shows as a 
 | `PositionMaxInterpolationTime`, `RotationMaxInterpolationTime`, `ScaleMaxInterpolationTime` | Same names; used by `SmoothDamp` only. |
 | `SlerpPosition` | Same. |
 | `UseHalfFloatPrecision`, `UseQuaternionSynchronization`, `UseQuaternionCompression` | Same names. |
-| `UseUnreliableDeltas` | Unreliable ordinary updates; root recovery within 30 ticks and periodic child keyframes. |
+| `UseUnreliableDeltas` | Unreliable ordinary updates; one root recovery sample 30 ticks after the root stops changing, and periodic child keyframes. |
 | `Teleport(pos, rot, scale)`, `SetState(pos?, rot?, scale?, teleport)` | Same signatures. |
 | `OnAuthorityPushTransformState(ref NetworkTransformState)` | `OnAuthorityPushTransformState(ref TransformState)`. |
 | `OnNetworkTransformStateUpdated(ref NetworkTransformState)` | `OnNetworkTransformStateUpdated(ref TransformState)`. |

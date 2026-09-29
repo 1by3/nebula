@@ -123,6 +123,14 @@ public Vector3 ExtentSize;
 
 Size of the extent box in the entity's local space.
 
+### UpdateInterval [#updateinterval]
+
+```csharp
+public byte UpdateInterval;
+```
+
+The entity's [`NetworkIdentity.UpdateInterval`](/docs/reference/core/network-identity#updateinterval) (protocol 24), a trailing optional section after the extent section, written when it is above 1. 0 when absent, which the receiver reads as 1. A sender that writes it with no extent to carry writes the extent section as "none" ([`NoExtent`](#noextent)).
+
 ## Methods
 
 ### Write [#write]

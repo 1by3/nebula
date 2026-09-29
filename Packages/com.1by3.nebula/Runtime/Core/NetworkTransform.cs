@@ -153,6 +153,17 @@ namespace Nebula
             }
         }
 
+        /// <summary>A teleport is waiting to be sent: it goes out on the next tick, whatever the entity's update interval.</summary>
+        internal bool TeleportPending => _teleportPending;
+
+        /// <summary>
+        /// Ticks without a change after which the root sends one reliable entry with where it came to rest
+        /// (<c>docs/server-owned-entities.md</c> D2). Every change pushes it back, so an entity that keeps moving sends
+        /// none: its unreliable entries follow one another, and it is only the last one, which nothing would resend,
+        /// that has to arrive.
+        /// </summary>
+        public const uint SettleTicks = NetworkIdentity.SyncKeyframeInterval;
+
         internal bool CaptureRoot(uint tick, out EntityStateEntry entry)
         {
             entry = EntityStateEntry.Snapshot(Identity);
@@ -181,12 +192,14 @@ namespace Nebula
                 Quaternion.Angle(r, _rootSent.LocalRotation) > RotAngleThreshold ||
                 (s - _rootSent.LocalScale).sqrMagnitude > ScaleThreshold * ScaleThreshold ||
                 ((entry.Fields & TransformFields.Velocity) != 0 && (entry.Velocity - _rootSent.Velocity).sqrMagnitude > 0.000001f);
-            bool recovery = _rootRecovery && tick >= _rootRecoveryTick;
+            // Settled: nothing changed for SettleTicks since the last entry. A change on this tick is not settling,
+            // however long ago the last one was (an entity updated every UpdateInterval ticks), and pushes it back.
+            bool recovery = _rootRecovery && !changed && tick >= _rootRecoveryTick;
             if (!changed && !recovery && !_teleportPending) return false;
             _rootSent = entry;
             _rootHasSent = true;
             if (recovery) _rootRecovery = false;
-            else if (!_rootRecovery) { _rootRecovery = true; _rootRecoveryTick = tick + NetworkIdentity.SyncKeyframeInterval; }
+            else { _rootRecovery = true; _rootRecoveryTick = tick + SettleTicks; }
             if (!UseUnreliableDeltas || recovery || _teleportPending || (entry.Fields & TransformFields.Axes) == 0) entry.Fields |= TransformFields.Reliable;
             if (_teleportPending) entry.Fields |= TransformFields.Teleport;
             _teleportPending = false;

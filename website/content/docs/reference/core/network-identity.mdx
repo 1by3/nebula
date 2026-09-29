@@ -54,6 +54,14 @@ public byte InterestGroup;
 
 A number your interest policy can filter on (team markers, quest objects). Nebula only carries it; 0 means no group.
 
+### MaxUpdateInterval [#maxupdateinterval]
+
+```csharp
+public const int MaxUpdateInterval = 255;
+```
+
+The longest [`UpdateInterval`](#updateinterval): 255 ticks, a little over four seconds.
+
 ### CostWeight [#costweight]
 
 ```csharp
@@ -79,6 +87,24 @@ public const uint SyncKeyframeInterval = 30;
 Every this many ticks a dirty sync behavior writes a keyframe instead of a delta, and an unreliable one writes a keyframe whether it is dirty or not. Keyframes heal lost packets and are what the gateway hands to late joiners.
 
 ## Properties
+
+### UpdateInterval [#updateinterval]
+
+```csharp
+public int UpdateInterval { get; set; }
+```
+
+Ticks between two updates of this entity on the worker that has authority over it: 1 (the default) is every tick. On the other ticks Nebula leaves the entity alone: its behaviours' [`NetworkBehaviour.NetworkTick`](/docs/reference/core/network-behaviour#networktick) is not called, its container, handover and ghost band are not checked, and no transform entry is sent for it. On its update ticks `NetworkTick` gets the time since the previous one as its `deltaTime`. Entities with the same interval are spread over the ticks of the interval by net id, so a crowd does not update all at once.
+
+Variables, maps, RPCs and sync-channel behaviours are still sent when they change, and a teleport or a change of container is sent at once. Set it on the authority, at spawn or at any time after; it travels with a handover. Clamped to 1..[`MaxUpdateInterval`](#maxupdateinterval). See `docs/server-owned-entities.md` D1.
+
+### RelevancePriority [#relevancepriority]
+
+```csharp
+public RelevancePriority RelevancePriority { get; set; }
+```
+
+How much this entity's transform updates matter to the clients that hold it, relative to its distance from each of them (`Nebula.RelevancePriority`). The gateway uses it to pick each client's update rate; it never changes who holds the entity. It travels with the entity's spawn, so a change on the authority re-announces the entity to the gateways that have it: change it when the entity's role changes, not every tick.
 
 ### EffectiveCostWeight [#effectivecostweight]
 
@@ -446,6 +472,14 @@ public event Action<Container, Container> ContainerChanged;
 ```
 
 ## Methods
+
+### SetUpdateRate [#setupdaterate]
+
+```csharp
+public void SetUpdateRate(float updatesPerSecond);
+```
+
+Set [`UpdateInterval`](#updateinterval) from a rate in updates per second: 60 is every tick, 10 every 6th tick, 0.5 every 120th. Rounded to whole ticks and clamped as [`UpdateInterval`](#updateinterval) is.
 
 ### SetCostWeight [#setcostweight]
 
