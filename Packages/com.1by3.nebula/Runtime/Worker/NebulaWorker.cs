@@ -2379,6 +2379,8 @@ namespace Nebula
         {
             e.Epoch = epoch;
             e.OwnerClientId = msg.OwnerClientId;
+            // The driver travels with a driven entity: the worker that takes it runs the same driver's input (D5).
+            e.DriverClientId = msg.OwnerClientId == 0 ? msg.DriverClientId : 0;
             e.OwnerIdentity = msg.OwnerIdentity ?? "";
             e.OwnerClaims = msg.OwnerClientId != 0 && msg.OwnerClaims != null ? msg.OwnerClaims : PlayerClaims.Empty;
             e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
@@ -2644,11 +2646,12 @@ namespace Nebula
                 // A sleeping entity sends only what the game changed on it while it sleeps, to whoever watches it now.
                 if (e.IsDormant && !e.HasPendingChanges) continue;
                 ulong mask = e.IsDormant ? PublishMaskOf(e) : MaskOfEntity(e.NetId);
-                if (e.RelevanceDirty)
+                if (e.RelevanceDirty || e.DriverDirty)
                 {
-                    // Its priority changed: the gateways that have it take the new one from a fresh spawn, which they
-                    // apply in place (docs/server-owned-entities.md D3).
+                    // Its priority or its driver changed: the gateways that have it take the new one from a fresh
+                    // spawn, which they apply in place (docs/server-owned-entities.md D3, docs/driven-vehicles.md D3).
                     e.RelevanceDirty = false;
+                    e.DriverDirty = false;
                     SendSpawnToMask(e, mask);
                 }
                 if (e.VarsDirty && (mask != 0 || _unmaskedGateways.Count > 0))
@@ -2694,11 +2697,15 @@ namespace Nebula
                 // Every tick, even when the owner's input for it had not arrived and the last one was repeated: the
                 // owner must still see what the worker actually simulated, and the lead report is what lets it fix
                 // late inputs. (Sending only on consumed ticks left a late owner blind until it got lucky.)
-                if (e.OwnerClientId != 0 && e.Predicted != null)
+                // The client in control: a pawn's owner, or a driven entity's driver (docs/driven-vehicles.md D2).
+                ulong controller = e.OwnerClientId != 0 ? e.OwnerClientId : e.DriverClientId;
+                if (controller != 0 && e.Predicted != null)
                 {
-                    // Owner state is for one client, so it goes to that client's gateway only.
-                    var session = SessionGatewayOf(e);
-                    if (session == null) continue;
+                    // Owner state is for one client, so it goes to that client's gateway only. A driver whose session
+                    // this worker does not know (its pawn lives on another worker) is reached through every gateway
+                    // linked here: only the one that has that client passes it on.
+                    var session = SessionGatewayOf(controller);
+                    if (session == null && (e.OwnerClientId != 0 || _gateways.Count == 0)) continue;
                     _scratch.Reset();
                     e.Predicted.WriteOwnerState(_scratch);
                     _writer.Reset();
@@ -2709,14 +2716,15 @@ namespace Nebula
                         Tick = tick,
                         LastInputTick = e.Predicted.LastProcessedInputTick,
                         InputLead = e.Predicted.TakeInputLead(),
-                        OwnerClientId = e.OwnerClientId,
+                        OwnerClientId = controller,
                         Container = e.ContainerRef,
                         State = _scratch.ToArray(),
                     }.Write(_writer);
                     // Owner state has exactly one destination client, so it is the gateway's relay cost rather
                     // than replication: it grows with players in the container, not with entities in it.
                     _costMeter.AddGateway(e.Container, _writer.Length);
-                    Send(session, Delivery.Sequenced);
+                    if (session != null) Send(session, Delivery.Sequenced);
+                    else for (int g = 0; g < _gateways.Count; g++) Send(_gateways[g], Delivery.Sequenced);
                 }
             }
         }
@@ -3028,6 +3036,7 @@ namespace Nebula
         {
             _pendingPlayerSpawns.Remove(clientId);
             _sessions.Remove(clientId);
+            ReleaseDriverSeats(clientId);
             _playerIdentities.Remove(clientId);
             _playerClaims.Remove(clientId);
             var e = FindPlayer(clientId);
@@ -3079,6 +3088,54 @@ namespace Nebula
                 _writer.Reset();
                 msg.Write(_writer, MsgId.ForwardInput);
                 Send(peer, Delivery.Sequenced);
+            }
+        }
+
+        /// <summary>
+        /// A driver's inputs for an entity it drives (docs/driven-vehicles.md): simulated here when this worker has
+        /// authority and the sender is the driver it knows, forwarded to the worker it handed the entity to otherwise.
+        /// A gateway only forwards them from the driver its spawn named, so a sender that is not the driver here is one
+        /// the seat changed hands from a moment ago: dropped.
+        /// </summary>
+        private void OnDriveInput(Peer from, DriveInputMsg msg)
+        {
+            // The session is not claimed here (this worker may never hold the driver's pawn); a known one must still
+            // speak through the gateway that sent this.
+            if (from.Role == PeerRole.Gateway && _sessions.TryGet(msg.ClientId, out var session) && session.Gateway != from.Key) return;
+            var e = Find(msg.NetId);
+            if (e == null || msg.Frames == null) return;
+            if (e.HasAuthority)
+            {
+                if (e.Predicted == null || e.DriverClientId != msg.ClientId || e.OwnerClientId != 0) return;
+                uint newest = 0;
+                foreach (var f in msg.Frames)
+                {
+                    _reader.Set(new ArraySegment<byte>(f.Payload));
+                    e.Predicted.ServerReceiveInput(f.Tick, _reader);
+                    if (f.Tick > newest) newest = f.Tick;
+                }
+                if (newest != 0) e.Predicted.NoteInputLead((long)newest - CurrentTick);
+            }
+            else if (_handedOff.TryGetValue(e.NetId, out var to) && _workerPeersById.TryGetValue(to, out var peer) && peer != from)
+            {
+                _writer.Reset();
+                msg.Write(_writer);
+                Send(peer, Delivery.Sequenced);
+            }
+        }
+
+        /// <summary>A player left: whatever it drove on this worker goes back to the worker's own input.</summary>
+        private void ReleaseDriverSeats(ulong clientId)
+        {
+            if (clientId == 0) return;
+            for (int i = 0; i < _authoritative.Count; i++)
+            {
+                var e = _authoritative[i];
+                if (e != null && e.DriverClientId == clientId)
+                {
+                    NebulaLog.Info($"session {clientId} ended; {e} is no longer driven");
+                    e.SetDriver(0);
+                }
             }
         }
 
@@ -3499,6 +3556,7 @@ namespace Nebula
                 case MsgId.DespawnPlayer: OnDespawnPlayer(peer, DespawnPlayerMsg.Read(r)); break;
                 case MsgId.ClientInput:
                 case MsgId.ForwardInput: OnClientInput(peer, ClientInputMsg.Read(r)); break;
+                case MsgId.DriveInput: OnDriveInput(peer, DriveInputMsg.Read(r)); break;
                 case MsgId.ServerRpc: OnServerRpc(peer, EntityRpcMsg.Read(r)); break;
                 case MsgId.InterestSubscribe: OnInterestSubscribe(peer, InterestSubscribeMsg.Read(r)); break;
                 case MsgId.GhostSpawn: OnGhostSpawn(peer, EntitySpawnMsg.Read(r)); break;

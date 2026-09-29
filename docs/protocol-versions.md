@@ -6,7 +6,7 @@ The policy itself, and why it is shaped this way, is `docs/compatibility-policy.
 ## The rule, in one paragraph
 
 A **client** may talk to a **gateway** that accepts its protocol: the accepted range is
-`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 23..24; protocols 18 to 22 are not supported. Anything outside that is refused
+`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 24..25; protocols 18 to 23 are not supported. Anything outside that is refused
 with `JoinRejectReason.ProtocolUnsupported` and the gateway's range, so the client can tell "update the game"
 from "this server has not been upgraded yet". A **gateway, worker and orchestrator of one mesh** must speak the
 **same** protocol, exactly; a mismatch is refused with a logged reason. The game's own content version is a
@@ -39,7 +39,8 @@ Protocol numbers are read from `HelloMsg.ProtocolVersion` at each release tag (`
 | (none) | 21 | replicated maps (NEB-335, `docs/replicated-collections.md` D12); **additive**, and the window moved to 20..21; never released under a tag |
 | (none) | 22 | forwarded token claims (NEB-357); nothing a client sees changed, and the window moved to 21..22; never released under a tag |
 | (none) | 23 | deliberate session endings, recovering hold, owner-connected flag (NEB-354, NEB-355, NEB-356); the window is **closed to 23..23** (pre-1.0, see `docs/compatibility-policy.md` D1) |
-| unreleased | 24 | relevance tiers (NEB-359, `docs/server-owned-entities.md` D5); **additive** for clients, so the window is 23..24 |
+| (none) | 24 | relevance tiers (NEB-359, `docs/server-owned-entities.md` D5); **additive** for clients, so the window was 23..24; never released under a tag |
+| unreleased | 25 | driven vehicles (NEB-361, `docs/driven-vehicles.md` §4); **additive** for clients, so the window is 24..25 |
 
 Every step in that table was breaking, because until now there was no window to be additive inside: a gateway
 required an exact match, and `HelloMsg.Write` could not even announce a version other than the one it was built
@@ -97,6 +98,15 @@ above 1, then a dormancy byte and the entity's `SleepWhenUnobserved` when either
 written only to reach it carries source byte `0xFF`, "no extent". The window is 23..24,
 so the protocol-23 recording now replays as N-1 through the frozen protocol-23 decoder, and
 `protocol-24-handshake.json` was recorded for the next bump.
+
+25 is additive for clients: a new message a client sends only while it drives something (`DriveInput`, 25), and a
+trailing `driver_client_id` in the spawn body, after `owner_claims`, that a protocol-24 client never reads. A sender that
+writes the driver writes the earlier trailing sections too, empty, and the entity body nested in `AuthorityTransfer`
+always carries it, so the handover's later fields moved between workers, which must match exactly. The window is 24..25:
+`MinProtocolVersion` is 24 and a protocol-23 client is now refused. The protocol-24 recording replays as N-1 through a
+frozen protocol-24 decoder (`Fixtures/Protocol24GatewayDecoder.cs`, the protocol-23 one with its literals raised: 24 only
+added flag bits in a byte it skips), the protocol-23 recording and decoder were removed, and `protocol-25-handshake.json`
+was recorded for the next bump.
 
 ## Bumping the protocol
 

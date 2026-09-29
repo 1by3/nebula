@@ -876,7 +876,8 @@ namespace Nebula
             if (client.PawnNetId != 0) _alwaysScratch.Add(client.PawnNetId);
             // Everything this client owns is in its set at full rate, wherever it is: it is the thing the client's
             // own prediction reconciles against.
-            foreach (var rec in _entities.Values) if (rec.OwnerClientId == client.ClientId) _alwaysScratch.Add(rec.NetId);
+            // So is what it drives, for the same reason (docs/driven-vehicles.md D3).
+            foreach (var rec in _entities.Values) if (rec.OwnerClientId == client.ClientId || rec.DriverClientId == client.ClientId) _alwaysScratch.Add(rec.NetId);
             var extras = client.Query.Entities;
             for (int i = 0; i < extras.Count; i++) _alwaysScratch.Add(extras[i]);
             client.Interest.SetAlways(_alwaysScratch);

@@ -137,6 +137,11 @@ namespace Nebula
                 NebulaLog.Warn($"{this}: a client owns it, so it cannot sleep; Sleep ignored");
                 return;
             }
+            if (DriverClientId != 0)
+            {
+                NebulaLog.Warn($"{this}: client {DriverClientId} drives it, so it cannot sleep; Sleep ignored");
+                return;
+            }
             if (IsSpawned && !HasAuthority)
             {
                 NebulaLog.Warn($"{this}: Sleep called on a copy without authority; ignored");
@@ -214,7 +219,7 @@ namespace Nebula
         }
 
         /// <summary>Something changed on it that the per-entity publish pass must send (variables, maps, sync state, audiences, priority).</summary>
-        internal bool HasPendingChanges => VarsDirty || MapsDirty || SyncDirty || AudienceChangedThisTick || RelevanceDirty || SyncSettlesPending > 0;
+        internal bool HasPendingChanges => VarsDirty || MapsDirty || SyncDirty || AudienceChangedThisTick || RelevanceDirty || DriverDirty || SyncSettlesPending > 0;
 
         /// <summary>
         /// Distance-rated sync behaviors that changed and have not yet sent the reliable keyframe they owe once they
@@ -246,7 +251,8 @@ namespace Nebula
             if (_pendingDormancy != PendingDormancy.None) ApplyPendingDormancy();
             // Asleep: nothing is due until it wakes (docs/server-owned-entities.md §6).
             if (IsDormant) { DueThisTick = false; return; }
-            if (_updateInterval <= 1) { DueThisTick = true; UpdateDelta = tickInterval; LastUpdateTick = tick; HasUpdated = true; return; }
+            // A driven entity runs its driver's input every tick, whatever its interval (docs/driven-vehicles.md D4).
+            if (_updateInterval <= 1 || DriverClientId != 0) { DueThisTick = true; UpdateDelta = tickInterval; LastUpdateTick = tick; HasUpdated = true; return; }
             DueThisTick = IsDueAt(tick);
             if (!DueThisTick) return;
             UpdateDelta = UpdateDeltaTime(tick, tickInterval);
@@ -268,7 +274,7 @@ namespace Nebula
         internal bool IsDueAt(uint tick)
         {
             int interval = _updateInterval;
-            if (interval <= 1 || !HasUpdated) return true;
+            if (interval <= 1 || !HasUpdated || DriverClientId != 0) return true;
             // A tick at or behind the last update (a clock step back) is not a new update; a gap as long as the
             // interval is one whatever the stagger says, so a late or re-phased entity catches up at once.
             if (tick <= LastUpdateTick) return false;
@@ -669,6 +675,69 @@ namespace Nebula
         public bool HasAuthority { get; internal set; }
         /// <summary>Client side: owned by the local client.</summary>
         public bool IsLocalPlayer { get; internal set; }
+
+        // ---- driving (docs/driven-vehicles.md) ------------------------------------------------------------
+
+        /// <summary>
+        /// The client whose input drives this server-owned entity, 0 when nobody does. Set it on the worker with
+        /// <see cref="SetDriver"/>. While it is set the entity's <see cref="PredictedBehaviour{TInput}"/> runs on that
+        /// client's input instead of <c>GatherServerInput</c>, and the driver's client predicts it the way it predicts
+        /// its own pawn. Every copy knows it: the worker's, its ghosts' (after a handover), and every client's, so a
+        /// game can show who is at the wheel.
+        /// </summary>
+        public ulong DriverClientId { get; internal set; }
+
+        /// <summary>Client side: this client drives the entity and predicts it (<see cref="DriverClientId"/> is this client).</summary>
+        public bool IsLocallyDriven { get; internal set; }
+
+        /// <summary>Client side: this client simulates the entity itself, as its own pawn or as the vehicle it drives, instead of interpolating the worker's stream.</summary>
+        internal bool IsLocallyPredicted => Predicted != null && (IsLocalPlayer || IsLocallyDriven);
+
+        /// <summary>The driver changed on the authority and the gateways that hold the entity have not been told yet.</summary>
+        internal bool DriverDirty;
+
+        /// <summary>
+        /// Hand the controls of this server-owned entity to a client (a player sits in a vehicle's driving seat), or
+        /// take them back with 0. Call it on the worker that has authority. From the next tick the entity's
+        /// <see cref="PredictedBehaviour{TInput}"/> simulates that client's input, and the client predicts it and is
+        /// reconciled to the worker's state, as it is for its own pawn; with 0 it goes back to
+        /// <see cref="PredictedBehaviour{TInput}.GatherServerInput"/>. The change is announced to the gateways and
+        /// travels with a handover. <see cref="PredictedBehaviourBase.OnDriverChanged"/> is called on the worker and
+        /// on every client that holds the entity.
+        /// <para>
+        /// Only an entity with a <see cref="PredictedBehaviour{TInput}"/> that no client owns can be driven; the call
+        /// is refused with a warning otherwise, and returns false. A driven entity is updated every tick whatever its
+        /// <see cref="UpdateInterval"/>, and it cannot sleep: a sleeping one is woken.
+        /// </para>
+        /// </summary>
+        public bool SetDriver(ulong clientId)
+        {
+            if (IsSpawned && !HasAuthority)
+            {
+                NebulaLog.Warn($"{this}: SetDriver called on a copy without authority; ignored");
+                return false;
+            }
+            if (clientId != 0 && Predicted == null)
+            {
+                NebulaLog.Warn($"{this}: it has no PredictedBehaviour to run a driver's input; SetDriver ignored");
+                return false;
+            }
+            if (clientId != 0 && OwnerClientId != 0)
+            {
+                NebulaLog.Warn($"{this}: client {OwnerClientId} owns it, so nobody else can drive it; SetDriver ignored");
+                return false;
+            }
+            if (DriverClientId == clientId) return true;
+            ulong previous = DriverClientId;
+            DriverClientId = clientId;
+            if (clientId != 0) Wake();
+            DriverDirty = IsSpawned;
+            Predicted?.DriverChanged(previous, clientId, authority: true);
+            return true;
+        }
+
+        /// <summary>Take the controls back from whoever drives this entity: <see cref="SetDriver"/> with 0.</summary>
+        public bool ClearDriver() => SetDriver(0);
         /// <summary>Index of the worker currently authoritative (as last heard). Debug/overlay only.</summary>
         public ushort OwnerWorkerIndex { get; internal set; }
         /// <summary>Velocity as reported by the authority; used for extrapolation and carried through handover.</summary>
@@ -746,7 +815,7 @@ namespace Nebula
             if ((location && !smoothed) || RootTransform == null)
             {
                 SetContainer(container);
-                if (!(IsLocalPlayer && Predicted != null) && !(RootTransform != null && RootTransform.IsSyncAuthority))
+                if (!IsLocallyPredicted && !(RootTransform != null && RootTransform.IsSyncAuthority))
                 {
                     SetLocalPose(container, entry.LocalPosition, entry.LocalRotation);
                     transform.localScale = entry.LocalScale;
@@ -996,6 +1065,9 @@ namespace Nebula
             IsOwnerConnected = true;
             HasAuthority = false;
             IsLocalPlayer = false;
+            DriverClientId = 0;
+            IsLocallyDriven = false;
+            DriverDirty = false;
             EffectiveCostWeight = NebulaCost.Clamp(CostWeight);
             _costWeightPinned = false;
             OwnerWorkerIndex = 0;

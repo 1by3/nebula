@@ -83,6 +83,13 @@ namespace Nebula
         /// <see cref="NebulaConfig.SessionReclaimSeconds"/>, and the gateway closes the link.
         /// </summary>
         Goodbye = 24,
+        /// <summary>
+        /// Client -> gateway -> worker, and worker -> worker after a handover: the driver's recent inputs for an entity
+        /// it drives (<see cref="DriveInputMsg"/>, protocol 25, docs/driven-vehicles.md). The gateway forwards it only
+        /// from the client the entity's spawn names as its driver, stamping the client id, to the worker that owns the
+        /// entity; a worker that handed the entity on forwards it to the new owner.
+        /// </summary>
+        DriveInput = 25,
 
         // Gateway -> worker
         SpawnPlayer = 30,
@@ -192,17 +199,17 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 24;
+        public const ushort ProtocolVersion = 25;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 23, one below <see cref="ProtocolVersion"/>. Protocol 24
-        /// (relevance tiers, <c>docs/server-owned-entities.md</c>) changes nothing a client reads: the spawn's interest
-        /// flags gain priority bits a client ignores, and the handover gains a trailing update section between
-        /// workers. Protocol 23 (deliberate session endings, a recovering join hold, the owner-connected flag) closed
-        /// the window to itself, so clients of 22 and older are refused with
+        /// The oldest client protocol the gateway accepts: 24, one below <see cref="ProtocolVersion"/>. Protocol 25
+        /// (driven vehicles, <c>docs/driven-vehicles.md</c>) is additive for clients: a new message a client sends
+        /// only while it drives something (<see cref="MsgId.DriveInput"/>), and a trailing driver field in the spawn
+        /// body that a protocol-24 client does not read. Protocol 24 (relevance tiers) changed nothing a client reads.
+        /// Protocol 23 closed the window to itself, so clients of 22 and older are refused with
         /// <see cref="JoinRejectReason.ProtocolUnsupported"/> and must be rebuilt. Gateway-to-worker and
         /// worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
         /// </summary>
-        public const ushort MinProtocolVersion = 23;
+        public const ushort MinProtocolVersion = 24;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -694,6 +701,13 @@ namespace Nebula
         /// spawn for a gateway never carries it, and <see cref="ForClient"/> clears it.
         /// </summary>
         public IReadOnlyDictionary<string, string> OwnerClaims;
+        /// <summary>
+        /// The client that drives this server-owned entity (<see cref="NetworkIdentity.DriverClientId"/>), 0 for none
+        /// (protocol 25, trailing and optional, after <see cref="OwnerClaims"/>, docs/driven-vehicles.md). The gateway
+        /// accepts <see cref="MsgId.DriveInput"/> for the entity from this client only, and the client it names
+        /// predicts the entity. It travels with every spawn, ghost spawn and handover.
+        /// </summary>
+        public ulong DriverClientId;
 
 #if !NEBULA_SERVICE
         /// <param name="id">The entity.</param>
@@ -756,6 +770,7 @@ namespace Nebula
                 Maps = maps,
                 // Claims are for workers: a gateway has no use for them and must never pass them to a client.
                 OwnerClaims = forGateway || id.OwnerClaims.Count == 0 ? null : id.OwnerClaims,
+                DriverClientId = id.DriverClientId,
             };
         }
 
@@ -798,16 +813,19 @@ namespace Nebula
             w.WriteHalf(CostWeight);
             bool hasMaps = Maps != null && Maps.Length > 0;
             bool hasClaims = OwnerClaims != null && OwnerClaims.Count > 0;
+            bool hasDriver = DriverClientId != 0;
             // Each trailing section is written when it or any section after it holds something (always, embedded).
-            if (!embedded && AudienceGeneration == 0 && (Audience == null || Audience.Length == 0) && !hasMaps && !hasClaims) return;
+            if (!embedded && AudienceGeneration == 0 && (Audience == null || Audience.Length == 0) && !hasMaps && !hasClaims && !hasDriver) return;
             w.WriteUInt(AudienceGeneration);
             w.WriteBytes(Audience ?? Array.Empty<byte>());
-            if (!embedded && !hasMaps && !hasClaims) return;
+            if (!embedded && !hasMaps && !hasClaims && !hasDriver) return;
             var maps = Maps ?? Array.Empty<byte>();
             w.WriteInt(maps.Length);
             w.WriteRaw(new ArraySegment<byte>(maps));
-            if (!embedded && !hasClaims) return;
+            if (!embedded && !hasClaims && !hasDriver) return;
             PlayerClaims.Write(w, OwnerClaims);
+            if (!embedded && !hasDriver) return;
+            w.WriteULong(DriverClientId);
         }
 
         /// <summary>This spawn as a client may see it: the fields only workers and gateways use are cleared.</summary>
@@ -869,6 +887,7 @@ namespace Nebula
                 var claims = PlayerClaims.Read(r);
                 msg.OwnerClaims = claims.Count > 0 ? claims : null;
             }
+            if (embedded || r.Remaining >= 8) msg.DriverClientId = r.ReadULong();
             return msg;
         }
     }
@@ -1521,6 +1540,40 @@ namespace Nebula
                 }
             }
             return update;
+        }
+    }
+
+    /// <summary>
+    /// A driver's recent inputs for an entity it drives (<see cref="MsgId.DriveInput"/>, protocol 25): the same frames
+    /// as <see cref="ClientInputMsg"/>, for the entity <see cref="NetId"/> names instead of the sender's pawn. The
+    /// client sends 0 as <see cref="ClientId"/>; the gateway stamps the sender's before forwarding.
+    /// </summary>
+    public struct DriveInputMsg
+    {
+        public ulong ClientId;
+        public ulong NetId;
+        public List<ClientInputMsg.Frame> Frames;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.DriveInput);
+            w.WriteULong(ClientId);
+            w.WriteULong(NetId);
+            w.WriteByte((byte)Frames.Count);
+            foreach (var f in Frames)
+            {
+                w.WriteUInt(f.Tick);
+                w.WriteBytes(f.Payload);
+            }
+        }
+
+        public static DriveInputMsg Read(NetworkReader r)
+        {
+            var m = new DriveInputMsg { ClientId = r.ReadULong(), NetId = r.ReadULong() };
+            int n = r.ReadByte();
+            m.Frames = new List<ClientInputMsg.Frame>(n);
+            for (int i = 0; i < n; i++) m.Frames.Add(new ClientInputMsg.Frame { Tick = r.ReadUInt(), Payload = r.ReadBytes() });
+            return m;
         }
     }
 
