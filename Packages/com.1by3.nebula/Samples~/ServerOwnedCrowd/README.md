@@ -9,8 +9,9 @@ does, and which ones are active, are game decisions (`docs/server-owned-entities
   where the last one stopped.
 - `CrowdSpawner` spawns `Count` walkers server-driven on the worker that owns the container at `AreaCentre`, once the
   mesh is ready. The first `ActiveCount` are updated every `ActiveUpdateInterval` ticks at `RelevancePriority.Normal`;
-  the rest every `LightUpdateInterval` ticks at `LightPriority` (`Background` by default). Walkers spawned into another
-  worker's container are handed to it on the next tick.
+  the rest every `LightUpdateInterval` ticks at `LightPriority` (`Background` by default), and they fall asleep after
+  `LightSleepWhenUnobserved` seconds (10) with no client near: not ticked and not sent until a client comes near
+  again. Walkers spawned into another worker's container are handed to it on the next tick.
 
 ## Using it
 

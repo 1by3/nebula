@@ -48,6 +48,15 @@ namespace Nebula
         public virtual void OnGainedAuthority() { }
         /// <summary>Called on a worker when authority moves to a neighbour. The object stays alive as a ghost.</summary>
         public virtual void OnLostAuthority() { }
+        /// <summary>
+        /// Called on the worker that has authority when the entity falls asleep (<see cref="NetworkIdentity.Sleep"/>, or
+        /// <see cref="NetworkIdentity.SleepWhenUnobserved"/>): stop what runs outside <see cref="NetworkTick"/> here, such
+        /// as a coroutine or an animation. Not called when a dormant entity arrives by handover; check
+        /// <see cref="NetworkIdentity.IsDormant"/> in <see cref="OnGainedAuthority"/>.
+        /// </summary>
+        public virtual void OnSleep() { }
+        /// <summary>Called on the worker that has authority when a dormant entity wakes (<see cref="NetworkIdentity.Wake"/>, or a gateway watching it).</summary>
+        public virtual void OnWake() { }
         public virtual void OnContainerChanged(Container previous, Container current) { }
         /// <summary>
         /// Partitioned worlds: the floating origin moved by <paramref name="delta"/>. The transform was moved with

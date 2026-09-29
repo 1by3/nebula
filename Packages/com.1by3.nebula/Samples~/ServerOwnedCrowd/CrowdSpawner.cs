@@ -8,9 +8,10 @@ namespace NebulaSamples
     /// Spawns a crowd of <see cref="CrowdWalker"/>s on a worker, in two tiers (<c>docs/server-owned-entities.md</c>):
     /// <see cref="ActiveCount"/> active ones updated every <see cref="ActiveUpdateInterval"/> ticks at
     /// <see cref="RelevancePriority.Normal"/>, and the rest updated every <see cref="LightUpdateInterval"/> ticks at
-    /// <see cref="LightPriority"/>. It is a <b>sample</b>: which characters are active, and when one changes tier, is
-    /// the game's decision. A game would usually promote the characters near players and demote the rest by setting
-    /// the same two properties.
+    /// <see cref="LightPriority"/>, falling asleep after <see cref="LightSleepWhenUnobserved"/> seconds with no client
+    /// near and waking when one comes. It is a <b>sample</b>: which characters are active, and when one changes tier,
+    /// is the game's decision. A game would usually promote the characters near players and demote the rest by setting
+    /// the same properties.
     /// <para>
     /// Put it in the scene the workers load. Only the worker that owns the container at <see cref="AreaCentre"/>
     /// spawns, once, when the mesh is ready; walkers spawned into another worker's container are handed to it on the
@@ -31,6 +32,8 @@ namespace NebulaSamples
         public int LightUpdateInterval = 60;
         [Tooltip("How clients rate a light walker's updates. Background: updated only near them.")]
         public RelevancePriority LightPriority = RelevancePriority.Background;
+        [Tooltip("Seconds with no client near after which a light walker falls asleep (dormant: not ticked, not sent). It wakes when a client comes near. 0 keeps it awake.")]
+        public float LightSleepWhenUnobserved = 10f;
         [Tooltip("The box the crowd spawns and wanders in, in world space: its centre and its size on the ground (x, z).")]
         public Vector3 AreaCentre;
         public Vector2 AreaSize = new Vector2(512f, 512f);
@@ -85,6 +88,7 @@ namespace NebulaSamples
             bool active = index < ActiveCount;
             identity.UpdateInterval = active ? ActiveUpdateInterval : LightUpdateInterval;
             identity.RelevancePriority = active ? RelevancePriority.Normal : LightPriority;
+            identity.SleepWhenUnobserved = active ? 0f : LightSleepWhenUnobserved;
             var walker = identity.GetComponent<CrowdWalker>();
             if (walker != null)
             {

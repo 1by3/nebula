@@ -211,6 +211,14 @@ public int GhostsSent { get; }
 public int GhostsHeld { get; }
 ```
 
+### DormantCount [#dormantcount]
+
+```csharp
+public int DormantCount { get; }
+```
+
+Entities this worker has authority over that are asleep ([`NetworkIdentity.IsDormant`](/docs/reference/core/network-identity#isdormant)), as of the start of the last tick. They are part of the authoritative count and cost almost nothing a tick.
+
 ### AuthoritativeCount [#authoritativecount]
 
 ```csharp

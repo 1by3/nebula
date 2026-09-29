@@ -113,6 +113,8 @@ namespace NebulaSamples.Tests
             Assert.AreEqual(RelevancePriority.Normal, tiers[1].RelevancePriority);
             Assert.AreEqual(60, tiers[2].UpdateInterval);
             Assert.AreEqual(RelevancePriority.Background, tiers[3].RelevancePriority);
+            Assert.AreEqual(0f, tiers[0].SleepWhenUnobserved, "an active walker never falls asleep by itself");
+            Assert.AreEqual(spawner.LightSleepWhenUnobserved, tiers[2].SleepWhenUnobserved, "a light one does, with no client near");
             Assert.AreEqual(spawner.AreaCentre, tiers[3].GetComponent<CrowdWalker>().AreaCentre);
         }
     }

@@ -46,6 +46,8 @@ namespace Nebula
         [SerializeField, Range(1, MaxUpdateInterval)] private int _updateInterval = 1;
         [Tooltip("How much this entity's transform updates matter to clients, relative to its distance from them. Normal uses the distance tiers as configured; High is one tier better, Low one tier worse, and Background is updated only inside InterestNearRadius (further away a client sees it only where it comes to rest). See https://nebula.1by3.co/docs/guides/server-owned-entities")]
         [SerializeField] private RelevancePriority _relevancePriority = RelevancePriority.Normal;
+        [Tooltip("Seconds without any gateway watching this server-owned entity after which the worker puts it to sleep (dormant: not ticked, not sent). It wakes as soon as a gateway watches its region again. 0 (the default) never puts it to sleep by itself. See https://nebula.1by3.co/docs/guides/server-owned-entities")]
+        [SerializeField, Min(0f)] private float _sleepWhenUnobserved;
 
         /// <summary>The longest <see cref="UpdateInterval"/>: 255 ticks, a little over four seconds.</summary>
         public const int MaxUpdateInterval = 255;
@@ -97,6 +99,123 @@ namespace Nebula
             }
         }
 
+        // ---- dormancy (docs/server-owned-entities.md §6) --------------------------------------------------
+
+        /// <summary>
+        /// True on the worker that has authority while the entity is dormant: asleep. A dormant entity keeps its
+        /// authority, its state and its replicas, but the worker does not tick it (no <see cref="NetworkBehaviour.NetworkTick"/>),
+        /// does not check its container or ghost band, and sends no transform updates for it. It is still handed to
+        /// another worker when the lease of its container moves there, and stays dormant. False on ghosts and clients.
+        /// </summary>
+        public bool IsDormant { get; private set; }
+
+        /// <summary>Whether this dormant entity wakes by itself as soon as a gateway watches it (see <see cref="Sleep"/>).</summary>
+        public bool WakesOnInterest { get; private set; }
+
+        /// <summary>
+        /// Seconds without any gateway watching this entity (no client near enough for a gateway to subscribe its
+        /// region) after which the worker puts it to sleep, waking on interest. 0 (the default) never does.
+        /// Server-owned entities only; set it on the prefab or on the authority. It travels with a handover.
+        /// </summary>
+        public float SleepWhenUnobserved
+        {
+            get => _sleepWhenUnobserved;
+            set => _sleepWhenUnobserved = value > 0f ? value : 0f;
+        }
+
+        /// <summary>
+        /// Put this server-owned entity to sleep from the next tick (<see cref="IsDormant"/>). On that tick the worker
+        /// sends one reliable transform entry with its pose and no velocity, so every client holds it where it
+        /// rests, and calls <see cref="NetworkBehaviour.OnSleep"/>. With <paramref name="wakeOnInterest"/> it wakes by
+        /// itself when a gateway starts to watch it; otherwise only <see cref="Wake"/> wakes it. Call it on the
+        /// worker that has authority. An entity a client owns cannot sleep: the call is ignored with a warning.
+        /// </summary>
+        public void Sleep(bool wakeOnInterest = true)
+        {
+            if (OwnerClientId != 0)
+            {
+                NebulaLog.Warn($"{this}: a client owns it, so it cannot sleep; Sleep ignored");
+                return;
+            }
+            if (IsSpawned && !HasAuthority)
+            {
+                NebulaLog.Warn($"{this}: Sleep called on a copy without authority; ignored");
+                return;
+            }
+            _pendingDormancy = PendingDormancy.Sleep;
+            _pendingWakeOnInterest = wakeOnInterest;
+        }
+
+        /// <summary>
+        /// Wake this entity from the next tick: it is ticked, checked and sent again, from where it slept, and
+        /// <see cref="NetworkBehaviour.OnWake"/> is called. Does nothing to an entity that is not asleep.
+        /// </summary>
+        public void Wake()
+        {
+            if (IsDormant || _pendingDormancy == PendingDormancy.Sleep) _pendingDormancy = PendingDormancy.Wake;
+        }
+
+        private enum PendingDormancy : byte { None, Sleep, Wake }
+        private PendingDormancy _pendingDormancy;
+        private bool _pendingWakeOnInterest;
+        /// <summary>The tick it fell asleep: publish one reliable, settled entry where it rests.</summary>
+        internal bool SettleThisTick;
+        /// <summary>Whether no gateway watched it on the last publish, and since which tick (<see cref="SleepWhenUnobserved"/>).</summary>
+        internal bool Unobserved;
+        internal uint UnobservedSinceTick;
+
+        /// <summary>Asleep, or falling asleep on the next tick: what a handover carries.</summary>
+        internal bool DormantForHandover => _pendingDormancy == PendingDormancy.Sleep || (IsDormant && _pendingDormancy != PendingDormancy.Wake);
+
+        /// <summary>Whether a handover carries "wakes on interest" with <see cref="DormantForHandover"/>.</summary>
+        internal bool WakesOnInterestForHandover => _pendingDormancy == PendingDormancy.Sleep ? _pendingWakeOnInterest : WakesOnInterest;
+
+        /// <summary>Take the dormancy that arrived with a handover, without calling any hook: the entity was already asleep.</summary>
+        internal void ApplyCarriedDormancy(bool dormant, bool wakeOnInterest, float sleepWhenUnobserved)
+        {
+            IsDormant = dormant;
+            WakesOnInterest = dormant && wakeOnInterest;
+            _pendingDormancy = PendingDormancy.None;
+            SleepWhenUnobserved = sleepWhenUnobserved;
+            Unobserved = false;
+            if (dormant) Motion.Velocity = Vector3.zero;
+        }
+
+        /// <summary>Apply a Sleep or Wake asked for since the last tick. Called by <see cref="BeginTick"/>.</summary>
+        private void ApplyPendingDormancy()
+        {
+            var pending = _pendingDormancy;
+            _pendingDormancy = PendingDormancy.None;
+            if (pending == PendingDormancy.Sleep && !IsDormant)
+            {
+                IsDormant = true;
+                WakesOnInterest = _pendingWakeOnInterest;
+                SettleThisTick = true;
+                Motion.Velocity = Vector3.zero;
+                for (int b = 0; b < Behaviours.Length; b++)
+                {
+                    try { Behaviours[b].OnSleep(); }
+                    catch (Exception ex) { NebulaLog.Error($"OnSleep on {this} threw: {ex}"); }
+                }
+            }
+            else if (pending == PendingDormancy.Sleep) WakesOnInterest = _pendingWakeOnInterest;
+            else if (pending == PendingDormancy.Wake && IsDormant)
+            {
+                IsDormant = false;
+                WakesOnInterest = false;
+                Unobserved = false;
+                ResetUpdatePhase();
+                for (int b = 0; b < Behaviours.Length; b++)
+                {
+                    try { Behaviours[b].OnWake(); }
+                    catch (Exception ex) { NebulaLog.Error($"OnWake on {this} threw: {ex}"); }
+                }
+            }
+        }
+
+        /// <summary>Something changed on it that the per-entity publish pass must send (variables, maps, sync state, audiences, priority).</summary>
+        internal bool HasPendingChanges => VarsDirty || MapsDirty || SyncDirty || AudienceChangedThisTick || RelevanceDirty;
+
         /// <summary>The priority changed on the authority and the gateways that hold the entity have not been told yet.</summary>
         internal bool RelevanceDirty;
 
@@ -116,6 +235,10 @@ namespace Nebula
         /// </summary>
         internal void BeginTick(uint tick, float tickInterval)
         {
+            SettleThisTick = false;
+            if (_pendingDormancy != PendingDormancy.None) ApplyPendingDormancy();
+            // Asleep: nothing is due until it wakes (docs/server-owned-entities.md §6).
+            if (IsDormant) { DueThisTick = false; return; }
             if (_updateInterval <= 1) { DueThisTick = true; UpdateDelta = tickInterval; LastUpdateTick = tick; HasUpdated = true; return; }
             DueThisTick = IsDueAt(tick);
             if (!DueThisTick) return;
@@ -573,8 +696,8 @@ namespace Nebula
         /// </summary>
         internal void PrepareReplication(uint tick, bool due = true)
         {
-            bool capture = due || (RootTransform != null && RootTransform.TeleportPending);
-            HasReplicationState = capture && RootTransform != null && RootTransform.isActiveAndEnabled && RootTransform.CaptureRoot(tick, out ReplicationState);
+            bool capture = due || SettleThisTick || (RootTransform != null && RootTransform.TeleportPending);
+            HasReplicationState = capture && RootTransform != null && RootTransform.isActiveAndEnabled && RootTransform.CaptureRoot(tick, out ReplicationState, settle: SettleThisTick);
             if (!_publishedLocation || _publishedContainer != ContainerRef || _publishedEpoch != Epoch)
             {
                 ReplicationState = EntityStateEntry.Snapshot(this);
@@ -1517,6 +1640,8 @@ namespace Nebula
             if (authority) foreach (var b in SyncBehaviours) { b.SyncEverSent = false; b.SyncWrittenThisTick = false; b.SyncDirty = true; SyncDirty = true; }
             // A new authority asks its own pawns: the answer can differ from the previous worker's (docs/sync-audience.md D7).
             if (authority) foreach (var b in SyncBehaviours) if (b.Audience == SyncAudience.Custom) b.AudienceDirty = true;
+            // Dormancy belongs to the authority: a copy that becomes a ghost is not asleep (docs/server-owned-entities.md §6).
+            if (!authority) ApplyCarriedDormancy(false, false, SleepWhenUnobserved);
             if (authority) foreach (var b in Behaviours) b.OnGainedAuthority();
             else foreach (var b in Behaviours) b.OnLostAuthority();
         }

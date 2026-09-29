@@ -1,15 +1,16 @@
 ---
 title: Run crowds of server-owned entities
-description: Keep hundreds of server-driven characters per worker within a tick budget and a client's bandwidth, with update intervals, relevance priorities and gateway distance tiers.
+description: Keep hundreds of server-driven characters per worker within a tick budget and a client's bandwidth, with update intervals, relevance priorities, gateway distance tiers and sleep.
 ---
 
 A server-owned entity is one no client owns: a townsperson, a trader, a patrol, an animal. A worker simulates it, and it crosses [worker seams](/docs/concepts/containers-and-handover) like any other entity. This page shows how to run hundreds of them on each worker without spending a player's worth of tick time and bandwidth on each one.
 
-By default Nebula updates every entity on every tick (60 times a second) and sends it to nearby clients at that rate. That suits a player in a firefight, not a crowd. Three settings change it:
+By default Nebula updates every entity on every tick (60 times a second) and sends it to nearby clients at that rate. That suits a player in a firefight, not a crowd. Four settings change it:
 
 - **Update interval** (`NetworkIdentity.UpdateInterval`): how often the worker updates the entity.
 - **Relevance priority** (`NetworkIdentity.RelevancePriority`): how much its updates matter to clients, relative to its distance from them.
 - **Distance tiers** (`NebulaConfig.InterestNearRadius`, `InterestFarRadius`, `InterestMidDivisor`, `InterestFarDivisor`): the rates the gateway sends at, by distance.
+- **Sleep** (`NetworkIdentity.Sleep`, `SleepWhenUnobserved`): stop updating an entity nobody needs, until it is needed.
 
 ## Spawn server-owned entities
 
@@ -91,6 +92,30 @@ Set it on the worker that has authority, at spawn or at any time after. A game u
 
 A priority change on the authority announces the entity to the gateways again, so change it when a character's role changes, not on every tick.
 
+## Put characters to sleep
+
+A sleeping, or dormant, entity costs its worker almost nothing: the worker does not call its `NetworkTick`, does not check its container or its ghosts, and sends no transform updates for it. It keeps its authority, its state, and its replicas on clients and on neighboring workers. Only server-owned entities can sleep.
+
+To put a character to sleep when no client is near, set `SleepWhenUnobserved` on its prefab or on the worker that has authority:
+
+```csharp
+identity.SleepWhenUnobserved = 10f; // seconds with no gateway watching it
+```
+
+A gateway watches an entity when one of its clients is near enough for the gateway to subscribe the entity's area. When no gateway has watched the entity for that many seconds, the worker puts it to sleep. When a gateway watches it again, the worker wakes it within a quarter of a second. Gateways subscribe an area a few seconds' walk before their clients can see into it, so a character wakes before a player sees it.
+
+To put a character to sleep yourself, call `Sleep` and `Wake` on the worker that has authority:
+
+```csharp
+identity.Sleep(wakeOnInterest: false); // only Wake() wakes it
+// later
+identity.Wake();
+```
+
+`Sleep(wakeOnInterest: true)` also wakes the entity when a gateway watches it. `IsDormant` tells you whether it sleeps.
+
+On the tick an entity falls asleep, Nebula sends its pose once, reliably and with no velocity, so every client holds it where it rests. Override `NetworkBehaviour.OnSleep` and `OnWake` to stop and restart work that runs outside `NetworkTick`, such as coroutines. A sleeping entity is still handed to another worker when its container is assigned there, and it stays asleep; `OnSleep` is not called again there, so check `IsDormant` in `OnGainedAuthority`.
+
 ## Send only the fields a character needs
 
 A root `NetworkTransform` with its defaults sends 46 bytes an update: position, a rotation of three angles, and velocity. A character that turns only about its vertical axis needs less:
@@ -124,6 +149,7 @@ Measured on a Windows development machine, in the Editor:
 | --- | --- |
 | 1,650 walkers updated every tick | about 7 ms |
 | 150 walkers updated every 6 ticks, 1,500 every 60 ticks | about 0.8 ms |
+| 150 walkers updated every 6 ticks, 1,500 asleep | about 0.4 ms |
 
 | A client among 200 active and 1,000 background walkers | Traffic |
 | --- | --- |
@@ -134,10 +160,12 @@ Traffic counts the application data only, not UDP and IP headers.
 
 ## Try the sample
 
-The **Server-owned crowd** sample in the package (`Samples~/ServerOwnedCrowd`) spawns a thousand walkers in two tiers. Import it from the Package Manager. `CrowdSpawner` gives each walker its interval and priority, and `CrowdWalker` carries its state across seams.
+The **Server-owned crowd** sample in the package (`Samples~/ServerOwnedCrowd`) spawns a thousand walkers in two tiers. Import it from the Package Manager. `CrowdSpawner` gives each walker its interval and priority, and puts the light ones to sleep when no client is near. `CrowdWalker` carries its state across seams.
 
 ## Limits
 
 - The update interval slows a character's own updates. It does not slow your code outside `NetworkTick`, such as `Update` or coroutines.
 - A `Background` character that keeps walking is shown to distant clients where it last came to rest, until it stops again or they come within `InterestNearRadius`.
+- Sleep does not keep a runtime chunk loaded. When no player needs a chunk, Nebula retires it, and the entities in it are saved (if they have a `PersistentEntity`) and removed, asleep or not.
+- The update interval, the priority and sleep are not saved with a `PersistentEntity`. A restored entity starts awake with its prefab's settings.
 - The distance tiers are the same for every client. A per-client choice, such as occlusion, belongs in a [gateway extension](/docs/guides/gateway-extensions) interest policy, which decides who holds an entity, not its rate.

@@ -1,6 +1,6 @@
 # Many server-owned entities — measurements and design (NEB-359)
 
-Status: measurements (§1–§3) and relevance tiers (§5, protocol 24) landed. Dormancy follows in its own change (§4).
+Status: measurements (§1–§3), relevance tiers (§5) and dormancy (§6) landed; protocol 24.
 Harness: `Tests/EditMode/CrowdMesh.cs` (two real workers), `Tests/EditMode/ServerOwnedCostMeasurementTests.cs`
 (`[Explicit]`, writes `Logs/scale/editor-server-owned.csv`), `Services~/Nebula.Services.Tests/ServerOwnedBandwidthTests.cs`
 (`[Category("Scale")]` + `Soak`, writes `Logs/scale/synthetic-server-owned-bandwidth.csv`). Conformance scenario 34
@@ -8,7 +8,8 @@ Harness: `Tests/EditMode/CrowdMesh.cs` (two real workers), `Tests/EditMode/Serve
 `docs/entity-extents.md` (the ghost band). User guide: `website/content/docs/guides/server-owned-entities.mdx`. Sample:
 `Samples~/ServerOwnedCrowd`. Relevance tiers: `Runtime/Interest/RelevanceTiers.cs`, `NetworkIdentity.UpdateInterval`,
 `NetworkIdentity.RelevancePriority`; tests `RelevanceTiersTests` (both places), `RelevanceTierWorkerTests`,
-conformance scenario 35 (`ConformanceRelevanceTierTests`, service tests).
+conformance scenario 35 (`ConformanceRelevanceTierTests`, service tests). Dormancy: `NetworkIdentity.Sleep`, `Wake`,
+`IsDormant`, `SleepWhenUnobserved`; conformance scenario 36 (`ConformanceDormancyTests`).
 
 ## 0. Problem
 
@@ -134,7 +135,7 @@ receiving worker's copy has only what the stream and the handover gave it.
 
 ## 4. What follows, and what does not
 
-Built in separate changes, each with its own tests, sample and user guide (relevance tiers: §5):
+Built in separate changes, each with its own tests, sample and user guide (relevance tiers: §5; dormancy: §6):
 
 - **Relevance tiers** — a per-entity update interval on the worker (the lighter tier: simulated, checked and
   published every N ticks, staggered), a per-entity relevance priority the gateway uses to pick each client's rate
@@ -263,6 +264,8 @@ and field mask (§4, compact encoding). Bytes are application payload; a datagra
 - Give every server-owned character an `UpdateInterval` that matches what it is doing: every tick or every few
   for the ones near players or in combat, 30–60 for the rest. Change it when the character's situation changes.
 - Give the numerous ones `RelevancePriority.Background` (or `Low`), and the few that matter from afar `High`.
+- Give the ones that only matter near players `SleepWhenUnobserved` (§6), or put them to sleep and wake them from
+  game logic.
 - Move by the `deltaTime` `NetworkTick` is given, and carry everything `NetworkTick` reads in
   `WriteHandoverState`/`ReadHandoverState` (§3).
 - Sync only the transform fields a character needs on its root `NetworkTransform` (yaw only, no velocity, half
@@ -270,7 +273,79 @@ and field mask (§4, compact encoding). Bytes are application payload; a datagra
 - Set the gateway's distance tiers for the game's own mix (`InterestNearRadius`, `InterestFarRadius`,
   `InterestMidDivisor`, `InterestFarDivisor`).
 
-## 6. Running the measurements
+## 6. Dormancy (built)
+
+An entity that nobody needs should cost nothing, not a thirtieth of an entity. `NetworkIdentity.Sleep(wakeOnInterest)`
+puts a server-owned entity to sleep from the next tick; `Wake()` wakes it; `IsDormant` says whether it sleeps (on
+the authority; a ghost or a client copy is never asleep). `SleepWhenUnobserved` (seconds, 0 = never, on the prefab
+or the authority) lets the worker do it: once no gateway has watched the entity for that long, it falls asleep,
+waking on interest. `NetworkBehaviour.OnSleep`/`OnWake` are called on the authority at each change.
+
+### D6. What sleeping means
+
+| | While asleep |
+|---|---|
+| `NetworkTick` | not called |
+| container, frame crossing, ghost band, interest bucket | not checked (it does not move) |
+| root transform | not sent; on the tick it falls asleep, one reliable entry with its pose and zero velocity, so every holder has it where it rests |
+| variables, maps, sync state, audiences, priority | sent if the game changes them, to whoever watches it then (its mask is computed on demand) |
+| its replicas on clients and the gateway's copy | kept: a gateway that subscribes its region is sent its spawn as usual |
+| its ghosts on neighbouring workers | kept where it rests (their linger does not run); they go if it is handed away or the peer is lost |
+| state history | still recorded every tick, so `StateAt` answers for a sleeping entity |
+| authority, epoch, state | kept |
+| the lease of its container | followed: if the container is dealt to another worker, the entity is handed over and stays asleep |
+
+A client's entity cannot sleep (the call is ignored with a warning): a pawn is observed by definition.
+
+### D7. Watching is a gateway's subscription
+
+"Watched" is what the worker already computes every tick for every entity: its publish mask, the set of gateways
+that subscribe its region, name it explicitly, reach it as a wide entity or, for an always-relevant one, are linked
+at all. An awake entity with `SleepWhenUnobserved` whose mask has been empty for that many seconds of ticks falls
+asleep. A sleeping entity that wakes on interest is asked for its mask once per interest evaluation
+(`InterestEvalHz`, 4 a second): the worker sweeps a fifteenth of the sleepers on each tick, so the cost is spread and
+an entity wakes within 250 ms of a gateway subscribing its region. Gateways subscribe regions a margin ahead of their
+clients' interest radius (`InterestSubscribeMargin`, about three seconds at sprint), so a character wakes before a
+client can see it. Counting in ticks, not wall time, keeps it deterministic.
+
+### D8. Following a lease without looking every tick
+
+An entity that is not resolved on a tick (asleep, or between its updates) cannot cross a seam, but its container's
+lease can move (a rebalance, a worker draining). Asking every such entity whose container it is every tick cost
+about 1 µs each in the Editor, which would have made 1,500 sleepers cost more than 1,500 light entities. So the
+registry counts ownership changes (`ContainerRegistry.OwnershipVersion`, raised only when a container's owner
+actually changes), and the worker asks these entities only on a tick after it changed, or again after a handover it
+could not make (a peer not connected, a crossing held).
+
+### D9. On the wire
+
+The handover's update section (protocol 24) gains a dormancy byte (asleep; wakes on interest) and the entity's
+`SleepWhenUnobserved` (f32), written when either is set, the interval then written as 1 if it was not above 1.
+Nothing a gateway or client reads changed.
+
+### What sleepers cost
+
+| Scenario (layer `editor`, one worker) | Tick avg / p95 (ms) |
+|---|---|
+| 150 walkers every 6 ticks + 1,500 asleep | **0.43** / 0.46 |
+| 150 walkers every 6 ticks + 5,000 asleep | 1.01 / 1.10 |
+| for comparison: 150 every 6 ticks + 1,500 awake every 60 ticks | 0.78 / 0.83 |
+| the sample (1,000 wanderers across two workers, light ones `SleepWhenUnobserved` 2 s) with one client's gateway watching a 120 m square in a corner: 749 asleep | 0.21 and 0.17 per worker |
+
+About 0.12 µs per sleeping entity per tick, against 4.2 µs for an entity updated every tick. Tests: conformance
+scenario 36 (`ConformanceDormancyTests`, 4 tests), `ConformanceHandoverWireTests.DormancyRidesInTheUpdateSectionAfterTheInterval`
+(both places), `ServerOwnedCostMeasurementTests.DormantCrowd`.
+
+### Limits
+
+- Dormancy does not keep a chunk loaded, and never did for a server-owned entity: a runtime chunk is retired when no
+  player needs it, and what is in it is saved (if persistent) and despawned, asleep or not.
+- Dormancy, like the update interval and the priority, is not persisted: a restored entity starts awake, with its
+  prefab's settings, unless the game sets them again.
+- A sleeping entity that does not wake on interest stays asleep however close a player comes: `Wake` is the
+  game's to call.
+
+## 7. Running the measurements
 
 - Editor layer: `Unity -batchmode -projectPath <checkout> -runTests -testPlatform EditMode -testFilter
   Nebula.Tests.ServerOwnedCostMeasurementTests -testResults <file>`; the tests are `[Explicit]`, so an ordinary run

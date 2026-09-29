@@ -160,6 +160,22 @@ public virtual void OnLostAuthority();
 
 Called on a worker when authority moves to a neighbour. The object stays alive as a ghost.
 
+### OnSleep [#onsleep]
+
+```csharp
+public virtual void OnSleep();
+```
+
+Called on the worker that has authority when the entity falls asleep ([`NetworkIdentity.Sleep`](/docs/reference/core/network-identity#sleep), or [`NetworkIdentity.SleepWhenUnobserved`](/docs/reference/core/network-identity#sleepwhenunobserved)): stop what runs outside [`NetworkTick`](#networktick) here, such as a coroutine or an animation. Not called when a dormant entity arrives by handover; check [`NetworkIdentity.IsDormant`](/docs/reference/core/network-identity#isdormant) in [`OnGainedAuthority`](#ongainedauthority).
+
+### OnWake [#onwake]
+
+```csharp
+public virtual void OnWake();
+```
+
+Called on the worker that has authority when a dormant entity wakes ([`NetworkIdentity.Wake`](/docs/reference/core/network-identity#wake), or a gateway watching it).
+
 ### OnContainerChanged [#oncontainerchanged]
 
 ```csharp
