@@ -191,6 +191,14 @@ public IReadOnlyDictionary<string, string> OwnerClaims;
 
 Worker to worker only: the owning player's forwarded token claims ([`NetworkIdentity.OwnerClaims`](/docs/reference/core/network-identity#ownerclaims)), or null when there are none (protocol 22, trailing and optional, after [`Maps`](#maps)). It travels with every ghost spawn and handover, so each worker holding a copy of a player's entity can read the claims. A spawn for a gateway never carries it, and [`ForClient`](#forclient) clears it.
 
+### DriverClientId [#driverclientid]
+
+```csharp
+public ulong DriverClientId;
+```
+
+The client that drives this server-owned entity ([`NetworkIdentity.DriverClientId`](/docs/reference/core/network-identity#driverclientid)), 0 for none (protocol 25, trailing and optional, after [`OwnerClaims`](#ownerclaims), docs/driven-vehicles.md). The gateway accepts [`MsgId.DriveInput`](/docs/reference/protocol/msg-id#driveinput) for the entity from this client only, and the client it names predicts the entity. It travels with every spawn, ghost spawn and handover.
+
 ## Methods
 
 ### From [#from]

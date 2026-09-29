@@ -1,0 +1,5 @@
+{
+    "name": "Nebula.Samples.DrivenVehicle",
+    "references": ["Nebula.Runtime"],
+    "autoReferenced": true
+}

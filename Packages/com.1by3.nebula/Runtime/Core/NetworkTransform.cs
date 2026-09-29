@@ -212,7 +212,7 @@ namespace Nebula
 
         internal void ReceiveRoot(uint tick, Container container, in EntityStateEntry entry)
         {
-            if (IsSyncAuthority || IsRelayingWorker || (Identity.IsLocalPlayer && Identity.Predicted != null)) return;
+            if (IsSyncAuthority || IsRelayingWorker || Identity.IsLocallyPredicted) return;
             if ((entry.Fields & TransformFields.Location) == 0) AcceptFields(entry.Fields);
             var buffer = Identity.Interpolator;
             if (buffer == null) buffer = Identity.Interpolator = gameObject.GetComponent<RemoteInterpolator>() ?? gameObject.AddComponent<RemoteInterpolator>();
@@ -263,7 +263,7 @@ namespace Nebula
 
         private void RenderRoot(double tick)
         {
-            if (!isActiveAndEnabled || IsSyncAuthority || IsRelayingWorker || (Identity.IsLocalPlayer && Identity.Predicted != null)) return;
+            if (!isActiveAndEnabled || IsSyncAuthority || IsRelayingWorker || Identity.IsLocallyPredicted) return;
             var buffer = Identity.Interpolator;
             if (buffer == null) return;
             buffer.SlerpPosition = SlerpPosition;

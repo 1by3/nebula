@@ -1,0 +1,46 @@
+---
+title: "DriveInputMsg"
+description: "A driver's recent inputs for an entity it drives (MsgId.DriveInput, protocol 25): the same frames as ClientInputMsg, for the entity NetId names instead of the sender's pawn."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct DriveInputMsg
+```
+
+A driver's recent inputs for an entity it drives ([`MsgId.DriveInput`](/docs/reference/protocol/msg-id#driveinput), protocol 25): the same frames as [`ClientInputMsg`](/docs/reference/protocol/client-input-msg), for the entity [`NetId`](#netid) names instead of the sender's pawn. The client sends 0 as [`ClientId`](#clientid); the gateway stamps the sender's before forwarding.
+
+## Fields
+
+### ClientId [#clientid]
+
+```csharp
+public ulong ClientId;
+```
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId;
+```
+
+### Frames [#frames]
+
+```csharp
+public List<ClientInputMsg.Frame> Frames;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static DriveInputMsg Read(NetworkReader r);
+```

@@ -189,6 +189,8 @@ namespace Nebula
             /// </summary>
             public bool OwnerUnconfirmed;
             public ulong OwnerClientId;
+            /// <summary>The client that drives the entity (its spawn's <see cref="EntitySpawnMsg.DriverClientId"/>), 0 for none: the only client whose <see cref="MsgId.DriveInput"/> for it is forwarded.</summary>
+            public ulong DriverClientId;
             /// <summary>The container of the newest pose (static index, or a carrier's net id for a dynamic container).</summary>
             public ContainerRef Container;
             public EntitySpawnMsg LastSpawn;
@@ -1277,6 +1279,13 @@ namespace Nebula
             // A spawn from a worker is the one thing that confirms who owns an entity; a redirect only promised.
             rec.OwnerUnconfirmed = false;
             rec.OwnerClientId = msg.OwnerClientId;
+            if (rec.DriverClientId != msg.DriverClientId)
+            {
+                // The seat changed hands: the new driver keeps the entity in its set at full rate (docs/driven-vehicles.md D3).
+                if (_clientsById.TryGetValue(rec.DriverClientId, out var left)) left.InterestDirty = true;
+                if (_clientsById.TryGetValue(msg.DriverClientId, out var took)) took.InterestDirty = true;
+                rec.DriverClientId = msg.DriverClientId;
+            }
             rec.Container = msg.Container;
             msg.OwnerWorkerIndex = w.Index;
             rec.LastSpawn = msg;
@@ -1860,6 +1869,18 @@ namespace Nebula
                     if (!_workersByIndex.TryGetValue(rec.OwnerWorkerIndex, out var w)) return;
                     _writer.Reset();
                     msg.Write(_writer, MsgId.ClientInput);
+                    Send(w.PeerId, Delivery.Sequenced, _writer.ToSegment());
+                    break;
+                }
+                case MsgId.DriveInput:
+                {
+                    // Only from the driver the entity's owner announced, and only to that owner (docs/driven-vehicles.md D2).
+                    var msg = DriveInputMsg.Read(r);
+                    msg.ClientId = c.ClientId;
+                    if (!_entities.TryGetValue(msg.NetId, out var rec) || rec.DriverClientId != c.ClientId || rec.OwnerClientId != 0) return;
+                    if (!_workersByIndex.TryGetValue(rec.OwnerWorkerIndex, out var w)) return;
+                    _writer.Reset();
+                    msg.Write(_writer);
                     Send(w.PeerId, Delivery.Sequenced, _writer.ToSegment());
                     break;
                 }

@@ -22,6 +22,8 @@ public sealed class FakeWorker : IDisposable
     {
         public ulong NetId;
         public ulong OwnerClientId;
+        /// <summary>The client that drives it (<see cref="EntitySpawnMsg.DriverClientId"/>), 0 for none; announce a change with <see cref="Reannounce"/>.</summary>
+        public ulong DriverClientId;
         public ContainerRef Container;
         public Vector3 Local;
         public uint Epoch = 1;
@@ -63,6 +65,8 @@ public sealed class FakeWorker : IDisposable
     public readonly Dictionary<int, string> Gateways = new();
     public readonly List<string> Refused = new();
     public readonly List<ClientInputMsg> Inputs = new();
+    /// <summary>Every <see cref="MsgId.DriveInput"/> a gateway forwarded here, as it arrived (client id stamped by the gateway).</summary>
+    public readonly List<DriveInputMsg> DriveInputs = new();
     /// <summary>Every <see cref="MsgId.InstanceReady"/> a gateway relayed back from a client, in order.</summary>
     public readonly List<InstancePreparationMsg> ReadyAnswers = new();
     /// <summary>Spawns, forgets and resyncs this worker has sent, by gateway id: what the subscription tests assert on.</summary>
@@ -830,7 +834,24 @@ public sealed class FakeWorker : IDisposable
             case MsgId.DespawnPlayer: Despawns.Add(DespawnPlayerMsg.Read(r)); break;
             case MsgId.InstanceReady: ReadyAnswers.Add(InstancePreparationMsg.Read(r)); break;
             case MsgId.ClientInput: Inputs.Add(ClientInputMsg.Read(r)); break;
+            case MsgId.DriveInput: DriveInputs.Add(DriveInputMsg.Read(r)); break;
         }
+    }
+
+    /// <summary>
+    /// Report an entity's state to the client in control of it, as a worker does every tick for a pawn's owner or a
+    /// vehicle's driver: sent to every linked gateway, as a worker that does not know the client's session does.
+    /// </summary>
+    public void SendOwnerState(ulong netId, ulong clientId, uint tick)
+    {
+        if (!_entities.TryGetValue(netId, out var e)) return;
+        _w.Reset();
+        new OwnerStateMsg
+        {
+            NetId = netId, Epoch = e.Epoch, Tick = tick, LastInputTick = tick, InputLead = 2, OwnerClientId = clientId,
+            Container = e.Container, State = new byte[] { 1, 2, 3 },
+        }.Write(_w);
+        foreach (var link in _links.Values) Transport.Send(link.PeerId, Delivery.Sequenced, _w.ToSegment());
     }
 
     private void DropLink(int peerId)
@@ -994,6 +1015,7 @@ public sealed class FakeWorker : IDisposable
             InterestFlags = RelevanceTiers.WithPriority(e.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None, e.Priority),
             InterestGroup = e.InterestGroup, Vars = e.Vars, State = e.State,
             AudienceGeneration = e.AudienceGeneration, Audience = e.Audience, Maps = e.Maps,
+            DriverClientId = e.DriverClientId,
         }.Write(_w, MsgId.EntitySpawn);
         Transport.Send(peerId, Delivery.ReliableOrdered, _w.ToSegment());
         if (_links.TryGetValue(peerId, out var link)) { Bump(SpawnsSent, link.GatewayId); SpawnLog.Add((link.GatewayId, e.NetId)); }
@@ -1093,6 +1115,10 @@ public sealed class FakeClient : IDisposable
     public readonly List<(InstancePreparationMsg Request, bool HadRow)> Preparations = new();
     /// <summary>The newest container each entity was placed in by a spawn or a state entry.</summary>
     public readonly Dictionary<ulong, ContainerRef> ContainerOf = new();
+    /// <summary>The driver each spawn named, by net id (<see cref="EntitySpawnMsg.DriverClientId"/>).</summary>
+    public readonly Dictionary<ulong, ulong> DriverOf = new();
+    /// <summary>Every owner state the gateway passed on to this client.</summary>
+    public readonly List<OwnerStateMsg> OwnerStates = new();
     /// <summary>
     /// Each entity's variables as a real client would hold them: the block of the last spawn that carried one, or of
     /// the last <see cref="MsgId.EntityVars"/>, whichever came later. A spawn relayed after a newer block regresses it.
@@ -1132,6 +1158,14 @@ public sealed class FakeClient : IDisposable
 
     /// <summary>Whether the gateway link is encrypted, which a test asserts after the handshake has settled.</summary>
     public bool Encrypted => TransportSecurity.IsEncrypted(Transport, _peer);
+
+    /// <summary>Send the driver's input for <paramref name="netId"/> at <paramref name="tick"/>, as a client driving it does every tick.</summary>
+    public void SendDriveInput(ulong netId, uint tick)
+    {
+        var w = new NetworkWriter();
+        new DriveInputMsg { NetId = netId, Frames = new List<ClientInputMsg.Frame> { new() { Tick = tick, Payload = new byte[] { 1 } } } }.Write(w);
+        Transport.Send(_peer, Delivery.Sequenced, w.ToSegment());
+    }
 
     public void SendInput()
     {
@@ -1269,6 +1303,7 @@ public sealed class FakeClient : IDisposable
                 var msg = EntitySpawnMsg.Read(r);
                 Named(msg.NetId, msg.Container);
                 Spawned.Add(msg.NetId);
+                DriverOf[msg.NetId] = msg.DriverClientId;
                 Wire.Add("spawn " + msg.NetId);
                 if (msg.Vars != null && msg.Vars.Length > 0) VarsOf[msg.NetId] = msg.Vars;
                 if (msg.Maps != null)
@@ -1345,6 +1380,7 @@ public sealed class FakeClient : IDisposable
                 break;
             }
             case MsgId.EntityRpc: { ulong netId = EntityRpcMsg.Read(r).NetId; Note(netId); RpcsReceived++; Wire.Add("rpc " + netId); break; }
+            case MsgId.OwnerState: OwnerStates.Add(OwnerStateMsg.Read(r)); break;
         }
     }
 

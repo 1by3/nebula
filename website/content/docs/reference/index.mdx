@@ -341,6 +341,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [ContainerOwnershipMsg](/docs/reference/protocol/container-ownership-msg) | Static class. Carries the container ownership protocol message. |
 | [ContainerOwnershipUpdate](/docs/reference/protocol/container-ownership-update) | Struct. What one MsgId.ContainerOwnership message says: either the complete set of containers a client should know about (Full) or a change to it. |
 | [DespawnPlayerMsg](/docs/reference/protocol/despawn-player-msg) | Struct. Gateway -\> worker: the client's link ended, so the session waits for a reclaim, or the session is over (EndNow). |
+| [DriveInputMsg](/docs/reference/protocol/drive-input-msg) | Struct. A driver's recent inputs for an entity it drives (MsgId.DriveInput, protocol 25): the same frames as ClientInputMsg, for the entity NetId names instead of the sender's pawn. |
 | [EndSessionMsg](/docs/reference/protocol/end-session-msg) | Struct. Worker -\> gateway: this gateway no longer speaks for the session, because the player connected again through another gateway (NebulaConfig.SingleSessionPerPlayer). |
 | [EntityDespawnMsg](/docs/reference/protocol/entity-despawn-msg) | Struct. Carries the entity despawn protocol message. |
 | [EntityExtentSource](/docs/reference/protocol/entity-extent-source) | Enum. Where an entity's extent comes from: the box, in the entity's own space, that the ghost band measures to each neighbouring container instead of the entity's root position (NetworkIdentity.ExtentSource). |

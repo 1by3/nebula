@@ -33,6 +33,8 @@ namespace Nebula
         public bool IsClient => NebulaRuntime.IsClient;
         /// <summary>Client side: this is the local player's entity.</summary>
         public bool IsOwner => IsClient && Identity != null && Identity.IsLocalPlayer;
+        /// <summary>Client side: this client drives the entity (<see cref="NetworkIdentity.SetDriver"/>) and predicts it.</summary>
+        public bool IsDriver => IsClient && Identity != null && Identity.IsLocallyDriven;
         /// <summary>Server side: this worker is authoritative for the entity right now.</summary>
         public bool HasAuthority => IsServer && Identity != null && Identity.HasAuthority;
         /// <summary>Server side: this worker holds a non-authoritative replica driven by a neighbouring worker.</summary>

@@ -68,6 +68,14 @@ public bool IsOwner { get; }
 
 Client side: this is the local player's entity.
 
+### IsDriver [#isdriver]
+
+```csharp
+public bool IsDriver { get; }
+```
+
+Client side: this client drives the entity ([`NetworkIdentity.SetDriver`](/docs/reference/core/network-identity#setdriver)) and predicts it.
+
 ### HasAuthority [#hasauthority]
 
 ```csharp

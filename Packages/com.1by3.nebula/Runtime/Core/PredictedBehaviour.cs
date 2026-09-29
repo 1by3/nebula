@@ -45,6 +45,26 @@ namespace Nebula
             return (sbyte)Math.Max(sbyte.MinValue + 1, Math.Min(sbyte.MaxValue, lead));
         }
 
+        /// <summary>
+        /// The driver of this entity changed (<see cref="NetworkIdentity.SetDriver"/>): <paramref name="current"/> is the
+        /// new driver's client id, 0 when nobody drives it now. Called on the worker that has authority when the
+        /// change is made, and on every client that holds the entity when it hears of it, the new and the previous
+        /// driver's included. Use it for what the seat does (a camera, a HUD, handing the controls back to the
+        /// worker's own logic); Nebula has already switched the input source and the prediction.
+        /// </summary>
+        protected virtual void OnDriverChanged(ulong previous, ulong current) { }
+
+        /// <summary>
+        /// Ticks without any input from the driver after which the worker stops repeating the last one and runs
+        /// <see cref="PredictedBehaviour{TInput}.GatherServerInput"/> instead, until the driver's input comes back: a
+        /// driver whose link drops does not leave the vehicle at full throttle. Default 30 (half a second). The driver
+        /// keeps the seat; take it with <see cref="NetworkIdentity.ClearDriver"/> when the player leaves.
+        /// </summary>
+        protected virtual int DriverInputTimeoutTicks => 30;
+
+        internal int DriverTimeoutTicks => DriverInputTimeoutTicks;
+
+        internal abstract void DriverChanged(ulong previous, ulong current, bool authority);
         internal abstract void ServerReceiveInput(uint tick, NetworkReader payload);
         internal abstract void ClientPredictTick(uint tick, NetworkWriter inputOut);
         internal abstract void ClientReconcile(uint serverTick, NetworkReader state);
@@ -81,6 +101,8 @@ namespace Nebula
         private uint _newestServerInputTick;
         private uint _clientTick;
         private uint _lastReconciledTick;
+        /// <summary>Server: the tick of the newest real input from the client in control, or the tick control changed hands.</summary>
+        private uint _lastControllerInputTick;
 
         /// <summary>The input consumed by the most recent <see cref="Simulate"/> call.</summary>
         public TInput LastInput { get; private set; }
@@ -100,9 +122,10 @@ namespace Nebula
         protected abstract TInput GatherInput();
 
         /// <summary>
-        /// Authoritative worker only, for entities with no owning client (NPCs): produce the input for this tick.
-        /// The same <see cref="Simulate"/> then runs on it, so an NPC moves, shoots and hands over exactly like a
-        /// player. Default: no input.
+        /// Authoritative worker only, for entities with no owning client (NPCs), and for a driven entity while nobody
+        /// drives it or its driver's input has stopped for <see cref="PredictedBehaviourBase.DriverInputTimeoutTicks"/>:
+        /// produce the input for this tick. The same <see cref="Simulate"/> then runs on it, so an NPC moves, shoots
+        /// and hands over exactly like a player. Default: no input.
         /// </summary>
         protected virtual TInput GatherServerInput(uint tick) => default;
 
@@ -150,13 +173,18 @@ namespace Nebula
             TInput input;
             ref var slot = ref _serverInputs[tick % BufferSize];
             ProcessedInputThisTick = false;
-            if (Identity.OwnerClientId == 0)
+            // The client in control: the owner of a pawn, or the driver of a server-owned entity (docs/driven-vehicles.md).
+            bool driven = Identity.OwnerClientId == 0 && Identity.DriverClientId != 0;
+            bool fresh = slot.Valid && slot.Tick == tick;
+            if (Identity.OwnerClientId == 0 && (!driven || (!fresh && (!_hasLastServerInput || DriverSilent(tick)))))
             {
-                // Nobody will ever send input for this entity: the worker is its brain.
+                // Nobody will ever send input for this entity, its driver's first input has not arrived yet, or its
+                // driver has gone quiet: the worker is its brain until the driver's input comes.
                 input = GatherServerInput(tick);
                 LastProcessedInputTick = tick;
+                _hasLastServerInput = false;
             }
-            else if (slot.Valid && slot.Tick == tick)
+            else if (fresh)
             {
                 input = slot.Input;
                 slot.Valid = false;
@@ -164,6 +192,7 @@ namespace Nebula
                 ProcessedInputThisTick = true;
                 _lastServerInput = input;
                 _hasLastServerInput = true;
+                _lastControllerInputTick = tick;
             }
             else if (_hasLastServerInput)
             {
@@ -177,6 +206,30 @@ namespace Nebula
             PendingInputCount = (int)Math.Max(0, (long)_newestServerInputTick - tick);
             LastInput = input;
             Simulate(tick, in input, deltaTime);
+        }
+
+        /// <summary>A driver sent nothing for this tick and nothing for <see cref="PredictedBehaviourBase.DriverInputTimeoutTicks"/> before it.</summary>
+        private bool DriverSilent(uint tick) => tick > _lastControllerInputTick && tick - _lastControllerInputTick > (uint)Math.Max(1, DriverTimeoutTicks);
+
+        internal sealed override void DriverChanged(ulong previous, ulong current, bool authority)
+        {
+            if (authority)
+            {
+                // The new driver's inputs start from nothing: nothing the previous one sent is run for it, and it is
+                // given the timeout from now to send its first.
+                for (int i = 0; i < BufferSize; i++) _serverInputs[i].Valid = false;
+                _hasLastServerInput = false;
+                _newestServerInputTick = 0;
+                _lastControllerInputTick = NetworkTime.Tick;
+            }
+            else
+            {
+                // A client that starts or stops predicting it starts from the worker's state, not from an old history.
+                for (int i = 0; i < BufferSize; i++) _history[i].Valid = false;
+                _lastReconciledTick = 0;
+            }
+            try { OnDriverChanged(previous, current); }
+            catch (Exception ex) { NebulaLog.Error($"OnDriverChanged of {GetType().Name} on {Identity} threw: {ex}"); }
         }
 
         internal sealed override void ServerReceiveInput(uint tick, NetworkReader payload)
@@ -246,6 +299,8 @@ namespace Nebula
                 last.Deserialize(reader);
                 _lastServerInput = last;
             }
+            // A driver's timeout starts again on the worker that takes the entity: its inputs are on their way here.
+            _lastControllerInputTick = Math.Max(LastProcessedInputTick, NetworkTime.Tick);
             // A sender from before the state rode along writes nothing more.
             if (reader.Remaining < 2) return;
             var state = reader.ReadSegment(reader.ReadUShort());
@@ -281,8 +336,12 @@ namespace Nebula
             ref var h = ref _history[serverTick % BufferSize];
             if (!h.Valid || h.Tick != serverTick)
             {
-                // We have no prediction for that tick (just spawned, or too old): adopt the server state outright.
+                // We have no prediction for that tick (just spawned, just took the wheel of a vehicle, or too old):
+                // adopt the server state, and replay what we did predict after it. Adopting alone threw away every
+                // tick predicted since: a driver taking a moving vehicle's wheel saw it pulled back by the input lead
+                // on every report for a round trip, until the reports reached the ticks it had predicted.
                 ReadState(state);
+                Replay(serverTick);
                 return;
             }
             // Peek at the server state without disturbing our own. Everything WriteState covers is saved and put
@@ -316,10 +375,20 @@ namespace Nebula
             if (error > MaxCorrectionMagnitude) MaxCorrectionMagnitude = error;
             h.Position = serverPos;
             h.Container = Identity.Container;
+            Replay(serverTick);
+            OnCorrected(error);
+        }
+
+        /// <summary>Re-run every predicted tick after <paramref name="serverTick"/> from the state just applied, recording where each ended.</summary>
+        private void Replay(uint serverTick)
+        {
+            if (_clientTick <= serverTick) return;
             IsReplaying = true;
             try
             {
-                for (uint t = serverTick + 1; t <= _clientTick; t++)
+                // The ring holds the last BufferSize ticks; anything older was overwritten.
+                uint from = Math.Max(serverTick + 1, _clientTick >= BufferSize ? _clientTick - BufferSize + 1 : 0u);
+                for (uint t = from; t <= _clientTick; t++)
                 {
                     ref var r = ref _history[t % BufferSize];
                     if (!r.Valid || r.Tick != t) continue;
@@ -329,7 +398,6 @@ namespace Nebula
                 }
             }
             finally { IsReplaying = false; }
-            OnCorrected(error);
         }
 
         internal sealed override void ResetPrediction()

@@ -50,6 +50,12 @@ namespace Nebula
         public bool SessionReclaimed { get; private set; }
         public NetworkIdentity LocalPlayer { get; private set; }
         /// <summary>
+        /// The entities this client drives (<see cref="NetworkIdentity.IsLocallyDriven"/>): usually none, or the one
+        /// vehicle the player sits at the wheel of. Each is predicted every tick with the player's input, before the
+        /// pawn, and reconciled to its worker's state, the way the pawn is (docs/driven-vehicles.md).
+        /// </summary>
+        public IReadOnlyList<NetworkIdentity> DrivenEntities => _driven;
+        /// <summary>
         /// How far the join has got, as the gateway sees it. A mesh with <see cref="NebulaConfig.MinWorkers"/> at 0
         /// has nowhere to spawn the first player after an idle period, so the gateway holds the join in
         /// <see cref="JoinState.Starting"/> while a worker boots and completes it with no reconnect; show a
@@ -327,6 +333,10 @@ namespace Nebula
         private readonly NetworkReader _batchReader = new NetworkReader();
         private readonly List<ClientInputMsg.Frame> _recentInputs = new List<ClientInputMsg.Frame>();
         private ClientInputMsg _inputMsg = new ClientInputMsg { Frames = new List<ClientInputMsg.Frame>() };
+        private readonly List<NetworkIdentity> _driven = new List<NetworkIdentity>();
+        /// <summary>Each driven entity's recent inputs, sent three at a time like the pawn's.</summary>
+        private readonly Dictionary<ulong, List<ClientInputMsg.Frame>> _drivenInputs = new Dictionary<ulong, List<ClientInputMsg.Frame>>();
+        private DriveInputMsg _driveMsg = new DriveInputMsg { Frames = new List<ClientInputMsg.Frame>() };
 
         private double _serverTickEstimate;
         private double _serverTickAnchor;
@@ -973,7 +983,8 @@ namespace Nebula
         {
             _fixedThisFrame++;
             if (_transport == null) return; // torn down (see OnDestroy); Unity can still call FixedUpdate this frame
-            if (ConnectionState != State.InGame || LocalPlayer == null || LocalPlayer.Predicted == null) return;
+            bool pawn = LocalPlayer != null && LocalPlayer.Predicted != null;
+            if (ConnectionState != State.InGame || (!pawn && _driven.Count == 0)) return;
 
             // Inputs must reach the worker before it simulates that tick: lead by half the RTT plus a margin, plus
             // whatever the worker's lead reports say is still missing (see OnOwnerState).
@@ -1002,30 +1013,110 @@ namespace Nebula
             // worker does between a carrier's tick and its contents', or the deck is a frame behind under the pawn.
             if (ContainerRegistry.Dynamic.Count > 0) Physics.SyncTransforms();
 
-            // A pawn inside a physics frame predicts in the frame's own coordinates, exactly as its worker simulates
-            // it: the frame root goes back to the identity pose for the step (docs/container-tree.md D11).
-            PhysicsFrames.BeginSimulation(LocalPlayer.Container != null ? LocalPlayer.Container.InnerSpace : null);
-            try
+            for (int i = 0; i < steps; i++)
             {
-                for (int i = 0; i < steps; i++)
+                _predictTick = first + (uint)i;
+                NetworkTime.Tick = _predictTick;
+                // What the player drives moves first, as its worker ticks a carrier before what rides in it: a pawn in
+                // the driving seat then predicts against the seat where the vehicle is now (docs/driven-vehicles.md D6).
+                for (int d = 0; d < _driven.Count; d++) PredictDriven(_driven[d]);
+                if (!pawn) continue;
+                if (_driven.Count > 0) Physics.SyncTransforms();
+                // A pawn inside a physics frame predicts in the frame's own coordinates, exactly as its worker simulates
+                // it: the frame root goes back to the identity pose for the step (docs/container-tree.md D11).
+                PhysicsFrames.BeginSimulation(LocalPlayer.Container != null ? LocalPlayer.Container.InnerSpace : null);
+                try
                 {
-                    _predictTick = first + (uint)i;
-                    NetworkTime.Tick = _predictTick;
                     _inputWriter.Reset();
                     LocalPlayer.Predicted.ClientPredictTick(_predictTick, _inputWriter);
                     _recentInputs.Add(new ClientInputMsg.Frame { Tick = _predictTick, Payload = _inputWriter.ToArray() });
                     while (_recentInputs.Count > 3) _recentInputs.RemoveAt(0);
                 }
+                finally { PhysicsFrames.EndSimulation(); }
+            }
+
+            if (pawn)
+            {
+                _inputMsg.ClientId = ClientId;
+                _inputMsg.Frames.Clear();
+                _inputMsg.Frames.AddRange(_recentInputs);
+                _writer.Reset();
+                _inputMsg.Write(_writer, MsgId.ClientInput);
+                _transport.Send(_gatewayPeer, Delivery.Sequenced, _writer.ToSegment());
+            }
+            for (int d = 0; d < _driven.Count; d++)
+            {
+                var driven = _driven[d];
+                if (driven == null || !_drivenInputs.TryGetValue(driven.NetId, out var frames) || frames.Count == 0) continue;
+                _driveMsg.ClientId = 0; // the gateway stamps the sender
+                _driveMsg.NetId = driven.NetId;
+                _driveMsg.Frames.Clear();
+                _driveMsg.Frames.AddRange(frames);
+                _writer.Reset();
+                _driveMsg.Write(_writer);
+                _transport.Send(_gatewayPeer, Delivery.Sequenced, _writer.ToSegment());
+            }
+            _transport.Flush();
+        }
+
+        /// <summary>One predicted tick of an entity this client drives: in its own space's frame, as its worker simulates it.</summary>
+        private void PredictDriven(NetworkIdentity e)
+        {
+            if (e == null || e.Predicted == null) return;
+            if (!_drivenInputs.TryGetValue(e.NetId, out var frames)) _drivenInputs[e.NetId] = frames = new List<ClientInputMsg.Frame>();
+            PhysicsFrames.BeginSimulation(e.Container != null ? e.Container.InnerSpace : null);
+            try
+            {
+                _inputWriter.Reset();
+                e.Predicted.ClientPredictTick(_predictTick, _inputWriter);
+                frames.Add(new ClientInputMsg.Frame { Tick = _predictTick, Payload = _inputWriter.ToArray() });
+                while (frames.Count > 3) frames.RemoveAt(0);
             }
             finally { PhysicsFrames.EndSimulation(); }
+            // A vehicle with a box of its own (seats, a hold): what rides in it is placed through its new pose.
+            e.Carried?.RefreshCache();
+        }
 
-            _inputMsg.ClientId = ClientId;
-            _inputMsg.Frames.Clear();
-            _inputMsg.Frames.AddRange(_recentInputs);
-            _writer.Reset();
-            _inputMsg.Write(_writer, MsgId.ClientInput);
-            _transport.Send(_gatewayPeer, Delivery.Sequenced, _writer.ToSegment());
-            _transport.Flush();
+        /// <summary>
+        /// Take the driver a spawn names (docs/driven-vehicles.md D3). This client starts predicting an entity it now
+        /// drives from where it shows it, and one it no longer drives goes back to the worker's stream from where the
+        /// prediction left it; every copy's behaviour hears of the change.
+        /// </summary>
+        private void ApplyDriver(NetworkIdentity e, ulong driver)
+        {
+            ulong previous = e.DriverClientId;
+            bool was = e.IsLocallyDriven;
+            e.DriverClientId = driver;
+            e.IsLocallyDriven = driver != 0 && driver == ClientId && e.Predicted != null && !e.IsLocalPlayer;
+            if (e.IsLocallyDriven != was)
+            {
+                if (e.IsLocallyDriven)
+                {
+                    _driven.Add(e);
+                    NebulaLog.Info($"driving {e}");
+                }
+                else
+                {
+                    _driven.Remove(e);
+                    _drivenInputs.Remove(e.NetId);
+                    // The buffer went stale while the prediction drove the pose: start it again from here.
+                    if (e.Interpolator != null)
+                    {
+                        e.Interpolator.Clear();
+                        e.Interpolator.Push(_latestServerTick, e.Container, e.LocalPosition, e.LocalRotation, e.Motion.Velocity);
+                    }
+                    NebulaLog.Info($"no longer driving {e}");
+                }
+            }
+            if (previous != driver) e.Predicted?.DriverChanged(previous, driver, authority: false);
+        }
+
+        private void ForgetDriven(NetworkIdentity e)
+        {
+            if (e == null || !e.IsLocallyDriven) return;
+            _driven.Remove(e);
+            _drivenInputs.Remove(e.NetId);
+            e.IsLocallyDriven = false;
         }
 
         private void ReportTelemetry()
@@ -1468,6 +1559,7 @@ namespace Nebula
                 e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
                 e.SetOwnerConnected((msg.Flags & EntityFlags.OwnerDisconnected) == 0);
                 if (container != e.Container) e.SetContainer(container);
+                ApplyDriver(e, msg.DriverClientId);
                 if (msg.Vars != null && msg.Vars.Length > 0)
                 {
                     _reader.Set(new ArraySegment<byte>(msg.Vars));
@@ -1544,6 +1636,7 @@ namespace Nebula
             e.gameObject.SetActive(true);
             e.InvokeSpawn();
             EntitySpawned?.Invoke(e);
+            ApplyDriver(e, msg.DriverClientId);
             if (e.IsLocalPlayer)
             {
                 LocalPlayer = e;
@@ -1577,6 +1670,7 @@ namespace Nebula
             _entities.Remove(msg.NetId);
             bool wasLocal = LocalPlayer == e;
             if (wasLocal) LocalPlayer = null;
+            ForgetDriven(e);
             EvacuateCarried(e);
             e.InvokeDespawn();
             EntityDespawned?.Invoke(e);
@@ -1724,6 +1818,7 @@ namespace Nebula
             if (e.NetId == 0 || !_entities.TryGetValue(e.NetId, out var bound) || bound != e) return;
             _entities.Remove(e.NetId);
             if (LocalPlayer == e) LocalPlayer = null;
+            ForgetDriven(e);
             _writer.Reset();
             e.WriteMapsFull(_writer);
             var maps = _writer.Length > 0 ? _writer.ToArray() : null;
@@ -1808,21 +1903,26 @@ namespace Nebula
 
         private void OnOwnerState(OwnerStateMsg msg)
         {
-            if (LocalPlayer == null || LocalPlayer.NetId != msg.NetId || LocalPlayer.Predicted == null) return;
-            if (msg.Epoch < LocalPlayer.Epoch) return;
-            LocalPlayer.Epoch = msg.Epoch;
+            // The pawn, or an entity this client drives (docs/driven-vehicles.md D2): reconciled the same way.
+            NetworkIdentity target = null;
+            if (LocalPlayer != null && LocalPlayer.NetId == msg.NetId && LocalPlayer.Predicted != null) target = LocalPlayer;
+            else if (_entities.TryGetValue(msg.NetId, out var driven) && driven != null && driven.IsLocallyDriven) target = driven;
+            if (target == null) return;
+            if (msg.Epoch < target.Epoch) return;
+            target.Epoch = msg.Epoch;
             if (msg.InputLead != OwnerStateMsg.NoInputLead) NoteInputLead(msg.InputLead);
             if (msg.Tick == 0) return;
             // The state is in the worker's container frame for that tick; move there first, or a seam crossing
             // would reconcile against the wrong origin for a tick and snap the pawn across the map.
             var container = ContainerRegistry.Resolve(msg.Container);
             if (container == null && msg.Container.MayArriveLater) return; // the container is not here yet; the next report will do
-            if (container != LocalPlayer.Container) LocalPlayer.SetContainer(container);
+            if (container != target.Container) target.SetContainer(container);
             _reader.Set(new ArraySegment<byte>(msg.State));
             // A correction replays inputs, which is simulation: in the pawn's frame at the identity pose (D11).
             PhysicsFrames.BeginSimulation(container != null ? container.InnerSpace : null);
-            try { LocalPlayer.Predicted.ClientReconcile(msg.Tick, _reader); }
+            try { target.Predicted.ClientReconcile(msg.Tick, _reader); }
             finally { PhysicsFrames.EndSimulation(); }
+            if (target != LocalPlayer) target.Carried?.RefreshCache();
         }
 
         /// <summary>
@@ -1877,6 +1977,8 @@ namespace Nebula
             _pendingSceneByNetId.Clear();
             _pendingByCarrier.Clear();
             LocalPlayer = null;
+            _driven.Clear();
+            _drivenInputs.Clear();
             _hasRenderOffset = false;
             _hasServerState = false;
             EndStall();
