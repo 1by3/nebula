@@ -164,7 +164,11 @@ namespace Nebula
         /// </summary>
         public const uint SettleTicks = NetworkIdentity.SyncKeyframeInterval;
 
-        internal bool CaptureRoot(uint tick, out EntityStateEntry entry)
+        /// <param name="settle">
+        /// The entity has just fallen asleep: send its pose now, reliably, whether it changed or not, as the entry it
+        /// came to rest with (its velocity is already zero), and schedule no recovery after it.
+        /// </param>
+        internal bool CaptureRoot(uint tick, out EntityStateEntry entry, bool settle = false)
         {
             entry = EntityStateEntry.Snapshot(Identity);
             entry.Fields = RootFields;
@@ -194,7 +198,7 @@ namespace Nebula
                 ((entry.Fields & TransformFields.Velocity) != 0 && (entry.Velocity - _rootSent.Velocity).sqrMagnitude > 0.000001f);
             // Settled: nothing changed for SettleTicks since the last entry. A change on this tick is not settling,
             // however long ago the last one was (an entity updated every UpdateInterval ticks), and pushes it back.
-            bool recovery = _rootRecovery && !changed && tick >= _rootRecoveryTick;
+            bool recovery = settle || (_rootRecovery && !changed && tick >= _rootRecoveryTick);
             if (!changed && !recovery && !_teleportPending) return false;
             _rootSent = entry;
             _rootHasSent = true;

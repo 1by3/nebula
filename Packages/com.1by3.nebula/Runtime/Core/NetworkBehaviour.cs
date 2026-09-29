@@ -48,6 +48,15 @@ namespace Nebula
         public virtual void OnGainedAuthority() { }
         /// <summary>Called on a worker when authority moves to a neighbour. The object stays alive as a ghost.</summary>
         public virtual void OnLostAuthority() { }
+        /// <summary>
+        /// Called on the worker that has authority when the entity falls asleep (<see cref="NetworkIdentity.Sleep"/>, or
+        /// <see cref="NetworkIdentity.SleepWhenUnobserved"/>): stop what runs outside <see cref="NetworkTick"/> here, such
+        /// as a coroutine or an animation. Not called when a dormant entity arrives by handover; check
+        /// <see cref="NetworkIdentity.IsDormant"/> in <see cref="OnGainedAuthority"/>.
+        /// </summary>
+        public virtual void OnSleep() { }
+        /// <summary>Called on the worker that has authority when a dormant entity wakes (<see cref="NetworkIdentity.Wake"/>, or a gateway watching it).</summary>
+        public virtual void OnWake() { }
         public virtual void OnContainerChanged(Container previous, Container current) { }
         /// <summary>
         /// Partitioned worlds: the floating origin moved by <paramref name="delta"/>. The transform was moved with
@@ -131,6 +140,35 @@ namespace Nebula
         /// healed by the next keyframe. Reliable is right for anything a receiver must not miss (animator triggers).
         /// </summary>
         public virtual Delivery SyncDelivery => Delivery.ReliableOrdered;
+
+        /// <summary>
+        /// Whether this behaviour's sync state follows the entity's distance tier for far clients, as its transform
+        /// does (<c>docs/server-owned-entities.md</c> D11). The default, <c>SyncDistanceRating.Off</c>, sends every
+        /// chunk to every client that holds the entity. <c>Keyframes</c> (a behaviour that writes deltas) sends a
+        /// client beyond the entity's every-update band only keyframes, one per window of its rate;
+        /// <c>WholeState</c> (a behaviour whose every write is complete, so Nebula always asks for <c>full</c>) sends
+        /// it one chunk per window. Either way, once the state has not changed for
+        /// <see cref="NetworkIdentity.SyncSettleTicks"/> ticks, one reliable keyframe reaches every client that holds
+        /// the entity, so a far client is never left with anything but the latest state. Only the rate changes: the
+        /// audience (<see cref="SyncAudience"/>) still decides who gets it at all.
+        /// <para>
+        /// Override it with a constant: Nebula reads it once, when the entity is spawned or instantiated. It suits
+        /// state that is continuous, where a far client only needs the gist: a swarm's member offsets, an
+        /// animation's blend values. It does not suit events a client must see each of (a trigger); keep those in
+        /// an RPC or a behaviour that is not rated. It has no effect on the root <see cref="NetworkTransform"/>, which
+        /// the gateway rates already, or on <see cref="NetworkVariable{T}"/>s.
+        /// </para>
+        /// </summary>
+        public virtual SyncDistanceRating SyncDistanceRating => SyncDistanceRating.Off;
+
+        /// <summary>The rating this behaviour was spawned with, read once from <see cref="SyncDistanceRating"/>.</summary>
+        internal SyncDistanceRating DistanceRating;
+        /// <summary>Rated only: a change went out and the reliable settle keyframe for it has not.</summary>
+        internal bool SyncSettlePending;
+        /// <summary>Rated only: the settle keyframe was written this tick (any destination); settled by ClearDirty.</summary>
+        internal bool SyncSettleWrittenThisTick;
+        /// <summary>Rated only: the tick of the last chunk written while dirty.</summary>
+        internal uint SyncLastChangeTick;
 
         /// <summary>Ask the worker to send this behaviour's sync state at the end of the tick.</summary>
         protected void MarkSyncDirty()

@@ -27,6 +27,11 @@ namespace Nebula.Tests
             public Vector2 Min = new Vector2(-250f, -250f);
             public Vector2 Max = new Vector2(250f, 250f);
             public int Ticks;
+            /// <summary>How often <see cref="OnSleep"/> and <see cref="OnWake"/> were called on this copy.</summary>
+            public int Slept, Woke;
+
+            public override void OnSleep() => Slept++;
+            public override void OnWake() => Woke++;
 
             public override void NetworkTick(uint tick, float deltaTime)
             {
@@ -94,7 +99,11 @@ namespace Nebula.Tests
         public ConformanceMesh.Worker W2 => Mesh[1];
         public uint CurrentTick => _tick;
 
-        public CrowdMesh(int seed = 359, Action<NetworkIdentity> configurePrefab = null)
+        /// <param name="subscribeEverything">
+        /// Whether the gateway starts subscribed to every region of both containers (as clients standing everywhere
+        /// would). Without it the gateway watches nothing until <see cref="SubscribeAround"/> or <see cref="SubscribeEverything"/>.
+        /// </param>
+        public CrowdMesh(int seed = 359, Action<NetworkIdentity> configurePrefab = null, bool subscribeEverything = true)
         {
             _random = new System.Random(seed);
             Mesh = new ConformanceMesh(2);
@@ -112,22 +121,33 @@ namespace Nebula.Tests
 
             Gateway = Mesh.AddGateway("gw1");
             Mesh.LinkGateway(Gateway);
-            SubscribeEverything();
+            if (subscribeEverything) SubscribeEverything();
         }
 
+        private uint _subscriptionSeq;
+
         /// <summary>The gateway asks both workers for every region of the two containers, as clients standing everywhere would.</summary>
-        private void SubscribeEverything()
+        public void SubscribeEverything() => SubscribeAround(Vector3.zero, HalfWidth * 2f);
+
+        /// <summary>
+        /// The gateway's whole subscription becomes the regions within <paramref name="radius"/> of <paramref name="centre"/>
+        /// (a square, as the grid is): a Full set, as a client's gateway sends when its clients' foci change. A radius of 0
+        /// subscribes nothing.
+        /// </summary>
+        public void SubscribeAround(Vector3 centre, float radius)
         {
             var grid = InterestGrid.Resolve(InterestSettings.Default);
             var set = new HashSet<ulong>();
-            for (float x = -HalfWidth + 1; x < HalfWidth; x += 16f)
-                for (float z = -HalfWidth + 1; z < HalfWidth; z += 16f)
-                    set.Add(grid.RegionOf(x, 0, z));
+            if (radius > 0f)
+                for (float x = Mathf.Max(-HalfWidth + 1, centre.x - radius); x < Mathf.Min(HalfWidth, centre.x + radius); x += 16f)
+                    for (float z = Mathf.Max(-HalfWidth + 1, centre.z - radius); z < Mathf.Min(HalfWidth, centre.z + radius); z += 16f)
+                        set.Add(grid.RegionOf(x, 0, z));
             var regions = new List<ulong>(set);
+            uint seq = ++_subscriptionSeq;
             foreach (var w in Mesh.Workers)
                 Mesh.FromGateway(Gateway, w, writer => new InterestSubscribeMsg
                 {
-                    Seq = 1, Grid = grid,
+                    Seq = seq, Grid = grid,
                     Flags = InterestSubscribeFlags.Full | InterestSubscribeFlags.Commit,
                     Add = regions, Remove = new List<ulong>(), FociRegions = new List<ulong>(), Entities = new List<ulong>(),
                     SetCount = (uint)regions.Count, SetHash = RegionSubscription.Hash(regions),

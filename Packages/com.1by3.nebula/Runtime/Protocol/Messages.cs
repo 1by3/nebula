@@ -1749,6 +1749,26 @@ namespace Nebula
         /// </summary>
         public byte UpdateInterval;
 
+        /// <summary>What <see cref="Dormancy"/> says about the entity being handed over.</summary>
+        [Flags]
+        public enum DormancyFlags : byte
+        {
+            None = 0,
+            /// <summary>It is asleep (<see cref="NetworkIdentity.IsDormant"/>): the receiver keeps it asleep.</summary>
+            Dormant = 1,
+            /// <summary>With <see cref="Dormant"/>: it wakes when a gateway watches it (<see cref="NetworkIdentity.WakesOnInterest"/>).</summary>
+            WakesOnInterest = 2,
+        }
+
+        /// <summary>
+        /// The entity's dormancy (protocol 24, <c>docs/server-owned-entities.md</c> §6), after
+        /// <see cref="UpdateInterval"/> in the same trailing update section, with <see cref="SleepWhenUnobserved"/>.
+        /// Written when either is set; absent reads as awake and never put to sleep.
+        /// </summary>
+        public DormancyFlags Dormancy;
+        /// <summary>The entity's <see cref="NetworkIdentity.SleepWhenUnobserved"/>, in seconds; 0 never.</summary>
+        public float SleepWhenUnobserved;
+
         /// <summary>The extent section's source byte when the section is there only to reach the ones after it.</summary>
         private const byte NoExtent = 0xFF;
 
@@ -1768,7 +1788,8 @@ namespace Nebula
             bool orphan = SessionOrphan != PlayerSessions.OrphanKind.None;
             // Each trailing section is written when it or any section after it holds something, so a reader that
             // knows fewer sections stops where it always did and one that knows more reads their "none" values.
-            bool update = UpdateInterval > 1;
+            bool dormancy = Dormancy != DormancyFlags.None || SleepWhenUnobserved > 0f;
+            bool update = UpdateInterval > 1 || dormancy;
             if (Crossing || orphan || CarriesExtent || update) w.WriteByte(Crossing ? (byte)1 : (byte)0);
             if (!orphan && !CarriesExtent && !update) return;
             w.WriteByte((byte)SessionOrphan);
@@ -1778,7 +1799,10 @@ namespace Nebula
             w.WriteVector3(CarriesExtent ? ExtentCenter : Vector3.zero);
             w.WriteVector3(CarriesExtent ? ExtentSize : Vector3.zero);
             if (!update) return;
-            w.WriteByte(UpdateInterval);
+            w.WriteByte(UpdateInterval > 1 ? UpdateInterval : (byte)1);
+            if (!dormancy) return;
+            w.WriteByte((byte)Dormancy);
+            w.WriteFloat(SleepWhenUnobserved);
         }
 
         public static AuthorityTransferMsg Read(NetworkReader r)
@@ -1810,6 +1834,11 @@ namespace Nebula
                 if (!msg.CarriesExtent) msg.ExtentCenter = msg.ExtentSize = Vector3.zero;
             }
             if (r.Remaining > 0) msg.UpdateInterval = r.ReadByte();
+            if (r.Remaining > 0)
+            {
+                msg.Dormancy = (DormancyFlags)r.ReadByte();
+                msg.SleepWhenUnobserved = r.ReadFloat();
+            }
             return msg;
         }
 

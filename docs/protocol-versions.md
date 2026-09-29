@@ -93,7 +93,8 @@ removed.
 24 is additive for clients: the spawn's `interest_flags` gain the entity's relevance priority in bits 1–2, which a
 protocol-23 client never reads, and nothing else a client sends or reads changed. Between workers,
 `AuthorityTransfer` gains a trailing update section (the entity's `UpdateInterval`, one byte, written only when it is
-above 1); an extent section written only to reach it carries source byte `0xFF`, "no extent". The window is 23..24,
+above 1, then a dormancy byte and the entity's `SleepWhenUnobserved` when either is set); an extent section
+written only to reach it carries source byte `0xFF`, "no extent". The window is 23..24,
 so the protocol-23 recording now replays as N-1 through the frozen protocol-23 decoder, and
 `protocol-24-handshake.json` was recorded for the next bump.
 

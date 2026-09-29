@@ -273,6 +273,44 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void DormancyRidesInTheUpdateSectionAfterTheInterval()
+        {
+            // docs/server-owned-entities.md section 6: a sleeping entity handed over stays asleep on the next worker.
+            var msg = Loaded();
+            var w = new NetworkWriter(512);
+            msg.Write(w);
+            int plain = w.Length;
+
+            msg.Dormancy = AuthorityTransferMsg.DormancyFlags.Dormant | AuthorityTransferMsg.DormancyFlags.WakesOnInterest;
+            msg.SleepWhenUnobserved = 7.5f;
+            w = new NetworkWriter(512);
+            msg.Write(w);
+            Assert.AreEqual(plain + 1 + 1 + 4 + 25 + 1 + 1 + 4, w.Length, "every section before it, the interval as 1, then the flags and the seconds");
+            var back = RoundTrip(msg, out int remaining);
+            Assert.AreEqual(0, remaining);
+            Assert.AreEqual(1, back.UpdateInterval);
+            Assert.AreEqual(msg.Dormancy, back.Dormancy);
+            Assert.AreEqual(7.5f, back.SleepWhenUnobserved);
+            Assert.IsFalse(back.CarriesExtent);
+
+            // With an interval, and asleep without waking on interest.
+            msg.UpdateInterval = 30;
+            msg.Dormancy = AuthorityTransferMsg.DormancyFlags.Dormant;
+            msg.SleepWhenUnobserved = 0f;
+            back = RoundTrip(msg, out remaining);
+            Assert.AreEqual(0, remaining);
+            Assert.AreEqual(30, back.UpdateInterval);
+            Assert.AreEqual(AuthorityTransferMsg.DormancyFlags.Dormant, back.Dormancy);
+
+            // An interval alone writes no dormancy, and reads back awake.
+            msg.Dormancy = AuthorityTransferMsg.DormancyFlags.None;
+            back = RoundTrip(msg, out remaining);
+            Assert.AreEqual(0, remaining);
+            Assert.AreEqual(AuthorityTransferMsg.DormancyFlags.None, back.Dormancy);
+            Assert.AreEqual(0f, back.SleepWhenUnobserved);
+        }
+
+        [Test]
         public void NullBlobsAndListsReadBackEmptyNotNull()
         {
             var msg = Loaded();

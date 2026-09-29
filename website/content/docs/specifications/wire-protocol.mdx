@@ -13,7 +13,7 @@ The current protocol version is `24`. Every `Hello` carries the version its send
 
 A gateway accepts clients of protocols 23 and 24: `HelloMsg.MinProtocolVersion` is `23` and `HelloMsg.ProtocolVersion` is `24`. Gateway-to-worker and worker-to-worker connections MUST match protocol `24` exactly. Before 1.0 a protocol change may close the client window to the new version; protocol 23 did, and protocol 24 does not.
 
-Protocol 24 added [relevance tiers](/docs/guides/server-owned-entities). Nothing a client reads changed. The spawn body's `interest_flags` carry the entity's relevance priority in bits 1 and 2, and `AuthorityTransfer` gains a trailing update section with the entity's update interval.
+Protocol 24 added [relevance tiers and dormancy](/docs/guides/server-owned-entities). Nothing a client reads changed. The spawn body's `interest_flags` carry the entity's relevance priority in bits 1 and 2, and `AuthorityTransfer` gains trailing update and dormancy sections.
 
 Protocol 22 added forwarded token claims (see [Forward token claims to workers](/docs/guides/authentication#forward-token-claims-to-workers)). Nothing a client sends or receives changed. Between gateways and workers, `SpawnPlayer` gains a trailing `claims` section. Between workers, `EntitySpawnBody` gains a trailing `owner_claims` section, which the entity body nested in `AuthorityTransfer` always carries, so the layout of `AuthorityTransfer` changed.
 
@@ -557,7 +557,8 @@ AuthorityTransfer :=
   [u8 crossing,
    [u8 session_orphan, f32 session_reclaim_remaining,
     [u8 extent_source, vec3 extent_center, vec3 extent_size,
-     [u8 update_interval]]]]
+     [u8 update_interval,
+      [u8 dormancy, f32 sleep_when_unobserved]]]]]
 ```
 
 `crossing` is an optional trailing byte. The sender writes it when it is `1`, and also, as `0`, when the session section follows. It means the sender is handing the entity over for a [physics frame](/docs/guides/physics-frames) crossing that it may not perform itself, because the receiver simulates the frame's carrier. The entity's pose is still in the sender's coordinates. The receiver crosses it on its next tick and does not hand it back for a short hold (30 ticks), so a lagging copy of the frame on the sender cannot return it at once.
@@ -570,7 +571,9 @@ The optional session section is written only when the owner's session is waiting
 
 The optional extent section carries an [extent](/docs/concepts/containers-and-handover#ghost-a-large-entity-by-its-extent) the entity was given at runtime: `extent_source` is `0` (none), `1` (explicit box) or `2` (colliders), and the box is in the entity's local space. A sender that writes the section only to reach the update section writes `extent_source` `255` and zero vectors, and the receiver keeps its own copy's extent.
 
-The optional update section carries the entity's `UpdateInterval`, in ticks (`2` to `255`). The sender writes it when the interval is above `1`, and writes the sections before it as empty. A receiver that reads no update section sets the interval to `1`.
+The optional update section carries the entity's `UpdateInterval`, in ticks (`1` to `255`). The sender writes it when the interval is above `1` or the dormancy section follows, and writes the sections before it as empty. A receiver that reads no update section sets the interval to `1`.
+
+The optional dormancy section says whether the entity is [asleep](/docs/guides/server-owned-entities#put-characters-to-sleep): `dormancy` bit 0 means it is asleep and the receiver keeps it asleep, and bit 1 means it wakes when a gateway watches it. `sleep_when_unobserved` is the entity's `SleepWhenUnobserved` in seconds, `0` for never. The sender writes the section when either is set. A receiver that reads no dormancy section treats the entity as awake, with `0`.
 
 A writer includes each optional section when it, or any section after it, holds something. A reader stops at the end of the message and treats every section it did not read as empty.
 

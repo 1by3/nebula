@@ -105,6 +105,41 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void APriorityWithItsOwnTiersUsesThemAndNormalAlwaysUsesTheGlobalOnes()
+        {
+            var crowd = RelevanceTierBands.Of(25f, 60f, 1, 30, 120);
+            var low = RelevanceTiers.Resolve(RelevancePriority.Low, crowd, 30f, 80f, 4, 12);
+            Assert.AreEqual(1, RelevanceTiers.DivisorAt(low, 20 * 20), "inside its own near band: every update");
+            Assert.AreEqual(30, RelevanceTiers.DivisorAt(low, 40 * 40), "40 m is its middle band, not the global near one");
+            Assert.AreEqual(120, RelevanceTiers.DivisorAt(low, 100 * 100));
+            Assert.AreEqual(120, RelevanceTiers.DivisorAt(low, double.MaxValue), "no focus in its space: its far rate");
+
+            var normal = RelevanceTiers.Resolve(RelevancePriority.Normal, crowd, 30f, 80f, 4, 12);
+            Assert.IsFalse(normal.Override, "Normal's tiers are the global ones; an override cannot be given to it");
+            Assert.AreEqual(1, RelevanceTiers.DivisorAt(normal, 20 * 20));
+            Assert.AreEqual(4, RelevanceTiers.DivisorAt(normal, 40 * 40), "a player 40 m away keeps its full middle-band rate");
+            Assert.AreEqual(12, RelevanceTiers.DivisorAt(normal, 100 * 100));
+
+            var quiet = RelevanceTiers.Resolve(RelevancePriority.Background, RelevanceTierBands.Of(25f, 60f, 4, 60, 0), 30f, 80f, 4, 12);
+            Assert.AreEqual(RelevanceTiers.Quiet, RelevanceTiers.DivisorAt(quiet, 100 * 100), "a divisor of 0 is none");
+        }
+
+        [Test]
+        public void WithoutAnOverrideEachPriorityResolvesToTheShiftedGlobalTiers()
+        {
+            foreach (RelevancePriority p in System.Enum.GetValues(typeof(RelevancePriority)))
+            {
+                var t = RelevanceTiers.Resolve(p, default, 30f, 80f, 4, 12);
+                Assert.IsFalse(t.Override);
+                foreach (double d in new[] { 10.0, 50.0, 100.0, double.MaxValue })
+                {
+                    double sqr = d == double.MaxValue ? d : d * d;
+                    Assert.AreEqual(RelevanceTiers.Divisor(p, RelevanceTiers.BandOf(sqr, 30f, 80f), 4, 12), RelevanceTiers.DivisorAt(t, sqr), $"{p} at {d}");
+                }
+            }
+        }
+
+        [Test]
         public void WindowsAreStaggeredByNetIdSoACrowdSpreadsOverTheTicks()
         {
             // 60 entities updated every tick, each to a 12-tick window: every tick carries about 5 of them.

@@ -83,6 +83,25 @@ namespace Nebula.Tests
         }
 
         /// <summary>
+        /// Dormancy (docs/server-owned-entities.md §6): 150 active walkers updated every 6 ticks beside
+        /// <paramref name="sleeping"/> walkers put to sleep, all on one worker.
+        /// </summary>
+        [Test]
+        public void DormantCrowd([Values(1500, 5000)] int sleeping)
+        {
+            using var crowd = new CrowdMesh();
+            var box = (min: new Vector2(-250f, -250f), max: new Vector2(-30f, 250f));
+            foreach (var e in crowd.SpawnWalkers(crowd.W1, 150, -240f, -40f, 1.5f, box.min, box.max)) e.UpdateInterval = 6;
+            foreach (var e in crowd.SpawnWalkers(crowd.W1, sleeping, -240f, -40f, 1.5f, box.min, box.max)) e.Sleep(wakeOnInterest: false);
+            crowd.Run(Warmup);
+            var w = crowd.Measure(Measured);
+            string scenario = $"dormant-150x6+{sleeping}asleep";
+            Rows.Add(CrowdMesh.CsvRow(scenario, 150 + sleeping, w));
+            Debug.Log(CrowdMesh.CsvRow(scenario, 150 + sleeping, w));
+            Assert.AreEqual(sleeping, crowd.W1.Instance.DormantCount);
+        }
+
+        /// <summary>
         /// 50 entities spawned in one frame: how many messages and bytes the worker hands the gateway for them
         /// (one reliable <c>EntitySpawn</c> each; the transport may still pack several into one datagram).
         /// </summary>

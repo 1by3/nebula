@@ -1,0 +1,20 @@
+---
+title: "SyncDistanceRating"
+description: "Whether a behavior's sync state reaches far clients less often, following the entity's distance tier as its transform does (NetworkBehaviour.SyncDistanceRating, docs/server-owned-entities.md D11)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/SyncState.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/SyncState.cs)</div>
+
+```csharp
+public enum SyncDistanceRating : byte
+```
+
+Whether a behavior's sync state reaches far clients less often, following the entity's distance tier as its transform does (`NetworkBehaviour.SyncDistanceRating`, `docs/server-owned-entities.md` D11). Configuration, not state: declare it on the behavior. Nothing is lost, only coalesced: once the state stops changing, one reliable keyframe reaches every client that holds the entity.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="off"></span>`Off` | `0` | Every chunk to every client that holds the entity, whatever its distance. The default, and what Nebula always did. |
+| <span id="keyframes"></span>`Keyframes` | `1` | For a behavior that writes deltas. A client in the entity's every-update band gets every chunk; a client further away gets only keyframes (at most one every `NetworkIdentity.SyncKeyframeInterval` ticks), one per window of its rate, and none where its rate is none. Once a client has missed a delta it gets no more deltas until its next keyframe. |
+| <span id="wholestate"></span>`WholeState` | `2` | For a behavior whose every write is its whole state: the worker asks for `full` every time, so every chunk is a keyframe and a far client gets one per window of its rate, exactly as the entity's transform. |

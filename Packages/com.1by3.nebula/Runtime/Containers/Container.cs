@@ -391,7 +391,13 @@ namespace Nebula
                 var parent = FixedParent;
                 return parent != null ? parent.OwnerWorkerId : _ownerWorkerId;
             }
-            internal set => _ownerWorkerId = value ?? "";
+            internal set
+            {
+                value ??= "";
+                if (_ownerWorkerId == value) return;
+                _ownerWorkerId = value;
+                ContainerRegistry.OwnershipVersion++;
+            }
         }
 
         /// <summary>Index of the owning worker (<see cref="ushort.MaxValue"/> when unowned), derived as <see cref="OwnerWorkerId"/> is.</summary>

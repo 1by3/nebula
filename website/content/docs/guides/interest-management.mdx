@@ -98,6 +98,8 @@ An entity's `NetworkIdentity.RelevancePriority` shifts these tiers for every cli
 
 "None" stops the client's updates without despawning the entity there. The client keeps the replica where it was last told and still receives the entity's reliable updates: the pose it comes to rest at, a teleport, and a change of container. A client's own pawn always receives every update. See [Run crowds of server-owned entities](/docs/guides/server-owned-entities).
 
+To give `High`, `Low` or `Background` entities tiers of their own instead of the shift, set `InterestHighTiers`, `InterestLowTiers` or `InterestBackgroundTiers` with `Override` on: two radii and a divisor for each band, where `0` is none. `Normal` always uses the four settings above. This lets a crowd use slow tiers while players keep the default ones; see [Set the distance tiers for a crowd](/docs/guides/server-owned-entities#set-the-distance-tiers-for-a-crowd). A behavior can also have its sync state follow these tiers, with `NetworkBehaviour.SyncDistanceRating`.
+
 ## Per-prefab overrides
 
 Three fields on `NetworkIdentity` adjust how a prefab participates in interest, independent of the client-side rate fields above:

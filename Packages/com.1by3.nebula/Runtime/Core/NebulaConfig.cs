@@ -300,6 +300,14 @@ namespace Nebula
         [Tooltip("Send every Nth tick for entities beyond the far radius (1 = every tick). Clients without a pawn yet get this rate for everything.")]
         public int InterestFarDivisor = 12;
 
+        [Header("Rate tiers per relevance priority")]
+        [Tooltip("High-priority entities' own distance tiers. Without Override they get the tiers above one band better: every update out to InterestFarRadius, InterestMidDivisor beyond.")]
+        public RelevanceTierBands InterestHighTiers;
+        [Tooltip("Low-priority entities' own distance tiers (a crowd, traffic, critters), so they can be slowed without slowing players. Without Override they get the tiers above one band worse. A divisor of 0 sends no updates in that band.")]
+        public RelevanceTierBands InterestLowTiers;
+        [Tooltip("Background entities' own distance tiers. Without Override they get InterestMidDivisor inside InterestNearRadius and no updates beyond. A divisor of 0 sends no updates in that band.")]
+        public RelevanceTierBands InterestBackgroundTiers;
+
         [Header("Client")]
         [Tooltip("Render delay for remote entities, in ticks.")]
         public int InterpolationDelayTicks = 3;

@@ -23,6 +23,13 @@ namespace Nebula
     /// </summary>
     public static class ContainerRegistry
     {
+        /// <summary>
+        /// Raised every time a container's recorded owner changes. A worker compares it between ticks to know when the
+        /// entities it does not re-resolve on a tick (asleep, or between their updates) may have to follow a lease
+        /// (<c>docs/server-owned-entities.md</c> §6), instead of asking every one of them every tick.
+        /// </summary>
+        internal static uint OwnershipVersion;
+
         private static readonly List<Container> Containers = new List<Container>();
         private static readonly Dictionary<string, Container> ById = new Dictionary<string, Container>();
         private static Dictionary<Vector3Int, List<Container>> _grid;
