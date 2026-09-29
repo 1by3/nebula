@@ -70,6 +70,14 @@ public int InputLeadMin { get; } = int.MaxValue;
 
 Server: the smallest input lead (input tick minus the worker's current tick at arrival) seen since the last [`TakeInputLead`](#takeinputlead). An input only gets simulated when it arrives with a lead of at least 1; the owner uses this to stretch or relax how far ahead it sends. `int.MaxValue` while nothing arrived.
 
+### DriverInputTimeoutTicks [#driverinputtimeoutticks]
+
+```csharp
+protected virtual int DriverInputTimeoutTicks { get; }
+```
+
+Ticks without any input from the driver after which the worker stops repeating the last one and runs [`PredictedBehaviour<TInput>.GatherServerInput`](/docs/reference/core/predicted-behaviour#gatherserverinput) instead, until the driver's input comes back: a driver whose link drops does not leave the vehicle at full throttle. Default 30 (half a second). The driver keeps the seat; take it with [`NetworkIdentity.ClearDriver`](/docs/reference/core/network-identity#cleardriver) when the player leaves.
+
 ## Methods
 
 ### ResetCorrectionStats [#resetcorrectionstats]
@@ -77,3 +85,11 @@ Server: the smallest input lead (input tick minus the worker's current tick at a
 ```csharp
 public void ResetCorrectionStats();
 ```
+
+### OnDriverChanged [#ondriverchanged]
+
+```csharp
+protected virtual void OnDriverChanged(ulong previous, ulong current);
+```
+
+The driver of this entity changed ([`NetworkIdentity.SetDriver`](/docs/reference/core/network-identity#setdriver)): `current` is the new driver's client id, 0 when nobody drives it now. Called on the worker that has authority when the change is made, and on every client that holds the entity when it hears of it, the new and the previous driver's included. Use it for what the seat does (a camera, a HUD, handing the controls back to the worker's own logic); Nebula has already switched the input source and the prediction.

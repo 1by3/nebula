@@ -1,9 +1,9 @@
 ---
 title: Prediction and reconciliation
-description: Predict an owned entity, reconcile it with worker state, drive server-owned entities, and perform lag-compensated queries.
+description: Predict an owned entity, reconcile it with worker state, drive server-owned entities and vehicles, and perform lag-compensated queries.
 ---
 
-Use `PredictedBehaviour<TInput>` for an entity that must respond to local input before a worker reply arrives. A player controller is the common example.
+Use `PredictedBehaviour<TInput>` for an entity that must respond to local input before a worker reply arrives. A player controller is the common example; a vehicle the player drives is another (see [Drive a vehicle](#drive-a-vehicle)).
 
 Keep `NetworkIdentity` and an enabled `NetworkTransform` on the controller's root. A newly added predicted behavior requires and adds the transform component; check existing prefabs explicitly. Use worker authority (`Authority = Server`) so remote clients and ghost workers follow the worker's state. The owning client uses reconciliation. Do not combine this controller with `NetworkRigidbody`.
 
@@ -170,6 +170,120 @@ protected override PlayerInput GatherServerInput(uint tick)
 The worker calls the same `Simulate` method used for a player. A server-driven entity can therefore move between workers through the normal handover path.
 
 Store behavior state that must survive handover in a `NetworkVariable` or the handover-state methods. Rebuild worker-local state in `OnGainedAuthority`.
+
+## Drive a vehicle
+
+A vehicle that players drive, such as a car or a boat, is an entity no client owns: several players can ride in it, and it stays in the world when its driver leaves. Spawn it with `NebulaWorker.SpawnServerDriven` and give it a `PredictedBehaviour<TInput>`. When a player takes the driving seat, the worker hands that player's client the controls with `NetworkIdentity.SetDriver`. From then on the vehicle runs the driver's input on the worker, and the driver's client predicts it and reconciles it with the worker's state, as it does for its own pawn.
+
+Without prediction, the driver sees the vehicle respond to the wheel a round trip plus about 110 ms later, because the worker's result reaches the client through the same interpolation delay as any other entity. On a 30 ms round-trip time (RTT) that is 140 ms; on a 150 ms RTT it is 273 ms, and a driver who steers by what they see turns past the heading they wanted. With prediction, the vehicle responds on the next frame at any latency. Other clients still see the vehicle interpolated.
+
+### Write the vehicle
+
+The vehicle's behavior is an ordinary predicted behavior. `GatherInput` reads the local player's controls, `GatherServerInput` says what the vehicle does with nobody at the wheel, and `Simulate` moves it.
+
+```csharp title="VehicleController.cs"
+using Nebula;
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+public struct VehicleInput : INetworkInput
+{
+    public float Throttle;
+    public float Steer;
+
+    public void Serialize(NetworkWriter writer)
+    {
+        writer.WriteFloat(Throttle);
+        writer.WriteFloat(Steer);
+    }
+
+    public void Deserialize(NetworkReader reader)
+    {
+        Throttle = reader.ReadFloat();
+        Steer = reader.ReadFloat();
+    }
+}
+
+public sealed class VehicleController : PredictedBehaviour<VehicleInput>
+{
+    public float Acceleration = 8f;
+    public float Drag = 0.4f;
+    public float TurnRate = 60f;
+    private float _speed;
+
+    protected override VehicleInput GatherInput()
+    {
+        var keyboard = Keyboard.current;
+        if (keyboard == null) return default;
+        return new VehicleInput
+        {
+            Throttle = (keyboard.wKey.isPressed ? 1f : 0f) - (keyboard.sKey.isPressed ? 1f : 0f),
+            Steer = (keyboard.dKey.isPressed ? 1f : 0f) - (keyboard.aKey.isPressed ? 1f : 0f),
+        };
+    }
+
+    // Nobody at the wheel: coast to a stop.
+    protected override VehicleInput GatherServerInput(uint tick) => default;
+
+    protected override void Simulate(uint tick, in VehicleInput input, float deltaTime)
+    {
+        _speed += (input.Throttle * Acceleration - Drag * _speed) * deltaTime;
+        float yaw = input.Steer * TurnRate * Mathf.Clamp01(Mathf.Abs(_speed) / 4f) * deltaTime;
+        var rotation = Identity.LocalRotation * Quaternion.Euler(0f, yaw, 0f);
+        var velocity = rotation * Vector3.forward * _speed;
+        Identity.SetLocalPose(Identity.Container, Identity.LocalPosition + velocity * deltaTime, rotation);
+        Identity.Motion.Velocity = Identity.Container != null ? Identity.Container.Rotation * velocity : velocity;
+    }
+
+    protected override void WriteState(NetworkWriter writer)
+    {
+        base.WriteState(writer);
+        writer.WriteFloat(_speed);
+    }
+
+    protected override void ReadState(NetworkReader reader)
+    {
+        base.ReadState(reader);
+        _speed = reader.ReadFloat();
+    }
+}
+```
+
+Keep `Simulate` deterministic and kinematic, as for a player controller: the client runs it again for a single vehicle during a replay, which PhysX cannot do for a `Rigidbody`. Do not use `NetworkRigidbody` or wheel colliders on a predicted vehicle. Write everything `Simulate` carries from tick to tick, such as the speed here, in `WriteState` and `ReadState`.
+
+### Hand the controls to a player
+
+Call `SetDriver` on the worker that has authority over the vehicle when a player's pawn takes the driving seat, and `ClearDriver` when it leaves:
+
+```csharp
+// On the worker, in your seat logic.
+void OnDriverSeated(NetworkIdentity vehicle, NetworkIdentity pawn) => vehicle.SetDriver(pawn.OwnerClientId);
+
+void OnDriverLeft(NetworkIdentity vehicle) => vehicle.ClearDriver();
+```
+
+`SetDriver` returns `false`, and logs a warning, when it is called on a copy without authority, on an entity with no predicted behavior, or on an entity a client owns: a player's pawn cannot be driven by anyone else. The vehicle has one driver at a time. Nebula announces the change to every client that holds the vehicle and carries it with the vehicle when another worker takes it over.
+
+What each side does:
+
+- The worker runs the driver's input every tick, even if the vehicle has a longer `UpdateInterval`, and sends the driver the vehicle's state. It ignores input for the vehicle from anybody else. A driven vehicle cannot sleep.
+- The driver's client predicts the vehicle before its own pawn on each tick, so a pawn in the driving seat moves with the vehicle's new pose. `NebulaClient.DrivenEntities` lists what the client drives, and `NetworkBehaviour.IsDriver` is true on that client.
+- Every copy of the behavior, on the worker and on each client, gets `OnDriverChanged(previous, current)`, with `0` for "nobody". Use it for cameras, prompts and HUDs.
+
+### Seat the passengers
+
+Put a `Container` on the vehicle's root so that it carries a box, and keep the driver's and passengers' pawns inside it: your pawn controller holds each pawn at its seat in the box's coordinates. Everything in the box moves with the vehicle, stays in its seat on every client, and changes worker with the vehicle. This also works when the vehicle itself is inside a moving container, such as a car in a ship's hold. See [Dynamic containers](/docs/guides/dynamic-containers) and [Physics frames](/docs/guides/physics-frames).
+
+### Handle a driver who goes quiet or leaves
+
+If the driver's input stops arriving, the worker repeats the last input for `DriverInputTimeoutTicks` (30 ticks, half a second), then runs `GatherServerInput` until the driver's input returns. The driver keeps the seat, so the vehicle does not stay at full throttle when a link drops. Override `DriverInputTimeoutTicks` to change the wait.
+
+When the driver's session ends, for example because the player left, the worker that holds both the vehicle and the driver's pawn clears the driver. That is the usual case, since the pawn rides in the vehicle. A disconnected player who can still reconnect keeps the seat; to free it at once, call `ClearDriver` from `NebulaGameMode.OnPlayerDisconnected`.
+
+### Know the limits
+
+- Something only the worker knows about, such as another player's vehicle hitting yours, is corrected in one step by the size of the difference. Use `OnCorrected` if you want to ease that visually.
+- A vehicle that needs PhysX to move cannot be predicted. It still works as a server-owned entity that the worker simulates and every client interpolates, with the delay described above.
 
 ## Perform a lag-compensated query
 

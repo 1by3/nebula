@@ -9,9 +9,11 @@ The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** descri
 
 ## Compatibility
 
-The current protocol version is `24`. Every `Hello` carries the version its sender speaks.
+The current protocol version is `25`. Every `Hello` carries the version its sender speaks.
 
-A gateway accepts clients of protocols 23 and 24: `HelloMsg.MinProtocolVersion` is `23` and `HelloMsg.ProtocolVersion` is `24`. Gateway-to-worker and worker-to-worker connections MUST match protocol `24` exactly. Before 1.0 a protocol change may close the client window to the new version; protocol 23 did, and protocol 24 does not.
+A gateway accepts clients of protocols 24 and 25: `HelloMsg.MinProtocolVersion` is `24` and `HelloMsg.ProtocolVersion` is `25`. Gateway-to-worker and worker-to-worker connections MUST match protocol `25` exactly. Before 1.0 a protocol change may close the client window to the new version; protocol 23 did, and protocols 24 and 25 do not.
+
+Protocol 25 added [driven vehicles](/docs/guides/prediction#drive-a-vehicle). A client that drives an entity sends `DriveInput`, and `EntitySpawnBody` gains a trailing `driver_client_id`. A protocol-24 client never sends the message and never reads the field. The entity body nested in `AuthorityTransfer` always carries the field, so the layout of `AuthorityTransfer` changed between workers.
 
 Protocol 24 added [relevance tiers and dormancy](/docs/guides/server-owned-entities). Nothing a client reads changed. The spawn body's `interest_flags` carry the entity's relevance priority in bits 1 and 2, and `AuthorityTransfer` gains trailing update and dormancy sections.
 
@@ -105,7 +107,7 @@ Decode each ten-bit value with `(q / 1023) * (2 * r) - r`. Reconstruct the omitt
 
 An entity authority epoch is a `u32` and starts at 1. It increases on every handover. Receivers ignore entity state whose epoch is older than the newest epoch they have accepted. This is separate from the `u64` lease epoch in the [control-plane contract](/docs/specifications/control-plane).
 
-`client_id` is a `u64` session identifier that is unique across every gateway of a mesh. A gateway draws a random 32-bit **incarnation** when it starts and numbers its sessions from 1: `client_id = (incarnation << 32) | sequence`. Zero means no owner in an entity record and broadcast in an `EntityRpc`. The gateway replaces the `client_id` supplied by a client in `ClientInput` and `ServerRpc` with the session ID of that connection. A session ID stays the same when the client reconnects with its session token, through any gateway of the mesh (see [`Hello` and session messages](#hello-and-session-messages)).
+`client_id` is a `u64` session identifier that is unique across every gateway of a mesh. A gateway draws a random 32-bit **incarnation** when it starts and numbers its sessions from 1: `client_id = (incarnation << 32) | sequence`. Zero means no owner in an entity record and broadcast in an `EntityRpc`. The gateway replaces the `client_id` supplied by a client in `ClientInput`, `DriveInput` and `ServerRpc` with the session ID of that connection. A session ID stays the same when the client reconnects with its session token, through any gateway of the mesh (see [`Hello` and session messages](#hello-and-session-messages)).
 
 ### Container reference
 
@@ -165,6 +167,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 21 | `ServerRpc` | `C-G-W` | Reliable ordered | [`EntityRpcBody`](#remote-procedure-calls) |
 | 23 | `ClientFocusHint` | `C-G` | Sequenced (hint), ReliableOrdered (clear) | [`ClientFocusHint`](#interest-management) |
 | 24 | `Goodbye` | `C-G` | Reliable ordered | [`Goodbye`](#hello-and-session-messages) |
+| 25 | `DriveInput` | `C-G-W`, `W-W` | Sequenced | [`DriveInputBody`](#prediction-messages) |
 | 30 | `SpawnPlayer` | `G-W` | Reliable ordered | [`SpawnPlayer`](#player-lifecycle) |
 | 31 | `DespawnPlayer` | `G-W` | Reliable ordered | [`DespawnPlayer`](#player-lifecycle) |
 | 32 | `EndSession` | `W-G` | Reliable ordered | [`EndSession`](#player-lifecycle) |
@@ -272,7 +275,8 @@ EntitySpawnBody :=
   [u32 audience_generation,
    bytes audience_sets,
    [u32 maps_length, raw maps[maps_length],
-    [Claims owner_claims]]]
+    [Claims owner_claims,
+     [u64 driver_client_id]]]]
 
 Claims := u8 count, ClaimEntry[count]
 ClaimEntry := string name, string value
@@ -295,7 +299,9 @@ EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
 
 `maps` is every [replicated map](#replicated-maps) of the entity in full, as a `MapSection`. A standalone spawn carries it only when the entity has maps, and then always writes the audience section before it. The entity body nested in `AuthorityTransfer` always carries it, empty when there are none. A gateway keeps it current with each `EntityMaps` and sends the current contents in the spawn a client joining later receives.
 
-`owner_claims` is the owning player's [forwarded token claims](#player-lifecycle), written only between workers: in a `GhostSpawn` when the owner has claims, and always in the entity body nested in `AuthorityTransfer` (`count` `0` when there are none). A standalone spawn that carries it writes the audience and maps sections before it. A worker MUST NOT send it to a gateway, and a gateway MUST NOT forward it to a client.
+`owner_claims` is the owning player's [forwarded token claims](#player-lifecycle), written only between workers: in a `GhostSpawn` when the owner has claims, and always in the entity body nested in `AuthorityTransfer` (`count` `0` when there are none). A standalone spawn that carries it writes the audience and maps sections before it. A worker MUST NOT send claims to a gateway, and a gateway MUST NOT forward them to a client: when `driver_client_id` follows, they write the section with `count` `0`.
+
+`driver_client_id` is the client that drives the entity (see [Drive a vehicle](/docs/guides/prediction#drive-a-vehicle)), or `0` for none. Only an entity no client owns can have a driver. A spawn carries the field when it is not zero, with every earlier trailing section written before it, and the entity body nested in `AuthorityTransfer` always carries it. A worker announces a change of driver with a fresh `EntitySpawn` to every gateway that holds the entity. The gateway forwards `DriveInput` for the entity only from this client and keeps the entity in this client's set. A client that finds its own session ID here predicts the entity.
 
 The `vars` blob concatenates every `NetworkVariable` in deterministic behavior and reflected field order. It carries no count, names, type tags, or per-value lengths. A compatible game schema is therefore required. `state` is a [sync-state envelope](#sync-state-envelope).
 
@@ -447,6 +453,7 @@ After `fields`, write data in this order:
 ```text
 ClientInputBody := u64 client_id, u8 frame_count, InputFrame[frame_count]
 InputFrame      := u32 tick, bytes payload
+DriveInputBody  := u64 client_id, u64 net_id, u8 frame_count, InputFrame[frame_count]
 
 OwnerState :=
   u64 net_id,
@@ -461,7 +468,9 @@ OwnerState :=
 
 `ClientInput` and `ForwardInput` share `ClientInputBody`. A worker accepts `ClientInput` for a session only from the gateway that currently holds that session. The stock client repeats up to its three newest frames to tolerate loss. Each input payload is the exact output of the game's `INetworkInput.Serialize` method.
 
-`OwnerState.state` is the exact output of the predicted behavior's `WriteState`. `input_lead` is the smallest observed `input_tick - worker_tick` since the previous report, clamped to `-127` through `127`. `-128` means that no input arrived during the reporting window.
+`DriveInput` carries the input of the client that drives `net_id`. A client writes `0` as `client_id`. The gateway drops the message unless the entity's latest `EntitySpawn` names the sender in `driver_client_id` and no client owns the entity, and forwards it to the worker it believes owns the entity. The worker runs the frames only when it has authority and the sender is the driver it knows; a worker that has handed the entity over forwards the message to the new owner. It never claims the sender's session.
+
+A worker sends `OwnerState` every tick for an entity a client owns, to that client, and for an entity a client drives, to the driver; `owner_client_id` names that client. A worker that does not know which gateway holds the driver's session sends it to every gateway it links to, and a gateway forwards it only to that client, and only while the client holds the entity. `OwnerState.state` is the exact output of the predicted behavior's `WriteState`. `input_lead` is the smallest observed `input_tick - worker_tick` since the previous report, clamped to `-127` through `127`. `-128` means that no input arrived during the reporting window.
 
 ### Container ownership
 

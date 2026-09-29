@@ -93,6 +93,14 @@ True when the last Welcome reclaimed the session (the pawn is the one from befor
 public NetworkIdentity LocalPlayer { get; }
 ```
 
+### DrivenEntities [#drivenentities]
+
+```csharp
+public IReadOnlyList<NetworkIdentity> DrivenEntities { get; }
+```
+
+The entities this client drives ([`NetworkIdentity.IsLocallyDriven`](/docs/reference/core/network-identity#islocallydriven)): usually none, or the one vehicle the player sits at the wheel of. Each is predicted every tick with the player's input, before the pawn, and reconciled to its worker's state, the way the pawn is (docs/driven-vehicles.md).
+
 ### Join [#join]
 
 ```csharp

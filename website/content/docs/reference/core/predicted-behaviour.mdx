@@ -67,7 +67,7 @@ Owning client only: sample the input for this tick.
 protected virtual TInput GatherServerInput(uint tick);
 ```
 
-Authoritative worker only, for entities with no owning client (NPCs): produce the input for this tick. The same [`Simulate`](#simulate) then runs on it, so an NPC moves, shoots and hands over exactly like a player. Default: no input.
+Authoritative worker only, for entities with no owning client (NPCs), and for a driven entity while nobody drives it or its driver's input has stopped for [`PredictedBehaviourBase.DriverInputTimeoutTicks`](/docs/reference/core/predicted-behaviour-base#driverinputtimeoutticks): produce the input for this tick. The same [`Simulate`](#simulate) then runs on it, so an NPC moves, shoots and hands over exactly like a player. Default: no input.
 
 ### Simulate [#simulate]
 

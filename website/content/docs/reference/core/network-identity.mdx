@@ -340,6 +340,22 @@ public bool IsLocalPlayer { get; }
 
 Client side: owned by the local client.
 
+### DriverClientId [#driverclientid]
+
+```csharp
+public ulong DriverClientId { get; }
+```
+
+The client whose input drives this server-owned entity, 0 when nobody does. Set it on the worker with [`SetDriver`](#setdriver). While it is set the entity's [`PredictedBehaviour<TInput>`](/docs/reference/core/predicted-behaviour) runs on that client's input instead of `GatherServerInput`, and the driver's client predicts it the way it predicts its own pawn. Every copy knows it: the worker's, its ghosts' (after a handover), and every client's, so a game can show who is at the wheel.
+
+### IsLocallyDriven [#islocallydriven]
+
+```csharp
+public bool IsLocallyDriven { get; }
+```
+
+Client side: this client drives the entity and predicts it ([`DriverClientId`](#driverclientid) is this client).
+
 ### OwnerWorkerIndex [#ownerworkerindex]
 
 ```csharp
@@ -628,6 +644,24 @@ public void PlaceInScope(Vector3 position, Quaternion rotation);
 ```
 
 Authority: put the entity at a pose given in its scope's own space (a respawn point, a warp target), leaving any physics frame it is in first. Writing such a pose straight onto the transform of an entity inside a frame would put it at those numbers in the frame's coordinates. When the target is inside a frame (a ship's interior), the entity lands in that frame at the matching frame-local pose. Outside frames this is a plain assignment; the next tick resolves the container as usual.
+
+### SetDriver [#setdriver]
+
+```csharp
+public bool SetDriver(ulong clientId);
+```
+
+Hand the controls of this server-owned entity to a client (a player sits in a vehicle's driving seat), or take them back with 0. Call it on the worker that has authority. From the next tick the entity's [`PredictedBehaviour<TInput>`](/docs/reference/core/predicted-behaviour) simulates that client's input, and the client predicts it and is reconciled to the worker's state, as it is for its own pawn; with 0 it goes back to [`PredictedBehaviour<TInput>.GatherServerInput`](/docs/reference/core/predicted-behaviour#gatherserverinput). The change is announced to the gateways and travels with a handover. [`PredictedBehaviourBase.OnDriverChanged`](/docs/reference/core/predicted-behaviour-base#ondriverchanged) is called on the worker and on every client that holds the entity.
+
+Only an entity with a [`PredictedBehaviour<TInput>`](/docs/reference/core/predicted-behaviour) that no client owns can be driven; the call is refused with a warning otherwise, and returns false. A driven entity is updated every tick whatever its [`UpdateInterval`](#updateinterval), and it cannot sleep: a sleeping one is woken.
+
+### ClearDriver [#cleardriver]
+
+```csharp
+public bool ClearDriver();
+```
+
+Take the controls back from whoever drives this entity: [`SetDriver`](#setdriver) with 0.
 
 ### StateAt [#stateat]
 
