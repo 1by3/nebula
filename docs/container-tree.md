@@ -171,7 +171,7 @@ The worker then:
 Crossings are decided for every entity a worker has authority over, whoever owns it: a player's pawn, a
 server-driven character, a crate. Nothing on the path (`ContainerRegistry.Resolve`, `SetContainer`'s conversion, the
 hand-off to the pose owner, the rider handover, the client's interpolation across a change of container) reads the
-owner. Scenario 34 (NEB-360) pins that for a server-driven walker, including a handover of the carrier on the
+owner. Scenario 37 (NEB-360) pins that for a server-driven walker, including a handover of the carrier on the
 boarding tick in either order.
 
 **D16 Crossing hooks.** `PhysicsFrames.CrossingPolicy` (`IFrameCrossingPolicy`) is asked on the pose owner before

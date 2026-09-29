@@ -43,7 +43,7 @@ Size the platform's box so that it:
   dropping off the edge of the deck's copy inside the frame.
 
 `Tests/ServerOwnedBoardingTests.cs` runs the whole trip on one worker, a tick at a time. Nebula's conformance
-scenario 34 (`ConformanceServerOwnedBoardingTests`) covers the same trip with a handover of the platform on the
+scenario 37 (`ConformanceServerOwnedBoardingTests`) covers the same trip with a handover of the platform on the
 boarding tick, and a client's view of it.
 
 Guide: https://nebula.1by3.co/docs/guides/physics-frames#cross-the-frames-boundary

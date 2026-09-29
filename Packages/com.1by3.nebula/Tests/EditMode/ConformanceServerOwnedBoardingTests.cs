@@ -8,7 +8,7 @@ using Object = UnityEngine.Object;
 namespace Nebula.Tests
 {
     /// <summary>
-    /// Conformance scenario 34 (NEB-360): an entity no player owns moves between a scope and a moving container with a
+    /// Conformance scenario 37 (NEB-360): an entity no player owns moves between a scope and a moving container with a
     /// physics frame of its own, as a player's pawn does. A server-driven walker with a <see cref="CharacterController"/>
     /// walks from the ground onto a drifting platform, rides it through a 1 km/s flight with a turn, and walks off
     /// again; its position is continuous in the scope through both crossings and its velocity is carried into each new
