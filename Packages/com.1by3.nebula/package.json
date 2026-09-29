@@ -18,6 +18,11 @@
       "path": "Samples~/LagCompensatedHitscan"
     },
     {
+      "displayName": "Server-owned crowd",
+      "description": "A thousand server-owned walkers in two relevance tiers: a spawner that gives each its update interval and priority, and a walker that carries what it needs across worker seams.",
+      "path": "Samples~/ServerOwnedCrowd"
+    },
+    {
       "displayName": "Server-owned boarding",
       "description": "A character no player owns walks onto a moving platform with its own physics frame, rides it and walks off again, with no crossing code: the worker converts it as it does a player's pawn.",
       "path": "Samples~/ServerOwnedBoarding"

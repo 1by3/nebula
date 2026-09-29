@@ -186,6 +186,14 @@ public float ScaleMaxInterpolationTime = 0.1f;
 
 Smooth damp only: seconds to reach the newest scale.
 
+### SettleTicks [#settleticks]
+
+```csharp
+public const uint SettleTicks = NetworkIdentity.SyncKeyframeInterval;
+```
+
+Ticks without a change after which the root sends one reliable entry with where it came to rest (`docs/server-owned-entities.md` D2). Every change pushes it back, so an entity that keeps moving sends none: its unreliable entries follow one another, and it is only the last one, which nothing would resend, that has to arrive.
+
 ## Properties
 
 ### Velocity [#velocity]

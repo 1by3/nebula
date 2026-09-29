@@ -1,0 +1,5 @@
+{
+    "name": "Nebula.Samples.ServerOwnedCrowd",
+    "references": ["Nebula.Runtime"],
+    "autoReferenced": true
+}

@@ -277,6 +277,21 @@ the mesh lifecycle, the load
 client launch, the API sampling, the profile scraping and the threshold assertions; they are written against the
 API field names and log format recorded in D9 and read out of the code, not guessed.
 
+## D12. Server-owned crowds (NEB-359)
+
+What a plain server-owned entity costs a worker and a client, at 100, 300 and 1,000 per worker, is measured by two
+scenarios of their own, one per layer, and recorded in `docs/server-owned-entities.md` §1:
+
+- `Tests/EditMode/ServerOwnedCostMeasurementTests` (layer `editor`: real `NebulaWorker`s on the in-process mesh,
+  `[Explicit]`) — tick time and sections, bytes to the gateway and between workers, handovers of a crowd across a
+  seam, a burst of 50 spawns. Artifact `Logs/scale/editor-server-owned.csv`.
+- `Services~/Nebula.Services.Tests/ServerOwnedBandwidthTests` (layer `synthetic`, `Scale` + `Soak`) — a client's
+  inbound bytes for a crowd around it, and the messages 50 spawns reach it in. Artifact
+  `Logs/scale/synthetic-server-owned-bandwidth.csv`.
+
+The editor layer is a third one beside D1's two: real workers, but in one process with a recording transport, so it
+measures a worker's own tick and its messages exactly and nothing about sockets or a player build.
+
 ## Non-goals
 
 Not a conformance suite: nothing here is deterministic except the two planner scenarios, and a scale run that is

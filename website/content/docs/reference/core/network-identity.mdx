@@ -54,6 +54,14 @@ public byte InterestGroup;
 
 A number your interest policy can filter on (team markers, quest objects). Nebula only carries it; 0 means no group.
 
+### MaxUpdateInterval [#maxupdateinterval]
+
+```csharp
+public const int MaxUpdateInterval = 255;
+```
+
+The longest [`UpdateInterval`](#updateinterval): 255 ticks, a little over four seconds.
+
 ### CostWeight [#costweight]
 
 ```csharp
@@ -78,7 +86,57 @@ public const uint SyncKeyframeInterval = 30;
 
 Every this many ticks a dirty sync behavior writes a keyframe instead of a delta, and an unreliable one writes a keyframe whether it is dirty or not. Keyframes heal lost packets and are what the gateway hands to late joiners.
 
+### SyncSettleTicks [#syncsettleticks]
+
+```csharp
+public const uint SyncSettleTicks = SyncKeyframeInterval;
+```
+
+Ticks a distance-rated sync behavior ([`NetworkBehaviour.SyncDistanceRating`](/docs/reference/core/network-behaviour#syncdistancerating)) must go without a change before it sends the reliable keyframe every client that holds the entity is given, near or far.
+
 ## Properties
+
+### UpdateInterval [#updateinterval]
+
+```csharp
+public int UpdateInterval { get; set; }
+```
+
+Ticks between two updates of this entity on the worker that has authority over it: 1 (the default) is every tick. On the other ticks Nebula leaves the entity alone: its behaviours' [`NetworkBehaviour.NetworkTick`](/docs/reference/core/network-behaviour#networktick) is not called, its container, handover and ghost band are not checked, and no transform entry is sent for it. On its update ticks `NetworkTick` gets the time since the previous one as its `deltaTime`. Entities with the same interval are spread over the ticks of the interval by net id, so a crowd does not update all at once.
+
+Variables, maps, RPCs and sync-channel behaviours are still sent when they change, and a teleport or a change of container is sent at once. Set it on the authority, at spawn or at any time after; it travels with a handover. Clamped to 1..[`MaxUpdateInterval`](#maxupdateinterval). See `docs/server-owned-entities.md` D1.
+
+### RelevancePriority [#relevancepriority]
+
+```csharp
+public RelevancePriority RelevancePriority { get; set; }
+```
+
+How much this entity's transform updates matter to the clients that hold it, relative to its distance from each of them (`Nebula.RelevancePriority`). The gateway uses it to pick each client's update rate; it never changes who holds the entity. It travels with the entity's spawn, so a change on the authority re-announces the entity to the gateways that have it: change it when the entity's role changes, not every tick.
+
+### IsDormant [#isdormant]
+
+```csharp
+public bool IsDormant { get; }
+```
+
+True on the worker that has authority while the entity is dormant: asleep. A dormant entity keeps its authority, its state and its replicas, but the worker does not tick it (no [`NetworkBehaviour.NetworkTick`](/docs/reference/core/network-behaviour#networktick)), does not check its container or ghost band, and sends no transform updates for it. It is still handed to another worker when the lease of its container moves there, and stays dormant. False on ghosts and clients.
+
+### WakesOnInterest [#wakesoninterest]
+
+```csharp
+public bool WakesOnInterest { get; }
+```
+
+Whether this dormant entity wakes by itself as soon as a gateway watches it (see [`Sleep`](#sleep)).
+
+### SleepWhenUnobserved [#sleepwhenunobserved]
+
+```csharp
+public float SleepWhenUnobserved { get; set; }
+```
+
+Seconds without any gateway watching this entity (no client near enough for a gateway to subscribe its region) after which the worker puts it to sleep, waking on interest. 0 (the default) never does. Server-owned entities only; set it on the prefab or on the authority. It travels with a handover.
 
 ### EffectiveCostWeight [#effectivecostweight]
 
@@ -446,6 +504,30 @@ public event Action<Container, Container> ContainerChanged;
 ```
 
 ## Methods
+
+### SetUpdateRate [#setupdaterate]
+
+```csharp
+public void SetUpdateRate(float updatesPerSecond);
+```
+
+Set [`UpdateInterval`](#updateinterval) from a rate in updates per second: 60 is every tick, 10 every 6th tick, 0.5 every 120th. Rounded to whole ticks and clamped as [`UpdateInterval`](#updateinterval) is.
+
+### Sleep [#sleep]
+
+```csharp
+public void Sleep(bool wakeOnInterest = true);
+```
+
+Put this server-owned entity to sleep from the next tick ([`IsDormant`](#isdormant)). On that tick the worker sends one reliable transform entry with its pose and no velocity, so every client holds it where it rests, and calls [`NetworkBehaviour.OnSleep`](/docs/reference/core/network-behaviour#onsleep). With `wakeOnInterest` it wakes by itself when a gateway starts to watch it; otherwise only [`Wake`](#wake) wakes it. Call it on the worker that has authority. An entity a client owns cannot sleep: the call is ignored with a warning.
+
+### Wake [#wake]
+
+```csharp
+public void Wake();
+```
+
+Wake this entity from the next tick: it is ticked, checked and sent again, from where it slept, and [`NetworkBehaviour.OnWake`](/docs/reference/core/network-behaviour#onwake) is called. Does nothing to an entity that is not asleep.
 
 ### SetCostWeight [#setcostweight]
 

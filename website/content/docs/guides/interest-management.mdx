@@ -54,10 +54,10 @@ Every field lives on `NebulaConfig` (`Resources/NebulaConfig.asset`), with a mat
 | `InterestMaxFocusSpeed` | 12 m/s | The fastest a player is expected to travel. Used only to check that `InterestSubscribeMargin` covers the distance a focus can move between two evaluations. |
 | `PartitionWarnEntities` | 2,000 | A worker warns when one container holds more entities than this. `0` disables the warning. |
 | `PartitionWarnFilterMs` | 2 ms | A worker warns when filtering entities for its gateways takes longer than this per tick. `0` disables the warning. |
-| `InterestNearRadius` | 30 m | Full update rate within this distance. |
+| `InterestNearRadius` | 30 m | Full update rate within this distance, for an entity of `Normal` priority. |
 | `InterestFarRadius` | 80 m | The far distance band starts here. |
-| `InterestMidDivisor` | 4 | Send every Nth tick between the near and far radius. |
-| `InterestFarDivisor` | 12 | Send every Nth tick beyond the far radius, and to a pawn-less client for anything not `AlwaysRelevant`. |
+| `InterestMidDivisor` | 4 | Send at most one update every N ticks between the near and far radius. |
+| `InterestFarDivisor` | 12 | Send at most one update every N ticks beyond the far radius, and to a pawn-less client for anything not `AlwaysRelevant`. |
 
 `NebulaConfig.Validate` (also `OnValidate`, the setup window, and role start-up logs) checks these against each other and against `ClientLoadRadiusCells` and `GhostBandMargin`. A value that would make behavior wrong (`InterestRadius <= 0`, `InterestCellSize <= 0`) is an error that blocks start-up; other invalid values are adjusted, with warnings for most corrections. For example: `InterestFarRadius` above `InterestRadius` is lowered to it; `InterestSubscribeMargin` below one evaluation of travel at `InterestMaxFocusSpeed` is raised to cover it; `ClientLoadRadiusCells` too small to cover `InterestRadius + InterestExitMargin` is raised until it does; and a `GhostBandMargin` as large as `InterestCellSize` is reported (a region would be narrower than the band a gateway must subscribe around it).
 
@@ -84,6 +84,21 @@ short-circuits to `ClientLoadRadiusCells`.)
 ## Level of detail inside the set
 
 `InterestNearRadius`, `InterestFarRadius`, `InterestMidDivisor`, and `InterestFarDivisor` throttle how often an entity already in the client's interest set receives root-transform updates. They do not decide whether the entity is visible. A client without a pawn uses `InterestFarDivisor` for anything that is not `AlwaysRelevant`.
+
+A divisor of N sends the client at most one update in each window of N ticks: the first update the worker sends for the entity in that window. If the worker already sends the entity less often than that, because the entity has an [update interval](/docs/guides/server-owned-entities), every update reaches the client.
+
+An entity's `NetworkIdentity.RelevancePriority` shifts these tiers for every client:
+
+| Priority | Within `InterestNearRadius` | Up to `InterestFarRadius` | Beyond |
+| --- | --- | --- | --- |
+| `High` | every update | every update | `InterestMidDivisor` |
+| `Normal` (default) | every update | `InterestMidDivisor` | `InterestFarDivisor` |
+| `Low` | `InterestMidDivisor` | `InterestFarDivisor` | `InterestFarDivisor` |
+| `Background` | `InterestMidDivisor` | none | none |
+
+"None" stops the client's updates without despawning the entity there. The client keeps the replica where it was last told and still receives the entity's reliable updates: the pose it comes to rest at, a teleport, and a change of container. A client's own pawn always receives every update. See [Run crowds of server-owned entities](/docs/guides/server-owned-entities).
+
+To give `High`, `Low` or `Background` entities tiers of their own instead of the shift, set `InterestHighTiers`, `InterestLowTiers` or `InterestBackgroundTiers` with `Override` on: two radii and a divisor for each band, where `0` is none. `Normal` always uses the four settings above. This lets a crowd use slow tiers while players keep the default ones; see [Set the distance tiers for a crowd](/docs/guides/server-owned-entities#set-the-distance-tiers-for-a-crowd). A behavior can also have its sync state follow these tiers, with `NetworkBehaviour.SyncDistanceRating`.
 
 ## Per-prefab overrides
 

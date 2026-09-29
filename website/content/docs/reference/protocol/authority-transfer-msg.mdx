@@ -123,6 +123,30 @@ public Vector3 ExtentSize;
 
 Size of the extent box in the entity's local space.
 
+### UpdateInterval [#updateinterval]
+
+```csharp
+public byte UpdateInterval;
+```
+
+The entity's [`NetworkIdentity.UpdateInterval`](/docs/reference/core/network-identity#updateinterval) (protocol 24), a trailing optional section after the extent section, written when it is above 1. 0 when absent, which the receiver reads as 1. A sender that writes it with no extent to carry writes the extent section as "none" ([`NoExtent`](#noextent)).
+
+### Dormancy [#dormancy]
+
+```csharp
+public DormancyFlags Dormancy;
+```
+
+The entity's dormancy (protocol 24, `docs/server-owned-entities.md` §6), after [`UpdateInterval`](#updateinterval) in the same trailing update section, with [`SleepWhenUnobserved`](#sleepwhenunobserved). Written when either is set; absent reads as awake and never put to sleep.
+
+### SleepWhenUnobserved [#sleepwhenunobserved]
+
+```csharp
+public float SleepWhenUnobserved;
+```
+
+The entity's [`NetworkIdentity.SleepWhenUnobserved`](/docs/reference/core/network-identity#sleepwhenunobserved), in seconds; 0 never.
+
 ## Methods
 
 ### Write [#write]
@@ -136,3 +160,22 @@ public void Write(NetworkWriter w);
 ```csharp
 public static AuthorityTransferMsg Read(NetworkReader r);
 ```
+
+## Nested types
+
+### DormancyFlags [#dormancyflags]
+
+```csharp
+[Flags]
+public enum DormancyFlags : byte
+```
+
+What [`Dormancy`](#dormancy) says about the entity being handed over.
+
+#### Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` | `0` |  |
+| <span id="dormant"></span>`Dormant` | `1` | It is asleep ([`NetworkIdentity.IsDormant`](/docs/reference/core/network-identity#isdormant)): the receiver keeps it asleep. |
+| <span id="wakesoninterest"></span>`WakesOnInterest` | `2` | With `Dormant`: it wakes when a gateway watches it ([`NetworkIdentity.WakesOnInterest`](/docs/reference/core/network-identity#wakesoninterest)). |

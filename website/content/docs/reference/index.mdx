@@ -56,6 +56,7 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [StateHistory](/docs/reference/core/state-history) | Class. The bounded per-entity ring of recorded ticks behind NetworkIdentity.StateAt: pose, velocity, container, epoch and the SyncHistoryAttribute variables, one entry per server tick, indexed by tick % capacity. |
 | [SyncAudience](/docs/reference/core/sync-audience) | Enum. Who receives a behavior's sync state (NetworkBehaviour.SyncAudience). |
 | [SyncAudienceCodec](/docs/reference/core/sync-audience-codec) | Static class. The client member sets of an entity's SyncAudience.Custom behaviors, as the authority last evaluated them: \[count:byte\]\{\[behaviourIndex:byte\]\[n:ushort\]\{\[clientId:ulong\]\}\}, each set sorted ascending. |
+| [SyncDistanceRating](/docs/reference/core/sync-distance-rating) | Enum. Whether a behavior's sync state reaches far clients less often, following the entity's distance tier as its transform does (NetworkBehaviour.SyncDistanceRating, docs/server-owned-entities.md D11). |
 | [SyncHistoryAttribute](/docs/reference/core/sync-history-attribute) | Class. Marks a NetworkVariable\<T\> field as part of the entity's recorded state history, so its value is snapshotted every tick alongside the pose and can be read back through NetworkIdentity.StateAt / HistoricalState.TryGetValue\<T\>. |
 | [SyncStateCodec](/docs/reference/core/sync-state-codec) | Static class. Envelope shared by the per-tick sync stream (EntityState/GhostSyncState messages) and the spawn snapshot: \[count\]\{\[behaviourIndex\]\[flags\]\[len:ushort\]\[chunk\]\}. |
 
@@ -460,6 +461,9 @@ Keep the control plane and saved entities in SQLite or PostgreSQL from the stand
 | [RegionSubscription](/docs/reference/interest/region-subscription) | Static class. The shared arithmetic of the region-subscription protocol: a set's fingerprint. |
 | [RegionSubscriptionReceiver](/docs/reference/interest/region-subscription-receiver) | Class. The worker's end of one gateway link's subscription: the region set it filters that gateway's traffic with. |
 | [RegionSubscriptionSender](/docs/reference/interest/region-subscription-sender) | Class. The gateway's end of one worker link's subscription: what this gateway wants from that worker, and the messages that get the worker there. |
+| [RelevancePriority](/docs/reference/interest/relevance-priority) | Enum. How much an entity's transform updates matter to the clients that hold it, relative to its distance from them (NetworkIdentity.RelevancePriority, docs/server-owned-entities.md D3). |
+| [RelevanceTierBands](/docs/reference/interest/relevance-tier-bands) | Struct. A priority's own distance tiers (NebulaConfig.InterestLowTiers and its siblings, docs/server-owned-entities.md D10): two radii and a divisor for each of the three bands they make. |
+| [RelevanceTiers](/docs/reference/interest/relevance-tiers) | Static class. The arithmetic of RelevancePriority: pure, shared by the gateway, the worker and the tests. |
 
 ## Persistence
 

@@ -96,6 +96,15 @@ namespace Nebula
         // ------------------------------------------------------------------------------------------- state
 
         private InterestSettings _interest = InterestSettings.Default;
+        /// <summary>Each priority's distance tiers, resolved once from <see cref="_interest"/> and indexed by <see cref="RelevancePriority"/>.</summary>
+        private RelevanceTierBands[] _tiers = ResolveTiers(InterestSettings.Default);
+
+        private static RelevanceTierBands[] ResolveTiers(in InterestSettings settings)
+        {
+            var tiers = new RelevanceTierBands[4];
+            for (int p = 0; p < tiers.Length; p++) tiers[p] = settings.TiersFor((RelevancePriority)p);
+            return tiers;
+        }
         private InterestGrid _interestGrid = InterestGrid.Resolve(InterestSettings.Default);
         private readonly InterestIndex<EntityRecord> _index = new InterestIndex<EntityRecord>();
         /// <summary>Region → the clients whose subscribe discs cover it, so an arriving entity is tested against those and nobody else.</summary>
@@ -507,9 +516,12 @@ namespace Nebula
                 else if (issue.Severity == ConfigSeverity.Warning) NebulaLog.Warn($"config: {issue.Field}: {issue.Message}");
             }
             _interest = Config.ToInterestSettings();
+            _tiers = ResolveTiers(_interest);
             _interestGrid = Config.ToInterestGrid();
             _hintFilter.Settings = _interest;
             NebulaLog.Info($"interest: radius {_interest.Radius} m (+{_interest.ExitMargin} exit, +{_interest.SubscribeMargin} subscribe), {_interestGrid}, eval {_interest.EvalHz} Hz");
+            for (int p = 1; p < _tiers.Length; p++)
+                if (_tiers[p].Override) NebulaLog.Info($"interest: {(RelevancePriority)p} entities use their own tiers: {_tiers[p]}");
         }
 
         private double InterestNow => _clock.Elapsed.TotalSeconds;
@@ -1065,6 +1077,7 @@ namespace Nebula
             client.ViewSeq[rec.NetId] = seq;
             var msg = rec.LastSpawn.ForClient();
             msg.State = CachedStateFor(rec, client);
+            ResetSyncBehind(rec, client);
             // The maps as they are now, not as the spawn had them (docs/replicated-collections.md D6).
             if (rec.Maps != null) msg.Maps = rec.Maps.Encode();
             msg.ViewSeq = seq;
@@ -1077,6 +1090,7 @@ namespace Nebula
         private void SendDespawn(ClientConn client, ulong netId, uint epoch)
         {
             client.ViewSeq.TryGetValue(netId, out ushort seq);
+            client.SyncBehind?.Remove(netId);
             _interestWriter.Reset();
             new EntityDespawnMsg { NetId = netId, Epoch = epoch, ViewSeq = seq }.Write(_interestWriter, MsgId.EntityDespawn);
             AppendReliable(client, _interestWriter.ToSegment());

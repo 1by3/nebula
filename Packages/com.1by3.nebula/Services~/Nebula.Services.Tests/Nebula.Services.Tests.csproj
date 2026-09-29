@@ -26,6 +26,8 @@
     <!-- Conformance suite (docs/conformance-suite.md): the pure-C# legs run here too, so `Tools/conformance.ps1 -DotnetOnly`
          exercises the same wire contracts the standalone gateway depends on. Unity-only scenarios stay in the package. -->
     <Compile Include="../../Tests/EditMode/ConformanceHandoverWireTests.cs" />
+    <!-- Relevance tiers (docs/server-owned-entities.md): the priority bits, bands, divisors and rate windows are pure C#. -->
+    <Compile Include="../../Tests/EditMode/RelevanceTiersTests.cs" />
     <!-- A worker's session bookkeeping (the reclaim grace, and an orphan carried in a handover) is pure C#. -->
     <Compile Include="../../Tests/EditMode/PlayerSessionsTests.cs" />
     <!-- The cross-worker call contract (docs/cross-worker-calls.md) is pure C# too, so its conformance tests run here as well. -->

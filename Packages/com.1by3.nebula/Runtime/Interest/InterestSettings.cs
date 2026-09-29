@@ -74,6 +74,15 @@ namespace Nebula
         public float FarRadius;
         public int MidDivisor;
         public int FarDivisor;
+        /// <summary>
+        /// <see cref="RelevancePriority.High"/>'s own distance tiers; without an override it gets the global tiers
+        /// shifted one better (see <see cref="TiersFor"/>).
+        /// </summary>
+        public RelevanceTierBands HighTiers;
+        /// <summary><see cref="RelevancePriority.Low"/>'s own distance tiers; without an override, the global tiers one worse.</summary>
+        public RelevanceTierBands LowTiers;
+        /// <summary><see cref="RelevancePriority.Background"/>'s own distance tiers; without an override, the middle band's rate near and none beyond.</summary>
+        public RelevanceTierBands BackgroundTiers;
         /// <summary>Cells of content a client keeps loaded; raised to cover the interest radius.</summary>
         public int ClientLoadRadiusCells;
         /// <summary>Entities in one container above which the worker warns that the world wants partitioning.</summary>
@@ -108,6 +117,24 @@ namespace Nebula
             PartitionWarnEntities = 2000,
             PartitionWarnFilterMs = 2f,
         };
+
+        /// <summary>
+        /// The distance tiers an entity of <paramref name="priority"/> is sent by: its own when the config overrides
+        /// them (<see cref="HighTiers"/>, <see cref="LowTiers"/>, <see cref="BackgroundTiers"/>), otherwise the global
+        /// ones (<see cref="NearRadius"/>, <see cref="FarRadius"/>, <see cref="MidDivisor"/>, <see cref="FarDivisor"/>)
+        /// shifted as <see cref="RelevancePriority"/> describes. <see cref="RelevancePriority.Normal"/> is always the
+        /// global tiers.
+        /// </summary>
+        public RelevanceTierBands TiersFor(RelevancePriority priority)
+        {
+            switch (priority)
+            {
+                case RelevancePriority.High: return RelevanceTiers.Resolve(priority, HighTiers, NearRadius, FarRadius, MidDivisor, FarDivisor);
+                case RelevancePriority.Low: return RelevanceTiers.Resolve(priority, LowTiers, NearRadius, FarRadius, MidDivisor, FarDivisor);
+                case RelevancePriority.Background: return RelevanceTiers.Resolve(priority, BackgroundTiers, NearRadius, FarRadius, MidDivisor, FarDivisor);
+                default: return RelevanceTiers.Resolve(RelevancePriority.Normal, default, NearRadius, FarRadius, MidDivisor, FarDivisor);
+            }
+        }
 
         /// <summary>Meters an entity must be outside before the linger clock even starts.</summary>
         public float ExitRadius => Radius + ExitMargin;
@@ -238,6 +265,9 @@ namespace Nebula
             }
             if (e.MidDivisor < 1) { Warn(nameof(NebulaConfig.InterestMidDivisor), "InterestMidDivisor must be at least 1; using 1."); e.MidDivisor = 1; }
             if (e.FarDivisor < 1) { Warn(nameof(NebulaConfig.InterestFarDivisor), "InterestFarDivisor must be at least 1; using 1."); e.FarDivisor = 1; }
+            e.HighTiers = ValidateTiers(e.HighTiers, InterestHighTiersField, e.Radius, issues);
+            e.LowTiers = ValidateTiers(e.LowTiers, InterestLowTiersField, e.Radius, issues);
+            e.BackgroundTiers = ValidateTiers(e.BackgroundTiers, InterestBackgroundTiersField, e.Radius, issues);
 
             // A client that can cross the margin between two evaluations would be sent an entity late.
             float travel = e.MaxFocusSpeed / e.EvalHz;
@@ -269,7 +299,37 @@ namespace Nebula
             return e;
         }
 
+        /// <summary>
+        /// One priority's own tiers, repaired like the global ones: radii not negative, in order and inside the
+        /// interest radius; divisors not negative (0 is "none", a legitimate choice). Bands that do not override are
+        /// left alone: their fields mean nothing.
+        /// </summary>
+        private static RelevanceTierBands ValidateTiers(RelevanceTierBands t, string field, float radius, List<ConfigIssue> issues)
+        {
+            if (!t.Override) return t;
+            void Warn(string sub, string message) => issues?.Add(new ConfigIssue(ConfigSeverity.Warning, field + "." + sub, message));
+            if (t.NearRadius < 0) { Warn(nameof(RelevanceTierBands.NearRadius), $"{field}.NearRadius cannot be negative; using 0."); t.NearRadius = 0; }
+            if (t.FarRadius < t.NearRadius)
+            {
+                Warn(nameof(RelevanceTierBands.FarRadius), $"{field}.FarRadius ({t.FarRadius}) is below its NearRadius ({t.NearRadius}); raised to it.");
+                t.FarRadius = t.NearRadius;
+            }
+            if (t.FarRadius > radius)
+            {
+                Warn(nameof(RelevanceTierBands.FarRadius), $"{field}.FarRadius ({t.FarRadius}) is beyond InterestRadius ({radius}), where no entity is ever sent; lowered to InterestRadius.");
+                t.FarRadius = radius;
+                if (t.NearRadius > t.FarRadius) t.NearRadius = t.FarRadius;
+            }
+            if (t.NearDivisor < 0) { Warn(nameof(RelevanceTierBands.NearDivisor), $"{field}.NearDivisor cannot be negative; using 1 (every update)."); t.NearDivisor = 1; }
+            if (t.MidDivisor < 0) { Warn(nameof(RelevanceTierBands.MidDivisor), $"{field}.MidDivisor cannot be negative; using 0 (none)."); t.MidDivisor = 0; }
+            if (t.FarDivisor < 0) { Warn(nameof(RelevanceTierBands.FarDivisor), $"{field}.FarDivisor cannot be negative; using 0 (none)."); t.FarDivisor = 0; }
+            return t;
+        }
+
         // Field names as the config spells them, so an issue points at the inspector row and not at this struct.
+        private const string InterestHighTiersField = "InterestHighTiers";
+        private const string InterestLowTiersField = "InterestLowTiers";
+        private const string InterestBackgroundTiersField = "InterestBackgroundTiers";
         private const string InterestRadiusField = "InterestRadius";
         private const string InterestMaxRadiusField = "InterestMaxRadius";
         private const string InterestExitMarginField = "InterestExitMargin";

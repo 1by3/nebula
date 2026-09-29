@@ -464,6 +464,8 @@ namespace Nebula
                     InterestAddAndAnnounce(e, null);
                     continue;
                 }
+                // Rebucketed on its update ticks only (NetworkIdentity.UpdateInterval): it is not moved in between.
+                if (!e.DueThisTick) continue;
                 // A carrier change is rare but real (a pawn boards a ship, a crate is dropped off one): re-link
                 // before deciding the key. Boarding rebuckets the entity into the carrier's region there and
                 // then, so it is a publication in its own right, not just a link.
@@ -855,16 +857,41 @@ namespace Nebula
             _entityMask.Clear();
             ReleaseMaskLists();
             ulong linked = _publisher.LinkedMask;
+            uint tick = CurrentTick;
+            int sweep = WakeSweepTicks;
             for (int i = 0; i < _authoritative.Count; i++)
             {
                 var e = _authoritative[i];
                 if (e == null) continue;
+                if (e.IsDormant)
+                {
+                    // Asleep: no row (it publishes nothing a tick). A slice of the sleepers that wake on interest is
+                    // asked each tick whether a gateway watches them now, so each is asked once per interest
+                    // evaluation (docs/server-owned-entities.md §6).
+                    if (e.WakesOnInterest && (uint)i % (uint)sweep == tick % (uint)sweep && PublishMaskOf(e) != 0) e.Wake();
+                    continue;
+                }
                 if (!_index.TryGetPlacement(e.NetId, out var placement, out ulong region)) { placement = InterestPlacement.Region; region = 0; }
                 ulong regionMask = placement == InterestPlacement.Region ? _publisher.MaskOf(region) : 0;
                 _wideMask.TryGetValue(e.NetId, out ulong wide);
                 ulong mask = EffectiveMask(placement, regionMask, wide, linked, StickyMask(e));
                 _entityMask[e.NetId] = mask;
+                if (e.SleepWhenUnobserved > 0f && e.OwnerClientId == 0) TrackObservation(e, mask, tick);
             }
+        }
+
+        /// <summary>Ticks over which the sleepers are swept for interest: one interest evaluation (InterestEvalHz).</summary>
+        private int WakeSweepTicks => Math.Max(1, (int)Math.Round(NetworkTime.TickRate / Math.Max(0.1f, _interest.EvalHz)));
+
+        /// <summary>
+        /// <see cref="NetworkIdentity.SleepWhenUnobserved"/>: put an entity to sleep, waking on interest, once no gateway
+        /// has watched it (its publish mask was empty) for that many seconds of ticks.
+        /// </summary>
+        private static void TrackObservation(NetworkIdentity e, ulong mask, uint tick)
+        {
+            if (mask != 0) { e.Unobserved = false; return; }
+            if (!e.Unobserved) { e.Unobserved = true; e.UnobservedSinceTick = tick; return; }
+            if (tick - e.UnobservedSinceTick >= (uint)Math.Ceiling(e.SleepWhenUnobserved * NetworkTime.TickRate)) e.Sleep(wakeOnInterest: true);
         }
 
         /// <summary>The gateways that currently hear about an entity; 0 when nobody does.</summary>
@@ -892,7 +919,8 @@ namespace Nebula
             {
                 var e = _authoritative[i];
                 if (e == null || !e.HasReplicationState || e.ReplicationState.Reliable != reliable) continue;
-                ulong mask = MaskOfEntity(e.NetId);
+                // An entity that has just fallen asleep has no row this tick; its settling entry still goes to whoever watches it.
+                ulong mask = _entityMask.TryGetValue(e.NetId, out ulong row) ? row : PublishMaskOf(e);
                 InterestEntriesTotal++;
                 if (mask == 0 && _unmaskedGateways.Count == 0) continue;
                 if (!_byMask.TryGetValue(mask, out var list))

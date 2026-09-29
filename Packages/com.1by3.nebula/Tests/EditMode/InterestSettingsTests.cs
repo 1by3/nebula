@@ -43,6 +43,28 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void APrioritysOwnTiersAreRepairedLikeTheGlobalOnesAndIgnoredWithoutOverride()
+        {
+            var settings = InterestSettings.Default;
+            settings.LowTiers = RelevanceTierBands.Of(nearRadius: -5f, farRadius: 500f, nearDivisor: -1, midDivisor: -2, farDivisor: 0);
+            // Not an override: whatever its fields say, nothing is checked and nothing changes.
+            settings.HighTiers = new RelevanceTierBands { Override = false, NearRadius = -1, FarRadius = -1, NearDivisor = -1 };
+            var effective = Validate(settings, out var issues);
+            Assert.IsTrue(Has(issues, ConfigSeverity.Warning, "InterestLowTiers.NearRadius"));
+            Assert.IsTrue(Has(issues, ConfigSeverity.Warning, "InterestLowTiers.FarRadius"));
+            Assert.IsTrue(Has(issues, ConfigSeverity.Warning, "InterestLowTiers.NearDivisor"));
+            Assert.IsTrue(Has(issues, ConfigSeverity.Warning, "InterestLowTiers.MidDivisor"));
+            Assert.IsFalse(Has(issues, ConfigSeverity.Warning, "InterestLowTiers.FarDivisor"), "0 is a legitimate divisor: none");
+            Assert.IsFalse(issues.Exists(i => i.Field.StartsWith("InterestHighTiers")), "a priority without an override is not checked");
+            Assert.AreEqual(0f, effective.LowTiers.NearRadius);
+            Assert.AreEqual(effective.Radius, effective.LowTiers.FarRadius, "kept inside the set");
+            Assert.AreEqual(1, effective.LowTiers.NearDivisor);
+            Assert.AreEqual(0, effective.LowTiers.MidDivisor);
+            Assert.AreEqual(RelevanceTiers.Divisor(RelevancePriority.High, RelevanceTiers.Near, effective.MidDivisor, effective.FarDivisor),
+                effective.TiersFor(RelevancePriority.High).NearDivisor, "High still shifts the global tiers");
+        }
+
+        [Test]
         public void RateTiersAreKeptInsideTheSet()
         {
             var settings = InterestSettings.Default;

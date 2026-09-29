@@ -93,10 +93,12 @@ namespace Nebula
         /// Split a worker's sync message into its chunks (kept in <see cref="_syncChunks"/>, pointing into the
         /// message), cache every keyframe with its audience, and say whether any chunk is restricted.
         /// </summary>
-        private bool ParseSyncChunks(EntityRecord rec, in EntitySyncMsg msg)
+        private bool ParseSyncChunks(EntityRecord rec, in EntitySyncMsg msg, out bool rated, out bool ratedKeyframe)
         {
             _syncChunks.Clear();
             bool restricted = false;
+            rated = false;
+            ratedKeyframe = false;
             if (msg.Chunks == null || msg.Chunks.Length == 0) return false;
             _reader.Set(new ArraySegment<byte>(msg.Chunks));
             int count = _reader.ReadByte();
@@ -111,17 +113,112 @@ namespace Nebula
                     restricted = true;
                     rec.NoteAudience(index, flags);
                 }
+                if (IsRated(index, flags))
+                {
+                    rated = true;
+                    rec.RatedBehaviours |= 1UL << index;
+                    if ((flags & (SyncStateCodec.ChunkFlags.Full | SyncStateCodec.ChunkFlags.Settled)) == SyncStateCodec.ChunkFlags.Full) ratedKeyframe = true;
+                }
                 _syncChunks.Add(new SyncChunk { Index = index, Flags = flags, Bytes = chunk });
             }
             return restricted;
         }
 
         /// <summary>
-        /// Relay a sync message some of whose chunks are restricted: each observer gets the chunks it may have and
-        /// nothing else. Observers that may have only the unrestricted ones share one message, built once; the
-        /// members of an audience get one each.
+        /// Whether a chunk follows the entity's distance tier (D11). Only the first 64 behaviours of an entity can be:
+        /// a client's missed deltas are kept as one bit per behaviour. A chunk of a later one is sent as if unrated.
         /// </summary>
-        private void BroadcastSyncFiltered(EntityRecord rec, in EntitySyncMsg msg)
+        private static bool IsRated(byte index, SyncStateCodec.ChunkFlags flags) =>
+            index < 64 && (flags & SyncStateCodec.ChunkFlags.DistanceRated) != 0;
+
+        private readonly List<bool> _syncInclude = new List<bool>();
+
+        /// <summary>
+        /// Decide, for one client, which chunks of <see cref="_syncChunks"/> it is sent (into <see cref="_syncInclude"/>)
+        /// and update which rated behaviours it is behind on. Returns how many it gets; <paramref name="custom"/> says
+        /// whether that set differs from "every unrestricted chunk" (it has a restricted one, or a rated one was
+        /// withheld), so the client needs a message of its own.
+        /// <para>
+        /// A rated chunk (docs/server-owned-entities.md D11): a settle keyframe goes to everyone. In the client's
+        /// every-update band (divisor 1, and always for its own pawn) it gets every chunk, except deltas of a behaviour
+        /// it is behind on, until a keyframe catches it up. Further away it gets only keyframes, and only the one that
+        /// opens a new window of its rate (<see cref="RelevanceTiers.StartsWindow"/>, measured from the previous rated
+        /// keyframe message); everything withheld leaves it behind.
+        /// </para>
+        /// </summary>
+        private int SelectSyncChunks(EntityRecord rec, ClientConn client, in EntitySyncMsg msg, bool rated, out bool custom)
+        {
+            custom = false;
+            _syncInclude.Clear();
+            int divisor = 1;
+            bool windowOpen = false;
+            ulong behind = 0;
+            if (rated)
+            {
+                divisor = DivisorFor(rec, client);
+                int stream = msg.Reliable ? 0 : 1;
+                windowOpen = divisor != 1 && RelevanceTiers.StartsWindow(msg.Tick, rec.HasRatedKeyframeTick[stream], rec.RatedKeyframeTick[stream], rec.NetId, divisor);
+                if (client.SyncBehind != null) client.SyncBehind.TryGetValue(rec.NetId, out behind);
+            }
+            ulong before = behind;
+            int count = 0;
+            for (int i = 0; i < _syncChunks.Count; i++)
+            {
+                var chunk = _syncChunks[i];
+                bool restricted = SyncStateCodec.IsRestricted(chunk.Flags);
+                bool include = !restricted || ReceivesChunk(rec, client, chunk.Index, chunk.Flags, msg.AudienceGeneration);
+                if (include && rated && IsRated(chunk.Index, chunk.Flags))
+                {
+                    ulong bit = 1UL << chunk.Index;
+                    bool full = (chunk.Flags & SyncStateCodec.ChunkFlags.Full) != 0;
+                    bool settled = (chunk.Flags & SyncStateCodec.ChunkFlags.Settled) != 0;
+                    bool send = settled
+                        || (full && (divisor == 1 || windowOpen))
+                        || (divisor == 1 && (behind & bit) == 0);
+                    if (send)
+                    {
+                        if (full) behind &= ~bit;
+                    }
+                    else
+                    {
+                        include = false;
+                        behind |= bit;
+                        custom = true;
+                    }
+                }
+                if (include && restricted) custom = true;
+                _syncInclude.Add(include);
+                if (include) count++;
+            }
+            if (behind != before)
+            {
+                if (behind == 0) client.SyncBehind.Remove(rec.NetId);
+                else (client.SyncBehind ??= new Dictionary<ulong, ulong>())[rec.NetId] = behind;
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// A client is about to be sent this entity's spawn, built from the cached keyframes: it is behind on every
+        /// rated behaviour whose keyframe is older than the newest sync state relayed, since the deltas after it are
+        /// not in the spawn. Anything it was behind on before is forgotten.
+        /// </summary>
+        private void ResetSyncBehind(EntityRecord rec, ClientConn client)
+        {
+            client.SyncBehind?.Remove(rec.NetId);
+            if (rec.RatedBehaviours == 0 || rec.SyncKeyframes == null) return;
+            ulong behind = 0;
+            foreach (var kv in rec.SyncKeyframes)
+                if (kv.Key < 64 && (rec.RatedBehaviours & (1UL << kv.Key)) != 0 && kv.Value.Tick < rec.LastSyncTick) behind |= 1UL << kv.Key;
+            if (behind != 0) (client.SyncBehind ??= new Dictionary<ulong, ulong>())[rec.NetId] = behind;
+        }
+
+        /// <summary>
+        /// Relay a sync message some of whose chunks are restricted or distance-rated: each observer gets the chunks
+        /// it may have, at the rate its distance gives (<see cref="SelectSyncChunks"/>), and nothing else. Observers
+        /// that get exactly the unrestricted ones share one message, built once; the others get one each.
+        /// </summary>
+        private void BroadcastSyncFiltered(EntityRecord rec, in EntitySyncMsg msg, bool rated)
         {
             var header = msg;
             header.AudienceGeneration = 0; // never to a client
@@ -131,28 +228,19 @@ namespace Nebula
             {
                 var client = rec.Observers[o];
                 if (!client.Welcomed) continue;
-                bool member = false;
-                int count = 0;
-                for (int i = 0; i < _syncChunks.Count; i++)
-                {
-                    var chunk = _syncChunks[i];
-                    bool restricted = SyncStateCodec.IsRestricted(chunk.Flags);
-                    if (restricted && !ReceivesChunk(rec, client, chunk.Index, chunk.Flags, msg.AudienceGeneration)) continue;
-                    if (restricted) member = true;
-                    count++;
-                }
+                int count = SelectSyncChunks(rec, client, msg, rated, out bool custom);
                 if (count == 0) continue;
                 ArraySegment<byte> segment;
-                if (!member)
+                if (!custom)
                 {
                     if (!publicBuilt)
                     {
                         publicBuilt = true;
-                        publicMessage = WriteSyncFor(_syncPublic, rec, null, header, msg.AudienceGeneration);
+                        publicMessage = WriteSyncFor(_syncPublic, header, null);
                     }
                     segment = publicMessage;
                 }
-                else segment = WriteSyncFor(_syncMessage, rec, client, header, msg.AudienceGeneration);
+                else segment = WriteSyncFor(_syncMessage, header, _syncInclude);
                 if (segment.Count == 0) continue;
                 if (msg.Delivery == Delivery.ReliableOrdered) AppendReliable(client, segment);
                 else Send(client.PeerId, msg.Delivery, segment);
@@ -160,10 +248,10 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Write an EntityState message holding the chunks of <see cref="_syncChunks"/> that <paramref name="client"/>
-        /// may have, or only the unrestricted ones when it is null. Returns an empty segment when nothing qualifies.
+        /// Write an EntityState message holding the chunks of <see cref="_syncChunks"/> that <paramref name="include"/>
+        /// selects, or every unrestricted one when it is null. Returns an empty segment when nothing qualifies.
         /// </summary>
-        private ArraySegment<byte> WriteSyncFor(NetworkWriter into, EntityRecord rec, ClientConn client, in EntitySyncMsg header, uint generation)
+        private ArraySegment<byte> WriteSyncFor(NetworkWriter into, in EntitySyncMsg header, List<bool> include)
         {
             _syncEnvelope.Reset();
             int at = SyncStateCodec.BeginEnvelope(_syncEnvelope);
@@ -171,7 +259,7 @@ namespace Nebula
             for (int i = 0; i < _syncChunks.Count; i++)
             {
                 var chunk = _syncChunks[i];
-                if (SyncStateCodec.IsRestricted(chunk.Flags) && (client == null || !ReceivesChunk(rec, client, chunk.Index, chunk.Flags, generation))) continue;
+                if (include != null ? !include[i] : SyncStateCodec.IsRestricted(chunk.Flags)) continue;
                 SyncStateCodec.WriteRawChunk(_syncEnvelope, chunk.Index, chunk.Flags, chunk.Bytes);
                 n++;
             }

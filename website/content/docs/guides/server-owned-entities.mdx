@@ -1,0 +1,233 @@
+---
+title: Run crowds of server-owned entities
+description: Keep hundreds of server-driven characters per worker within a tick budget and a client's bandwidth, with update intervals, relevance priorities, gateway distance tiers, distance-rated sync state and sleep.
+---
+
+A server-owned entity is one no client owns: a townsperson, a trader, a patrol, an animal. A worker simulates it, and it crosses [worker seams](/docs/concepts/containers-and-handover) like any other entity. This page shows how to run hundreds of them on each worker without spending a player's worth of tick time and bandwidth on each one.
+
+By default Nebula updates every entity on every tick (60 times a second) and sends it to nearby clients at that rate. That suits a player in a firefight, not a crowd. Five settings change it:
+
+- **Update interval** (`NetworkIdentity.UpdateInterval`): how often the worker updates the entity.
+- **Relevance priority** (`NetworkIdentity.RelevancePriority`): how much its updates matter to clients, relative to its distance from them.
+- **Distance tiers** (`NebulaConfig.InterestNearRadius`, `InterestFarRadius`, `InterestMidDivisor`, `InterestFarDivisor`, and each priority's own `InterestHighTiers`, `InterestLowTiers`, `InterestBackgroundTiers`): the rates the gateway sends at, by distance.
+- **Distance-rated sync state** (`NetworkBehaviour.SyncDistanceRating`): send a behavior's sync state to far clients at the rate of the entity's distance tier.
+- **Sleep** (`NetworkIdentity.Sleep`, `SleepWhenUnobserved`): stop updating an entity nobody needs, until it is needed.
+
+## Spawn server-owned entities
+
+Spawn each character on a worker with `NebulaWorker.SpawnServerDriven`. The container does not have to be one the worker owns: Nebula hands the entity to the container's owner on the next tick. Wait for `NebulaWorker.MeshReady` before spawning into another worker's container.
+
+```csharp title="CrowdSpawner.cs"
+var identity = NetworkPrefabs.Instantiate(NetworkPrefabs.IdOf(WalkerPrefab), position, Quaternion.identity, container.transform);
+identity.UpdateInterval = 60;                                // one update a second
+identity.RelevancePriority = RelevancePriority.Background;   // updated only near a client
+worker.SpawnServerDriven(identity, container);
+```
+
+`WalkerPrefab` is your own character prefab: a `NetworkIdentity`, a root `NetworkTransform`, and your behavior.
+
+## Carry what the character needs across a seam
+
+When a character walks into a container another worker owns, the new worker takes it over with only what the transform stream and the handover give it. Write everything your `NetworkTick` reads in `WriteHandoverState`, and read it back in `ReadHandoverState`: a target, a path index, a timer, a random seed.
+
+```csharp title="Walker.cs"
+public sealed class Walker : NetworkBehaviour
+{
+    public float Speed = 1.4f;
+    private Vector3 _target;
+    private float _wait;
+
+    public override void NetworkTick(uint tick, float deltaTime)
+    {
+        if (_wait > 0f) { _wait -= deltaTime; return; }
+        var step = Vector3.MoveTowards(transform.position, _target, Speed * deltaTime);
+        transform.position = step;
+    }
+
+    public override void WriteHandoverState(NetworkWriter writer)
+    {
+        writer.WriteVector3(_target);
+        writer.WriteFloat(_wait);
+    }
+
+    public override void ReadHandoverState(NetworkReader reader)
+    {
+        _target = reader.ReadVector3();
+        _wait = reader.ReadFloat();
+    }
+}
+```
+
+Move by the `deltaTime` that `NetworkTick` is given. With an update interval, that is the time since the entity's previous update, so the character covers the same ground at any interval.
+
+## Update a character less often
+
+`NetworkIdentity.UpdateInterval` is the number of ticks between two updates of the entity on the worker that has authority over it. `1`, the default, is every tick. `6` is 10 updates a second, `60` is one. `SetUpdateRate(10f)` sets it from a rate. The maximum is `255` ticks, a little over four seconds.
+
+On the ticks between two updates, the worker leaves the entity alone:
+
+| Work | Between updates |
+| --- | --- |
+| `NetworkTick` of its behaviors | Not called. |
+| Container, handover and ghost checks | Not made. |
+| Root transform updates | Not sent. A teleport and a change of container still go out on the next tick. |
+
+`NetworkVariable`s, maps, RPCs and sync-channel behaviors such as `NetworkAnimator` are still sent when they change. Characters with the same interval are spread over its ticks, so a crowd does not update all at once. The interval travels with the entity when it is handed to another worker.
+
+Set it on the worker that has authority, at spawn or at any time after. A game usually gives characters near players or in combat a short interval and the rest a long one, and changes it as their situation changes.
+
+## Tell clients which characters matter
+
+`NetworkIdentity.RelevancePriority` picks the gateway's distance tiers for an entity, for every client. Unless you [give a priority tiers of its own](#set-the-distance-tiers-for-a-crowd), it shifts the mesh's tiers:
+
+| Priority | Within `InterestNearRadius` | Up to `InterestFarRadius` | Beyond |
+| --- | --- | --- | --- |
+| `High` | every update | every update | `InterestMidDivisor` |
+| `Normal` (default) | every update | `InterestMidDivisor` | `InterestFarDivisor` |
+| `Low` | `InterestMidDivisor` | `InterestFarDivisor` | `InterestFarDivisor` |
+| `Background` | `InterestMidDivisor` | none | none |
+
+"Every update" is every update the worker sends, after the update interval. A divisor of N is at most one update in each window of N ticks.
+
+"None" stops a client's updates without despawning the entity on that client. The client keeps it where it was last told. It still receives the entity's reliable updates: the pose the entity comes to rest at, a teleport, and a change of container. Use `Background` for the many characters that matter only up close, and `High` for the few that matter from far away. A client's own pawn always receives every update.
+
+A priority change on the authority announces the entity to the gateways again, so change it when a character's role changes, not on every tick.
+
+## Put characters to sleep
+
+A sleeping, or dormant, entity costs its worker almost nothing: the worker does not call its `NetworkTick`, does not check its container or its ghosts, and sends no transform updates for it. It keeps its authority, its state, and its replicas on clients and on neighboring workers. Only server-owned entities can sleep.
+
+To put a character to sleep when no client is near, set `SleepWhenUnobserved` on its prefab or on the worker that has authority:
+
+```csharp
+identity.SleepWhenUnobserved = 10f; // seconds with no gateway watching it
+```
+
+A gateway watches an entity when one of its clients is near enough for the gateway to subscribe the entity's area. When no gateway has watched the entity for that many seconds, the worker puts it to sleep. When a gateway watches it again, the worker wakes it within a quarter of a second. Gateways subscribe an area a few seconds' walk before their clients can see into it, so a character wakes before a player sees it.
+
+To put a character to sleep yourself, call `Sleep` and `Wake` on the worker that has authority:
+
+```csharp
+identity.Sleep(wakeOnInterest: false); // only Wake() wakes it
+// later
+identity.Wake();
+```
+
+`Sleep(wakeOnInterest: true)` also wakes the entity when a gateway watches it. `IsDormant` tells you whether it sleeps.
+
+On the tick an entity falls asleep, Nebula sends its pose once, reliably and with no velocity, so every client holds it where it rests. Override `NetworkBehaviour.OnSleep` and `OnWake` to stop and restart work that runs outside `NetworkTick`, such as coroutines. A sleeping entity is still handed to another worker when its container is assigned there, and it stays asleep; `OnSleep` is not called again there, so check `IsDormant` in `OnGainedAuthority`.
+
+## Send only the fields a character needs
+
+A root `NetworkTransform` with its defaults sends 46 bytes an update: position, a rotation of three angles, and velocity. A character that turns only about its vertical axis needs less:
+
+| Setting | Change | Saves |
+| --- | --- | --- |
+| `SyncRotAngleX`, `SyncRotAngleZ` | off | 8 bytes |
+| `SyncVelocity` | off, if your clients do not extrapolate | 6 bytes |
+| `UseHalfFloatPrecision` | on, if your containers are a few hundred meters across or smaller | 8 bytes |
+
+With all three, an update is 24 bytes. See [NetworkTransform](/docs/guides/network-transform).
+
+## Set the distance tiers for a crowd
+
+The mesh's distance tiers (`InterestNearRadius` 30 m, `InterestFarRadius` 80 m, `InterestMidDivisor` 4, `InterestFarDivisor` 12) send nearby entities every tick and the middle band 15 times a second. They suit players. To slow a crowd without slowing players, give the crowd's priorities tiers of their own and leave players at `Normal`.
+
+In `NebulaConfig`, under **Rate tiers per relevance priority**, each of `InterestHighTiers`, `InterestLowTiers` and `InterestBackgroundTiers` has these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `Override` | Use these tiers for the priority. Off, the default, keeps the shifted mesh tiers in the table above. |
+| `NearRadius`, `FarRadius` | Meters from the client that end the near and the middle band. |
+| `NearDivisor`, `MidDivisor`, `FarDivisor` | Ticks per update in each band: `1` is every update, `30` is at most one update every 30 ticks, and `0` is none. |
+
+For example, crowd members at `Low` and ambient characters at `Background`:
+
+| Field | `InterestLowTiers` | `InterestBackgroundTiers` |
+| --- | --- | --- |
+| `Override` | on | on |
+| `NearRadius` | 25 | 25 |
+| `FarRadius` | 60 | 60 |
+| `NearDivisor` | 1 | 30 |
+| `MidDivisor` | 30 | 0 |
+| `FarDivisor` | 120 | 0 |
+
+A `Low` character within 25 m then gets every update, two a second out to 60 m, and one every two seconds beyond. A player at `Normal` 40 m away still gets 15 updates a second. `Normal` always uses the mesh's tiers; to slow every entity, players included, change those instead. A client's own pawn always receives every update.
+
+The same settings in code, for example in an editor script that sets up the config asset:
+
+```csharp
+config.InterestLowTiers = RelevanceTierBands.Of(nearRadius: 25f, farRadius: 60f, nearDivisor: 1, midDivisor: 30, farDivisor: 120);
+config.InterestBackgroundTiers = RelevanceTierBands.Of(nearRadius: 25f, farRadius: 60f, nearDivisor: 30, midDivisor: 0, farDivisor: 0);
+```
+
+Only the gateway reads these settings. A mesh whose config sets none of them behaves as before.
+
+## Send far clients less of a behavior's sync state
+
+A behavior that replicates through `WriteSyncState`, such as a swarm's member positions or an animation's blend values, is sent to every client that holds the entity each time it changes, however far away. To send it to far clients at the rate of the entity's distance tier instead, override `SyncDistanceRating`:
+
+```csharp title="SwarmMembers.cs"
+public sealed class SwarmMembers : NetworkBehaviour
+{
+    public override bool HasSyncState => true;
+    public override Delivery SyncDelivery => Delivery.Sequenced;
+    public override SyncDistanceRating SyncDistanceRating => SyncDistanceRating.WholeState;
+
+    public override void WriteSyncState(NetworkWriter writer, bool full)
+    {
+        // With WholeState, full is always true: write every member.
+    }
+
+    public override void ReadSyncState(NetworkReader reader, uint tick, bool full)
+    {
+        // Read every member.
+    }
+}
+```
+
+Choose the value by how the behavior writes its state:
+
+| Value | For a behavior that | A client beyond its every-update band receives |
+| --- | --- | --- |
+| `Off` (default) | writes either way | every chunk |
+| `Keyframes` | writes only what changed | keyframes only, at most one per window of its rate. The worker writes a keyframe at most every 30 ticks, so this is at most two a second. |
+| `WholeState` | writes all of its state every time | one chunk per window of its rate, as the entity's transform |
+
+The "every-update band" is the distance band whose divisor is 1 for the entity's priority. There, a client receives every chunk. A client that comes closer after missing changes receives the next keyframe before any further changes.
+
+Nothing is lost, only combined: 30 ticks after the state last changed, the worker sends one keyframe reliably, and the gateway gives it to every client that holds the entity, near or far. So a far client always ends up with the latest state.
+
+Use it for state where a far client only needs the latest value. Do not use it for events a client must see each of, such as an animation trigger: send those as an RPC, or keep them in a behavior that is not rated. The rating has no effect on the root `NetworkTransform`, which the distance tiers already rate, or on `NetworkVariable`s, which every client that holds the entity receives on every change.
+
+## What it costs
+
+Measured on a Windows development machine, in the Editor:
+
+| Worker | Tick time |
+| --- | --- |
+| 1,650 walkers updated every tick | about 7 ms |
+| 150 walkers updated every 6 ticks, 1,500 every 60 ticks | about 0.8 ms |
+| 150 walkers updated every 6 ticks, 1,500 asleep | about 0.4 ms |
+
+| A client among 200 active and 1,000 background walkers | Traffic |
+| --- | --- |
+| Default settings (active walkers every tick) | about 1.1 Mbit/s |
+| Active every 6 ticks, background every 60 ticks, crowd tiers for every entity, 24-byte updates | about 87 kbit/s |
+| Active at `Low` every 6 ticks, background every 60 ticks, crowd tiers for `Low` and `Background` only, 24-byte updates, and a `Normal` player 40 m away | about 90 kbit/s, with the player at 15 updates a second |
+| The same, plus 20 swarms each sending a 200-byte sync state every 6 ticks | about 460 kbit/s, or about 140 kbit/s with `SyncDistanceRating.WholeState` |
+
+Traffic counts the application data only, not UDP and IP headers.
+
+## Try the sample
+
+The **Server-owned crowd** sample in the package (`Samples~/ServerOwnedCrowd`) spawns a thousand walkers in two tiers. Import it from the Package Manager. `CrowdSpawner` gives each walker its interval and priority, and puts the light ones to sleep when no client is near. `CrowdWalker` carries its state across seams.
+
+## Limits
+
+- The update interval slows a character's own updates. It does not slow your code outside `NetworkTick`, such as `Update` or coroutines.
+- A `Background` character that keeps walking is shown to distant clients where it last came to rest, until it stops again or they come within `InterestNearRadius`.
+- Sleep does not keep a runtime chunk loaded. When no player needs a chunk, Nebula retires it, and the entities in it are saved (if they have a `PersistentEntity`) and removed, asleep or not.
+- The update interval, the priority and sleep are not saved with a `PersistentEntity`. A restored entity starts awake with its prefab's settings.
+- Distance-rated sync state works for an entity's first 64 behaviors. The chunks of a later behavior are sent to every client, as if it were not rated.
+- The distance tiers are the same for every client. A per-client choice, such as occlusion, belongs in a [gateway extension](/docs/guides/gateway-extensions) interest policy, which decides who holds an entity, not its rate.

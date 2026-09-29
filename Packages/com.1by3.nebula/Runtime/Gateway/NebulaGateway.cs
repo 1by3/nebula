@@ -152,6 +152,12 @@ namespace Nebula
             public NetworkWriter Reliable;
             public int ReliableSlot = -1;
             public ushort ReliableCount;
+            /// <summary>
+            /// Per entity, the distance-rated behaviours (bit = behaviour index) whose deltas this client has missed:
+            /// it gets no more of their deltas until it has had a keyframe (docs/server-owned-entities.md D11). Null
+            /// until the client first misses one.
+            /// </summary>
+            public Dictionary<ulong, ulong> SyncBehind;
         }
 
         /// <summary>Flush a client's reliable batch once it holds this many bytes (ReliableOrdered fragments above the MTU, so this is about latency, not size).</summary>
@@ -195,6 +201,14 @@ namespace Nebula
             public uint LastStateTick;
             public bool HasStateTick;
             /// <summary>
+            /// The tick of the state entry before the newest one, when <see cref="HasPreviousStateTick"/>: what a
+            /// client's rate window is measured from (<see cref="RelevanceTiers.StartsWindow"/>).
+            /// </summary>
+            public uint PreviousStateTick;
+            public bool HasPreviousStateTick;
+            /// <summary>From the spawn's interest flags (<see cref="NetworkIdentity.RelevancePriority"/>): how each client's rate is picked.</summary>
+            public RelevancePriority Priority;
+            /// <summary>
             /// Absolute world position, cached and refreshed only when a pose or container changes. Interest asks
             /// for it several times per client per second; resolving the container chain each time would put the
             /// cost back into the loop interest management exists to take it out of.
@@ -233,6 +247,15 @@ namespace Nebula
             public uint AudienceGeneration;
             /// <summary>The newest tick of sync state relayed for this entity: what a <see cref="SyncStateCodec.ChunkFlags.Cleared"/> notice is stamped with.</summary>
             public uint LastSyncTick;
+            /// <summary>Behaviour indices (below 64) whose chunks came flagged <see cref="SyncStateCodec.ChunkFlags.DistanceRated"/>.</summary>
+            public ulong RatedBehaviours;
+            /// <summary>
+            /// Per stream (0 reliable, 1 sequenced), the tick of the last message that carried a rated keyframe, when
+            /// <see cref="HasRatedKeyframeTick"/>: what a far client's keyframe window is measured from, as
+            /// <see cref="PreviousStateTick"/> is for its transform.
+            /// </summary>
+            public readonly uint[] RatedKeyframeTick = new uint[2];
+            public readonly bool[] HasRatedKeyframeTick = new bool[2];
 
             public void SeedKeyframes(byte[] state, uint generation)
             {
@@ -1272,6 +1295,7 @@ namespace Nebula
             // InterestSettings.Validate guarantees is a real ceiling (>= InterestRadius > 0) and never "off".
             rec.RelevanceRadius = Math.Min(msg.RelevanceRadius, _interest.MaxRadius);
             rec.AlwaysRelevant = (msg.InterestFlags & EntityInterestFlags.AlwaysRelevant) != 0;
+            rec.Priority = RelevanceTiers.PriorityOf(msg.InterestFlags);
             rec.InterestGroup = msg.InterestGroup;
             IndexEntity(rec);
             if (msg.OwnerClientId != 0 && _clientsById.TryGetValue(msg.OwnerClientId, out var c))
@@ -1291,6 +1315,9 @@ namespace Nebula
                 // cell it landed in). The row has to be there before the spawn that names it, or the client
                 // cannot resolve the frame and holds the entity where it was - for its own pawn, for ever.
                 if (containerChanged) SendOwnershipForContainerChange(rec);
+                // The spawn carries a keyframe of every behaviour: nobody is behind on its rated state any more.
+                if (rec.RatedBehaviours != 0)
+                    for (int o = rec.Observers.Count - 1; o >= 0; o--) rec.Observers[o].SyncBehind?.Remove(rec.NetId);
                 if (rec.Audiences == null)
                 {
                     _writer.Reset();
@@ -1374,10 +1401,10 @@ namespace Nebula
             if (HoldBehind(msg.NetId, msg.Epoch, new HeldUpdate { Kind = HeldKind.Sync, Sync = msg, Worker = w.Index })) return;
             if (!_entities.TryGetValue(msg.NetId, out var rec) || msg.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) return;
             // Remember keyframes so a late joiner's spawn carries the newest full state of each behaviour, and note
-            // which chunks only some clients may have.
-            bool restricted = ParseSyncChunks(rec, msg);
+            // which chunks only some clients may have, and which follow the entity's distance tier.
+            bool restricted = ParseSyncChunks(rec, msg, out bool rated, out bool ratedKeyframe);
             if (msg.Tick > rec.LastSyncTick) rec.LastSyncTick = msg.Tick;
-            if (!restricted)
+            if (!restricted && !rated)
             {
                 // Everything in it is for everyone: relayed as it came, which is what it cost before audiences.
                 msg.AudienceGeneration = 0;
@@ -1386,7 +1413,13 @@ namespace Nebula
                 BroadcastEntity(rec, msg.Delivery);
                 return;
             }
-            BroadcastSyncFiltered(rec, msg);
+            BroadcastSyncFiltered(rec, msg, rated);
+            if (ratedKeyframe)
+            {
+                int stream = msg.Reliable ? 0 : 1;
+                rec.RatedKeyframeTick[stream] = msg.Tick;
+                rec.HasRatedKeyframeTick[stream] = true;
+            }
         }
 
         private void OnEntityRpc(WorkerConn w, EntityRpcMsg msg)
@@ -1490,6 +1523,8 @@ namespace Nebula
             if (entry.Epoch < rec.Epoch) { _wsStale++; return false; }
             if (rec.OwnerWorkerIndex != w.Index) { _wsWrongOwner++; return false; }
             if (entry.Epoch == rec.Epoch && rec.HasStateTick && tick <= rec.LastStateTick) return false;
+            rec.HasPreviousStateTick = rec.HasStateTick;
+            rec.PreviousStateTick = rec.LastStateTick;
             rec.HasStateTick = true;
             rec.LastStateTick = tick;
             rec.Epoch = entry.Epoch;
@@ -1582,16 +1617,28 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Interest management, by distance from the client's pawn: every tick nearby, every few ticks at mid range,
-        /// a trickle far away (the client's interpolator bridges the gaps; see NebulaConfig). The rate is spread by
-        /// net id so a reduced-rate tier still sends a steady stream rather than a burst every Nth tick. A client
-        /// with no pawn yet (spectating the title screen) gets the far rate for everything; the client's own pawn
-        /// always gets every tick (it is what reconciliation compares against).
+        /// Interest management, by distance from the client's foci and the entity's priority: every update nearby,
+        /// one update per few ticks at mid range, a trickle far away, and none at all for a background entity
+        /// beyond the near band (the client's interpolator bridges the gaps; see <see cref="RelevanceTiers"/>). A
+        /// client sends one entry per window of its rate, the first entry of the entity that falls in a new window,
+        /// so the rate composes with a worker that sends the entity only every few ticks
+        /// (<see cref="NetworkIdentity.UpdateInterval"/>); the windows are staggered by net id so a reduced-rate tier
+        /// is a steady stream rather than a burst. A client with no focus in the entity's space gets the far rate;
+        /// the client's own pawn always gets every update (it is what reconciliation compares against). Reliable
+        /// entries never come here: they reach every observer.
         /// </summary>
-        private bool WantsThisTick(EntityRecord rec, in EntityStateEntry entry, uint tick, ClientConn c)
+        private bool WantsThisTick(EntityRecord rec, in EntityStateEntry entry, uint tick, ClientConn c) =>
+            RelevanceTiers.StartsWindow(tick, rec.HasPreviousStateTick, rec.PreviousStateTick, rec.NetId, DivisorFor(rec, c));
+
+        /// <summary>
+        /// Ticks per update window for <paramref name="c"/> and this entity: its priority's tiers
+        /// (<see cref="InterestSettings.TiersFor"/>, a priority's own when the config overrides them) at the distance
+        /// from the client's nearest focus in the entity's space. 1 for the client's own pawn; <see cref="RelevanceTiers.Quiet"/> is none.
+        /// </summary>
+        private int DivisorFor(EntityRecord rec, ClientConn c)
         {
             // A client with no pawn has PawnNetId 0, which must not make every record match "this is my pawn".
-            if (c.PawnNetId != 0 && rec.NetId == c.PawnNetId) return true;
+            if (c.PawnNetId != 0 && rec.NetId == c.PawnNetId) return 1;
             // Distance is measured from the client's cached foci to the record's cached absolute position: no
             // container walk, no transform maths, per (entity, observer) pair.
             double best = double.MaxValue;
@@ -1603,12 +1650,8 @@ namespace Nebula
                     double d2 = foci[i].SqrDistanceTo(rec.AbsX, rec.AbsY, rec.AbsZ);
                     if (d2 < best) best = d2;
                 }
-            int divisor;
-            if (best == double.MaxValue) divisor = _interest.FarDivisor;
-            else if (best <= (double)_interest.NearRadius * _interest.NearRadius) return true;
-            else divisor = best <= (double)_interest.FarRadius * _interest.FarRadius ? _interest.MidDivisor : _interest.FarDivisor;
-            if (divisor <= 1) return true;
-            return (tick + (uint)(rec.NetId % (ulong)divisor)) % (uint)divisor == 0;
+            int p = (int)rec.Priority;
+            return RelevanceTiers.DivisorAt(in _tiers[p < _tiers.Length ? p : 0], best);
         }
 
         private bool TryGetPawnPosition(ClientConn c, out Vector3 position)

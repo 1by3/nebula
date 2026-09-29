@@ -1,0 +1,8 @@
+{
+    "name": "Nebula.Samples.ServerOwnedCrowd.Tests",
+    "references": ["Nebula.Runtime", "Nebula.Samples.ServerOwnedCrowd"],
+    "includePlatforms": ["Editor"],
+    "optionalUnityReferences": ["TestAssemblies"],
+    "autoReferenced": false,
+    "defineConstraints": ["UNITY_INCLUDE_TESTS"]
+}

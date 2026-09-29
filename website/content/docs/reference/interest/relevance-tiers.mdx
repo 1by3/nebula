@@ -1,0 +1,98 @@
+---
+title: "RelevanceTiers"
+description: "The arithmetic of RelevancePriority: pure, shared by the gateway, the worker and the tests."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/RelevanceTiers.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/RelevanceTiers.cs)</div>
+
+```csharp
+public static class RelevanceTiers
+```
+
+The arithmetic of [`RelevancePriority`](/docs/reference/interest/relevance-priority): pure, shared by the gateway, the worker and the tests.
+
+## Fields
+
+### PriorityMask [#prioritymask]
+
+```csharp
+public const EntityInterestFlags PriorityMask = (EntityInterestFlags)0b0000_0110;
+```
+
+The bits of [`EntityInterestFlags`](/docs/reference/protocol/entity-interest-flags) that carry the priority.
+
+### Near, Middle, Far [#near-middle-far]
+
+```csharp
+public const int Near = 0, Middle = 1, Far = 2;
+```
+
+Distance bands, nearest first.
+
+### Quiet [#quiet]
+
+```csharp
+public const int Quiet = 0;
+```
+
+A divisor meaning "send this client no unreliable updates for this entity".
+
+## Methods
+
+### WithPriority [#withpriority]
+
+```csharp
+public static EntityInterestFlags WithPriority(EntityInterestFlags flags, RelevancePriority priority);
+```
+
+`flags` with its priority bits set to `priority`.
+
+### PriorityOf [#priorityof]
+
+```csharp
+public static RelevancePriority PriorityOf(EntityInterestFlags flags);
+```
+
+The priority a spawn's interest flags carry; [`RelevancePriority.Normal`](/docs/reference/interest/relevance-priority#normal) from a sender that sets none.
+
+### BandOf [#bandof]
+
+```csharp
+public static int BandOf(double sqrDistance, float nearRadius, float farRadius);
+```
+
+The distance band of a squared distance: [`Near`](#near) within the near radius, [`Middle`](#middle) within the far radius, [`Far`](#far) beyond it or when there is no distance at all (`double.MaxValue`: a client with no focus in the entity's space).
+
+### Divisor [#divisor]
+
+```csharp
+public static int Divisor(RelevancePriority priority, int band, int midDivisor, int farDivisor);
+```
+
+Ticks per update window for an entity of `priority` in distance band `band`: 1 is every update, [`Quiet`](#quiet) is none (see [`RelevancePriority`](/docs/reference/interest/relevance-priority)).
+
+### Resolve [#resolve]
+
+```csharp
+public static RelevanceTierBands Resolve(RelevancePriority priority, in RelevanceTierBands own, float nearRadius, float farRadius, int midDivisor, int farDivisor);
+```
+
+The bands a priority uses under the global tiers `nearRadius`, `farRadius`, `midDivisor` and `farDivisor`: the priority's own when it has an [`RelevanceTierBands.Override`](/docs/reference/interest/relevance-tier-bands#override), otherwise the global ones shifted as [`Divisor`](#divisor) says. [`RelevancePriority.Normal`](/docs/reference/interest/relevance-priority#normal) always uses the global tiers: they are its tiers.
+
+### DivisorAt [#divisorat]
+
+```csharp
+public static int DivisorAt(in RelevanceTierBands bands, double sqrDistance);
+```
+
+Ticks per update window for a client at squared distance `sqrDistance` from an entity whose priority resolved to `bands` ([`Resolve`](#resolve)); [`Quiet`](#quiet) is none.
+
+### StartsWindow [#startswindow]
+
+```csharp
+public static bool StartsWindow(uint tick, bool hasPrevious, uint previousTick, ulong netId, int divisor);
+```
+
+Whether an entry at `tick` starts a new window of `divisor` ticks for this entity, given the tick of the entity's previous entry. A client whose rate is one update per window is sent the first entry of each window and nothing else in it. Windows are staggered by net id so a crowd's updates spread over the ticks of a window rather than landing on one.
+
+This, and not "is the tick a multiple of the divisor", is what lets a gateway's rate compose with a worker that sends an entity only every [`NetworkIdentity.UpdateInterval`](/docs/reference/core/network-identity#updateinterval) ticks: an entity updated every 6 ticks and a client asking for every 4th tick get every update, where the tick test would match some entities never.

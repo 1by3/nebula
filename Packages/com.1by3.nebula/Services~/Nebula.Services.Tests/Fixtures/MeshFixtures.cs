@@ -28,6 +28,8 @@ public sealed class FakeWorker : IDisposable
         public float RelevanceRadius;
         public bool AlwaysRelevant;
         public byte InterestGroup;
+        /// <summary>Carried in the spawn's interest flags, as a worker sends <see cref="NetworkIdentity.RelevancePriority"/>.</summary>
+        public RelevancePriority Priority;
         public ulong Region;
         public InterestPlacement Placement;
         /// <summary>The entity's variables as its spawn carries them: the last block <see cref="SendVars"/> sent.</summary>
@@ -154,12 +156,13 @@ public sealed class FakeWorker : IDisposable
     // ------------------------------------------------------------------------------------------- content
 
     /// <summary>Add an authoritative entity and publish it to whoever already subscribes where it sits.</summary>
-    public Entity Spawn(ulong netId, Vector3 local, ContainerRef? container = null, ulong owner = 0, float relevanceRadius = 0, bool alwaysRelevant = false, byte group = 0)
+    public Entity Spawn(ulong netId, Vector3 local, ContainerRef? container = null, ulong owner = 0, float relevanceRadius = 0, bool alwaysRelevant = false, byte group = 0,
+        RelevancePriority priority = RelevancePriority.Normal)
     {
         var e = new Entity
         {
             NetId = netId, Local = local, Container = container ?? PawnContainer, OwnerClientId = owner,
-            RelevanceRadius = relevanceRadius, AlwaysRelevant = alwaysRelevant, InterestGroup = group,
+            RelevanceRadius = relevanceRadius, AlwaysRelevant = alwaysRelevant, InterestGroup = group, Priority = priority,
         };
         _entities[netId] = e;
         // Passengers may already name this id as their carrier: until it existed they sat on their own
@@ -442,6 +445,128 @@ public sealed class FakeWorker : IDisposable
             }
             WorldStateMsg.End(_w, slot, n);
             if (n > 0) Transport.Send(link.PeerId, Delivery.Sequenced, _w.ToSegment());
+        }
+        Transport.Flush();
+    }
+
+    // ------------------------------------------------------------------------------------------- walkers
+
+    /// <summary>
+    /// A server-owned entity that moves by itself, published the way a Unity worker's root
+    /// <c>NetworkTransform</c> publishes it (docs/server-owned-entities.md): the default fields (position, Euler
+    /// rotation, half-float velocity: 46 bytes an entry), only on the ticks it changed, and a reliable
+    /// recovery entry after a change.
+    /// </summary>
+    public sealed class Walker
+    {
+        public Vector3 Velocity;
+        /// <summary>Walks inside a disc of this radius around <see cref="Centre"/>, turning back at its edge.</summary>
+        public Vector3 Centre;
+        public float Radius = 100f;
+        /// <summary>Ticks between two updates (the worker's <c>NetworkIdentity.UpdateInterval</c>); 1 = every tick.</summary>
+        public int UpdateInterval = 1;
+        internal bool RecoveryPending;
+        internal uint RecoveryTick;
+        internal uint LastUpdateTick;
+    }
+
+    /// <summary>How a walker's reliable recovery entry is scheduled.</summary>
+    public enum RecoveryMode
+    {
+        /// <summary>Before NEB-359: one reliable entry 30 ticks after the first change, again and again while it keeps moving.</summary>
+        EveryThirtyTicks,
+        /// <summary>NEB-359: one reliable entry once the entity has not changed for 30 ticks: none while it keeps moving.</summary>
+        OnceSettled,
+    }
+
+    public readonly Dictionary<ulong, Walker> Walkers = new();
+    public RecoveryMode Recovery = RecoveryMode.EveryThirtyTicks;
+    /// <summary>
+    /// The fields each walker entry carries, as a root <c>NetworkTransform</c>'s settings select them: by default
+    /// position, Euler rotation and velocity (46 bytes). A game that syncs only yaw, no velocity, or half floats
+    /// sends less (docs/server-owned-entities.md §5).
+    /// </summary>
+    public TransformFields WalkerFields = TransformFields.Position | TransformFields.Rotation | TransformFields.Velocity;
+    private readonly List<(Entity Entity, bool Reliable)> _walkerEntries = new();
+    private readonly NetworkWriter _walkerBatch = new();
+
+    /// <summary>Make an entity this worker owns walk (or stand, with a zero velocity).</summary>
+    public Walker Walk(ulong netId, Vector3 velocity, float radius = 100f, int updateInterval = 1)
+    {
+        var e = _entities[netId];
+        var walker = new Walker { Velocity = velocity, Centre = e.Local, Radius = radius, UpdateInterval = Math.Max(1, updateInterval) };
+        Walkers[netId] = walker;
+        return walker;
+    }
+
+    /// <summary>
+    /// Simulate and publish one worker tick of every walker: move the ones whose update tick this is, rebucket them,
+    /// and send each gateway link the entries of the walkers it subscribes, in 500-byte sequenced batches plus one
+    /// reliable message per recovery entry, as <c>NebulaWorker.PublishToGateways</c> does.
+    /// </summary>
+    public void PublishWalkers(uint tick)
+    {
+        _walkerEntries.Clear();
+        foreach (var kv in Walkers)
+        {
+            if (!_entities.TryGetValue(kv.Key, out var e)) continue;
+            var w = kv.Value;
+            if ((tick + (uint)(kv.Key % (ulong)w.UpdateInterval)) % (uint)w.UpdateInterval != 0) continue;
+            float dt = w.LastUpdateTick == 0 ? w.UpdateInterval / 60f : (tick - w.LastUpdateTick) / 60f;
+            w.LastUpdateTick = tick;
+            bool changed = w.Velocity.x != 0f || w.Velocity.y != 0f || w.Velocity.z != 0f;
+            if (changed)
+            {
+                var next = e.Local + w.Velocity * dt;
+                var offset = next - w.Centre;
+                if (offset.x * offset.x + offset.z * offset.z > w.Radius * w.Radius) { w.Velocity = w.Velocity * -1f; next = e.Local + w.Velocity * dt; }
+                Move(kv.Key, next);
+            }
+            bool recovery = w.RecoveryPending && tick >= w.RecoveryTick && (Recovery == RecoveryMode.EveryThirtyTicks || !changed);
+            if (!changed && !recovery) continue;
+            if (recovery) w.RecoveryPending = false;
+            else if (Recovery == RecoveryMode.OnceSettled || !w.RecoveryPending) { w.RecoveryPending = true; w.RecoveryTick = tick + 30; }
+            _walkerEntries.Add((e, recovery));
+        }
+        if (_walkerEntries.Count == 0) return;
+        foreach (var link in _links.Values)
+        {
+            int slot = -1;
+            ushort n = 0;
+            foreach (var (e, reliable) in _walkerEntries)
+            {
+                if (!Reaches(e, link)) continue;
+                var w = Walkers[e.NetId];
+                var entry = new EntityStateEntry
+                {
+                    NetId = e.NetId, Epoch = e.Epoch, Container = e.Container,
+                    Fields = WalkerFields | (reliable ? TransformFields.Reliable : 0),
+                    LocalPosition = e.Local, LocalRotation = Quaternion.identity, LocalScale = Vector3.one, Velocity = w.Velocity,
+                };
+                if (reliable)
+                {
+                    _w.Reset();
+                    int one = WorldStateMsg.Begin(_w, MsgId.WorldState, tick, Index);
+                    entry.Write(_w);
+                    WorldStateMsg.End(_w, one, 1);
+                    Transport.Send(link.PeerId, Delivery.ReliableOrdered, _w.ToSegment());
+                    continue;
+                }
+                if (slot < 0) { _walkerBatch.Reset(); slot = WorldStateMsg.Begin(_walkerBatch, MsgId.WorldState, tick, Index); n = 0; }
+                entry.Write(_walkerBatch);
+                n++;
+                if (_walkerBatch.Length + EntityStateEntry.WireSize > WorldStateMsg.BatchBytes)
+                {
+                    WorldStateMsg.End(_walkerBatch, slot, n);
+                    Transport.Send(link.PeerId, Delivery.Sequenced, _walkerBatch.ToSegment());
+                    slot = -1;
+                }
+            }
+            if (slot >= 0)
+            {
+                WorldStateMsg.End(_walkerBatch, slot, n);
+                Transport.Send(link.PeerId, Delivery.Sequenced, _walkerBatch.ToSegment());
+            }
         }
         Transport.Flush();
     }
@@ -866,7 +991,7 @@ public sealed class FakeWorker : IDisposable
             Epoch = e.Epoch, Container = e.Container, LocalPosition = e.Local,
             LocalRotation = Quaternion.identity, LocalScale = Vector3.one,
             RelevanceRadius = e.RelevanceRadius,
-            InterestFlags = e.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None,
+            InterestFlags = RelevanceTiers.WithPriority(e.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None, e.Priority),
             InterestGroup = e.InterestGroup, Vars = e.Vars, State = e.State,
             AudienceGeneration = e.AudienceGeneration, Audience = e.Audience, Maps = e.Maps,
         }.Write(_w, MsgId.EntitySpawn);
@@ -985,6 +1110,10 @@ public sealed class FakeClient : IDisposable
     /// <summary>The last packet this client could not parse, if any. A test that loses messages looks here first.</summary>
     public string LastError = "";
     public long BytesIn;
+    /// <summary>World-state entries received per entity, and how many of them came reliable (docs/server-owned-entities.md).</summary>
+    public readonly Dictionary<ulong, int> StatesOf = new(), ReliableStatesOf = new();
+    /// <summary>Transport messages received (one reliable batch or one sequenced world-state packet each).</summary>
+    public long MessagesIn;
 
     private readonly Dictionary<ulong, ushort> _viewSeq = new();
     private readonly HashSet<string> _inMessage = new();
@@ -1070,6 +1199,7 @@ public sealed class FakeClient : IDisposable
             else if (e.Type == TransportEvent.Kind.Data)
             {
                 BytesIn += e.Data.Count;
+                MessagesIn++;
                 Record?.Add((false, e.Data.ToArray()));
                 // A malformed message must fail the test loudly rather than silently cost the client a batch.
                 try { Dispatch(new NetworkReader(e.Data)); }
@@ -1176,7 +1306,14 @@ public sealed class FakeClient : IDisposable
             case MsgId.WorldState:
             {
                 WorldStateMsg.ReadHeader(r, out _, out _, out ushort count);
-                for (int i = 0; i < count; i++) { var entry = EntityStateEntry.Read(r); Note(entry.NetId); Named(entry.NetId, entry.Container); StatesReceived++; }
+                for (int i = 0; i < count; i++)
+                {
+                    var entry = EntityStateEntry.Read(r);
+                    Note(entry.NetId); Named(entry.NetId, entry.Container); StatesReceived++;
+                    StatesOf.TryGetValue(entry.NetId, out int n);
+                    StatesOf[entry.NetId] = n + 1;
+                    if (entry.Reliable) { ReliableStatesOf.TryGetValue(entry.NetId, out int k); ReliableStatesOf[entry.NetId] = k + 1; }
+                }
                 break;
             }
             case MsgId.EntityVars:

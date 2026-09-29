@@ -1,0 +1,31 @@
+---
+title: "RelevancePriority"
+description: "How much an entity's transform updates matter to the clients that hold it, relative to its distance from them (NetworkIdentity.RelevancePriority, docs/server-owned-entities.md D3)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/RelevanceTiers.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/RelevanceTiers.cs)</div>
+
+```csharp
+public enum RelevancePriority : byte
+```
+
+How much an entity's transform updates matter to the clients that hold it, relative to its distance from them ([`NetworkIdentity.RelevancePriority`](/docs/reference/core/network-identity#relevancepriority), `docs/server-owned-entities.md` D3). The gateway picks each client's update rate for an entity from its distance band ([`InterestSettings.NearRadius`](/docs/reference/interest/interest-settings#nearradius), [`InterestSettings.FarRadius`](/docs/reference/interest/interest-settings#farradius)) and this priority:
+
+- **Priority** near / middle / far
+- **`High`** every update / every update / `InterestMidDivisor`
+- **`Normal`** every update / `InterestMidDivisor` / `InterestFarDivisor`
+- **`Low`** `InterestMidDivisor` / `InterestFarDivisor` / `InterestFarDivisor`
+- **`Background`** `InterestMidDivisor` / none / none
+
+"Every update" is every update the worker sends, which [`NetworkIdentity.UpdateInterval`](/docs/reference/core/network-identity#updateinterval) may already have slowed. "None" stops a client's updates without despawning the entity there: the client keeps it where it was last told, and still receives its reliable entries (where it came to rest, a teleport, a container change). A client's own pawn is always sent every update.
+
+That table is the shift a priority gets by default. `High`, `Low` and `Background` can instead have tiers of their own ([`NebulaConfig.InterestHighTiers`](/docs/reference/core/nebula-config#interesthightiers), [`NebulaConfig.InterestLowTiers`](/docs/reference/core/nebula-config#interestlowtiers), [`NebulaConfig.InterestBackgroundTiers`](/docs/reference/core/nebula-config#interestbackgroundtiers)), so a crowd can be slowed while players, at `Normal`, keep the global tiers.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="normal"></span>`Normal` | `0` | The configured distance tiers, unchanged. The default. |
+| <span id="high"></span>`High` | `1` | One tier better than its distance: every update out to `InterestFarRadius`. A boss, an escort target. |
+| <span id="low"></span>`Low` | `2` | One tier worse than its distance. Traffic, a crowd member, a critter. |
+| <span id="background"></span>`Background` | `3` | Updated only inside `InterestNearRadius`, at the middle band's rate; beyond it a client is told only where the entity comes to rest. For the many entities that matter only up close: townsfolk, ambient life. |
