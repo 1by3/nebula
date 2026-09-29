@@ -112,6 +112,8 @@ public override void OnContainerChanged(Container previous, Container current)
 
 `_verticalSpeed` stands for your controller's own field. Write it into `Identity.Motion.Velocity` each tick so Nebula has the value to convert.
 
+Crossings work the same way for every entity a worker simulates, whether a player owns it or not. A character spawned with `SpawnServerDriven` walks onto a moving ship and off again as a player's pawn does: write its movement in its own space, turn targets from the scope's space into that space with `Identity.FromScope`, and write what it did into `Identity.Motion.Velocity` each tick. Clients need no code for it, because they interpolate it across the crossing like any other entity. The **Server-owned boarding** sample in the package (`Samples~/ServerOwnedBoarding`) has a walker and a moving platform that show this.
+
 Only the worker that simulates the carrier knows its pose exactly. That worker, the **pose owner**, performs every crossing. Any other worker that would cross an entity hands it to the pose owner first, unconverted. The pose owner crosses it, then hands it on if the destination belongs to another worker. A crossing costs at most one extra handover and never a position error.
 
 To limit where entities may cross, install a crossing policy. This one lets entities leave only through an airlock at the stern of a ship:
