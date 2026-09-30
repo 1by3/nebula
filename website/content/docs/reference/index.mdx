@@ -59,6 +59,7 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [SyncDistanceRating](/docs/reference/core/sync-distance-rating) | Enum. Whether a behavior's sync state reaches far clients less often, following the entity's distance tier as its transform does (NetworkBehaviour.SyncDistanceRating, docs/server-owned-entities.md D11). |
 | [SyncHistoryAttribute](/docs/reference/core/sync-history-attribute) | Class. Marks a NetworkVariable\<T\> field as part of the entity's recorded state history, so its value is snapshotted every tick alongside the pose and can be read back through NetworkIdentity.StateAt / HistoricalState.TryGetValue\<T\>. |
 | [SyncStateCodec](/docs/reference/core/sync-state-codec) | Static class. Envelope shared by the per-tick sync stream (EntityState/GhostSyncState messages) and the spawn snapshot: \[count\]\{\[behaviourIndex\]\[flags\]\[len:ushort\]\[chunk\]\}. |
+| [UpdateGapDelay](/docs/reference/core/update-gap-delay) | Class. The extra render delay a client gives one remote entity whose state arrives further apart than the render delay: an entity the worker updates every few ticks (NetworkIdentity.UpdateInterval), or one the gateway sends a client only every ... |
 
 ## Containers
 

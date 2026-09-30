@@ -311,6 +311,15 @@ namespace Nebula
         [Header("Client")]
         [Tooltip("Render delay for remote entities, in ticks.")]
         public int InterpolationDelayTicks = 3;
+        /// <summary>
+        /// The most extra render delay, in ticks, a client gives a remote entity whose state arrives further apart than
+        /// the render delay (an entity updated every few ticks, or sent in a slow distance tier), so it interpolates
+        /// across its own gap instead of being extrapolated past its newest state and snapping back. Entities sent
+        /// every tick or two get none. 0 turns it off. See <see cref="UpdateGapDelay"/> and
+        /// <see cref="NetworkIdentity.UpdateGap"/>.
+        /// </summary>
+        [Tooltip("Client: the most extra render delay, in ticks, for a remote entity whose state arrives further apart than the render delay, so it interpolates across its own gap instead of extrapolating. Entities sent every tick get none. 0 turns it off.")]
+        public int SlowUpdateMaxDelayTicks = 30;
         [Tooltip("Extra ticks of input lead on top of half the measured RTT, before the adaptive adjustment.")]
         public int InputLeadMarginTicks = 2;
         [Tooltip("Lead (in ticks) the client tries to keep its inputs arriving at the worker with. Below this the client sends further ahead at once; well above it, it slowly relaxes.")]

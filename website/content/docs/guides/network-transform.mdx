@@ -133,6 +133,14 @@ Non-authoritative copies (remote entities on a client, ghosts on a worker) prese
 
 **Buffered**: Nebula stores 64 received states by tick. `RemoteTick` interpolates between the states before and after `renderTick`. When no newer state is available, child transforms hold the latest sample. Root transforms can extrapolate briefly using the supplied velocity when `SyncVelocity` is enabled.
 
+On a client, an entity whose state arrives further apart than the render delay is drawn later than that, by its own gap. An entity updated every 6 ticks, or sent every 20th tick in a slow distance tier, would otherwise be drawn past its newest state for most of each gap: held there, or extrapolated by its velocity, until the next state pulls it into place. The client measures how far apart each entity's states arrive and draws that entity enough ticks further behind to have a state on each side of the render tick, so it interpolates across the gap. `renderTick` is then earlier for that entity, and every behavior on it is drawn at that tick.
+
+- An entity sent every tick or two gets no extra delay.
+- `NebulaConfig.SlowUpdateMaxDelayTicks` caps the extra delay (`30` ticks by default; `0` turns it off).
+- A gap longer than a second counts as the entity resting, not as its rate.
+- When an entity's rate changes, its delay moves toward the new one at half real time, so it slows down or speeds up briefly instead of jumping.
+- `NetworkIdentity.UpdateGap` shows the measured gap (`GapTicks`) and the delay in use (`DelayTicks`).
+
 **SmoothDamp**: Nebula presents the newest state without sampling between buffered ticks. Each `RemoteTick` moves toward the newest state. Configure the maximum interpolation time separately for position, scale, and rotation.
 
 Regardless of mode, a state is applied immediately (and the buffer cleared) when it is a teleport, when `Interpolate` is off, when it arrived with tick 0 (the spawn snapshot a late joiner or fresh ghost receives), or on the relaying worker.

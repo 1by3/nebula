@@ -892,6 +892,14 @@ public int InterpolationDelayTicks = 3;
 
 Render delay for remote entities, in ticks.
 
+### SlowUpdateMaxDelayTicks [#slowupdatemaxdelayticks]
+
+```csharp
+public int SlowUpdateMaxDelayTicks = 30;
+```
+
+The most extra render delay, in ticks, a client gives a remote entity whose state arrives further apart than the render delay (an entity updated every few ticks, or sent in a slow distance tier), so it interpolates across its own gap instead of being extrapolated past its newest state and snapping back. Entities sent every tick or two get none. 0 turns it off. See [`UpdateGapDelay`](/docs/reference/core/update-gap-delay) and [`NetworkIdentity.UpdateGap`](/docs/reference/core/network-identity#updategap).
+
 ### InputLeadMarginTicks [#inputleadmarginticks]
 
 ```csharp

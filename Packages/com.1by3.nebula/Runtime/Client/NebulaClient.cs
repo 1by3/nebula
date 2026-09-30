@@ -923,7 +923,8 @@ namespace Nebula
                 // nothing left to present; it is dropped below instead of throwing here every frame.
                 if (e == null) { _destroyedScratch.Add(e); continue; }
                 // The local player too: its server-authoritative children (a NetworkTransform on a turret, say) interpolate.
-                e.RemoteTick(_renderTick);
+                // An entity whose state arrives further apart than the render delay is drawn behind by its own gap.
+                e.RemoteTick(_renderTick - e.UpdateGap.Advance(RenderDelayTicks, Config.SlowUpdateMaxDelayTicks, Time.unscaledDeltaTime));
             }
             if (_destroyedScratch.Count > 0) DropDestroyed();
             TrackCarrier();

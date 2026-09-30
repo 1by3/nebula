@@ -1,0 +1,92 @@
+---
+title: "UpdateGapDelay"
+description: "The extra render delay a client gives one remote entity whose state arrives further apart than the render delay: an entity the worker updates every few ticks (NetworkIdentity.UpdateInterval), or one the gateway sends a client only every ..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/UpdateGapDelay.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/UpdateGapDelay.cs)</div>
+
+```csharp
+public sealed class UpdateGapDelay
+```
+
+The extra render delay a client gives one remote entity whose state arrives further apart than the render delay: an entity the worker updates every few ticks ([`NetworkIdentity.UpdateInterval`](/docs/reference/core/network-identity#updateinterval)), or one the gateway sends a client only every Nth tick (the distance tiers). Without it such an entity is drawn past its newest state for most of every gap, extrapolated by its velocity, and snaps back when the next state arrives. With it the entity is drawn far enough behind to have a state on either side of the render tick, so it interpolates across its own gap. Entities whose state arrives within the render delay get none, so a player or a vehicle sent every tick is drawn exactly as late as before.
+
+The gap is measured, not configured: the larger of the last two gaps between states, in ticks, so the staggered windows of a gateway divisor (an entity updated every 6 ticks, sent in 20-tick windows, arrives 18 and 24 ticks apart) settle on the longer one. A gap longer than [`MaxGapTicks`](#maxgapticks) is taken for an entity at rest (a resting entity is not sent) and ignored. The delay moves toward its target at half the tick rate, so the entity plays at between half and one and a half times real speed while it changes, and never jumps.
+
+## Fields
+
+### SlewTicksPerSecond [#slewtickspersecond]
+
+```csharp
+public const double SlewTicksPerSecond = NetworkTime.TickRate * 0.5;
+```
+
+How fast the delay moves toward its target, in ticks per second: half the tick rate.
+
+### MaxGapTicks [#maxgapticks]
+
+```csharp
+public const int MaxGapTicks = NetworkTime.TickRate;
+```
+
+Gaps longer than this, in ticks (one second), are an entity at rest, not its rate. It stays under the 64 ticks a [`RemoteInterpolator`](/docs/reference/core/remote-interpolator) buffers, so the older state of a gap is still there to interpolate from.
+
+## Properties
+
+### GapTicks [#gapticks]
+
+```csharp
+public int GapTicks { get; }
+```
+
+The larger of the last two gaps between states within the limit, in ticks; 0 until two have arrived.
+
+### DelayTicks [#delayticks]
+
+```csharp
+public double DelayTicks { get; }
+```
+
+The extra delay in use, in ticks (fractional while it moves toward [`TargetTicks`](#targetticks)).
+
+### TargetTicks [#targetticks]
+
+```csharp
+public int TargetTicks { get; }
+```
+
+The delay [`Advance`](#advance) last aimed for, in ticks.
+
+## Methods
+
+### Observe [#observe]
+
+```csharp
+public void Observe(uint tick);
+```
+
+A state for `tick` arrived. A gap longer than [`MaxGapTicks`](#maxgapticks) is taken for the entity resting and does not count; an older or repeated tick is ignored.
+
+### TargetFor [#targetfor]
+
+```csharp
+public static int TargetFor(int gapTicks, int renderDelayTicks, int maxDelayTicks);
+```
+
+The target for a client rendering `renderDelayTicks` behind the newest state: one tick more than the part of the gap the render delay does not cover, when the gap is longer than the render delay, and 0 otherwise; never more than `maxDelayTicks`.
+
+### Advance [#advance]
+
+```csharp
+public double Advance(int renderDelayTicks, int maxDelayTicks, double deltaSeconds);
+```
+
+Move the delay toward its target by at most [`SlewTicksPerSecond`](#slewtickspersecond) times `deltaSeconds`, and return it. `maxDelayTicks` of 0 turns the delay off at once.
+
+### Reset [#reset]
+
+```csharp
+public void Reset();
+```
+
+Forget every gap and the delay (a despawned identity going back to a pool).

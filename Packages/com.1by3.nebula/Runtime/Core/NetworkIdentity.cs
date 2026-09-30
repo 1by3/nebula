@@ -749,6 +749,13 @@ namespace Nebula
         internal bool HasReplicationState;
         internal uint LastStateTick;
         internal bool HasStateTick;
+        /// <summary>
+        /// On a client, how far apart this entity's state arrives and the extra render delay that buys it
+        /// (<see cref="NebulaConfig.SlowUpdateMaxDelayTicks"/>): an entity sent slower than the render delay is drawn
+        /// that much further behind, so it interpolates across its own gap. <see cref="UpdateGapDelay.DelayTicks"/>
+        /// is 0 for an entity sent every tick or two.
+        /// </summary>
+        public UpdateGapDelay UpdateGap { get; } = new UpdateGapDelay();
         private ContainerRef _publishedContainer;
         private uint _publishedEpoch;
         private bool _publishedLocation;
@@ -800,6 +807,7 @@ namespace Nebula
             OwnerWorkerIndex = worker;
             LastStateTick = tick;
             HasStateTick = true;
+            UpdateGap.Observe(tick);
             if (RootTransform != null && RootTransform.IsOwnerAuthoritative && RootTransform.IsOwner)
             {
                 // The owner never consumes the root interpolation buffer. Adopt the worker's
@@ -1073,6 +1081,7 @@ namespace Nebula
             OwnerWorkerIndex = 0;
             Motion.Velocity = Vector3.zero;
             HasStateTick = false;
+            UpdateGap.Reset();
             _publishedLocation = false;
             _hasPendingState = false;
             ContainerPinned = false;
