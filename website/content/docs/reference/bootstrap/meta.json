@@ -1,4 +1,4 @@
 {
   "title": "Bootstrap",
-  "pages": ["editor-dev-paths", "editor-dev-session", "editor-player", "editor-run-plan", "nebula-bootstrap", "nebula-editor-persistence", "nebula-editor-run-mode", "nebula-roles"]
+  "pages": ["editor-dev-paths", "editor-dev-session", "editor-player", "editor-roster", "editor-roster-reader", "editor-run-plan", "nebula-bootstrap", "nebula-editor-persistence", "nebula-editor-run-mode", "nebula-roles"]
 }

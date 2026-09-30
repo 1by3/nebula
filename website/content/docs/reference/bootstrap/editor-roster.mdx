@@ -1,0 +1,72 @@
+---
+title: "EditorRoster"
+description: "What one virtual player knows about the others of the Multiplayer Play Mode window, read from the project's Library/VP/SystemData.json (EditorRosterReader)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Bootstrap/EditorRoster.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Bootstrap/EditorRoster.cs)</div>
+
+```csharp
+public readonly struct EditorRoster
+```
+
+What one virtual player knows about the others of the Multiplayer Play Mode window, read from the project's `Library/VP/SystemData.json` ([`EditorRosterReader`](/docs/reference/bootstrap/editor-roster-reader)). [`EditorRunPlan.Resolve`](/docs/reference/bootstrap/editor-run-plan#resolve) uses it so that exactly one virtual player hosts the server: an untagged virtual player hosts only when it is the active one with the lowest index, and every other one is a client.
+
+## Constructors
+
+### EditorRoster [#editorroster]
+
+```csharp
+public EditorRoster(bool anyServerTagged, bool lowerIndexServerTagged, bool isFirstHostCandidate);
+```
+
+## Properties
+
+### Known [#known]
+
+```csharp
+public bool Known { get; }
+```
+
+Whether this player was found in the roster. When false the other facts mean nothing and the plan keeps the older rule: an untagged virtual player hosts.
+
+### AnyServerTagged [#anyservertagged]
+
+```csharp
+public bool AnyServerTagged { get; }
+```
+
+Whether any active player carries [`EditorRunPlan.ServerTag`](/docs/reference/bootstrap/editor-run-plan#servertag), which makes every untagged virtual player a client.
+
+### LowerIndexServerTagged [#lowerindexservertagged]
+
+```csharp
+public bool LowerIndexServerTagged { get; }
+```
+
+Whether another active player with [`EditorRunPlan.ServerTag`](/docs/reference/bootstrap/editor-run-plan#servertag) has a lower index than this one.
+
+### IsFirstHostCandidate [#isfirsthostcandidate]
+
+```csharp
+public bool IsFirstHostCandidate { get; }
+```
+
+Whether no other active virtual player without [`EditorRunPlan.ClientTag`](/docs/reference/bootstrap/editor-run-plan#clienttag) has a lower index than this one.
+
+### Unknown [#unknown]
+
+```csharp
+public static EditorRoster Unknown { get; }
+```
+
+No roster: the older rule applies.
+
+## Methods
+
+### Parse [#parse]
+
+```csharp
+public static EditorRoster Parse(string json, string playerFolder, out string problem);
+```
+
+Work out the roster facts for the virtual player that runs from `Library/VP/<playerFolder>` (the folder is the player's `m_Prefix` followed by its `m_Id`) from the text of `SystemData.json`. Tolerant: anything unreadable gives [`Unknown`](#unknown) and a reason in `problem`; null when the roster was read.

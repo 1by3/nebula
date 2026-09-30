@@ -91,7 +91,7 @@ namespace Nebula
             if (Config.WorldManifest == null && Config.RuntimeWorld != null)
                 NebulaWorld.LoadRuntime(Config.RuntimeWorld);
 
-            RunPlan = ResolveEditorRunPlan(Config);
+            RunPlan = ResolveEditorRunPlan(Config, out _devLoopPlayerLabel);
             RunPlan.ApplyTo(Config, CommandLine.Has, ProjectRoot);
             Roles = RunPlan.Player != EditorPlayer.Mesh ? RunPlan.Roles : ResolveRoles();
             if ((Roles & NebulaRoles.Client) != 0 && (Roles & NebulaRoles.Worker) != 0)
@@ -202,6 +202,8 @@ namespace Nebula
             if ((Roles & NebulaRoles.Client) != 0)
             {
                 Client = gameObject.AddComponent<NebulaClient>();
+                // A client in a virtual player is not the main Editor's player: it shares the Editor's PlayerPrefs, so it needs an identity of its own.
+                if (RunPlan.Player == EditorPlayer.Client) Client.DevLoopPlayerLabel = _devLoopPlayerLabel;
                 // Scripted clients (bots, an explicit -nebula-gateway, -nebula-connect) go straight in. Otherwise the
                 // client waits for ConnectTo, from NebulaTitleScreen if the scene has one or from the game's own UI.
                 // A client of the Editor-hosted server (EditorRunMode MultiplayerPlayMode) has nobody to ask either.
@@ -426,16 +428,29 @@ namespace Nebula
         /// <summary>The main project's folder, also from a virtual player (see <see cref="EditorDevPaths.ProjectRoot"/>).</summary>
         private static string ProjectRoot => EditorDevPaths.ProjectRoot(Application.dataPath);
 
-        private static EditorRunPlan ResolveEditorRunPlan(NebulaConfig config)
+        /// <summary>The Library/VP folder name of the virtual player this process is (mppm plus an id), used to give its client its own identity; null for the main Editor and builds.</summary>
+        private string _devLoopPlayerLabel;
+
+        private static EditorRunPlan ResolveEditorRunPlan(NebulaConfig config, out string virtualPlayerFolder)
         {
+            virtualPlayerFolder = null;
             bool isEditor = Application.isEditor;
             bool explicitRole = !string.IsNullOrEmpty(CommandLine.Get("nebula-role"));
             bool available = false, isMainEditor = true;
             string[] tags = null;
             if (config.EditorRunMode == NebulaEditorRunMode.MultiplayerPlayMode && isEditor && !explicitRole)
                 available = MultiplayerPlayModePlayer.TryRead(out isMainEditor, out tags);
-            var plan = EditorRunPlan.Resolve(config.EditorRunMode, isEditor, available, isMainEditor, tags, explicitRole);
+            // Which virtual player this is decides who hosts: exactly one untagged virtual player does (EditorRoster).
+            var roster = EditorRoster.Unknown;
+            if (available && !isMainEditor)
+            {
+                virtualPlayerFolder = EditorDevPaths.VirtualPlayerFolder(Application.dataPath);
+                roster = EditorRosterReader.Read(ProjectRoot, virtualPlayerFolder, out string problem);
+                if (!roster.Known) NebulaLog.Warn($"dev session: could not tell which virtual player this is ({problem}); an untagged virtual player will host the server, as before. With several virtual players enabled, tag one Server and the others Client");
+            }
+            var plan = EditorRunPlan.Resolve(config.EditorRunMode, isEditor, available, isMainEditor, tags, explicitRole, roster);
             if (plan.Warning != null) NebulaLog.Warn(plan.Warning);
+            if (plan.Error != null) NebulaLog.Error(plan.Error);
             return plan;
         }
 

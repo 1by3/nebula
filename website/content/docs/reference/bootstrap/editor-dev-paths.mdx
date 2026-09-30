@@ -21,6 +21,14 @@ public static string ProjectRoot(string dataPath);
 
 The project's root folder from `Application.dataPath` (`<root>/Assets`). A virtual player runs from a copy of the project inside `<root>/Library/VP/<player>`, so its own data path is walked back out of that folder to the project it belongs to.
 
+### VirtualPlayerFolder [#virtualplayerfolder]
+
+```csharp
+public static string VirtualPlayerFolder(string dataPath);
+```
+
+The folder name of the virtual player that owns `dataPath` (`Library/VP/<prefix><id>`, for example `mppm98673e00`), or null for the main Editor and for a build.
+
 ### Folder [#folder]
 
 ```csharp

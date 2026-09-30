@@ -459,15 +459,29 @@ namespace Nebula
 
         /// <param name="connectNow">False with <paramref name="autoConnect"/> true: the client connects on its own, but
         /// later (<see cref="Connect"/>), once the bootstrap knows where. Connection UI stays hidden meanwhile.</param>
+        /// <summary>
+        /// Set by the bootstrap before <see cref="Initialize(NebulaConfig, bool)"/> when this client runs in a
+        /// Multiplayer Play Mode virtual player (its <c>Library/VP</c> folder name, for example <c>mppm98673e00</c>):
+        /// the Editor keeps one PlayerPrefs store for the main Editor and every virtual player, so without it they
+        /// would all sign in as one player. It suffixes the identity key and the default player name. Null or empty
+        /// for the main Editor and for builds, which keep the plain key.
+        /// </summary>
+        internal string DevLoopPlayerLabel { get; set; }
+
+        internal static string IdentityKey(string label) => string.IsNullOrEmpty(label) ? StoredTokenPref : StoredTokenPref + "." + label;
+
+        private string _identityKey = StoredTokenPref;
+
         internal void Initialize(NebulaConfig config, bool autoConnect, bool connectNow)
         {
             Config = config;
             ConnectsAutomatically = autoConnect;
-            PlayerName = CommandLine.Get("nebula-name", DefaultPlayerName());
+            _identityKey = IdentityKey(DevLoopPlayerLabel);
+            PlayerName = CommandLine.Get("nebula-name", string.IsNullOrEmpty(DevLoopPlayerLabel) ? DefaultPlayerName() : $"{DefaultPlayerName()} ({DevLoopPlayerLabel})");
             AuthToken = CommandLine.Get("nebula-auth-token", "");
             // Bots share one PlayerPrefs store per machine and must not all become the same player.
             _keepsIdentity = !CommandLine.Has("nebula-bot");
-            _storedToken = _keepsIdentity ? PlayerPrefs.GetString(StoredTokenPref, "") : "";
+            _storedToken = _keepsIdentity ? PlayerPrefs.GetString(_identityKey, "") : "";
             NebulaRuntime.RpcSink = this;
 #if UNITY_WEBGL && !UNITY_EDITOR
             // A browser has no UDP sockets: a web build reaches the gateway over WebRTC data channels, which
@@ -543,7 +557,7 @@ namespace Nebula
         {
             _storedToken = token;
             if (!_keepsIdentity) return;
-            try { PlayerPrefs.SetString(StoredTokenPref, token); PlayerPrefs.Save(); }
+            try { PlayerPrefs.SetString(_identityKey, token); PlayerPrefs.Save(); }
             catch (Exception e) { NebulaLog.Warn($"could not save the identity token: {e.Message}"); }
         }
 
@@ -556,7 +570,7 @@ namespace Nebula
             _storedToken = "";
             _presentedStoredToken = false;
             if (!_keepsIdentity) return;
-            try { PlayerPrefs.DeleteKey(StoredTokenPref); PlayerPrefs.Save(); } catch { }
+            try { PlayerPrefs.DeleteKey(_identityKey); PlayerPrefs.Save(); } catch { }
         }
 
         /// <summary>
