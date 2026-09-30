@@ -1,0 +1,30 @@
+---
+title: "EditorRosterReader"
+description: "Reads Library/VP/SystemData.json, where Multiplayer Play Mode lists its players."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Bootstrap/EditorRoster.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Bootstrap/EditorRoster.cs)</div>
+
+```csharp
+public static class EditorRosterReader
+```
+
+Reads `Library/VP/SystemData.json`, where Multiplayer Play Mode lists its players.
+
+## Methods
+
+### RosterFile [#rosterfile]
+
+```csharp
+public static string RosterFile(string projectRoot);
+```
+
+The roster file: `<root>/Library/VP/SystemData.json`.
+
+### Read [#read]
+
+```csharp
+public static EditorRoster Read(string projectRoot, string playerFolder, out string problem);
+```
+
+Read the roster for the virtual player in `playerFolder`; [`EditorRoster.Unknown`](/docs/reference/bootstrap/editor-roster#unknown) with a reason in `problem` when it cannot be read.

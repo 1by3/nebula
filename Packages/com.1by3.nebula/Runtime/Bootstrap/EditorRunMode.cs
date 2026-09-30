@@ -43,16 +43,22 @@ namespace Nebula
         Mesh,
         /// <summary>A client that connects to the server a virtual player hosts.</summary>
         Client,
-        /// <summary>The virtual player that hosts the server: orchestrator, gateway and one worker in one process.</summary>
+        /// <summary>The one virtual player that hosts the server: orchestrator, gateway and one worker in one process.</summary>
         Server,
     }
 
     /// <summary>The decision for one Editor process in the Multiplayer Play Mode dev loop, and the settings it implies.</summary>
     public readonly struct EditorRunPlan
     {
-        /// <summary>A virtual player with this tag (any case) hosts the server; one with <see cref="ClientTag"/> is a client. Untagged, the main Editor is the client and a virtual player is the server.</summary>
+        /// <summary>
+        /// A virtual player with this tag (any case) hosts the server; one with <see cref="ClientTag"/> is a client.
+        /// Untagged, the main Editor is a client, the active virtual player with the lowest index hosts the server,
+        /// and every other virtual player is a client. When any active player is tagged <c>Server</c>, untagged
+        /// virtual players are clients, and when several are, only the one with the lowest index hosts: the others
+        /// are clients and log an error.
+        /// </summary>
         public const string ServerTag = "Server";
-        /// <summary>A player with this tag is a client, so a second virtual player can be a second player.</summary>
+        /// <summary>A player with this tag is always a client and never hosts, whatever its index.</summary>
         public const string ClientTag = "Client";
 
         public EditorPlayer Player { get; }
@@ -62,6 +68,8 @@ namespace Nebula
             : NebulaRoles.None;
         /// <summary>Why the plan is <see cref="EditorPlayer.Mesh"/> when the mode asked for more; null otherwise.</summary>
         public string Warning { get; }
+        /// <summary>Set when the tags ask for more than one server: this player was tagged <see cref="ServerTag"/> but another active player with a lower index hosts, so this one is a client. Null otherwise.</summary>
+        public string Error { get; }
         /// <summary>
         /// Whether this Editor closes its Game view while it plays: true only for the server when a virtual player
         /// hosts it, never for the main Editor or a client. The Game view builds the render pipeline each time it
@@ -70,10 +78,11 @@ namespace Nebula
         /// </summary>
         public bool HidesGameView { get; }
 
-        private EditorRunPlan(EditorPlayer player, string warning, bool hidesGameView = false)
+        private EditorRunPlan(EditorPlayer player, string warning, bool hidesGameView = false, string error = null)
         {
             Player = player;
             Warning = warning;
+            Error = error;
             HidesGameView = hidesGameView;
         }
 
@@ -84,13 +93,27 @@ namespace Nebula
         /// <param name="tags">This player's Multiplayer Play Mode tags; null or empty for none.</param>
         /// <param name="explicitRole">Whether <c>-nebula-role</c> was given, which always wins.</param>
         public static EditorRunPlan Resolve(NebulaEditorRunMode mode, bool isEditor, bool playModeAvailable, bool isMainEditor, IReadOnlyList<string> tags, bool explicitRole)
+            => Resolve(mode, isEditor, playModeAvailable, isMainEditor, tags, explicitRole, EditorRoster.Unknown);
+
+        /// <param name="roster">Who else is playing (<see cref="EditorRosterReader"/>). With a known roster exactly one virtual player hosts: an untagged one hosts only when it is the lowest-index active virtual player that is not tagged <see cref="ClientTag"/> and no active player is tagged <see cref="ServerTag"/>. <see cref="EditorRoster.Unknown"/> keeps the older rule, where every untagged virtual player hosts.</param>
+        /// <inheritdoc cref="Resolve(NebulaEditorRunMode, bool, bool, bool, IReadOnlyList{string}, bool)"/>
+        public static EditorRunPlan Resolve(NebulaEditorRunMode mode, bool isEditor, bool playModeAvailable, bool isMainEditor, IReadOnlyList<string> tags, bool explicitRole, EditorRoster roster)
         {
             if (mode != NebulaEditorRunMode.MultiplayerPlayMode || !isEditor || explicitRole) return new EditorRunPlan(EditorPlayer.Mesh, null);
             if (!playModeAvailable)
                 return new EditorRunPlan(EditorPlayer.Mesh, "EditorRunMode is MultiplayerPlayMode, but Multiplayer Play Mode is not available in this Editor (it needs Unity 6 with the com.unity.multiplayer.playmode package); running as EditorRunMode Mesh");
-            if (HasTag(tags, ServerTag)) return new EditorRunPlan(EditorPlayer.Server, null, hidesGameView: !isMainEditor);
+            if (HasTag(tags, ServerTag))
+            {
+                // Two servers would bind the same ports and share one save file. The lowest index hosts; the other
+                // becomes a client instead of exiting, so the player the operator ticked is still a usable one.
+                if (roster.Known && roster.LowerIndexServerTagged)
+                    return new EditorRunPlan(EditorPlayer.Client, null, error: "more than one active Multiplayer Play Mode player is tagged Server; only the one with the lowest index hosts the server, so this player joins as a client. Remove the Server tag from the others");
+                return new EditorRunPlan(EditorPlayer.Server, null, hidesGameView: !isMainEditor);
+            }
             if (HasTag(tags, ClientTag)) return new EditorRunPlan(EditorPlayer.Client, null);
-            return isMainEditor ? new EditorRunPlan(EditorPlayer.Client, null) : new EditorRunPlan(EditorPlayer.Server, null, hidesGameView: true);
+            if (isMainEditor) return new EditorRunPlan(EditorPlayer.Client, null);
+            bool hosts = !roster.Known || (!roster.AnyServerTagged && roster.IsFirstHostCandidate);
+            return hosts ? new EditorRunPlan(EditorPlayer.Server, null, hidesGameView: true) : new EditorRunPlan(EditorPlayer.Client, null);
         }
 
         private static bool HasTag(IReadOnlyList<string> tags, string tag)
@@ -172,6 +195,20 @@ namespace Nebula
                 }
             }
             return string.Join("/", parts, 0, end);
+        }
+
+        /// <summary>
+        /// The folder name of the virtual player that owns <paramref name="dataPath"/> (<c>Library/VP/&lt;prefix&gt;&lt;id&gt;</c>,
+        /// for example <c>mppm98673e00</c>), or null for the main Editor and for a build.
+        /// </summary>
+        public static string VirtualPlayerFolder(string dataPath)
+        {
+            if (string.IsNullOrEmpty(dataPath)) return null;
+            string[] parts = dataPath.Replace('\\', '/').TrimEnd('/').Split('/');
+            for (int i = parts.Length - 3; i >= 1; i--)
+                if (string.Equals(parts[i], "VP", StringComparison.OrdinalIgnoreCase) && string.Equals(parts[i - 1], "Library", StringComparison.OrdinalIgnoreCase))
+                    return parts[i + 1];
+            return null;
         }
 
         /// <summary>The dev loop's folder: <c>&lt;root&gt;/Library/Nebula</c>.</summary>

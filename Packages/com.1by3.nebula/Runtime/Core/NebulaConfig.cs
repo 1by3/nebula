@@ -37,8 +37,9 @@ namespace Nebula
         /// What pressing Play in the Editor starts. <see cref="NebulaEditorRunMode.Mesh"/> (the default) runs
         /// <see cref="NebulaBootstrap.EditorRole"/> against a mesh started from a build.
         /// <see cref="NebulaEditorRunMode.MultiplayerPlayMode"/> needs no build: a Multiplayer Play Mode virtual player
-        /// hosts the server (orchestrator, gateway and one worker) and the main Editor connects to it as a client. A
-        /// virtual player tagged <c>Client</c> is one more client; one tagged <c>Server</c> hosts. An explicit
+        /// hosts the server (orchestrator, gateway and one worker) and the main Editor connects to it as a client. With
+        /// several virtual players enabled, the one with the lowest index hosts and the others are clients, each with
+        /// its own identity; a virtual player tagged <c>Client</c> never hosts, and one tagged <c>Server</c> hosts. An explicit
         /// <c>-nebula-role</c> wins, and builds ignore this setting.
         /// </summary>
         [Tooltip("Editor only. Mesh: Play runs EditorRole against a mesh started with nebula start. MultiplayerPlayMode: a Multiplayer Play Mode virtual player hosts the server (orchestrator, gateway, one worker) and the main Editor joins it as a client, with no build. Builds ignore this.")]

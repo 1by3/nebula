@@ -116,7 +116,7 @@ To play your game in the Editor without running `nebula build` and `nebula start
 
 - Use Unity 6.6 (6000.6) or later. Earlier Unity 6 versions can work if the Multiplayer Play Mode package provides its player API. If Nebula cannot read it, it runs as `Mesh` and logs a warning.
 - Add the `com.unity.multiplayer.playmode` package with the Package Manager.
-- Give the server a virtual player. On Unity 6.6 and later, [set up a Play Mode Scenario](#start-the-server-with-a-play-mode-scenario) so that Play starts it for you. Otherwise, open **Window > Multiplayer > Multiplayer Play Mode** and enable one virtual player before each session.
+- Give the server a virtual player. On Unity 6.6 and later, [set up a Play Mode Scenario](#start-the-server-with-a-play-mode-scenario) so that Play starts it for you. Otherwise, open **Window > Multiplayer > Multiplayer Play Mode** and enable one virtual player before each session. To add more players, see [Add more players](#add-more-players).
 
 ### Start the server with a Play Mode Scenario
 
@@ -126,6 +126,8 @@ To create the scenario, choose **Nebula > Dev Loop > Create Scenario**. It creat
 
 - The main Editor, with no tag, so it is the client.
 - **Player 2**, an extra Editor instance tagged `Server`, with **Stream Logs to Main Editor** on, so the server's log also appears in the main Editor's Console.
+
+To test with more players, add more Editor instances to the scenario and leave them untagged. They join as clients. Keep the `Server` instance in the lowest player slot (Player 2): an untagged instance in a lower slot would host the server instead.
 
 It also turns on **Keep Active** for Player 2, so the server's Editor stays open between Plays and the next Play only has to enter Play mode. Keep Active is a per-user setting kept in `UserSettings`, so it applies only to you. Commit the scenario asset so that everyone on the project gets it.
 
@@ -157,7 +159,19 @@ The virtual player runs the orchestrator, the gateway and one worker in one proc
 
 The setting affects only the Editor. Builds ignore it. The settings it implies are applied to the Editor's copy of the config, never to the asset. So you do not have to change anything back before `nebula build`. A command-line switch such as `-nebula-role` or `-nebula-workers` still wins.
 
-To add a second player, enable another virtual player and give it the `Client` tag in the Multiplayer Play Mode window. A virtual player tagged `Server` hosts the server. With no tags, the main Editor is the client and a virtual player is the server. Run only one server.
+### Add more players
+
+To add a player, enable another virtual player in the Multiplayer Play Mode window (Player 3, Player 4, and so on). Exactly one virtual player hosts the server, and every other one joins it as a client:
+
+- With no tags, the main Editor is a client, the enabled virtual player with the lowest number hosts the server, and every other enabled virtual player is a client. If you disable Player 2 and enable Player 3 and Player 4, Player 3 hosts.
+- Tags override this. A virtual player tagged `Client` never hosts. When any enabled player is tagged `Server`, untagged virtual players are clients.
+- Run only one server. If several enabled players are tagged `Server`, only the one with the lowest number hosts. Each of the others logs an error and joins as a client instead of starting a second server on the same ports and save file. Remove the extra `Server` tags.
+
+Each client has its own identity, so two clients are two players. The main Editor keeps the identity it has always used. A virtual player's client saves its own identity, keyed by the virtual player, and its default player name ends with that name, for example `jesse (mppm98673e00)`. A `-nebula-name` switch still sets the name.
+
+Nebula reads which players are enabled from `Library/VP/SystemData.json`. If it can't read that file, or the virtual player isn't listed in it, Nebula logs a warning and an untagged virtual player hosts the server. In that case, tag one virtual player `Server` and the others `Client`.
+
+On Unity 6000.6, a virtual player can't render URP, so a client's Game view may be black. The client still connects, spawns and moves, and it receives input when you focus its window. See [The server renders nothing](#the-server-renders-nothing).
 
 ### Saved entities
 
@@ -203,7 +217,7 @@ To test these, run `nebula build` and `nebula start` with more than one worker, 
 
 The server has nothing to show, so it renders nothing. It turns off every camera, and when a virtual player hosts it, Nebula also closes that player's Game view while it plays. A **Nebula Server** tab takes the Game view's place. Read the server's log in the virtual player's Console.
 
-This also works around a known problem. On Unity 6000.6, a virtual player cannot build the Universal Render Pipeline (URP). A Game view builds the render pipeline every time it draws, even with every camera off, so an open Game view in the server's virtual player logs shader errors every frame. Its log can grow by gigabytes in one session. For the same reason, a virtual player tagged `Client` in a URP project may not render.
+This also works around a known problem. On Unity 6000.6, a virtual player cannot build the Universal Render Pipeline (URP). A Game view builds the render pipeline every time it draws, even with every camera off, so an open Game view in the server's virtual player logs shader errors every frame. Its log can grow by gigabytes in one session. For the same reason, a virtual player that joins as a client in a URP project may not render. It still connects and plays; only its Game view is affected.
 
 Nebula does not change the render pipeline settings to avoid this. A virtual player shares the main Editor's `ProjectSettings` folder, so a change there would reach the main Editor. When a virtual player that hosted the server later plays as a client, its Game view comes back and the **Nebula Server** tab closes.
 

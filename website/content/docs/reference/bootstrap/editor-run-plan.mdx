@@ -19,7 +19,7 @@ The decision for one Editor process in the Multiplayer Play Mode dev loop, and t
 public const string ServerTag = "Server";
 ```
 
-A virtual player with this tag (any case) hosts the server; one with [`ClientTag`](#clienttag) is a client. Untagged, the main Editor is the client and a virtual player is the server.
+A virtual player with this tag (any case) hosts the server; one with [`ClientTag`](#clienttag) is a client. Untagged, the main Editor is a client, the active virtual player with the lowest index hosts the server, and every other virtual player is a client. When any active player is tagged `Server`, untagged virtual players are clients, and when several are, only the one with the lowest index hosts: the others are clients and log an error.
 
 ### ClientTag [#clienttag]
 
@@ -27,7 +27,7 @@ A virtual player with this tag (any case) hosts the server; one with [`ClientTag
 public const string ClientTag = "Client";
 ```
 
-A player with this tag is a client, so a second virtual player can be a second player.
+A player with this tag is always a client and never hosts, whatever its index.
 
 ## Properties
 
@@ -53,6 +53,14 @@ public string Warning { get; }
 
 Why the plan is [`EditorPlayer.Mesh`](/docs/reference/bootstrap/editor-player#mesh) when the mode asked for more; null otherwise.
 
+### Error [#error]
+
+```csharp
+public string Error { get; }
+```
+
+Set when the tags ask for more than one server: this player was tagged [`ServerTag`](#servertag) but another active player with a lower index hosts, so this one is a client. Null otherwise.
+
 ### HidesGameView [#hidesgameview]
 
 ```csharp
@@ -67,6 +75,7 @@ Whether this Editor closes its Game view while it plays: true only for the serve
 
 ```csharp
 public static EditorRunPlan Resolve(NebulaEditorRunMode mode, bool isEditor, bool playModeAvailable, bool isMainEditor, IReadOnlyList<string> tags, bool explicitRole);
+public static EditorRunPlan Resolve(NebulaEditorRunMode mode, bool isEditor, bool playModeAvailable, bool isMainEditor, IReadOnlyList<string> tags, bool explicitRole, EditorRoster roster);
 ```
 
 | Parameter | Description |
