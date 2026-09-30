@@ -15,7 +15,9 @@ namespace Nebula
         /// <summary>
         /// No build: a Multiplayer Play Mode virtual player hosts the whole server in its own Editor process
         /// (orchestrator, gateway and one worker, with the control plane in memory), and the main Editor is a client
-        /// that connects to it. Needs Unity's Multiplayer Play Mode package and one enabled virtual player.
+        /// that connects to it. Needs Unity's Multiplayer Play Mode package and a virtual player: one enabled in the
+        /// Multiplayer Play Mode window, or, on Unity 6.6 and later, one that a Play Mode Scenario starts at Play
+        /// (<c>Nebula &gt; Dev Loop &gt; Create Scenario</c>).
         /// </summary>
         MultiplayerPlayMode = 1,
     }

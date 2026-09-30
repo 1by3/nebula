@@ -415,7 +415,9 @@ namespace Nebula
                     if (!_devServerHinted && now - _devServerWaitSince >= DevServerHintSeconds)
                     {
                         _devServerHinted = true;
-                        NebulaLog.Warn($"dev session: no Editor-hosted server has started after {DevServerHintSeconds:0} s. Enable a virtual player in Window > Multiplayer > Multiplayer Play Mode, or set NebulaConfig.EditorRunMode to Mesh. Still waiting.");
+                        NebulaLog.Warn($"dev session: no Editor-hosted server has started after {DevServerHintSeconds:0} s. Play with a Play Mode Scenario that starts an Editor instance tagged {EditorRunPlan.ServerTag} " +
+                                       "(Nebula > Dev Loop > Create Scenario makes one, and Nebula makes it the active scenario), or enable a virtual player in Window > Multiplayer > Multiplayer Play Mode, " +
+                                       "or set NebulaConfig.EditorRunMode to Mesh. Still waiting.");
                     }
                     break;
             }

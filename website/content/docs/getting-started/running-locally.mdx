@@ -116,7 +116,32 @@ To play your game in the Editor without running `nebula build` and `nebula start
 
 - Use Unity 6.6 (6000.6) or later. Earlier Unity 6 versions can work if the Multiplayer Play Mode package provides its player API. If Nebula cannot read it, it runs as `Mesh` and logs a warning.
 - Add the `com.unity.multiplayer.playmode` package with the Package Manager.
-- Open **Window > Multiplayer > Multiplayer Play Mode** and enable one virtual player.
+- Give the server a virtual player. On Unity 6.6 and later, [set up a Play Mode Scenario](#start-the-server-with-a-play-mode-scenario) so that Play starts it for you. Otherwise, open **Window > Multiplayer > Multiplayer Play Mode** and enable one virtual player before each session.
+
+### Start the server with a Play Mode Scenario
+
+A Play Mode Scenario is an asset that lists the Editor instances Unity starts when you press Play. With a scenario that starts one extra Editor instance tagged `Server`, Play launches the server's virtual player itself, so nobody has to enable one in the Multiplayer Play Mode window first. Scenarios are part of the Editor from Unity 6.6.
+
+To create the scenario, choose **Nebula > Dev Loop > Create Scenario**. It creates `Assets/Settings/PlayMode/Nebula Dev Loop.asset` with two instances:
+
+- The main Editor, with no tag, so it is the client.
+- **Player 2**, an extra Editor instance tagged `Server`, with **Stream Logs to Main Editor** on, so the server's log also appears in the main Editor's Console.
+
+It also turns on **Keep Active** for Player 2, so the server's Editor stays open between Plays and the next Play only has to enter Play mode. Keep Active is a per-user setting kept in `UserSettings`, so it applies only to you. Commit the scenario asset so that everyone on the project gets it.
+
+To create the scenario by hand instead:
+
+1. Open **Window > Play Mode > Scenarios** and create a scenario.
+2. Leave the main Editor untagged.
+3. Add an Editor instance and give it the tag `Server`. If the tag list doesn't have `Server`, create it.
+4. Turn on **Keep Active** and **Stream Logs to Main Editor** for that instance.
+5. Commit the scenario asset.
+
+When `EditorRunMode` is `MultiplayerPlayMode`, the active scenario is **Default**, and no virtual player is running, Nebula makes that scenario the active one. It checks when the Editor loads, after each Play, and when `NebulaConfig` or a scenario asset changes. If several scenarios have an instance tagged `Server`, Nebula picks the first by asset path and logs a warning. A scenario you choose in the dropdown next to the Play button stays active. Nebula doesn't switch while a virtual player from the Multiplayer Play Mode window is running, because making a scenario active stops those players.
+
+To start the server's Editor instance before you press Play, choose **Nebula > Dev Loop > Start Server Player**. The server opens in its own Editor window. The first launch imports the project and can take a minute or two. Press Play once it's open. A script or an automated tool can run this menu item to prepare a session, so that a person only has to press Play.
+
+With a scenario active, enter Play with the Play button or from a script with `PlayModeScenarioManager.Start()`. If a script sets `EditorApplication.isPlaying` instead, Unity switches back to the Default scenario for that Play and starts no extra Editor instances. Nebula makes the scenario active again after Play stops.
 
 ### Turn it on
 
@@ -157,7 +182,7 @@ A client in this mode connects only to the server its own Play session started. 
 The Editor-hosted server could not start (could not bind udp/7050: another process is using it, ...). A client of this session does not join any other server. Stop the other mesh (nebula stop) or change NebulaConfig.EditorPortOffset, then press Play again.
 ```
 
-If no server starts within 20 seconds, the client logs how to enable a virtual player, then keeps waiting.
+If no server starts within 20 seconds, the client logs how to start one, then keeps waiting.
 
 ### Environment variables
 
@@ -181,6 +206,41 @@ The server has nothing to show, so it renders nothing. It turns off every camera
 This also works around a known problem. On Unity 6000.6, a virtual player cannot build the Universal Render Pipeline (URP). A Game view builds the render pipeline every time it draws, even with every camera off, so an open Game view in the server's virtual player logs shader errors every frame. Its log can grow by gigabytes in one session. For the same reason, a virtual player tagged `Client` in a URP project may not render.
 
 Nebula does not change the render pipeline settings to avoid this. A virtual player shares the main Editor's `ProjectSettings` folder, so a change there would reach the main Editor. When a virtual player that hosted the server later plays as a client, its Game view comes back and the **Nebula Server** tab closes.
+
+### Troubleshoot the dev loop
+
+**The client logs that no Editor-hosted server has started.** No virtual player hosted the server during that Play. Check the scenario dropdown next to the Play button: the active scenario needs an Editor instance tagged `Server`. If it shows **Default**, see [Start the server with a Play Mode Scenario](#start-the-server-with-a-play-mode-scenario), or enable a virtual player in **Window > Multiplayer > Multiplayer Play Mode**. If a virtual player did start, read its Console for the server's error.
+
+**An Editor script fails only in the server's virtual player.** A virtual player runs from a copy of your project in `Library/VP/<id>`. The copy has no `Packages/manifest.json` of its own, doesn't run the Package Manager, and can't write to the asset database. A third-party `[InitializeOnLoad]` script that installs packages or writes assets can fail there after every domain reload. For example, a package's setup helper might offer to install a package each time and fail. Make such a script return early outside the main Editor:
+
+```csharp
+using UnityEditor;
+
+[InitializeOnLoad]
+static class PackageSetupCheck
+{
+    static PackageSetupCheck()
+    {
+        if (!IsMainEditor()) return;
+        // The script's own work.
+    }
+
+    static bool IsMainEditor()
+    {
+        try
+        {
+            return Unity.Multiplayer.PlayMode.CurrentPlayer.IsMainEditor;
+        }
+        catch (System.Exception)
+        {
+            // Multiplayer Play Mode isn't available, so this is the only Editor.
+            return true;
+        }
+    }
+}
+```
+
+`CurrentPlayer` is part of the Editor on Unity 6.6 and later. On earlier versions, it comes from the Multiplayer Play Mode package.
 
 ## Watch
 
