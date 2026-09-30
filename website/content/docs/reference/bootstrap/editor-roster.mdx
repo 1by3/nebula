@@ -16,7 +16,7 @@ What one virtual player knows about the others of the Multiplayer Play Mode wind
 ### EditorRoster [#editorroster]
 
 ```csharp
-public EditorRoster(bool anyServerTagged, bool lowerIndexServerTagged, bool isFirstHostCandidate);
+public EditorRoster(bool anyServerTagged, bool lowerIndexServerTagged, bool isFirstHostCandidate, string playerName = null);
 ```
 
 ## Properties
@@ -52,6 +52,14 @@ public bool IsFirstHostCandidate { get; }
 ```
 
 Whether no other active virtual player without [`EditorRunPlan.ClientTag`](/docs/reference/bootstrap/editor-run-plan#clienttag) has a lower index than this one.
+
+### PlayerName [#playername]
+
+```csharp
+public string PlayerName { get; }
+```
+
+This player's name in the Multiplayer Play Mode window (for example `Player 3`); null when the roster does not give one.
 
 ### Unknown [#unknown]
 

@@ -457,8 +457,6 @@ namespace Nebula
         /// false leaves the client idle until game code, or <see cref="NebulaTitleScreen"/>, calls <see cref="ConnectTo"/>.</param>
         public void Initialize(NebulaConfig config, bool autoConnect = true) => Initialize(config, autoConnect, autoConnect);
 
-        /// <param name="connectNow">False with <paramref name="autoConnect"/> true: the client connects on its own, but
-        /// later (<see cref="Connect"/>), once the bootstrap knows where. Connection UI stays hidden meanwhile.</param>
         /// <summary>
         /// Set by the bootstrap before <see cref="Initialize(NebulaConfig, bool)"/> when this client runs in a
         /// Multiplayer Play Mode virtual player (its <c>Library/VP</c> folder name, for example <c>mppm98673e00</c>):
@@ -468,16 +466,21 @@ namespace Nebula
         /// </summary>
         internal string DevLoopPlayerLabel { get; set; }
 
+        /// <summary>The virtual player's name in the Multiplayer Play Mode window (for example <c>Player 3</c>), which the default player name shows in place of <see cref="DevLoopPlayerLabel"/> when known.</summary>
+        internal string DevLoopPlayerName { get; set; }
+
         internal static string IdentityKey(string label) => string.IsNullOrEmpty(label) ? StoredTokenPref : StoredTokenPref + "." + label;
 
         private string _identityKey = StoredTokenPref;
 
+        /// <param name="connectNow">False with <paramref name="autoConnect"/> true: the client connects on its own, but
+        /// later (<see cref="Connect"/>), once the bootstrap knows where. Connection UI stays hidden meanwhile.</param>
         internal void Initialize(NebulaConfig config, bool autoConnect, bool connectNow)
         {
             Config = config;
             ConnectsAutomatically = autoConnect;
             _identityKey = IdentityKey(DevLoopPlayerLabel);
-            PlayerName = CommandLine.Get("nebula-name", string.IsNullOrEmpty(DevLoopPlayerLabel) ? DefaultPlayerName() : $"{DefaultPlayerName()} ({DevLoopPlayerLabel})");
+            PlayerName = CommandLine.Get("nebula-name", string.IsNullOrEmpty(DevLoopPlayerLabel) ? DefaultPlayerName() : $"{DefaultPlayerName()} ({(string.IsNullOrEmpty(DevLoopPlayerName) ? DevLoopPlayerLabel : DevLoopPlayerName)})");
             AuthToken = CommandLine.Get("nebula-auth-token", "");
             // Bots share one PlayerPrefs store per machine and must not all become the same player.
             _keepsIdentity = !CommandLine.Has("nebula-bot");

@@ -144,6 +144,7 @@ namespace Nebula.Tests
             Assert.IsFalse(facts.AnyServerTagged);
             Assert.IsFalse(facts.LowerIndexServerTagged);
             Assert.IsTrue(facts.IsFirstHostCandidate);
+            Assert.AreEqual("Player 2", facts.PlayerName, "a client clone's default name shows its name in the Multiplayer Play Mode window");
             Assert.IsFalse(EditorRoster.Parse(Sample, "mppm00000000", out _).Known);
         }
 

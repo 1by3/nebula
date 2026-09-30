@@ -21,10 +21,13 @@ namespace Nebula
         public bool LowerIndexServerTagged { get; }
         /// <summary>Whether no other active virtual player without <see cref="EditorRunPlan.ClientTag"/> has a lower index than this one.</summary>
         public bool IsFirstHostCandidate { get; }
+        /// <summary>This player's name in the Multiplayer Play Mode window (for example <c>Player 3</c>); null when the roster does not give one.</summary>
+        public string PlayerName { get; }
 
-        public EditorRoster(bool anyServerTagged, bool lowerIndexServerTagged, bool isFirstHostCandidate)
+        public EditorRoster(bool anyServerTagged, bool lowerIndexServerTagged, bool isFirstHostCandidate, string playerName = null)
         {
             Known = true;
+            PlayerName = playerName;
             AnyServerTagged = anyServerTagged;
             LowerIndexServerTagged = lowerIndexServerTagged;
             IsFirstHostCandidate = isFirstHostCandidate;
@@ -61,6 +64,7 @@ namespace Nebula
                     IsMain = p.TryGetValue("Type", out var t) && t is double td && td == 0d,
                     Folder = ReadFolder(p),
                     Tags = ReadTags(p),
+                    Name = p.TryGetValue("Name", out var n) && n is string sn && sn.Trim().Length > 0 ? sn.Trim() : null,
                 };
                 players.Add(e);
                 if (e.Folder != null && string.Equals(e.Folder, playerFolder, StringComparison.OrdinalIgnoreCase)) me = e;
@@ -82,7 +86,7 @@ namespace Nebula
                 }
                 if (!isMe && !e.IsMain && e.Index < me.Index && !HasTag(e.Tags, EditorRunPlan.ClientTag)) firstCandidate = false;
             }
-            return new EditorRoster(anyServer, lowerServer, firstCandidate);
+            return new EditorRoster(anyServer, lowerServer, firstCandidate, me.Name);
         }
 
         private sealed class Entry
@@ -92,6 +96,7 @@ namespace Nebula
             public bool IsMain;
             public string Folder;
             public List<string> Tags;
+            public string Name;
         }
 
         private static int ReadIndex(Dictionary<string, object> p, string key)
