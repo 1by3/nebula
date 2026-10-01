@@ -792,6 +792,8 @@ namespace Nebula
             client.KnownContainers.Clear();
             client.PreparedRows.Clear();
             client.RowsLeaving.Clear();
+            client.HostViews.Clear();
+            client.HasPlaced = false;
             _hintFilter.Forget(client.ClientId);
             _subscriptionsDirty = true;
             if (welcomed) RaiseClientEvent(ClientLeft, client, nameof(ClientLeft));
@@ -1656,6 +1658,9 @@ namespace Nebula
             // world's unless its scope observes it.
             ulong scopeInstance = 0;
             bool observePublic = true;
+            // The scope the pawn came from, when its scope keeps that one in view (docs/scope-activation.md §12).
+            bool observeHost = false;
+            HostView host = default;
             if (client.PawnNetId != 0 && _entities.TryGetValue(client.PawnNetId, out var pawn))
             {
                 var root = RootOf(pawn);
@@ -1668,13 +1673,16 @@ namespace Nebula
                 // The pawn's own window first: whatever a camera is doing, the player's body must be able to
                 // stand on the ground, and this is the one focus that exists before any evaluation has run. The
                 // window is in the scope's own space, which a pawn on a planet with regions of its own is not.
-                if (root.FrameKey == 0) AddWindow(root.AbsX, root.AbsY, root.AbsZ, 0, 0, 0, reach);
-                else
+                double px = root.AbsX, py = root.AbsY, pz = root.AbsZ;
+                if (root.FrameKey != 0)
                 {
                     var world = WorldPosition(root.Container, root.LastSpawn.LocalPosition);
-                    AddWindow(world.x, world.y, world.z, 0, 0, 0, reach);
+                    px = world.x; py = world.y; pz = world.z;
                 }
+                AddWindow(px, py, pz, 0, 0, 0, reach);
                 if (scope != null) Add(scope.ContainerId);
+                if (scope != null || pawn.Container.IsNone) TrackHostViews(client, scopeInstance, px, py, pz);
+                observeHost = TryGetObservedHost(client, scope, out host);
             }
             var foci = client.Interest?.Foci;
             if (foci != null)
@@ -1692,6 +1700,8 @@ namespace Nebula
                         AddWindow(focus.X, focus.Y, focus.Z, focus.HalfX, focus.HalfY, focus.HalfZ, (float)focus.Scaled(reach));
                     }
             }
+            // The host's window after the client's own: the budget can only ever withhold ground it is not standing on.
+            if (observeHost) AddHostWindow();
             // A destination a worker asked this client to prepare (D14): pinned for the life of the crossing, whatever
             // the window says, so the client can still resolve it when the commit names it.
             if (client.PreparedRows.Count > 0)
@@ -1728,6 +1738,19 @@ namespace Nebula
                     if (!observePublic) return;
                 }
                 ContainerRegistry.Overlapping(InRegistryFrame(box, 0UL), _containerScratch);
+                for (int i = 0; i < _containerScratch.Count; i++)
+                {
+                    if (budget <= 0) { truncated = true; return; }
+                    if (Add(_containerScratch[i].ContainerId)) budget--;
+                }
+            }
+            // The window the pawn had where it left the host, queried in the host's scope only: the public world's rows
+            // only when the host is the public world, and no other scope's ever.
+            void AddHostWindow()
+            {
+                if (budget <= 0) { truncated = true; return; }
+                var box = new Bounds(new Vector3((float)host.X, (float)host.Y, (float)host.Z), new Vector3(2 * reach, 2 * reach, 2 * reach));
+                ContainerRegistry.Overlapping(InRegistryFrame(box, host.Scope), _containerScratch, host.Scope);
                 for (int i = 0; i < _containerScratch.Count; i++)
                 {
                     if (budget <= 0) { truncated = true; return; }

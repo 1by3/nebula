@@ -407,3 +407,75 @@ uses the mechanism both sides already implement (D12), is bounded, and is limite
 Nothing new is required. A game may prepare every rider along with the ship — that readies each rider's client for
 the destination before the commit — and commit them as one group; or it may move the ship alone and let the riders'
 clients follow it. Both are tested.
+
+## 12. An instance can keep observing its host (NEB-369)
+
+### 12.1 What went wrong
+
+D10 of `docs/scoped-chunk-grids.md` collects a client's container rows in its own scope, and in the public world only
+when its scope has `ObservePublic`. An occupant of an instance entered from a scoped grid, or from the public world
+with `ObservePublic` off, is therefore told none of its host's rows. D17 withdraws them a second later, and the client
+tears down the host's containers and everything the game built in them. On the way out, a preparation brings only the
+one destination row (D14), so the host is rebuilt from nothing after the crossing commits. Both crossings hitch.
+`ObservePublic` cannot help a scoped grid: it observes scope 0, whatever the host is.
+
+### 12.2 Decisions
+
+**D22 `ObserveHost` is a scope option, and the host is where the pawn came from.** `ScopeDefinition.ObserveHost`
+(and `InstanceTemplate.ObserveHost`, which `PrepareInstance` copies into the definition) is off by default. A scope
+definition does not name a host: the same instance can be entered from more than one place, and a boundary only knows
+its own. The gateway already resolves each client's scope on every row collection, so it records, per client, the scope
+the pawn was in and its absolute position there. When the scope changes, the scope it left and the last position in it
+are pushed onto `ClientConn.HostViews`; going back to a scope on that list drops it and everything pushed after it, so
+the list reads as the way back. At most `NebulaGateway.MaxHostViews` (4) are kept, oldest dropped first. The
+bookkeeping runs for every client, sends nothing, and changes nothing unless the pawn's scope has the option.
+
+**D23 The window is the one the pawn had at the boundary.** While the pawn's scope has `ObserveHost`, the gateway adds
+one window to the client's rows: the pawn's own window (`NearCells` x cell size on each side), centred on the last
+host-side position, queried in the host's scope only. An `InstanceBoundary` crossing keeps the absolute pose, so that
+is the boundary. It does not follow the occupant through the instance, so its cost is fixed at what the client already
+held when it crossed, at most one window's rows. It is collected after the client's own windows and foci and counts
+against the same `MaxContainerRows` budget, so exhausting the budget can only withhold host ground, never the rows the
+client stands in.
+
+**D24 Rows only; no host entities.** The host's entities are not observed. Entity interest across scopes is
+`ObservePublic`'s job, for the public world, and widening it to any scope would change authorization (`CanObserve`), the
+policy snapshot and region salting for a benefit the rows alone already deliver: the ground is resident, and the
+entities standing on it are sent again by interest, as on any arrival in an area, once the pawn is back. A second flag
+can add them later without changing this one.
+
+**D25 One host, never the chain.** An instance entered from another instance keeps the outer instance's rows around
+the inner door, and not the outer instance's own host. Keeping the chain would multiply the cost by the nesting depth,
+and the client draws only the scope it is in anyway. Going back into the outer instance pops the list (D22), so the
+outer instance's host is sent again from the place the pawn first came in by.
+
+**D26 Workers do not matter.** Rows are the control plane's lease rows, which every gateway mirrors whoever owns them.
+A host chunk leased to another worker, or to no worker this gateway links to, is kept exactly as one leased to the
+pawn's own worker. No subscription or worker link is added.
+
+**D27 The client keeps the host resident and hidden.** `InstanceScenes.SetView` hid only the static content
+`InstanceScenes.Prepare` loads for an instance part. A scoped grid's chunk content is built by the game under
+`ChunkContext.Root`, which nothing hid, and that did not matter while a client was never told about another scope's
+chunks. Now `NebulaChunks.SetView`, called from the same place, turns off the renderers under the root of every
+scoped grid chunk in another scope than the local pawn's, records which it turned off, and turns those back on when
+the pawn returns, so renderers the game turned off itself stay off. A chunk that loads while its scope is not the view
+is hidden after `Loaded` returns, and `NebulaChunks.IsDrawn` lets content built later start hidden. The public world is
+never hidden, as before. Before the local pawn exists, nothing is hidden. The one visible change with the option off:
+the destination chunk of a crossing into another grid scope (D14) is now hidden until the pawn arrives, as an instance
+destination's static content already was. Physics is unchanged: host chunks were never prepared into the occupant's
+physics scene, and are not now.
+
+**D28 The lease row carries it; the client wire does not.** `InstanceContainerInfo.ObserveHost` is stored on the lease
+row as a trailing flags byte, written only when a flag is set, and read with the `Remaining > 0` tolerance the row's
+other trailing fields use. `InstanceContainerInfo.Write`, which is the form a client is sent, does not write it, since
+only the gateway acts on it. The definition's canonical JSON gains `observeHost` only when it is true. With the option
+off, every lease row, scope definition and client message is byte-identical to before, and the protocol stays 25.
+
+### 12.3 Limits
+
+- The gateway remembers the host per connection. A client that joins or reconnects while its pawn is inside an
+  instance has no host to keep until it leaves and enters again.
+- Keeping the host's rows does not keep its chunks leased. A game that wants the host's ground to exist while a player
+  is inside still pins the entrance chunk (`docs/scoped-chunk-grids.md` §4), as the instancing guide says.
+- Content the game adds to a hidden chunk after `Loaded` is hidden at the local pawn's next container change, unless
+  it checks `NebulaChunks.IsDrawn`.

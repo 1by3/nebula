@@ -175,6 +175,8 @@ namespace Nebula
                 var container = ContainerRegistry.GetRuntime(pair.Key);
                 if (container != null) SetVisible(pair.Value, container.InstanceId == instanceId);
             }
+            // A scoped grid's chunks hold content the game builds, not content prepared here: hidden the same way.
+            World.NebulaChunks.SetView(instanceId);
         }
 
         private static void SetVisible(GameObject content, bool visible)

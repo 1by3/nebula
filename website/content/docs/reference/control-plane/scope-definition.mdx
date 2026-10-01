@@ -44,6 +44,14 @@ public Vector3 ObservationCenter, ObservationSize;
 
 The outward view box, in absolute world coordinates.
 
+### ObserveHost [#observehost]
+
+```csharp
+public bool ObserveHost;
+```
+
+Occupants keep the scope they came from loaded while they are inside: the gateway keeps sending a client the container rows of that scope around the place its pawn left it, so the client keeps those containers and their content resident, hidden, and nothing has to be rebuilt when the pawn goes back. Only the scope the pawn came from immediately before is kept, and none of its entities. False, the default, drops the rows shortly after the pawn leaves. See `docs/scope-activation.md` §12.
+
 ### Payload [#payload]
 
 ```csharp

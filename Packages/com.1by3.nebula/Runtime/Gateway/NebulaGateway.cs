@@ -134,6 +134,17 @@ namespace Nebula
             /// </summary>
             public readonly Dictionary<string, double> RowsLeaving = new Dictionary<string, double>();
             /// <summary>
+            /// The scopes this client's pawn has left, with where it last stood in each, oldest first and at most
+            /// <see cref="NebulaGateway.MaxHostViews"/>. Going back to one of them drops it and every later one. The
+            /// last is the host an <see cref="InstanceContainerInfo.ObserveHost"/> scope keeps in the client's view
+            /// (docs/scope-activation.md §12).
+            /// </summary>
+            public readonly List<HostView> HostViews = new List<HostView>();
+            /// <summary>Whether <see cref="Placed"/> has been recorded.</summary>
+            public bool HasPlaced;
+            /// <summary>The pawn's scope and absolute position the last time its scope resolved: what a scope change pushes onto <see cref="HostViews"/>.</summary>
+            public HostView Placed;
+            /// <summary>
             /// The accepted version from this connection's Hello, echoed in the welcome.
             /// The gateway accepts protocol 18 only.
             /// </summary>

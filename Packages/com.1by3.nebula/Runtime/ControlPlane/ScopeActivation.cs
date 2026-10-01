@@ -148,6 +148,14 @@ namespace Nebula
         public bool ObservePublic;
         /// <summary>The outward view box, in absolute world coordinates.</summary>
         public Vector3 ObservationCenter, ObservationSize;
+        /// <summary>
+        /// Occupants keep the scope they came from loaded while they are inside: the gateway keeps sending a client the
+        /// container rows of that scope around the place its pawn left it, so the client keeps those containers and
+        /// their content resident, hidden, and nothing has to be rebuilt when the pawn goes back. Only the scope the
+        /// pawn came from immediately before is kept, and none of its entities. False, the default, drops the rows
+        /// shortly after the pawn leaves. See <c>docs/scope-activation.md</c> §12.
+        /// </summary>
+        public bool ObserveHost;
         /// <summary>An opaque blob the game or a later milestone attaches to the definition. Never parsed by Nebula.</summary>
         public string Payload = "";
 
@@ -302,6 +310,8 @@ namespace Nebula
             }
             w.EndArray();
             w.Prop("observePublic", d.ObservePublic);
+            // Written only when set, so a definition without it compares equal to one written before it existed.
+            if (d.ObserveHost) w.Prop("observeHost", true);
             w.Key("observationCenter"); ControlPlaneJson.Vec(w, d.ObservationCenter);
             w.Key("observationSize"); ControlPlaneJson.Vec(w, d.ObservationSize);
             w.Prop("payload", d.Payload ?? "");
@@ -336,6 +346,7 @@ namespace Nebula
                 }
             }
             d.ObservePublic = ControlPlaneJson.Bool(o, "observePublic");
+            d.ObserveHost = ControlPlaneJson.Bool(o, "observeHost");
             d.ObservationCenter = ControlPlaneJson.Vec(o, "observationCenter");
             d.ObservationSize = ControlPlaneJson.Vec(o, "observationSize");
             d.Payload = ControlPlaneJson.Str(o, "payload");
@@ -516,6 +527,7 @@ namespace Nebula
                     ObservePublic = definition.ObservePublic,
                     ObservationCenter = definition.ObservationCenter,
                     ObservationSize = definition.ObservationSize,
+                    ObserveHost = definition.ObserveHost,
                 });
             }
             if (created) NebulaLog.Info($"control plane: scope '{key}' activated with {scope.ContainerIds.Count} container(s)");

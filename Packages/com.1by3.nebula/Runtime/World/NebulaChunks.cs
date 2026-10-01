@@ -384,6 +384,69 @@ namespace Nebula.World
             if (grid == null) return;
             var ctx = ContextFor(c, grid);
             _loaded?.Invoke(in ctx);
+            if (_hasView && !grid.IsPublic && NebulaRuntime.IsClient) ApplyView(c.RuntimeId, ctx.Root);
+        }
+
+        // -------------------------------------------------------------------------------- which scope is drawn
+
+        /// <summary>The scope the local pawn is in, once a client has one (<see cref="SetView"/>).</summary>
+        private static ulong _view;
+        private static bool _hasView;
+        /// <summary>Renderers this class turned off under each hidden chunk's root, so showing it again restores only those.</summary>
+        private static readonly Dictionary<ulong, List<Renderer>> Hidden = new Dictionary<ulong, List<Renderer>>();
+        private static readonly List<Renderer> RendererScratch = new List<Renderer>();
+        private static readonly List<ulong> ViewScratch = new List<ulong>();
+
+        /// <summary>
+        /// Whether a chunk's content is drawn on this client: false for a chunk of a scoped grid while the local pawn
+        /// is in another scope, true otherwise. A client is told about another scope's chunks while its pawn is in an
+        /// instance that keeps its host loaded (<see cref="ScopeDefinition.ObserveHost"/>), or while it prepares to
+        /// cross into another scope. Content a game adds to a chunk after <see cref="Loaded"/> should start hidden
+        /// when this is false; the public world's chunks are always drawn, as they always were.
+        /// </summary>
+        /// <param name="chunk">A chunk reported by <see cref="Loaded"/>.</param>
+        public static bool IsDrawn(in ChunkContext chunk) =>
+            chunk.Container == null || !Hidden.ContainsKey(chunk.Container.RuntimeId);
+
+        /// <summary>
+        /// The local pawn is now in <paramref name="instanceId"/>: hide the content of every scoped grid's chunk in
+        /// another scope and show again what was hidden in this one. Renderers that were already off are left alone.
+        /// Called on clients by <see cref="InstanceScenes"/>.
+        /// </summary>
+        internal static void SetView(ulong instanceId)
+        {
+            _hasView = true;
+            _view = instanceId;
+            ViewScratch.Clear();
+            foreach (var id in Roots.Keys) ViewScratch.Add(id);
+            for (int i = 0; i < ViewScratch.Count; i++)
+                if (Roots.TryGetValue(ViewScratch[i], out var root)) ApplyView(ViewScratch[i], root);
+            ViewScratch.Clear();
+        }
+
+        private static void ApplyView(ulong id, Transform root)
+        {
+            var container = ContainerRegistry.GetRuntime(id);
+            if (container == null || root == null) return;
+            bool hide = container.InstanceId != 0 && container.InstanceId != _view;
+            if (!hide)
+            {
+                if (!Hidden.TryGetValue(id, out var shown)) return;
+                Hidden.Remove(id);
+                foreach (var renderer in shown) if (renderer != null) renderer.forceRenderingOff = false;
+                return;
+            }
+            if (!Hidden.TryGetValue(id, out var hidden)) Hidden[id] = hidden = new List<Renderer>();
+            // Again on every view change, so renderers the game added since are hidden too.
+            RendererScratch.Clear();
+            root.GetComponentsInChildren(true, RendererScratch);
+            foreach (var renderer in RendererScratch)
+            {
+                if (renderer.forceRenderingOff) continue;
+                renderer.forceRenderingOff = true;
+                hidden.Add(renderer);
+            }
+            RendererScratch.Clear();
         }
 
         private static void OnUnregistering(Container c)
@@ -396,6 +459,7 @@ namespace Nebula.World
                 _unloading(in ctx);
             }
             Roots.Remove(c.RuntimeId);
+            Hidden.Remove(c.RuntimeId);
         }
 
         private static ChunkContext ContextFor(Container c, RuntimeGrid grid)
@@ -430,6 +494,9 @@ namespace Nebula.World
             _loaded = null;
             _unloading = null;
             Roots.Clear();
+            Hidden.Clear();
+            _hasView = false;
+            _view = 0;
         }
     }
 }

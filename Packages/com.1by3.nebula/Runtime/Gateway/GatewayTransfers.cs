@@ -332,6 +332,60 @@ namespace Nebula
             return client.LastScope;
         }
 
+        // ------------------------------------------------------------------------------------------- host views
+
+        /// <summary>
+        /// Most scopes a client's pawn has left that the gateway remembers where it stood in. Only the last one is ever
+        /// observed; the earlier ones are what lets the scope before it be observed again after the pawn goes back
+        /// (an instance entered from another instance, and left again).
+        /// </summary>
+        public const int MaxHostViews = 4;
+
+        /// <summary>A scope a pawn stood in and where, in absolute coordinates of that scope.</summary>
+        private struct HostView
+        {
+            public ulong Scope;
+            public double X, Y, Z;
+        }
+
+        /// <summary>
+        /// Record where the pawn stands, and when its scope has changed since the last record, where it stood before
+        /// (docs/scope-activation.md D22). Going back to a scope the client left drops that scope and every one it went
+        /// on to from there, so the views always read as the path back the way it came. Runs on every collection,
+        /// whatever any scope's options, and sends nothing.
+        /// </summary>
+        private static void TrackHostViews(ClientConn client, ulong scope, double x, double y, double z)
+        {
+            if (client.HasPlaced && client.Placed.Scope != scope)
+            {
+                var views = client.HostViews;
+                int back = -1;
+                for (int i = views.Count - 1; i >= 0; i--)
+                    if (views[i].Scope == scope) { back = i; break; }
+                if (back >= 0) views.RemoveRange(back, views.Count - back);
+                else
+                {
+                    if (views.Count >= MaxHostViews) views.RemoveAt(0);
+                    views.Add(client.Placed);
+                }
+            }
+            client.HasPlaced = true;
+            client.Placed = new HostView { Scope = scope, X = x, Y = y, Z = z };
+        }
+
+        /// <summary>
+        /// The host whose rows this client keeps: the scope its pawn came from immediately before this one, when this
+        /// scope is an <see cref="InstanceContainerInfo.ObserveHost"/> scope. False for any other scope, for a scope
+        /// that cannot be described, and for a client that has not come from anywhere on this connection.
+        /// </summary>
+        private static bool TryGetObservedHost(ClientConn client, Container scope, out HostView host)
+        {
+            host = default;
+            if (scope == null || scope.Instance == null || !scope.Instance.ObserveHost || client.HostViews.Count == 0) return false;
+            host = client.HostViews[client.HostViews.Count - 1];
+            return host.Scope != scope.InstanceId;
+        }
+
         private readonly List<ClientConn> _scopeRevokeScratch = new List<ClientConn>();
 
         /// <summary>

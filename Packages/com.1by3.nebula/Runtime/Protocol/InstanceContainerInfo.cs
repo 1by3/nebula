@@ -59,6 +59,15 @@ namespace Nebula
         /// the part id was recorded, and on a public-world container.
         /// </summary>
         public string PartId = "";
+        /// <summary>
+        /// Occupants keep the container rows of the scope they came from, around where they left it
+        /// (<see cref="ScopeDefinition.ObserveHost"/>). Only the gateway acts on it: it is stored on the lease row but
+        /// not written by <see cref="Write"/>, so what a client is sent is unchanged.
+        /// </summary>
+        public bool ObserveHost;
+
+        /// <summary>Bit of the trailing flags byte a stored lease row carries when any flag is set.</summary>
+        private const byte FlagObserveHost = 1;
 
         public void Write(NetworkWriter writer)
         {
@@ -86,11 +95,19 @@ namespace Nebula
             if (info == null) return "";
             var writer = new NetworkWriter();
             info.Write(writer);
+            // A trailing flags byte, written only when a flag is set, so a row without one is the bytes it always was.
+            if (info.ObserveHost) writer.WriteByte(FlagObserveHost);
             return Convert.ToBase64String(writer.ToArray());
         }
 
-        internal static InstanceContainerInfo Decode(string value) => string.IsNullOrEmpty(value)
-            ? null : Read(new NetworkReader(Convert.FromBase64String(value)));
+        internal static InstanceContainerInfo Decode(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return null;
+            var reader = new NetworkReader(Convert.FromBase64String(value));
+            var info = Read(reader);
+            if (reader.Remaining > 0) info.ObserveHost = (reader.ReadByte() & FlagObserveHost) != 0;
+            return info;
+        }
 
         internal InstanceContainerInfo Copy() => Decode(Encode(this));
     }
