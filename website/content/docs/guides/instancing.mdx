@@ -64,6 +64,45 @@ Public scenery remains the game's responsibility. If the public scene already dr
 
 Preparation loads bundled assets on the client before entry. Entity visibility filtering does not make those assets secret or prevent a modified client from inspecting them.
 
+### Wait for content that finishes loading later
+
+Preparation creates a part's content prefab in one frame. If your content keeps building after that, for example geometry a component generates over several frames, or assets it loads asynchronously, make the crossing wait for it. Otherwise a player can cross into a part whose floor does not exist yet.
+
+To make a crossing wait, implement `IInstanceContentLoader` on a component in the content prefab:
+
+```csharp title="StreamedRoom.cs"
+using Nebula;
+using UnityEngine;
+
+public sealed class StreamedRoom : MonoBehaviour, IInstanceContentLoader
+{
+    private int piecesLeft = 40;
+
+    public InstanceContentState State =>
+        piecesLeft > 0 ? InstanceContentState.Loading : InstanceContentState.Ready;
+
+    public float Progress => 1f - piecesLeft / 40f;
+
+    private void Update()
+    {
+        if (piecesLeft == 0) return;
+        // Build one piece of the room each frame.
+        piecesLeft--;
+    }
+}
+```
+
+When the content is created, Nebula collects the active components under the part's container that implement `IInstanceContentLoader`. Add them to the prefab, or add them in `Awake`; a loader added later is not collected. Then:
+
+- The owning client acknowledges the preparation only once every loader reports `Ready`. The destination worker marks itself ready the same way.
+- A loader that reports `Failed` refuses the crossing, as a missing content resource does.
+- Content with no loaders is ready as soon as it is created, as before.
+- If the content is still loading when the preparation times out, the crossing does not commit. The worker logs a warning and sets `InstanceTransfer.Error`, and an `InstanceBoundary` prepares the crossing again.
+
+Nebula reads `State` once a frame on a client and once a tick on a worker, only while a preparation waits for it, so keep it cheap. Keep `Progress` between 0 and 1. To show a loading indicator, read `InstanceScenes.ContentProgress(container)`. To check readiness yourself, read `InstanceScenes.ContentState(container)`.
+
+Leave enough `PreparationDistance` for the content to load before the player reaches the boundary. While the crossing waits, the boundary holds a player who reaches it at the last position it recorded.
+
 ## Place a boundary in a scoped grid
 
 A boundary can also stand in a [scoped chunk grid](/docs/guides/infinite-runtime-world), such as a planet whose buildings and caves your game builds per chunk at runtime. Parent the boundary under the chunk's content root (`ChunkContext.Root`), as you would the rest of the chunk's content.
@@ -144,7 +183,7 @@ Follow this sequence on the entity's authoritative worker:
 1. Validate the destination key and the player's permission in game code.
 2. Call `PrepareInstance` and wait for the selected `ContainerRef.Resolve()` to return a container with an owning lease. A control-plane request is not an immediate load-completion signal.
 3. Call `PrepareTransfer` once for this attempt and retain its result. The default timeout is 15 seconds, with a minimum of one second.
-4. Poll the retained result from your existing worker update flow. `Ready` means the destination worker and owning client have acknowledged preparation. Entities without an owning client do not require a client acknowledgment.
+4. Poll the retained result from your existing worker update flow. `Ready` means the destination worker and owning client have acknowledged preparation, after their content finished loading (see [Wait for content that finishes loading later](#wait-for-content-that-finishes-loading-later)). Entities without an owning client do not require a client acknowledgment.
 5. Recheck game-level admission, then call `TryCommitTransfer` with a safe world-space pose inside the destination. Treat its return value as the final success check.
 6. On failure or expiration, keep the entity in its source and start a new preparation when appropriate. Do not reuse a finished transfer.
 
@@ -252,7 +291,7 @@ See [Running locally](/docs/getting-started/running-locally) for build paths and
 | Symptom | Check |
 | --- | --- |
 | Repeated connection attempts without joining | Compare protocol versions in the gateway log and rebuild all roles together. |
-| Player stops at the entrance | Inspect `InstanceTransfer.Error`, resource paths, client/worker content availability, and destination lease ownership. Allow enough preparation distance. |
+| Player stops at the entrance | Inspect `InstanceTransfer.Error`, resource paths, client/worker content availability, and destination lease ownership. Check that every `IInstanceContentLoader` in the content reaches `Ready`. Allow enough preparation distance. |
 | Crossing never starts | Confirm the boundary is loaded on the worker, the template is assigned, the identity key is nonempty, and `Interior` covers the doorway. |
 | Crossing never starts in a scoped grid | Confirm the boundary is parented under the chunk's content, so `HostInstanceId` is the grid's scope. |
 | Player can't leave an instance in a scoped grid | Check that the chunk outside the doorway is leased; pin it while the instance is occupied. |
@@ -269,5 +308,6 @@ See [Running locally](/docs/getting-started/running-locally) for build paths and
 - [NebulaWorker](/docs/reference/worker/nebula-worker) creates instances and prepares or commits transfers.
 - [InstanceTransfer](/docs/reference/worker/instance-transfer) reports preparation state.
 - [InstanceScenes](/docs/reference/containers/instance-scenes) exposes scoped physics and content preparation.
+- [IInstanceContentLoader](/docs/reference/containers/i-instance-content-loader) lets content report when it has finished loading.
 - [Wire protocol](/docs/specifications/wire-protocol#instance-preparation) and [control plane](/docs/specifications/control-plane) describe preparation messages and lease metadata.
 - [Entity location contract](/docs/specifications/entity-location) explains how the instance key becomes the scope key that `NetworkIdentity.Location` and persisted records report.

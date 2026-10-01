@@ -28,3 +28,29 @@ public static bool Prepare(Container container);
 ```
 
 Load this container's geometry. Returns false when its resource is missing or contains network identities.
+
+True means the content was created, not that it has finished loading: content with an [`IInstanceContentLoader`](/docs/reference/containers/i-instance-content-loader) may still be building. [`ContentState`](#contentstate) reports that.
+
+### ContentState [#contentstate]
+
+```csharp
+public static InstanceContentState ContentState(Container container);
+```
+
+Whether a prepared container's content has finished loading: [`InstanceContentState.Failed`](/docs/reference/containers/instance-content-state#failed) when any [`IInstanceContentLoader`](/docs/reference/containers/i-instance-content-loader) under it has failed, [`InstanceContentState.Loading`](/docs/reference/containers/instance-content-state#loading) while any is still loading, and [`InstanceContentState.Ready`](/docs/reference/containers/instance-content-state#ready) otherwise. Content with no loaders, a container in the public world, and a container that has not been prepared are [`InstanceContentState.Ready`](/docs/reference/containers/instance-content-state#ready). A child or carried container reports the content that [`Prepare`](#prepare) loads for it.
+
+| Parameter | Description |
+| --- | --- |
+| `container` | A container passed to [`Prepare`](#prepare). |
+
+### ContentProgress [#contentprogress]
+
+```csharp
+public static float ContentProgress(Container container);
+```
+
+How far a prepared container's content has loaded, from 0 to 1: the mean of its loaders' [`IInstanceContentLoader.Progress`](/docs/reference/containers/i-instance-content-loader#progress), counting a ready loader as 1. It is 1 when the content has no loaders. Use it for a loading indicator; [`ContentState`](#contentstate) decides readiness.
+
+| Parameter | Description |
+| --- | --- |
+| `container` | A container passed to [`Prepare`](#prepare). |
