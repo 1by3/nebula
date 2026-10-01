@@ -1,0 +1,27 @@
+---
+title: "InstanceCrossingStatus"
+description: "Where an InstanceBoundary crossing stands: ready to commit, or the first reason it is not."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/InstanceCrossingState.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/InstanceCrossingState.cs)</div>
+
+```csharp
+public enum InstanceCrossingStatus
+```
+
+Where an [`InstanceBoundary`](/docs/reference/containers/instance-boundary) crossing stands: ready to commit, or the first reason it is not. [`InstanceBoundary.TryGetPreparation`](/docs/reference/containers/instance-boundary#trygetpreparation) reports it.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` |  | The boundary is not preparing a crossing for this entity: it is out of range, in another scope, or not an authoritative player entity on this worker. |
+| <span id="notrequested"></span>`NotRequested` |  | [`InstanceBoundary.RequireRequest`](/docs/reference/containers/instance-boundary#requirerequest) is on and no [`InstanceBoundary.Request`](/docs/reference/containers/instance-boundary#request) for this entity is live. |
+| <span id="refused"></span>`Refused` |  | [`InstanceBoundary.CanEnter`](/docs/reference/containers/instance-boundary#canenter) refused entry. |
+| <span id="nodestination"></span>`NoDestination` |  | The destination container is not there yet: the instance's lease has not arrived, or, leaving, no container of the host scope that holds the point is leased. |
+| <span id="destinationnotleased"></span>`DestinationNotLeased` |  | The destination container exists, but no worker holds an active lease on it yet. |
+| <span id="pendingworker"></span>`PendingWorker` |  | The worker that owns the destination has not acknowledged the preparation yet; its content may still be loading. |
+| <span id="pendingcontent"></span>`PendingContent` |  | This worker owns the destination, and its content is still loading ([`IInstanceContentLoader`](/docs/reference/containers/i-instance-content-loader)). |
+| <span id="pendingclient"></span>`PendingClient` |  | The entity's owning client has not acknowledged the preparation yet; its content may still be loading. |
+| <span id="failed"></span>`Failed` |  | The preparation failed. [`InstanceCrossingState.Error`](/docs/reference/containers/instance-crossing-state#error) says why. The boundary prepares again once it expires. |
+| <span id="ready"></span>`Ready` |  | The crossing is prepared and can commit when the entity crosses the boundary's face. |
