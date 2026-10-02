@@ -229,7 +229,7 @@ The deterministic per-chunk seed ([`ChunkContext.Seed`](/docs/reference/world/ch
 public static bool IsDrawn(in ChunkContext chunk);
 ```
 
-Whether a chunk's content is drawn on this client: false for a chunk of a scoped grid while the local pawn is in another scope, true otherwise. A client is told about another scope's chunks while its pawn is in an instance that keeps its host loaded ([`ScopeDefinition.ObserveHost`](/docs/reference/control-plane/scope-definition#observehost)), or while it prepares to cross into another scope. Content a game adds to a chunk after [`Loaded`](#loaded) should start hidden when this is false; the public world's chunks are always drawn, as they always were.
+Whether a chunk's content is drawn on this client: false for a chunk of a scoped grid while the local pawn is in another scope that is not kept drawn ([`InstanceScenes.KeepDrawn`](/docs/reference/containers/instance-scenes#keepdrawn)), true otherwise. A client is told about another scope's chunks while its pawn is in an instance that keeps its host loaded ([`ScopeDefinition.ObserveHost`](/docs/reference/control-plane/scope-definition#observehost)), or while it prepares to cross into another scope. Content a game adds to a chunk after [`Loaded`](#loaded) should start hidden when this is false; the public world's chunks are always drawn, as they always were.
 
 | Parameter | Description |
 | --- | --- |

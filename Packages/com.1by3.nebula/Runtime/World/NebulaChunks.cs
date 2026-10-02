@@ -394,15 +394,15 @@ namespace Nebula.World
         private static bool _hasView;
         /// <summary>Renderers this class turned off under each hidden chunk's root, so showing it again restores only those.</summary>
         private static readonly Dictionary<ulong, List<Renderer>> Hidden = new Dictionary<ulong, List<Renderer>>();
-        private static readonly List<Renderer> RendererScratch = new List<Renderer>();
         private static readonly List<ulong> ViewScratch = new List<ulong>();
 
         /// <summary>
         /// Whether a chunk's content is drawn on this client: false for a chunk of a scoped grid while the local pawn
-        /// is in another scope, true otherwise. A client is told about another scope's chunks while its pawn is in an
-        /// instance that keeps its host loaded (<see cref="ScopeDefinition.ObserveHost"/>), or while it prepares to
-        /// cross into another scope. Content a game adds to a chunk after <see cref="Loaded"/> should start hidden
-        /// when this is false; the public world's chunks are always drawn, as they always were.
+        /// is in another scope that is not kept drawn (<see cref="InstanceScenes.KeepDrawn"/>), true otherwise. A
+        /// client is told about another scope's chunks while its pawn is in an instance that keeps its host loaded
+        /// (<see cref="ScopeDefinition.ObserveHost"/>), or while it prepares to cross into another scope. Content a
+        /// game adds to a chunk after <see cref="Loaded"/> should start hidden when this is false; the public world's
+        /// chunks are always drawn, as they always were.
         /// </summary>
         /// <param name="chunk">A chunk reported by <see cref="Loaded"/>.</param>
         public static bool IsDrawn(in ChunkContext chunk) =>
@@ -410,7 +410,8 @@ namespace Nebula.World
 
         /// <summary>
         /// The local pawn is now in <paramref name="instanceId"/>: hide the content of every scoped grid's chunk in
-        /// another scope and show again what was hidden in this one. Renderers that were already off are left alone.
+        /// another scope that is not kept drawn (<see cref="InstanceScenes.KeepDrawn"/>), and show again what was hidden
+        /// in the others. Renderers that were already off are left alone.
         /// Called on clients by <see cref="InstanceScenes"/>.
         /// </summary>
         internal static void SetView(ulong instanceId)
@@ -428,25 +429,30 @@ namespace Nebula.World
         {
             var container = ContainerRegistry.GetRuntime(id);
             if (container == null || root == null) return;
-            bool hide = container.InstanceId != 0 && container.InstanceId != _view;
-            if (!hide)
+            ulong scope = container.InstanceId;
+            bool hide = scope != 0 && scope != _view && !InstanceScenes.IsKeptDrawn(scope);
+            // Hiding runs again on every view change, so renderers the game added since are hidden too.
+            if (hide) HiddenRenderers.Hide(Hidden, id, root);
+            else HiddenRenderers.Show(Hidden, id);
+        }
+
+        /// <summary>
+        /// A scope's <see cref="InstanceScenes.KeepDrawn"/> requests changed: show or hide its chunks to match. Does
+        /// nothing before the local pawn has a scope, when nothing is hidden. Called on clients by
+        /// <see cref="InstanceScenes"/>.
+        /// </summary>
+        internal static void ApplyScope(ulong instanceId)
+        {
+            if (!_hasView || instanceId == 0) return;
+            ViewScratch.Clear();
+            foreach (var id in Roots.Keys) ViewScratch.Add(id);
+            for (int i = 0; i < ViewScratch.Count; i++)
             {
-                if (!Hidden.TryGetValue(id, out var shown)) return;
-                Hidden.Remove(id);
-                foreach (var renderer in shown) if (renderer != null) renderer.forceRenderingOff = false;
-                return;
+                var container = ContainerRegistry.GetRuntime(ViewScratch[i]);
+                if (container != null && container.InstanceId == instanceId && Roots.TryGetValue(ViewScratch[i], out var root))
+                    ApplyView(ViewScratch[i], root);
             }
-            if (!Hidden.TryGetValue(id, out var hidden)) Hidden[id] = hidden = new List<Renderer>();
-            // Again on every view change, so renderers the game added since are hidden too.
-            RendererScratch.Clear();
-            root.GetComponentsInChildren(true, RendererScratch);
-            foreach (var renderer in RendererScratch)
-            {
-                if (renderer.forceRenderingOff) continue;
-                renderer.forceRenderingOff = true;
-                hidden.Add(renderer);
-            }
-            RendererScratch.Clear();
+            ViewScratch.Clear();
         }
 
         private static void OnUnregistering(Container c)
@@ -459,7 +465,7 @@ namespace Nebula.World
                 _unloading(in ctx);
             }
             Roots.Remove(c.RuntimeId);
-            Hidden.Remove(c.RuntimeId);
+            HiddenRenderers.Forget(Hidden, c.RuntimeId);
         }
 
         private static ChunkContext ContextFor(Container c, RuntimeGrid grid)
@@ -494,7 +500,7 @@ namespace Nebula.World
             _loaded = null;
             _unloading = null;
             Roots.Clear();
-            Hidden.Clear();
+            HiddenRenderers.Clear(Hidden);
             _hasView = false;
             _view = 0;
         }

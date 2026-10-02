@@ -13,6 +13,10 @@ namespace Nebula
         /// <summary>The <see cref="IInstanceContentLoader"/>s found under each prepared container, by runtime ID. A container with none has no entry.</summary>
         private static readonly Dictionary<ulong, IInstanceContentLoader[]> Loaders = new Dictionary<ulong, IInstanceContentLoader[]>();
         private static readonly List<IInstanceContentLoader> LoaderScratch = new List<IInstanceContentLoader>();
+        /// <summary>Renderers this class turned off under each hidden container's content, by runtime ID.</summary>
+        private static readonly Dictionary<ulong, List<Renderer>> HiddenContent = new Dictionary<ulong, List<Renderer>>();
+        /// <summary>How many live <see cref="KeepDrawn"/> requests each scope has. A scope with none has no entry.</summary>
+        private static readonly Dictionary<ulong, int> DrawnRequests = new Dictionary<ulong, int>();
         private static ulong _view;
 
         /// <summary>
@@ -31,6 +35,8 @@ namespace Nebula
             Scenes.Clear();
             Content.Clear();
             Loaders.Clear();
+            HiddenRenderers.Clear(HiddenContent);
+            DrawnRequests.Clear();
             _view = 0;
         }
 
@@ -68,10 +74,19 @@ namespace Nebula
             SceneManager.MoveGameObjectToScene(container.gameObject, scene);
             GameObject content = prefab != null ? UnityEngine.Object.Instantiate(prefab, container.transform, false) : new GameObject("Content");
             if (prefab == null) content.transform.SetParent(container.transform, false);
+            AdoptContent(container, content);
+            return true;
+        }
+
+        /// <summary>
+        /// Record the content <see cref="Prepare"/> created for a container, collect its loaders, and hide it on a
+        /// client when its scope is not drawn. A seam for EditMode tests, which cannot create a runtime scene.
+        /// </summary>
+        internal static void AdoptContent(Container container, GameObject content)
+        {
             Content.Add(container.RuntimeId, content);
             CollectLoaders(container);
-            SetVisible(content, !NebulaRuntime.IsClient || info.InstanceId == _view);
-            return true;
+            SetVisible(container.RuntimeId, content, !NebulaRuntime.IsClient || Drawn(container.InstanceId));
         }
 
         /// <summary>
@@ -167,22 +182,99 @@ namespace Nebula
             LoaderScratch.Clear();
         }
 
+        // -------------------------------------------------------------------------------- which scopes are drawn
+
+        /// <summary>
+        /// Keep a scope's content drawn on this client while the local pawn is in another scope: the static content
+        /// <see cref="Prepare"/> loads for its instance parts, and the content under the
+        /// <see cref="World.ChunkContext.Root"/> of its scoped grid's chunks. A client normally draws only the pawn's
+        /// own scope and the public world, and keeps other resident scopes hidden; use this to show the other side of
+        /// an open doorway. Content created or loaded while the request is live starts drawn.
+        /// <para>
+        /// Requests are counted: match each call with one <see cref="StopKeepingDrawn"/>. The scope is hidden again
+        /// only when its last request is withdrawn. Nebula turns on only the renderers it turned off itself, so
+        /// renderers the game turned off stay off. A request outlives the scope's content: when the
+        /// content is released Nebula forgets its renderers but keeps the request, so content of the scope prepared
+        /// again starts drawn.
+        /// </para>
+        /// <para>
+        /// Rendering only. It loads nothing, and changes no physics scene, interest, ownership or message: content
+        /// that is not resident on this client stays absent. A worker records the request and ignores it. The
+        /// public world (<paramref name="instanceId"/> 0) is always drawn, so a request for it does nothing.
+        /// </para>
+        /// </summary>
+        /// <param name="instanceId">The scope's instance ID, as <see cref="Container.InstanceId"/> reports it.</param>
+        public static void KeepDrawn(ulong instanceId)
+        {
+            if (instanceId == 0) return;
+            DrawnRequests.TryGetValue(instanceId, out int count);
+            DrawnRequests[instanceId] = count + 1;
+            if (count == 0) ApplyScope(instanceId);
+        }
+
+        /// <summary>
+        /// Withdraw one <see cref="KeepDrawn"/> request for a scope. When it was the last one and the local pawn is in
+        /// another scope, the scope's content is hidden again. Returns false, and changes nothing, when the scope has
+        /// no request.
+        /// </summary>
+        /// <param name="instanceId">The scope's instance ID passed to <see cref="KeepDrawn"/>.</param>
+        public static bool StopKeepingDrawn(ulong instanceId)
+        {
+            if (!DrawnRequests.TryGetValue(instanceId, out int count)) return false;
+            if (count > 1) { DrawnRequests[instanceId] = count - 1; return true; }
+            DrawnRequests.Remove(instanceId);
+            ApplyScope(instanceId);
+            return true;
+        }
+
+        /// <summary>
+        /// Whether a scope's content is drawn on this client: true for the public world, for the local pawn's scope,
+        /// and for a scope with a live <see cref="KeepDrawn"/> request; false for any other scope. Always true on a
+        /// process that is not a client, which hides nothing.
+        /// </summary>
+        /// <param name="instanceId">A scope's instance ID; 0 is the public world.</param>
+        public static bool IsDrawn(ulong instanceId) => !NebulaRuntime.IsClient || Drawn(instanceId);
+
+        /// <summary>Whether a scope is drawn by the view rules alone: the public world, the pawn's scope, or a kept scope.</summary>
+        internal static bool Drawn(ulong instanceId) => instanceId == 0 || instanceId == _view || IsKeptDrawn(instanceId);
+
+        /// <summary>Whether a scope has a live <see cref="KeepDrawn"/> request.</summary>
+        internal static bool IsKeptDrawn(ulong instanceId) => DrawnRequests.Count > 0 && DrawnRequests.ContainsKey(instanceId);
+
         internal static void SetView(ulong instanceId)
         {
             _view = instanceId;
             foreach (var pair in Content)
             {
                 var container = ContainerRegistry.GetRuntime(pair.Key);
-                if (container != null) SetVisible(pair.Value, container.InstanceId == instanceId);
+                if (container != null) SetVisible(pair.Key, pair.Value, Drawn(container.InstanceId));
             }
             // A scoped grid's chunks hold content the game builds, not content prepared here: hidden the same way.
             World.NebulaChunks.SetView(instanceId);
         }
 
-        private static void SetVisible(GameObject content, bool visible)
+        /// <summary>A scope's requests changed: show or hide its content to match, on a client only.</summary>
+        private static void ApplyScope(ulong instanceId)
+        {
+            if (!NebulaRuntime.IsClient) return;
+            bool visible = Drawn(instanceId);
+            foreach (var pair in Content)
+            {
+                var container = ContainerRegistry.GetRuntime(pair.Key);
+                if (container != null && container.InstanceId == instanceId) SetVisible(pair.Key, pair.Value, visible);
+            }
+            World.NebulaChunks.ApplyScope(instanceId);
+        }
+
+        /// <summary>
+        /// Show or hide one container's content. Hiding turns off the renderers that are drawn and remembers them;
+        /// showing turns those back on, so renderers the game turned off itself stay off.
+        /// </summary>
+        private static void SetVisible(ulong runtimeId, GameObject content, bool visible)
         {
             if (content == null) return;
-            foreach (var renderer in content.GetComponentsInChildren<Renderer>(true)) renderer.forceRenderingOff = !visible;
+            if (visible) HiddenRenderers.Show(HiddenContent, runtimeId);
+            else HiddenRenderers.Hide(HiddenContent, runtimeId, content.transform);
         }
 
         internal static void Simulate(float deltaTime)
@@ -196,6 +288,7 @@ namespace Nebula
             if (container.InstanceId == 0) return;
             Content.Remove(container.RuntimeId);
             Loaders.Remove(container.RuntimeId);
+            HiddenRenderers.Forget(HiddenContent, container.RuntimeId);
             foreach (var other in ContainerRegistry.Runtime)
                 if (other != container && other.InstanceId == container.InstanceId) return;
             if (Scenes.TryGetValue(container.InstanceId, out var scene))

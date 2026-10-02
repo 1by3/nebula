@@ -479,3 +479,52 @@ off, every lease row, scope definition and client message is byte-identical to b
   is inside still pins the entrance chunk (`docs/scoped-chunk-grids.md` §4), as the instancing guide says.
 - Content the game adds to a hidden chunk after `Loaded` is hidden at the local pawn's next container change, unless
   it checks `NebulaChunks.IsDrawn`.
+
+## 13. A client can keep another scope drawn (NEB-373)
+
+### 13.1 What went wrong
+
+D27 draws exactly one private scope on a client: the local pawn's. `InstanceScenes.SetView` hides the static content
+of every other prepared instance part, and `NebulaChunks.SetView` the chunks of every other scoped grid. A player at
+an open `InstanceBoundary` therefore sees only their own side. The other side is prepared and resident (the crossing's
+destination, or the host kept by `ObserveHost`), but not drawn, and the crossing visibly swaps one scene for the other.
+
+### 13.2 Decisions
+
+**D29 A counted request per scope, on the client.** `InstanceScenes.KeepDrawn(instanceId)` adds one request and
+`StopKeepingDrawn(instanceId)` withdraws one; a scope is kept while it has any. A door, a camera and a cutscene can ask
+for the same scope independently, so a set with a boolean per scope would let the first to let go hide it under the
+others. A withdrawal with no request returns false and changes nothing. `InstanceScenes.IsDrawn(instanceId)` answers
+for the public world (always), the pawn's scope, and kept scopes. The requests live in `InstanceScenes`, which already
+owns the view, and `NebulaChunks` reads them: one rule decides both kinds of content.
+
+**D30 The view is the union.** A scope is drawn when it is the public world, the pawn's scope, or kept. `SetView`
+applies that to static content and chunks alike; the first and last request apply it to that scope's content at once.
+Content created while a scope is kept starts drawn, by the same rule, in `Prepare` and in `NebulaChunks` after
+`Loaded`. When the pawn changes scope, the scope it left stays drawn if it is kept, so a doorway looks the same from both
+sides. `NebulaChunks.IsDrawn` reports true for a kept scope's chunks, since they are not hidden.
+
+**D31 Static content restores only what Nebula turned off.** D27 recorded the renderers it turned off under a chunk's
+root. Static content was hidden and shown wholesale, turning every renderer under it on or off. Both now share
+`HiddenRenderers`: hiding turns off the renderers that are drawn and records them, showing turns those back on, so a
+renderer the game turned off itself stays off. With the API unused this differs from before in one case only: a
+renderer of an instance's static content that the game turned off was turned back on by the next view change, and is
+now left off. The record lists are pooled, so hiding and showing allocate nothing once warm.
+
+**D32 A release forgets renderers, not requests.** When a container's content or chunk is released, its record of
+hidden renderers is dropped (the renderers are being destroyed). The scope's request stays: a scope that drops out of
+the client's view and comes back while its door is still open must come back drawn, and the caller that asked is the
+one that knows when to let go. `InstanceScenes.Reset` drops every request with the session.
+
+**D33 Rendering only.** Requests change `Renderer.forceRenderingOff` and nothing else: no physics scene, interest
+window, lease, ownership or message. Kept content is whatever is resident; nothing is loaded for it. A worker records a
+request and applies nothing, since a worker never hides content. The public world is never hidden, and a request for
+it does nothing. With the API unused, `SetView`, `Prepare` and `NebulaChunks` hide and show exactly the content they did
+before (D31 aside), and the protocol stays 25.
+
+### 13.3 Limits
+
+- Only content Nebula hides is shown: an instance's static content and a scoped grid chunk's content under
+  `ChunkContext.Root`. Entities of another scope are not sent to the client by keeping it drawn (`ObservePublic` and
+  D24 decide that), and content the game parents elsewhere is the game's to show.
+- Nothing clips the kept scope to the doorway. Both sides are drawn whole; a game that wants a portal masks it itself.

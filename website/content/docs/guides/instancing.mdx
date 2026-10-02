@@ -301,6 +301,46 @@ The gateway remembers where a player entered only for the current connection. A 
 
 If your game builds a chunk's content after `NebulaChunks.Loaded` returns, check `NebulaChunks.IsDrawn` and keep new renderers hidden while it is `false`. Otherwise the client hides them only when the player next moves into another container.
 
+## Show both sides of an open boundary
+
+A client draws only the scope the local player is in, plus the public world. Another scope's content can be loaded on the client and still be hidden: an instance's static content before the player enters, or a scoped grid's chunks while the player is inside an instance with `ObserveHost`. So a player standing at an open door sees only their own side, and the other side appears all at once when they cross.
+
+To draw the other side while the door is open, call `InstanceScenes.KeepDrawn` on the client with that scope's instance ID. Call `InstanceScenes.StopKeepingDrawn` when the door closes:
+
+```csharp
+using Nebula;
+using UnityEngine;
+
+// A client-side door view: draws the scope on the other side while the door is open.
+public sealed class DoorView : MonoBehaviour
+{
+    // The instance ID of the scope behind the door, such as a Container's InstanceId.
+    public ulong OtherSide;
+    bool _open;
+
+    public void SetOpen(bool open)
+    {
+        if (open == _open) return;
+        _open = open;
+        if (open) InstanceScenes.KeepDrawn(OtherSide);
+        else InstanceScenes.StopKeepingDrawn(OtherSide);
+    }
+
+    void OnDestroy() => SetOpen(false);
+}
+```
+
+While a scope is kept drawn:
+
+- The client draws its instance static content and the content under each of its scoped grid chunks' `ChunkContext.Root`. Content that loads while the scope is kept starts drawn, and `NebulaChunks.IsDrawn` returns `true` for its chunks.
+- Requests are counted. Several doors, or a door and a camera, can keep the same scope drawn. The scope is hidden again only after each of them calls `StopKeepingDrawn`.
+- When the player crosses, the scope they left stays drawn while it is kept, so the doorway looks the same from both sides.
+- Nebula turns on only the renderers it turned off itself. A renderer your game turned off stays off, whether the scope is kept, hidden again or entered.
+
+`KeepDrawn` changes rendering only. It loads nothing, so the other side must already be on the client: for example, a boundary has prepared the crossing, or the instance keeps its host with `ObserveHost`. Physics scenes, interest, ownership and network messages don't change, so the player still can't collide with, target or affect anything on the other side. Workers ignore the call, and the public world is always drawn.
+
+A request outlives the scope's content. If the content is unloaded and loaded again while the request is live, it starts drawn. Call `StopKeepingDrawn` once for each `KeepDrawn`. Use `InstanceScenes.IsDrawn` to check whether a scope is drawn on this client.
+
 ## Keep gameplay in the correct scope
 
 Use `NetworkIdentity.PhysicsScene` for movement raycasts, sweeps, and overlaps. Global `Physics` queries inspect the public physics scene. For a loaded instance ID, use `InstanceScenes.PhysicsFor(instanceId)`.
@@ -395,6 +435,7 @@ See [Running locally](/docs/getting-started/running-locally) for build paths and
 | Interior surfaces flicker | Remove overlapping visible geometry between the public shell and private prefab. |
 | Hallway players disappear from inside | Enable `ObservePublic` and check `PublicView` relative to the instance origin. |
 | The area outside pops in again after a player leaves | Enable `ObserveHost` on the template, so the client keeps the host loaded while the player is inside. |
+| The other side of an open door is empty until the player crosses | Call `InstanceScenes.KeepDrawn` for that scope while the door is open. |
 | Saved furniture is missing or shared across copies | Check stable template/part/key values, `PersistentEntity`, and instance-specific persistence keys. |
 
 ## API and protocol reference
