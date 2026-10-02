@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The behaviour model of nebula-loadgen and the interface a game implements to add its own behaviours.
+    It depends on nothing from Nebula, so a plugin project references this assembly (Private=false, the
+    loadgen process already carries it) and no game-specific type ever enters Nebula.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Nebula.LoadGen.Sdk</AssemblyName>
+    <RootNamespace>Nebula.LoadGen</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+</Project>

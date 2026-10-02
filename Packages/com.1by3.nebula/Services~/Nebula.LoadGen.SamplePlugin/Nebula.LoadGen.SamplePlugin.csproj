@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    What a game's loadgen plugin looks like as a project: a class library that references Nebula.LoadGen.Sdk and
+    nothing else from Nebula. Private=false keeps the SDK out of the output: the loadgen process already carries it, and
+    two copies would be two sets of types. A game that consumes Nebula as a Unity package points the reference at the
+    Nebula.LoadGen.Sdk.dll that ships with the published loadgen instead of at these sources.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Nebula.LoadGen.Sdk/Nebula.LoadGen.Sdk.csproj" Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+</Project>

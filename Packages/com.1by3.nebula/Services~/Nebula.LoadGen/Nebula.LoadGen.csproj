@@ -11,5 +11,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Nebula.Services/Nebula.Services.csproj" />
+    <ProjectReference Include="../Nebula.LoadGen.Sdk/Nebula.LoadGen.Sdk.csproj" />
   </ItemGroup>
 </Project>
