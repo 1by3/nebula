@@ -343,6 +343,7 @@ namespace Nebula
             w.Prop("prefabName", r.PrefabName ?? "");
             w.Prop("sceneId", r.SceneId);
             w.Prop("containerId", r.ContainerId ?? "");
+            w.Prop("partId", r.PartId ?? "");
             w.Prop("carrierKey", r.CarrierKey ?? "");
             w.Prop("name", r.Name ?? "");
             w.Prop("epoch", r.Epoch);
@@ -488,7 +489,14 @@ namespace Nebula
         private string ApplyFields(PersistedEntityRecord record, Dictionary<string, object> body)
         {
             if (body.TryGetValue("name", out var name)) record.Name = PersistenceJson.AsString(name) ?? "";
-            if (body.TryGetValue("containerId", out var container)) record.ContainerId = PersistenceJson.AsString(container) ?? "";
+            if (body.TryGetValue("containerId", out var container))
+            {
+                string moved = PersistenceJson.AsString(container) ?? "";
+                // The part id named the old container; a move to another one leaves it unknown unless the body sets it.
+                if (!string.Equals(moved, record.ContainerId ?? "", StringComparison.Ordinal)) record.PartId = "";
+                record.ContainerId = moved;
+            }
+            if (body.TryGetValue("partId", out var part)) record.PartId = PersistenceJson.AsString(part) ?? "";
             if (body.TryGetValue("carrierKey", out var carrier)) record.CarrierKey = PersistenceJson.AsString(carrier) ?? "";
             if (body.TryGetValue("serverDriven", out var driven) && driven is bool sd) record.ServerDriven = sd;
             if (body.TryGetValue("owned", out var owned) && owned is bool ow) record.Owned = ow;

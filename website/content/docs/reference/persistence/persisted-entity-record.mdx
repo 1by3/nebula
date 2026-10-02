@@ -61,6 +61,14 @@ public string ContainerId = "";
 
 Static or runtime container the entity was in (its [`Container.ContainerId`](/docs/reference/containers/container#containerid)), or "" when it was in none or inside a carrier.
 
+### PartId [#partid]
+
+```csharp
+public string PartId = "";
+```
+
+The scope part id of the container in [`ContainerId`](#containerid) at save time ([`InstanceContainerInfo.PartId`](/docs/reference/protocol/instance-container-info#partid), the same string the container's lease row carries), or "" when the container has none or the record was written before part ids were recorded. For a chunk of a scoped grid it is the chunk's coordinate, `c/x/y/z` ([`ChunkKeys.PartId`](/docs/reference/world/chunk-keys#partid)). A scoped chunk's container id is a hash of the scope key and this string and cannot be turned back into a coordinate, so this field is how a process that never named the chunk places the record: see [`ChunkKeys.TryCoordOf`](/docs/reference/world/chunk-keys#trycoordof). Setting [`Location`](#location) to another scope or container clears it.
+
 ### CarrierKey [#carrierkey]
 
 ```csharp
@@ -159,7 +167,7 @@ Id of the worker that wrote the record.
 public EntityLocation Location { get; set; }
 ```
 
-The saved location as the contract's triple ([`EntityLocation`](/docs/reference/containers/entity-location)): [`ScopeKey`](#scopekey), [`ContainerId`](#containerid) and the local pose. For an entity saved inside a carrier the container id is empty and [`CarrierKey`](#carrierkey) names the carrier instead, because a dynamic container's id lives only as long as its carrier's net id. Setting it writes the three fields back and leaves [`CarrierKey`](#carrierkey) alone.
+The saved location as the contract's triple ([`EntityLocation`](/docs/reference/containers/entity-location)): [`ScopeKey`](#scopekey), [`ContainerId`](#containerid) and the local pose. For an entity saved inside a carrier the container id is empty and [`CarrierKey`](#carrierkey) names the carrier instead, because a dynamic container's id lives only as long as its carrier's net id. Setting it writes the three fields back and leaves [`CarrierKey`](#carrierkey) alone. When the scope or the container changes, it also clears [`PartId`](#partid), which named the old container.
 
 ## Methods
 

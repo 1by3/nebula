@@ -25,6 +25,7 @@ namespace Nebula
             w.Prop("sceneId", r.SceneId);
             w.Prop("scopeKey", r.ScopeKey ?? "");
             w.Prop("containerId", r.ContainerId ?? "");
+            w.Prop("partId", r.PartId ?? "");
             w.Prop("carrierKey", r.CarrierKey ?? "");
             w.Key("position"); ControlPlaneJson.Vec(w, r.LocalPosition);
             w.Key("rotation");
@@ -80,6 +81,7 @@ namespace Nebula
                 SceneId = (uint)ControlPlaneJson.Num(o, "sceneId"),
                 ScopeKey = ControlPlaneJson.Str(o, "scopeKey"), // absent in older documents: the public world
                 ContainerId = ControlPlaneJson.Str(o, "containerId"),
+                PartId = ControlPlaneJson.Str(o, "partId"), // absent in older documents: unknown
                 CarrierKey = ControlPlaneJson.Str(o, "carrierKey"),
                 LocalPosition = ControlPlaneJson.Vec(o, "position"),
                 Velocity = ControlPlaneJson.Vec(o, "velocity"),

@@ -132,12 +132,12 @@ namespace Nebula
             Enqueue("save " + r.Key, c =>
             {
                 int written = NebulaDatabase.Execute(c, @"INSERT INTO nebula_entity (entity_key, prefab_id, prefab_name, scene_id, container_id, carrier_key,
-                    pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w, vel_x, vel_y, vel_z, epoch, server_driven, owned, name, state, version, saved_at, saved_by, scope_key)
+                    pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w, vel_x, vel_y, vel_z, epoch, server_driven, owned, name, state, version, saved_at, saved_by, scope_key, part_id)
                     VALUES (@key, @prefab_id, @prefab_name, @scene_id, @container_id, @carrier_key,
-                    @pos_x, @pos_y, @pos_z, @rot_x, @rot_y, @rot_z, @rot_w, @vel_x, @vel_y, @vel_z, @epoch, @server_driven, @owned, @name, @state, 1, @saved_at, @saved_by, @scope_key)
+                    @pos_x, @pos_y, @pos_z, @rot_x, @rot_y, @rot_z, @rot_w, @vel_x, @vel_y, @vel_z, @epoch, @server_driven, @owned, @name, @state, 1, @saved_at, @saved_by, @scope_key, @part_id)
                     ON CONFLICT (entity_key) DO UPDATE SET
                     prefab_id = excluded.prefab_id, prefab_name = excluded.prefab_name, scene_id = excluded.scene_id,
-                    container_id = excluded.container_id, carrier_key = excluded.carrier_key, scope_key = excluded.scope_key,
+                    container_id = excluded.container_id, carrier_key = excluded.carrier_key, scope_key = excluded.scope_key, part_id = excluded.part_id,
                     pos_x = excluded.pos_x, pos_y = excluded.pos_y, pos_z = excluded.pos_z,
                     rot_x = excluded.rot_x, rot_y = excluded.rot_y, rot_z = excluded.rot_z, rot_w = excluded.rot_w,
                     vel_x = excluded.vel_x, vel_y = excluded.vel_y, vel_z = excluded.vel_z,
@@ -151,7 +151,7 @@ namespace Nebula
                     ("@vel_x", (double)r.Velocity.x), ("@vel_y", (double)r.Velocity.y), ("@vel_z", (double)r.Velocity.z),
                     ("@epoch", (long)r.Epoch), ("@server_driven", r.ServerDriven), ("@owned", r.Owned), ("@name", r.Name ?? ""),
                     ("@state", r.State != null && r.State.Length > 0 ? r.State : Array.Empty<byte>()),
-                    ("@saved_at", ControlPlaneJson.ToUnixMs(r.SavedAt)), ("@saved_by", r.SavedBy ?? ""), ("@scope_key", r.ScopeKey ?? ""));
+                    ("@saved_at", ControlPlaneJson.ToUnixMs(r.SavedAt)), ("@saved_by", r.SavedBy ?? ""), ("@scope_key", r.ScopeKey ?? ""), ("@part_id", r.PartId ?? ""));
                 // No row inserted or updated: the stored record has a newer epoch and the save was refused.
                 if (written == 0) ReportStale(c, r);
                 _countDirty = true;
@@ -216,7 +216,7 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- reads
 
-        private const string Columns = "entity_key, prefab_id, prefab_name, scene_id, container_id, carrier_key, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w, vel_x, vel_y, vel_z, epoch, server_driven, owned, name, state, version, saved_at, saved_by, scope_key";
+        private const string Columns = "entity_key, prefab_id, prefab_name, scene_id, container_id, carrier_key, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w, vel_x, vel_y, vel_z, epoch, server_driven, owned, name, state, version, saved_at, saved_by, scope_key, part_id";
 
         public void Load(string key, Action<PersistedEntityRecord> onLoaded)
         {
@@ -376,6 +376,7 @@ namespace Nebula
                 SavedAt = ControlPlaneJson.FromUnixMs(r.GetInt64(22)),
                 SavedBy = r.GetString(23),
                 ScopeKey = r.GetString(24),
+                PartId = r.GetString(25),
             };
             return record;
         }
