@@ -18,7 +18,9 @@ namespace Nebula
     /// for as long as it is inside. <see cref="RequireRequest"/> and <see cref="Request"/> let the game decide when
     /// instead, for example while a door is open. <see cref="TryGetPreparation"/> and <see cref="CrossingReady"/>
     /// report when a crossing can commit, and <see cref="ExitMargin"/> keeps an occupant standing at the face from
-    /// leaving and entering again on every tick. All of it runs on the worker that simulates the entity.
+    /// leaving and entering again on every tick. <see cref="ResolveCompanions"/> names entities that cross together
+    /// with a player, such as an item it holds, and the group commits as one. All of it runs on the worker that
+    /// simulates the entity.
     /// </para>
     /// </summary>
     public sealed class InstanceBoundary : MonoBehaviour
@@ -63,6 +65,47 @@ namespace Nebula
         public event Action<NetworkIdentity, InstanceCrossingState> CrossingReady;
 
         /// <summary>
+        /// Server-side: fill the list with the entities that must cross together with the one crossing, its
+        /// companions: an item it holds, a pet, a cart it tows, an escort. Called on the worker that simulates the
+        /// crossing entity, once a tick while its crossing is being prepared, with an empty list. When unset, or when
+        /// it adds nothing, the entity crosses alone, as before.
+        /// <para>
+        /// The boundary prepares a transfer for each companion into the crossing entity's own destination, the
+        /// crossing's readiness (<see cref="TryGetPreparation"/>, <see cref="CrossingReady"/>) covers the whole group,
+        /// and the group commits in one <see cref="NebulaWorker.TryCommitTransfers"/> on the tick the crossing entity
+        /// passes the face: every member arrives in the same destination container, on the same worker, with its
+        /// identity and absolute pose kept. A companion moves with its leader and does not cross on its own while it
+        /// is one.
+        /// </para>
+        /// <para>
+        /// A companion that cannot cross is left behind, and the group does not wait for it: one this worker does
+        /// not simulate, one in another scope, a pinned or scene entity, one <see cref="CanEnter"/> refuses, or one
+        /// whose preparation failed (refused for capacity, its content unavailable, expired). A companion whose
+        /// preparation is still pending holds the group for up to <see cref="CompanionWaitSeconds"/> after the
+        /// crossing entity itself is ready; after that it is left behind too. <see cref="CompanionLeftBehind"/>
+        /// reports each one when the group commits, so the game can drop a held item, for example.
+        /// </para>
+        /// </summary>
+        public Action<NetworkIdentity, List<NetworkIdentity>> ResolveCompanions;
+
+        /// <summary>
+        /// How long, in unscaled seconds, a crossing waits for a companion whose preparation is still pending once
+        /// the crossing entity's own preparation is ready (<see cref="ResolveCompanions"/>). After that the entity
+        /// crosses without it. 0 never waits. A companion that failed or was refused never holds the crossing.
+        /// </summary>
+        public float CompanionWaitSeconds = 5;
+
+        /// <summary>
+        /// Raised on this worker when a crossing entity committed without one of its companions
+        /// (<see cref="ResolveCompanions"/>): the crossing entity, the companion left behind, and the companion's
+        /// state at the commit, which says why (<see cref="InstanceCrossingStatus.Refused"/>,
+        /// <see cref="InstanceCrossingStatus.Failed"/> with its <see cref="InstanceCrossingState.Error"/>, or a pending
+        /// status when the wait ran out). The companion stays where it was, in the scope the entity left. Handlers
+        /// run inside the worker's tick and must not throw.
+        /// </summary>
+        public event Action<NetworkIdentity, NetworkIdentity, InstanceCrossingState> CompanionLeftBehind;
+
+        /// <summary>
         /// The instance origin is this boundary's absolute position rounded to this many meters, so every worker and
         /// every origin frame names the same instance bounds, however its transform's float numbers came out.
         /// </summary>
@@ -78,8 +121,31 @@ namespace Nebula
             public bool Leaving;
             /// <summary><see cref="CrossingReady"/> has been raised for the readiness this crossing has now.</summary>
             public bool ReadyRaised;
+            /// <summary>The crossing entity.</summary>
+            public NetworkIdentity Entity;
+            /// <summary>What crosses with it (<see cref="ResolveCompanions"/>).</summary>
+            public readonly List<Companion> Companions = new List<Companion>();
+            /// <summary>When the entity's own preparation became ready, for <see cref="CompanionWaitSeconds"/>; negative while it is not.</summary>
+            public float ReadySince = -1;
         }
+
+        private sealed class Companion
+        {
+            public NetworkIdentity Entity;
+            public InstanceTransfer Transfer;
+            /// <summary>The leader's transfer this one was prepared alongside: a new one for the leader prepares the companion again.</summary>
+            public InstanceTransfer PreparedFor;
+            /// <summary>Why it cannot cross, when no transfer is in flight: Refused, or Failed with <see cref="Error"/>.</summary>
+            public InstanceCrossingStatus Blocked;
+            public string Error;
+        }
+
         private readonly Dictionary<ulong, Crossing> _crossings = new Dictionary<ulong, Crossing>();
+        /// <summary>Each companion's leader, by net id.</summary>
+        private readonly Dictionary<ulong, ulong> _leaderOf = new Dictionary<ulong, ulong>();
+        private static readonly List<NetworkIdentity> Resolved = new List<NetworkIdentity>();
+        private static readonly List<InstanceTransfer> Group = new List<InstanceTransfer>();
+        private static readonly List<Companion> LeftBehind = new List<Companion>();
         /// <summary>Live requests: when each entity's request expires, in unscaled seconds.</summary>
         private readonly Dictionary<ulong, float> _requests = new Dictionary<ulong, float>();
         private static readonly List<ulong> ExpiredRequests = new List<ulong>();
@@ -96,7 +162,7 @@ namespace Nebula
             _hostResolved = false;
         }
 
-        private void OnDisable() { Active.Remove(this); _crossings.Clear(); _requests.Clear(); }
+        private void OnDisable() { Active.Remove(this); _crossings.Clear(); _requests.Clear(); _leaderOf.Clear(); }
 
         private void OnTransformParentChanged() => _hostResolved = false;
 
@@ -163,17 +229,32 @@ namespace Nebula
         /// the worker's last tick found, with the preparation's progress since then. An entity the boundary is not
         /// preparing a crossing for reports <see cref="InstanceCrossingStatus.None"/>.
         /// </summary>
+        /// <remarks>
+        /// With companions (<see cref="ResolveCompanions"/>), the crossing entity's state covers the group: it is not
+        /// ready while a companion's preparation is pending and <see cref="CompanionWaitSeconds"/> has not run out,
+        /// and it then reports that companion's pending status. A companion that failed or was refused does not hold
+        /// it. Asked about a companion, it reports that companion's own preparation, with its leader's direction.
+        /// </remarks>
         /// <param name="entity">An entity this worker simulates.</param>
         /// <param name="state">The crossing's state.</param>
         public bool TryGetPreparation(NetworkIdentity entity, out InstanceCrossingState state)
         {
-            if (entity == null || !_crossings.TryGetValue(entity.NetId, out var crossing))
+            if (entity != null && _crossings.TryGetValue(entity.NetId, out var crossing))
             {
-                state = default;
-                return false;
+                state = StateOf(crossing);
+                return state.IsReady;
             }
-            state = StateOf(crossing);
-            return state.IsReady;
+            if (entity != null && _leaderOf.TryGetValue(entity.NetId, out var leaderId) && _crossings.TryGetValue(leaderId, out var led))
+            {
+                var companion = FindCompanion(led, entity);
+                if (companion != null)
+                {
+                    state = StateOf(companion, led.Leaving);
+                    return state.IsReady;
+                }
+            }
+            state = default;
+            return false;
         }
 
         private bool IsRequested(ulong netId)
@@ -192,17 +273,30 @@ namespace Nebula
             ExpiredRequests.Clear();
         }
 
-        private static InstanceCrossingState StateOf(Crossing crossing)
+        private InstanceCrossingState StateOf(Crossing crossing)
         {
-            var status = StatusOf(crossing);
-            var error = status == InstanceCrossingStatus.Failed ? crossing.Transfer?.Error : null;
-            return new InstanceCrossingState(status, crossing.Leaving, error);
+            var own = OwnStatusOf(crossing);
+            if (own == InstanceCrossingStatus.Ready)
+            {
+                // Ready alone: the group is ready unless a companion is still pending and the wait has not run out.
+                var pending = PendingCompanion(crossing);
+                if (pending != null) return StateOf(pending, crossing.Leaving);
+            }
+            var error = own == InstanceCrossingStatus.Failed ? crossing.Transfer?.Error : null;
+            return new InstanceCrossingState(own, crossing.Leaving, error);
         }
 
-        private static InstanceCrossingStatus StatusOf(Crossing crossing)
+        private InstanceCrossingStatus StatusOf(Crossing crossing) => StateOf(crossing).Status;
+
+        /// <summary>The crossing entity's own preparation, without its companions.</summary>
+        private static InstanceCrossingStatus OwnStatusOf(Crossing crossing)
         {
             if (crossing.Blocked == InstanceCrossingStatus.Refused || crossing.Blocked == InstanceCrossingStatus.NotRequested) return crossing.Blocked;
-            var transfer = crossing.Transfer;
+            return TransferStatus(crossing.Transfer, crossing.Blocked);
+        }
+
+        private static InstanceCrossingStatus TransferStatus(InstanceTransfer transfer, InstanceCrossingStatus blocked)
+        {
             // A transfer finished without an error was committed by someone else: nothing is prepared now.
             if (transfer != null && (!transfer.Finished || transfer.Error != null))
             {
@@ -211,7 +305,34 @@ namespace Nebula
                 if (!transfer.WorkerReady) return transfer.WorkerContentPending ? InstanceCrossingStatus.PendingContent : InstanceCrossingStatus.PendingWorker;
                 return InstanceCrossingStatus.PendingClient;
             }
-            return crossing.Blocked == InstanceCrossingStatus.None ? InstanceCrossingStatus.NoDestination : crossing.Blocked;
+            return blocked == InstanceCrossingStatus.None ? InstanceCrossingStatus.NoDestination : blocked;
+        }
+
+        private static InstanceCrossingState StateOf(Companion companion, bool leaving)
+        {
+            if (companion.Blocked != InstanceCrossingStatus.None)
+                return new InstanceCrossingState(companion.Blocked, leaving, companion.Blocked == InstanceCrossingStatus.Failed ? companion.Error : null);
+            var status = TransferStatus(companion.Transfer, InstanceCrossingStatus.None);
+            return new InstanceCrossingState(status, leaving, status == InstanceCrossingStatus.Failed ? companion.Transfer?.Error : null);
+        }
+
+        private static bool IsPending(InstanceCrossingStatus status) => status == InstanceCrossingStatus.PendingWorker ||
+            status == InstanceCrossingStatus.PendingContent || status == InstanceCrossingStatus.PendingClient;
+
+        /// <summary>The first companion the group still waits for, or null when none holds it.</summary>
+        private Companion PendingCompanion(Crossing crossing)
+        {
+            if (crossing.Companions.Count == 0) return null;
+            if (crossing.ReadySince >= 0 && Now - crossing.ReadySince >= Mathf.Max(0, CompanionWaitSeconds)) return null;
+            foreach (var companion in crossing.Companions)
+                if (IsPending(StateOf(companion, crossing.Leaving).Status)) return companion;
+            return null;
+        }
+
+        private static Companion FindCompanion(Crossing crossing, NetworkIdentity entity)
+        {
+            foreach (var companion in crossing.Companions) if (companion.Entity == entity) return companion;
+            return null;
         }
 
         /// <summary>An entity's position in absolute coordinates, read in its scope's own space (out of any physics frame).</summary>
@@ -228,6 +349,8 @@ namespace Nebula
         private void Cross(NebulaWorker worker, NetworkIdentity entity)
         {
             if (Template == null) return;
+            // A companion moves with its leader: it does not cross on its own while its leader's crossing is live.
+            if (_leaderOf.Count > 0 && IsLedCompanion(entity)) return;
             string key = ResolveKey != null ? ResolveKey(entity) : Personal ? entity.OwnerIdentity : SharedKey;
             if (string.IsNullOrEmpty(key)) return;
             ulong scope = NebulaWorker.InstanceKey(Template.TemplateId + "/" + key);
@@ -249,9 +372,16 @@ namespace Nebula
             bool requested = IsRequested(entity.NetId);
             var nearby = Interior;
             nearby.Expand(Mathf.Max(0, PreparationDistance) * 2);
-            if (!privateSide && !requested && !nearby.Contains(local)) { _crossings.Remove(entity.NetId); return; }
+            if (!privateSide && !requested && !nearby.Contains(local))
+            {
+                if (_crossings.TryGetValue(entity.NetId, out var gone)) ReleaseCompanions(gone);
+                _crossings.Remove(entity.NetId);
+                return;
+            }
             if (!_crossings.TryGetValue(entity.NetId, out var crossing))
                 _crossings.Add(entity.NetId, crossing = new Crossing());
+            crossing.Entity = entity;
+            if (crossing.Leaving != privateSide) ReleaseCompanions(crossing);
             crossing.Leaving = privateSide;
             bool allowed = privateSide || CanEnter == null || CanEnter(entity, key);
             // Where the entity stands on the other side, in that scope's own frame.
@@ -277,6 +407,10 @@ namespace Nebula
                         crossing.Transfer = worker.PrepareTransfer(entity, destination);
                 }
             }
+            if (crossing.Blocked == InstanceCrossingStatus.None && crossing.Transfer != null) PrepareCompanions(worker, entity, crossing, key);
+            else ReleaseCompanions(crossing);
+            if (OwnStatusOf(crossing) != InstanceCrossingStatus.Ready) crossing.ReadySince = -1;
+            else if (crossing.ReadySince < 0) crossing.ReadySince = Now;
             if (StatusOf(crossing) != InstanceCrossingStatus.Ready) crossing.ReadyRaised = false;
             else if (!crossing.ReadyRaised)
             {
@@ -285,10 +419,11 @@ namespace Nebula
             }
             if (inside != privateSide)
             {
-                if (allowed && worker.TryCommitTransfer(crossing.Transfer, there, entity.transform.rotation))
+                if (allowed && Commit(worker, entity, crossing, there))
                 {
                     crossing.Transfer = null;
                     crossing.ReadyRaised = false;
+                    crossing.ReadySince = -1;
                 }
                 else if (crossing.HasPosition)
                     // Held where it last stood, read back through its scope's frame as it is now: an origin shift
@@ -297,6 +432,139 @@ namespace Nebula
             }
             crossing.LastPosition = AbsoluteOf(entity);
             crossing.HasPosition = true;
+        }
+
+        /// <summary>Whether <paramref name="entity"/> is a companion of a crossing entity this worker still simulates.</summary>
+        private bool IsLedCompanion(NetworkIdentity entity)
+        {
+            if (!_leaderOf.TryGetValue(entity.NetId, out var leaderId)) return false;
+            if (_crossings.TryGetValue(leaderId, out var led) && led.Entity != null && led.Entity.IsSpawned && led.Entity.HasAuthority &&
+                FindCompanion(led, entity) != null) return true;
+            _leaderOf.Remove(entity.NetId);
+            return false;
+        }
+
+        /// <summary>Ask the game for the entity's companions, and prepare each one into the entity's own destination.</summary>
+        private void PrepareCompanions(NebulaWorker worker, NetworkIdentity leader, Crossing crossing, string key)
+        {
+            Resolved.Clear();
+            if (ResolveCompanions != null)
+            {
+                try { ResolveCompanions(leader, Resolved); }
+                catch (Exception e)
+                {
+                    NebulaLog.Error($"InstanceBoundary '{name}': a ResolveCompanions handler threw: {e}");
+                    Resolved.Clear();
+                }
+            }
+            // Companions no longer reported are released.
+            for (int i = crossing.Companions.Count - 1; i >= 0; i--)
+            {
+                var companion = crossing.Companions[i];
+                if (companion.Entity != null && Resolved.Contains(companion.Entity)) continue;
+                if (companion.Entity != null) _leaderOf.Remove(companion.Entity.NetId);
+                crossing.Companions.RemoveAt(i);
+            }
+            foreach (var entity in Resolved)
+            {
+                if (entity == null || entity == leader || FindCompanion(crossing, entity) != null) continue;
+                // One leader per companion: the first to claim it keeps it while its crossing is live.
+                if (_leaderOf.TryGetValue(entity.NetId, out var other) && other != leader.NetId && IsLedCompanion(entity)) continue;
+                // An entity crossing with companions of its own is nobody's companion: groups do not nest.
+                if (_crossings.TryGetValue(entity.NetId, out var own) && own.Companions.Count > 0) continue;
+                _crossings.Remove(entity.NetId);
+                _leaderOf[entity.NetId] = leader.NetId;
+                crossing.Companions.Add(new Companion { Entity = entity });
+            }
+            Resolved.Clear();
+
+            var lead = crossing.Transfer;
+            foreach (var companion in crossing.Companions)
+            {
+                var entity = companion.Entity;
+                companion.Blocked = InstanceCrossingStatus.None;
+                companion.Error = null;
+                string problem = CompanionProblem(entity, leader);
+                if (problem != null)
+                {
+                    companion.Transfer = null;
+                    companion.Blocked = InstanceCrossingStatus.Failed;
+                    companion.Error = problem;
+                    continue;
+                }
+                if (!crossing.Leaving && CanEnter != null && !CanEnter(entity, key))
+                {
+                    companion.Transfer = null;
+                    companion.Blocked = InstanceCrossingStatus.Refused;
+                    continue;
+                }
+                if (lead.Finished) { companion.Transfer = null; continue; }
+                // Prepared again only alongside a new preparation of the leader's: a companion whose preparation
+                // failed stays failed, and is left behind, until the leader's own is renewed.
+                if (companion.Transfer != null && companion.PreparedFor == lead && companion.Transfer.Destination == lead.Destination &&
+                    !(companion.Transfer.Finished && companion.Transfer.Error == null)) continue;
+                companion.PreparedFor = lead;
+                try { companion.Transfer = worker.PrepareTransfer(entity, lead.Destination); }
+                catch (ArgumentException e)
+                {
+                    companion.Transfer = null;
+                    companion.Blocked = InstanceCrossingStatus.Failed;
+                    companion.Error = e.Message;
+                }
+            }
+        }
+
+        /// <summary>Why <paramref name="entity"/> cannot cross with <paramref name="leader"/>, or null when it can.</summary>
+        private static string CompanionProblem(NetworkIdentity entity, NetworkIdentity leader)
+        {
+            if (entity == null || !entity.IsSpawned || !entity.HasAuthority) return "The companion is not simulated by the crossing entity's worker";
+            if (entity.IsSceneEntity) return "Scene entities cannot leave their authored scene";
+            if (entity.ContainerPinned) return "The companion is pinned to its container";
+            if (entity.InstanceId != leader.InstanceId) return "The companion is in another scope";
+            return null;
+        }
+
+        private void ReleaseCompanions(Crossing crossing)
+        {
+            if (crossing.Companions.Count == 0) return;
+            foreach (var companion in crossing.Companions)
+                if (companion.Entity != null && crossing.Entity != null && _leaderOf.TryGetValue(companion.Entity.NetId, out var leader) && leader == crossing.Entity.NetId)
+                    _leaderOf.Remove(companion.Entity.NetId);
+            crossing.Companions.Clear();
+        }
+
+        /// <summary>
+        /// Commit the crossing entity with every companion that is ready, as one group, and report the ones left
+        /// behind. With no companions it is the single commit the boundary has always made.
+        /// </summary>
+        private bool Commit(NebulaWorker worker, NetworkIdentity entity, Crossing crossing, Vector3 there)
+        {
+            if (crossing.Companions.Count == 0) return worker.TryCommitTransfer(crossing.Transfer, there, entity.transform.rotation);
+            if (StatusOf(crossing) != InstanceCrossingStatus.Ready) return false; // waiting for a companion
+            Group.Clear();
+            LeftBehind.Clear();
+            Group.Add(crossing.Transfer);
+            foreach (var companion in crossing.Companions)
+            {
+                if (companion.Blocked == InstanceCrossingStatus.None && companion.Transfer != null && companion.Transfer.Ready) Group.Add(companion.Transfer);
+                else LeftBehind.Add(companion);
+            }
+            bool committed = Group.Count == 1
+                ? worker.TryCommitTransfer(crossing.Transfer, there, entity.transform.rotation)
+                // One displacement for the whole group, from the source scope's space to the destination's: the leader's.
+                : worker.TryCommitTransfers(Group, there - entity.ToScope(entity.transform.position));
+            Group.Clear();
+            if (!committed) { LeftBehind.Clear(); return false; }
+            var handler = CompanionLeftBehind;
+            foreach (var companion in LeftBehind)
+            {
+                if (handler == null || companion.Entity == null) continue;
+                try { handler(entity, companion.Entity, StateOf(companion, crossing.Leaving)); }
+                catch (Exception e) { NebulaLog.Error($"InstanceBoundary '{name}': a CompanionLeftBehind handler threw: {e}"); }
+            }
+            LeftBehind.Clear();
+            ReleaseCompanions(crossing);
+            return true;
         }
 
         private void RaiseCrossingReady(NetworkIdentity entity, Crossing crossing)

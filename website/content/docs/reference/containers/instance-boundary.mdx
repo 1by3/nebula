@@ -13,7 +13,7 @@ Prepares a private area as players approach and crosses its bounds without chang
 
 The boundary works in the scope around it, its [`HostInstanceId`](#hostinstanceid): the public world when it stands in the shared scene, or the scope of the container it is parented under, such as a chunk of a scoped grid whose content the game builds at runtime. Only entities in that scope, or in the boundary's own instance, cross it, and an occupant who leaves returns to a container of that scope. Positions are compared in absolute coordinates, so a host scope with an origin frame of its own crosses at the same place on every worker.
 
-By default a crossing is prepared whenever a player is near the boundary, and an occupant is prepared to leave for as long as it is inside. [`RequireRequest`](#requirerequest) and [`Request`](#request) let the game decide when instead, for example while a door is open. [`TryGetPreparation`](#trygetpreparation) and [`CrossingReady`](#crossingready) report when a crossing can commit, and [`ExitMargin`](#exitmargin) keeps an occupant standing at the face from leaving and entering again on every tick. All of it runs on the worker that simulates the entity.
+By default a crossing is prepared whenever a player is near the boundary, and an occupant is prepared to leave for as long as it is inside. [`RequireRequest`](#requirerequest) and [`Request`](#request) let the game decide when instead, for example while a door is open. [`TryGetPreparation`](#trygetpreparation) and [`CrossingReady`](#crossingready) report when a crossing can commit, and [`ExitMargin`](#exitmargin) keeps an occupant standing at the face from leaving and entering again on every tick. [`ResolveCompanions`](#resolvecompanions) names entities that cross together with a player, such as an item it holds, and the group commits as one. All of it runs on the worker that simulates the entity.
 
 ## Fields
 
@@ -89,6 +89,26 @@ public float ExitMargin;
 
 How far outside [`Interior`](#interior), in meters on each side, an occupant must stand before it leaves the instance. Entry still happens at [`Interior`](#interior)'s face, so an entity standing at the face does not leave and enter again on every tick. 0, the default, leaves at the face itself. Within the margin the occupant is still in the instance and moves against its colliders, so the template's parts and collision content should cover the margin too.
 
+### ResolveCompanions [#resolvecompanions]
+
+```csharp
+public Action<NetworkIdentity, List<NetworkIdentity>> ResolveCompanions;
+```
+
+Server-side: fill the list with the entities that must cross together with the one crossing, its companions: an item it holds, a pet, a cart it tows, an escort. Called on the worker that simulates the crossing entity, once a tick while its crossing is being prepared, with an empty list. When unset, or when it adds nothing, the entity crosses alone, as before.
+
+The boundary prepares a transfer for each companion into the crossing entity's own destination, the crossing's readiness ([`TryGetPreparation`](#trygetpreparation), [`CrossingReady`](#crossingready)) covers the whole group, and the group commits in one [`NebulaWorker.TryCommitTransfers`](/docs/reference/worker/nebula-worker#trycommittransfers) on the tick the crossing entity passes the face: every member arrives in the same destination container, on the same worker, with its identity and absolute pose kept. A companion moves with its leader and does not cross on its own while it is one.
+
+A companion that cannot cross is left behind, and the group does not wait for it: one this worker does not simulate, one in another scope, a pinned or scene entity, one [`CanEnter`](#canenter) refuses, or one whose preparation failed (refused for capacity, its content unavailable, expired). A companion whose preparation is still pending holds the group for up to [`CompanionWaitSeconds`](#companionwaitseconds) after the crossing entity itself is ready; after that it is left behind too. [`CompanionLeftBehind`](#companionleftbehind) reports each one when the group commits, so the game can drop a held item, for example.
+
+### CompanionWaitSeconds [#companionwaitseconds]
+
+```csharp
+public float CompanionWaitSeconds = 5;
+```
+
+How long, in unscaled seconds, a crossing waits for a companion whose preparation is still pending once the crossing entity's own preparation is ready ([`ResolveCompanions`](#resolvecompanions)). After that the entity crosses without it. 0 never waits. A companion that failed or was refused never holds the crossing.
+
 ### OriginResolution [#originresolution]
 
 ```csharp
@@ -133,6 +153,14 @@ public event Action<NetworkIdentity, InstanceCrossingState> CrossingReady;
 
 Raised on this worker once when an entity's crossing becomes ready to commit, before the tick commits it. It is raised again for a later crossing, after a commit or after the crossing stopped being ready. The state says which way the crossing leads. Handlers run inside the worker's tick and must not throw.
 
+### CompanionLeftBehind [#companionleftbehind]
+
+```csharp
+public event Action<NetworkIdentity, NetworkIdentity, InstanceCrossingState> CompanionLeftBehind;
+```
+
+Raised on this worker when a crossing entity committed without one of its companions ([`ResolveCompanions`](#resolvecompanions)): the crossing entity, the companion left behind, and the companion's state at the commit, which says why ([`InstanceCrossingStatus.Refused`](/docs/reference/containers/instance-crossing-status#refused), [`InstanceCrossingStatus.Failed`](/docs/reference/containers/instance-crossing-status#failed) with its [`InstanceCrossingState.Error`](/docs/reference/containers/instance-crossing-state#error), or a pending status when the wait ran out). The companion stays where it was, in the scope the entity left. Handlers run inside the worker's tick and must not throw.
+
 ## Methods
 
 ### Request [#request]
@@ -157,6 +185,8 @@ public bool TryGetPreparation(NetworkIdentity entity, out InstanceCrossingState 
 ```
 
 Whether `entity`'s crossing is prepared and ready to commit, with its `state`: which way it leads, and why it is not ready when it is not. The state is the one the worker's last tick found, with the preparation's progress since then. An entity the boundary is not preparing a crossing for reports [`InstanceCrossingStatus.None`](/docs/reference/containers/instance-crossing-status#none).
+
+With companions ([`ResolveCompanions`](#resolvecompanions)), the crossing entity's state covers the group: it is not ready while a companion's preparation is pending and [`CompanionWaitSeconds`](#companionwaitseconds) has not run out, and it then reports that companion's pending status. A companion that failed or was refused does not hold it. Asked about a companion, it reports that companion's own preparation, with its leader's direction.
 
 | Parameter | Description |
 | --- | --- |

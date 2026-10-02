@@ -196,6 +196,52 @@ boundary.CrossingReady += (player, state) =>
 
 A player standing exactly at the face of `Interior` can enter on one tick and leave on the next, because the same face is used both ways. Set `ExitMargin` to give the way out some slack: an occupant then leaves only once they are that many meters outside `Interior`. Entry still happens at `Interior`'s face. A margin of half a meter to a meter is usually enough. Within the margin the occupant is still in the instance, and moves against the instance's colliders, not the public ones. Make the template part's bounds and its collision content cover the margin as well.
 
+## Cross with companions
+
+The boundary only crosses entities a player owns, one at a time. An entity no player owns, such as an item the player is carrying, a pet, a cart they tow or an escort, would stay behind at the face. To take such entities along, set `ResolveCompanions` on every worker that can simulate the entrance, and add the entities that must cross with the player to the list it's given:
+
+```csharp title="CarryThroughDoors.cs"
+using Nebula;
+using UnityEngine;
+
+[RequireComponent(typeof(InstanceBoundary))]
+public sealed class CarryThroughDoors : MonoBehaviour
+{
+    private InstanceBoundary boundary;
+
+    private void Awake()
+    {
+        boundary = GetComponent<InstanceBoundary>();
+        boundary.ResolveCompanions = (player, companions) =>
+        {
+            var held = HeldItemOf(player);
+            if (held != null) companions.Add(held);
+        };
+        boundary.CompanionLeftBehind += (player, item, state) => Drop(player, item);
+    }
+}
+```
+
+`HeldItemOf` and `Drop` stand for your own game code. The worker calls `ResolveCompanions` once a tick while the player's crossing is being prepared, with an empty list. Then:
+
+- **Each companion is prepared too,** into the player's own destination. `TryGetPreparation` and `CrossingReady` cover the whole group: the player's crossing isn't ready until every companion's is, and while one is pending, the player's state reports that companion's status. Call `TryGetPreparation` with a companion to see its own state.
+- **The group commits as one,** with `TryCommitTransfers`, on the tick the player crosses the face. Every member keeps its network ID and absolute pose and arrives in the same destination container, so it ends up on the same worker, whichever worker owns the destination.
+- **A companion moves with the player.** It doesn't cross on its own while it's a companion, even if it's a player's pawn standing inside `Interior`.
+- **Requests and the exit margin are the player's.** With `RequireRequest` on, the player's request prepares the companions as well. The player's position alone decides when the group crosses, so a carried item can be past the face, inside the margin, without leaving.
+
+A companion that can't cross is **left behind**, and the player crosses without it. `CompanionLeftBehind` reports each one when the group commits, with the companion's state to say why:
+
+| Why | `Status` |
+| --- | --- |
+| `CanEnter` refused it. Entry checks each companion as well as the player. | `Refused` |
+| Its preparation failed: the destination was at capacity or refused the transfer, its content was unavailable, or the preparation expired. | `Failed`, with `Error` |
+| It isn't simulated by the player's worker, it's in another scope, or it's a pinned or authored scene entity. | `Failed`, with `Error` |
+| Its preparation was still pending `CompanionWaitSeconds` (5 by default) after the player's own was ready. | the pending status |
+
+A failed or refused companion never holds the player back. A pending one holds the player at the face, as an unready crossing does, until it's ready or `CompanionWaitSeconds` runs out. Set it to `0` to never wait. A companion that failed is prepared again only alongside a new preparation of the player's, so it doesn't make the player wait over and over.
+
+All members must be simulated by the player's worker when the group crosses, because `TryCommitTransfers` only moves its own entities. Keep a carried item in the same container as its holder, or at least on the same worker. Groups don't nest: an entity crossing with companions of its own isn't anyone's companion. With no `ResolveCompanions`, or when it adds nothing, the boundary behaves exactly as before.
+
 ## Choose who enters together
 
 With `Personal` enabled, the boundary uses the player's authenticated `OwnerIdentity` as its key. Returning players resolve the same container IDs. With `Personal` disabled, everyone using the same `SharedKey` enters the same instance.
