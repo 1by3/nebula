@@ -190,5 +190,48 @@ namespace Nebula
         /// <summary>The control-plane container id of a chunk: <see cref="RuntimeId"/> in the <c>rt_</c> form.</summary>
         public static string ContainerId(string scopeKey, Vector3Int coord) =>
             ScopeKeys.RuntimeIdPrefix + RuntimeId(scopeKey, coord).ToString(CultureInfo.InvariantCulture);
+
+        /// <summary>The 64-bit id in a runtime container id (<c>rt_&lt;id&gt;</c>); false for any other form.</summary>
+        public static bool TryParseContainerId(string containerId, out ulong runtimeId)
+        {
+            runtimeId = 0;
+            string prefix = ScopeKeys.RuntimeIdPrefix;
+            return containerId != null && containerId.Length > prefix.Length && containerId.StartsWith(prefix, StringComparison.Ordinal)
+                && ulong.TryParse(containerId.Substring(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out runtimeId);
+        }
+
+        /// <summary>
+        /// The chunk a persisted record was saved in, from the record alone, so any process can place it without
+        /// having named the chunk or holding its lease. True when the record's <see cref="PersistedEntityRecord.ContainerId"/>
+        /// is a runtime container id and either:
+        /// <list type="bullet">
+        /// <item>its <see cref="PersistedEntityRecord.PartId"/> is a chunk part id (<c>c/x/y/z</c>) that hashes, with
+        /// the record's scope key, to that very id (<see cref="RuntimeId"/>), so a part id that names another
+        /// container is never trusted; or</item>
+        /// <item>the record is in the public world, whose chunk ids are the pinned packing and always unpack.</item>
+        /// </list>
+        /// False for a record in no container, inside a carrier, in a static container or an instance's part, and for
+        /// a scoped record saved before part ids were recorded, whose part is unknown: place that one with
+        /// <c>RuntimeGrid.TryFindCoordNear</c> and an approximate position. In the public world every runtime id
+        /// unpacks, so whether the container really was a chunk is for the game to know.
+        /// <c>RuntimeGrid.TryCoordOf(PersistedEntityRecord, out Vector3Int)</c> does the same and also teaches the
+        /// grid the id.
+        /// </summary>
+        public static bool TryCoordOf(PersistedEntityRecord record, out Vector3Int coord)
+        {
+            coord = default;
+            if (record == null || !string.IsNullOrEmpty(record.CarrierKey)) return false;
+            if (!TryParseContainerId(record.ContainerId, out ulong id)) return false;
+            string scopeKey = record.ScopeKey ?? "";
+            if (TryParsePartId(record.PartId, out var parsed) && IsValidCoordinate(parsed) && RuntimeId(scopeKey, parsed) == id)
+            {
+                coord = parsed;
+                return true;
+            }
+            if (scopeKey.Length != 0) return false;
+            InterestGrid.UnpackRegion(id, out int x, out int y, out int z);
+            coord = new Vector3Int(x, y, z);
+            return true;
+        }
     }
 }
