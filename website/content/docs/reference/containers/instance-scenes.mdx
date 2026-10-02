@@ -54,3 +54,43 @@ How far a prepared container's content has loaded, from 0 to 1: the mean of its 
 | Parameter | Description |
 | --- | --- |
 | `container` | A container passed to [`Prepare`](#prepare). |
+
+### KeepDrawn [#keepdrawn]
+
+```csharp
+public static void KeepDrawn(ulong instanceId);
+```
+
+Keep a scope's content drawn on this client while the local pawn is in another scope: the static content [`Prepare`](#prepare) loads for its instance parts, and the content under the `World.ChunkContext.Root` of its scoped grid's chunks. A client normally draws only the pawn's own scope and the public world, and keeps other resident scopes hidden; use this to show the other side of an open doorway. Content created or loaded while the request is live starts drawn.
+
+Requests are counted: match each call with one [`StopKeepingDrawn`](#stopkeepingdrawn). The scope is hidden again only when its last request is withdrawn. Nebula turns on only the renderers it turned off itself, so renderers the game turned off stay off. A request outlives the scope's content: when the content is released Nebula forgets its renderers but keeps the request, so content of the scope prepared again starts drawn.
+
+Rendering only. It loads nothing, and changes no physics scene, interest, ownership or message: content that is not resident on this client stays absent. A worker records the request and ignores it. The public world (`instanceId` 0) is always drawn, so a request for it does nothing.
+
+| Parameter | Description |
+| --- | --- |
+| `instanceId` | The scope's instance ID, as [`Container.InstanceId`](/docs/reference/containers/container#instanceid) reports it. |
+
+### StopKeepingDrawn [#stopkeepingdrawn]
+
+```csharp
+public static bool StopKeepingDrawn(ulong instanceId);
+```
+
+Withdraw one [`KeepDrawn`](#keepdrawn) request for a scope. When it was the last one and the local pawn is in another scope, the scope's content is hidden again. Returns false, and changes nothing, when the scope has no request.
+
+| Parameter | Description |
+| --- | --- |
+| `instanceId` | The scope's instance ID passed to [`KeepDrawn`](#keepdrawn). |
+
+### IsDrawn [#isdrawn]
+
+```csharp
+public static bool IsDrawn(ulong instanceId);
+```
+
+Whether a scope's content is drawn on this client: true for the public world, for the local pawn's scope, and for a scope with a live [`KeepDrawn`](#keepdrawn) request; false for any other scope. Always true on a process that is not a client, which hides nothing.
+
+| Parameter | Description |
+| --- | --- |
+| `instanceId` | A scope's instance ID; 0 is the public world. |
