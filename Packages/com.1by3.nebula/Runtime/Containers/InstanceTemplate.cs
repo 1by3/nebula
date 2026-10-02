@@ -26,6 +26,13 @@ namespace Nebula
         public Part[] Parts = { new Part() };
         /// <summary>Allow occupants to receive public entities within PublicView. Does not enable cross-instance interaction.</summary>
         public bool ObservePublic = true;
+        /// <summary>
+        /// Keep the scope an occupant came from loaded while it is inside: the world around the place it entered, the
+        /// public world or a scoped grid's chunks, stays resident on its client, hidden, so leaving rebuilds nothing.
+        /// Grants no visibility of that scope's entities. Off by default.
+        /// </summary>
+        [Tooltip("Keep the area the player entered from loaded, hidden, while inside, so leaving rebuilds nothing.")]
+        public bool ObserveHost;
         /// <summary>Axis-aligned public observation bounds relative to the instance origin.</summary>
         public Bounds PublicView = new Bounds(Vector3.zero, new Vector3(60, 30, 60));
     }

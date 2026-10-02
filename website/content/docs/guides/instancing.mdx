@@ -47,6 +47,7 @@ Static content prefabs must not contain `NetworkIdentity` components. Spawn netw
 | `Parts[].ContentResource` | A static prefab path, such as `Instances/Apartment`, for `Resources/Instances/Apartment.prefab`. An empty path creates a container with no static content. |
 | `ObservePublic` | Whether occupants receive the bounded public view. Disable it for a fully separate encounter. |
 | `PublicView` | The public observation box relative to the instance origin, shared by the template's parts. |
+| `ObserveHost` | Keep the area the player entered from loaded on their client while they are inside, so leaving rebuilds nothing. Off by default. See [Keep the host loaded while inside](#keep-the-host-loaded-while-inside). |
 | `Interior` | The private crossing volume relative to the boundary's position. |
 | `PreparationDistance` | Distance added on each side of the crossing volume to begin preparation. Increase it if players can reach the entrance before loading finishes. |
 | `Personal` | Use `OwnerIdentity` as the destination key when enabled and no custom resolver is set. |
@@ -121,6 +122,7 @@ Your game is responsible for the rest:
 - **Keep the entrance chunk leased and the host scope active while the instance is occupied.** A scoped grid leases chunks around the players standing in it, and players inside the instance are not standing in it. Pin the entrance chunk on the grid's allocator (`RuntimeGridAllocator.AddPin`) while anyone is inside, and keep the scope from retiring.
 - **Keep the boundary on the worker that simulates the occupants.** The boundary runs on each worker that has built the chunk's content. The instance is leased first by the worker that prepared it.
 - **Turn `ObservePublic` off.** It observes the public world, not the host scope, so occupants cannot see out into the grid. The boundary logs a warning when it is on.
+- **Turn `ObserveHost` on** to keep the grid's chunks around the entrance loaded, hidden, while players are inside. Without it, the client unloads them shortly after a player enters and loads them again after the player leaves. See [Keep the host loaded while inside](#keep-the-host-loaded-while-inside).
 - **Close the view between the two sides.** The host scope's scenery and the instance's content render in different origin frames on the client, so a player inside cannot look out through the doorway. Put a door, a turn, or a dark passage at the crossing.
 
 ## Prepare crossings on request
@@ -280,6 +282,25 @@ This is an observation-only connection. It does not grant cross-instance collisi
 
 `PublicView` selects public entities by position in a box. It is not a camera frustum, line-of-sight test, or a window-shaped portal. Within the private scope, entities remain eligible for replication regardless of distance; distance affects update frequency. Public-to-private and private-to-other-private visibility are not configurable through this template.
 
+## Keep the host loaded while inside
+
+The host scope is the scope a player was in before they entered the instance: the public world, a scoped grid, or another instance. By default, an occupant's client is sent no container assignments of the host scope. About one second after a player enters, the client unloads the host's containers and the content your game built in them. When the player leaves, the client loads that area again from nothing, which can cause a visible hitch.
+
+To keep the host loaded, enable `ObserveHost` on the template. If you create the scope yourself, set `ScopeDefinition.ObserveHost` instead. While the player is inside:
+
+- The gateway keeps sending the client the host's containers that were around the player when they entered. The area is the same one the player had loaded at the entrance, centered where they left the host. It doesn't follow the player through the instance, so it costs no more than what the client already had.
+- The client keeps those containers and their content in memory. A scoped grid's chunks are hidden while the player is in another scope, the same way an instance's static content is hidden until a player enters it. The public world is drawn as it always was.
+- The player receives none of the host's entities. Use `ObservePublic` to see public entities from inside.
+- Physics stays separate. The host's colliders don't affect anything in the instance.
+
+When the player leaves, the area is already loaded, so nothing is rebuilt. After that, the host's containers are unloaded as the player moves away, like any other.
+
+`ObserveHost` keeps one host. In an instance entered from another instance, the client keeps the outer instance's area around the inner entrance, not the world outside the outer instance. When the player returns to the outer instance, the gateway sends its host's area again.
+
+The gateway remembers where a player entered only for the current connection. A player who joins or reconnects while inside an instance has no host to keep until they leave and enter again.
+
+If your game builds a chunk's content after `NebulaChunks.Loaded` returns, check `NebulaChunks.IsDrawn` and keep new renderers hidden while it is `false`. Otherwise the client hides them only when the player next moves into another container.
+
 ## Keep gameplay in the correct scope
 
 Use `NetworkIdentity.PhysicsScene` for movement raycasts, sweeps, and overlaps. Global `Physics` queries inspect the public physics scene. For a loaded instance ID, use `InstanceScenes.PhysicsFor(instanceId)`.
@@ -373,6 +394,7 @@ See [Running locally](/docs/getting-started/running-locally) for build paths and
 | Floor or wall collision disappears inside | Include those colliders in private static content and use scoped physics queries. |
 | Interior surfaces flicker | Remove overlapping visible geometry between the public shell and private prefab. |
 | Hallway players disappear from inside | Enable `ObservePublic` and check `PublicView` relative to the instance origin. |
+| The area outside pops in again after a player leaves | Enable `ObserveHost` on the template, so the client keeps the host loaded while the player is inside. |
 | Saved furniture is missing or shared across copies | Check stable template/part/key values, `PersistentEntity`, and instance-specific persistence keys. |
 
 ## API and protocol reference

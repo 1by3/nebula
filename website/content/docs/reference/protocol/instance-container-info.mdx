@@ -62,6 +62,14 @@ public string PartId = "";
 
 The scope part this container is ([`ScopePart.PartId`](/docs/reference/control-plane/scope-part#partid)), carried so a role that was handed the row — a client, a gateway — can say *which* part of the scope it holds without inverting the hash that named it. A scoped chunk's part id is its coordinate ([`ChunkKeys.PartId`](/docs/reference/world/chunk-keys#partid)), which is how every role rebuilds the chunk grid's coordinate map from lease rows alone. Empty on a row written before the part id was recorded, and on a public-world container.
 
+### ObserveHost [#observehost]
+
+```csharp
+public bool ObserveHost;
+```
+
+Occupants keep the container rows of the scope they came from, around where they left it ([`ScopeDefinition.ObserveHost`](/docs/reference/control-plane/scope-definition#observehost)). Only the gateway acts on it: it is stored on the lease row but not written by [`Write`](#write), so what a client is sent is unchanged.
+
 ## Methods
 
 ### Write [#write]

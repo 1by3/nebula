@@ -57,6 +57,14 @@ public const double HoldSeconds = 10;
 
 The longest an entity's updates wait for a container row this gateway does not have. The control plane delivers a new lease in one long-poll round; past this bound the updates are applied anyway and the entity fails closed exactly as an unknown container always did.
 
+### MaxHostViews [#maxhostviews]
+
+```csharp
+public const int MaxHostViews = 4;
+```
+
+Most scopes a client's pawn has left that the gateway remembers where it stood in. Only the last one is ever observed; the earlier ones are what lets the scope before it be observed again after the pawn goes back (an instance entered from another instance, and left again).
+
 ### MaxFollowedPassengers [#maxfollowedpassengers]
 
 ```csharp

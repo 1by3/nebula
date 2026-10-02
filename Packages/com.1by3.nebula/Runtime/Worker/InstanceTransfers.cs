@@ -98,6 +98,7 @@ namespace Nebula
             {
                 Kind = ScopeKind.Parts,
                 ObservePublic = template.ObservePublic,
+                ObserveHost = template.ObserveHost,
                 ObservationCenter = view.center,
                 ObservationSize = view.size,
             };

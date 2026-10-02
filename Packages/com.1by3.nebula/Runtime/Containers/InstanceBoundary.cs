@@ -313,7 +313,7 @@ namespace Nebula
             if (host != 0 && Template.ObservePublic && !_warnedObserve)
             {
                 _warnedObserve = true;
-                NebulaLog.Warn($"InstanceBoundary '{name}' stands in a scoped grid, but its template '{Template.TemplateId}' has ObservePublic on: occupants would see the public world, not this scope. Turn ObservePublic off for boundaries in scoped grids.");
+                NebulaLog.Warn($"InstanceBoundary '{name}' stands in a scoped grid, but its template '{Template.TemplateId}' has ObservePublic on: occupants would see the public world, not this scope. Turn ObservePublic off for boundaries in scoped grids, and turn ObserveHost on to keep this scope's ground loaded while occupants are inside.");
             }
             try
             {
