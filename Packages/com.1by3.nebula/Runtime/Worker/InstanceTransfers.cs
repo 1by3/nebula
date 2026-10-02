@@ -30,6 +30,8 @@ namespace Nebula
         internal uint Epoch;
         internal InstancePreparationMsg Message;
         internal bool ClientReady, WorkerReady;
+        /// <summary>This worker owns the destination and waits for its content's <see cref="IInstanceContentLoader"/>s.</summary>
+        internal bool WorkerContentPending;
         internal float Deadline;
     }
 
@@ -38,6 +40,15 @@ namespace Nebula
         private uint _nextInstanceRequest;
         private readonly Dictionary<uint, InstanceTransfer> _instanceTransfers = new Dictionary<uint, InstanceTransfer>();
         private readonly List<uint> _expiredInstanceRequests = new List<uint>();
+
+        /// <summary>A preparation another worker asked of this one, answered once the destination's content has loaded.</summary>
+        private struct PendingContentAck
+        {
+            public Peer Peer;
+            public InstancePreparationMsg Message;
+            public float GiveUpAt;
+        }
+        private readonly List<PendingContentAck> _pendingContentAcks = new List<PendingContentAck>();
 
         /// <summary>Stable identifier for an instance or one of its containers. Include a run ID in the key for temporary instances.</summary>
         /// <remarks>The derivation itself is <see cref="ScopeKeys.Hash"/>, so a gateway, an orchestrator or a
@@ -228,7 +239,7 @@ namespace Nebula
                 Destination = destination.Ref, SourceWorker = WorkerIndex, LeaseEpoch = destination.LeaseEpoch };
             _instanceTransfers.Add(transfer.Message.RequestId, transfer);
             if (destination.OwnerWorkerId == WorkerId)
-                transfer.WorkerReady = InstanceScenes.Prepare(destination);
+                PrepareHere(transfer);
             else if (_workerPeersById.TryGetValue(destination.OwnerWorkerId, out var peer) && peer.HelloReceived)
             {
                 _writer.Reset(); transfer.Message.Write(_writer, MsgId.InstancePrepare);
@@ -274,26 +285,97 @@ namespace Nebula
         private bool TransferScopeAdmits(Container destination) =>
             ScopeLifecycle.Admits(ControlPlane, destination.ScopeKey, out _);
 
+        /// <summary>
+        /// Prepare a destination this worker owns: its content is created, and the worker is ready once the content
+        /// has loaded (<see cref="InstanceScenes.ContentState"/>). Content that is still loading is polled each tick by
+        /// <see cref="UpdateInstancePreparations"/>; content with no loaders is ready at once.
+        /// </summary>
+        private static void PrepareHere(InstanceTransfer transfer)
+        {
+            if (!InstanceScenes.Prepare(transfer.Destination)) return;
+            ApplyContentState(transfer, InstanceScenes.ContentState(transfer.Destination));
+        }
+
+        private static void ApplyContentState(InstanceTransfer transfer, InstanceContentState state)
+        {
+            transfer.WorkerContentPending = state == InstanceContentState.Loading;
+            if (state == InstanceContentState.Ready) transfer.WorkerReady = true;
+            else if (state == InstanceContentState.Failed) transfer.Error = "Destination content failed to load";
+        }
+
         private void UpdateInstancePreparations()
         {
             _expiredInstanceRequests.Clear();
             foreach (var pair in _instanceTransfers)
             {
                 var transfer = pair.Value;
-                if (Time.unscaledTime < transfer.Deadline && ValidTransfer(transfer)) continue;
-                transfer.Error = "Preparation expired, container authority changed, or destination scope stopped admitting";
+                if (Time.unscaledTime < transfer.Deadline && ValidTransfer(transfer))
+                {
+                    if (transfer.WorkerContentPending && transfer.Error == null)
+                        ApplyContentState(transfer, InstanceScenes.ContentState(transfer.Destination));
+                    continue;
+                }
+                if (transfer.WorkerContentPending && Time.unscaledTime >= transfer.Deadline)
+                {
+                    transfer.Error = "Destination content did not finish loading before the preparation expired";
+                    NebulaLog.Warn($"preparation of entity {transfer.Entity?.NetId} into {transfer.Destination?.ContainerId} expired while its content was still loading ({InstanceScenes.ContentProgress(transfer.Destination):P0})");
+                }
+                else transfer.Error = "Preparation expired, container authority changed, or destination scope stopped admitting";
+                transfer.WorkerContentPending = false;
                 transfer.Finished = true;
                 _expiredInstanceRequests.Add(pair.Key);
             }
             foreach (var id in _expiredInstanceRequests) _instanceTransfers.Remove(id);
+            if (_pendingContentAcks.Count > 0) UpdatePendingContentAcks();
         }
+
+        /// <summary>Answer the preparations other workers asked of this one whose content has now loaded, failed, or become invalid.</summary>
+        private void UpdatePendingContentAcks()
+        {
+            for (int i = _pendingContentAcks.Count - 1; i >= 0; i--)
+            {
+                var pending = _pendingContentAcks[i];
+                // The source worker is gone: nobody is left to answer.
+                var peer = pending.Peer;
+                if (!_workerPeersById.TryGetValue(peer.Id, out var current) || current != peer) { _pendingContentAcks.RemoveAt(i); continue; }
+                var message = pending.Message;
+                var destination = message.Destination.Resolve();
+                var state = ValidPreparationHere(destination, message) ? InstanceScenes.ContentState(destination) : InstanceContentState.Failed;
+                if (state == InstanceContentState.Loading)
+                {
+                    if (Time.unscaledTime < pending.GiveUpAt) continue;
+                    // The source's own timeout ended the crossing long ago; it would ignore a late answer.
+                    NebulaLog.Warn($"stopped waiting for the content of {destination?.ContainerId} for entity {message.EntityId}: still loading after {InstanceScenes.ContentWaitLimitSeconds} s");
+                    _pendingContentAcks.RemoveAt(i);
+                    continue;
+                }
+                message.Success = state == InstanceContentState.Ready;
+                _writer.Reset(); message.Write(_writer, MsgId.InstanceReady);
+                _transport.Send(peer.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+                _pendingContentAcks.RemoveAt(i);
+            }
+        }
+
+        private bool ValidPreparationHere(Container destination, in InstancePreparationMsg message) =>
+            destination != null && destination.OwnerWorkerId == WorkerId &&
+            destination.LeaseEpoch == message.LeaseEpoch && TransferScopeAdmits(destination);
 
         private void OnInstancePrepare(Peer peer, InstancePreparationMsg message)
         {
             if (peer.Role != PeerRole.Worker || peer.Index != message.SourceWorker) return;
             var destination = message.Destination.Resolve();
-            message.Success = destination != null && destination.OwnerWorkerId == WorkerId &&
-                destination.LeaseEpoch == message.LeaseEpoch && TransferScopeAdmits(destination) && InstanceScenes.Prepare(destination);
+            message.Success = ValidPreparationHere(destination, message) && InstanceScenes.Prepare(destination);
+            if (message.Success)
+            {
+                var state = InstanceScenes.ContentState(destination);
+                // Answered once its loaders are done (UpdatePendingContentAcks); with none, at once as before.
+                if (state == InstanceContentState.Loading)
+                {
+                    _pendingContentAcks.Add(new PendingContentAck { Peer = peer, Message = message, GiveUpAt = Time.unscaledTime + InstanceScenes.ContentWaitLimitSeconds });
+                    return;
+                }
+                message.Success = state == InstanceContentState.Ready;
+            }
             _writer.Reset(); message.Write(_writer, MsgId.InstanceReady);
             _transport.Send(peer.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
         }

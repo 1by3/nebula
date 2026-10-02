@@ -1,4 +1,4 @@
 {
   "title": "Containers",
-  "pages": ["container", "container-authority", "container-frame-mode", "container-hint", "container-placement", "container-ref", "container-registry", "container-source", "double3", "dynamic-container", "entity-location", "frame-crossing", "frame-interest-mode", "i-frame-crossing-policy", "instance-boundary", "instance-scenes", "instance-template", "location-container-kind", "nebula-container-helpers", "physics-frame", "physics-frame-state", "physics-frames"]
+  "pages": ["container", "container-authority", "container-frame-mode", "container-hint", "container-placement", "container-ref", "container-registry", "container-source", "double3", "dynamic-container", "entity-location", "frame-crossing", "frame-interest-mode", "i-frame-crossing-policy", "i-instance-content-loader", "instance-boundary", "instance-content-state", "instance-scenes", "instance-template", "location-container-kind", "nebula-container-helpers", "physics-frame", "physics-frame-state", "physics-frames"]
 }

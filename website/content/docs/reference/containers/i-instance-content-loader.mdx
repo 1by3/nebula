@@ -1,0 +1,34 @@
+---
+title: "IInstanceContentLoader"
+description: "Content of an instance part that finishes loading after InstanceScenes.Prepare returns: geometry a component builds over several frames, or assets it loads asynchronously."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/IInstanceContentLoader.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/IInstanceContentLoader.cs)</div>
+
+```csharp
+public interface IInstanceContentLoader
+```
+
+Content of an instance part that finishes loading after [`InstanceScenes.Prepare`](/docs/reference/containers/instance-scenes#prepare) returns: geometry a component builds over several frames, or assets it loads asynchronously.
+
+Implement it on a component of the part's content prefab ([`InstanceTemplate.Part.ContentResource`](/docs/reference/containers/instance-template#contentresource)), or on one the game adds under the part's container in `Awake`. When the content is created, Nebula collects the active components under the container that implement this interface. A client then acknowledges a crossing into the part, and the destination worker marks itself ready, only once every one of them reports [`InstanceContentState.Ready`](/docs/reference/containers/instance-content-state#ready). One that reports [`InstanceContentState.Failed`](/docs/reference/containers/instance-content-state#failed) refuses the crossing. Content with none of them is ready as soon as it is created, as before.
+
+Nebula reads [`State`](#state) once a frame on a client, and once a tick on a worker, only while a preparation waits for it. Keep it cheap and free of allocations. A crossing still expires at its preparation timeout ([`NebulaWorker.PrepareTransfer`](/docs/reference/worker/nebula-worker#preparetransfer)); an [`InstanceBoundary`](/docs/reference/containers/instance-boundary) then prepares it again.
+
+## Properties
+
+### State [#state]
+
+```csharp
+InstanceContentState State { get; }
+```
+
+Whether this content is still loading, complete, or cannot be completed.
+
+### Progress [#progress]
+
+```csharp
+float Progress { get; }
+```
+
+How far loading has got, from 0 to 1. Only [`InstanceScenes.ContentProgress`](/docs/reference/containers/instance-scenes#contentprogress) reads it, to show a loading indicator; [`State`](#state) alone decides readiness.

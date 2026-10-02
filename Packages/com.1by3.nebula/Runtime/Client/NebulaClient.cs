@@ -788,6 +788,46 @@ namespace Nebula
         /// The watch runs only while the client is in the world (<see cref="JoinState.Joined"/>) and has had state
         /// since it joined, so a join in progress, and a client in a scope that sends nothing, never look stalled.
         /// </summary>
+        /// <summary>A destination the gateway asked this client to prepare, acknowledged once its content has loaded.</summary>
+        private struct PendingPreparation
+        {
+            public int Peer;
+            public InstancePreparationMsg Message;
+            public float GiveUpAt;
+        }
+        private readonly List<PendingPreparation> _pendingPreparations = new List<PendingPreparation>();
+
+        /// <summary>
+        /// Acknowledge each preparation whose destination content has finished loading (or tell the worker it failed).
+        /// Runs once a frame, and only does work while a preparation waits for an <see cref="IInstanceContentLoader"/>.
+        /// A preparation asked on a link the client has since left is dropped: its worker has moved on.
+        /// </summary>
+        internal void TickInstancePreparations()
+        {
+            if (_pendingPreparations.Count == 0) return;
+            for (int i = _pendingPreparations.Count - 1; i >= 0; i--)
+            {
+                var pending = _pendingPreparations[i];
+                if (pending.Peer != _gatewayPeer || _gatewayPeer < 0) { _pendingPreparations.RemoveAt(i); continue; }
+                var message = pending.Message;
+                var destination = message.Destination.Resolve();
+                var content = destination != null && destination.LeaseEpoch == message.LeaseEpoch
+                    ? InstanceScenes.ContentState(destination) : InstanceContentState.Failed;
+                if (content == InstanceContentState.Loading)
+                {
+                    if (Now < pending.GiveUpAt) continue;
+                    // The worker's own timeout ended the crossing long ago, and it would ignore a late answer.
+                    NebulaLog.Warn($"stopped waiting for the content of {destination.ContainerId}: still loading after {InstanceScenes.ContentWaitLimitSeconds} s");
+                    _pendingPreparations.RemoveAt(i);
+                    continue;
+                }
+                message.Success = content == InstanceContentState.Ready;
+                _writer.Reset(); message.Write(_writer, MsgId.InstanceReady);
+                _transport.Send(_gatewayPeer, Delivery.ReliableOrdered, _writer.ToSegment());
+                _pendingPreparations.RemoveAt(i);
+            }
+        }
+
         internal void TickStallWatch()
         {
             float limit = Config != null ? Config.ClientStallSeconds : 0f;
@@ -862,6 +902,7 @@ namespace Nebula
 
             TickConnection();
             TickStallWatch();
+            TickInstancePreparations();
             if (ConnectionState == State.Disconnected || ConnectionState == State.Connecting) return;
             _frames++;
             float frameMs = Time.unscaledDeltaTime * 1000f;
@@ -1255,6 +1296,18 @@ namespace Nebula
                     var preparation = InstancePreparationMsg.Read(r);
                     var destination = preparation.Destination.Resolve();
                     preparation.Success = destination != null && destination.LeaseEpoch == preparation.LeaseEpoch && InstanceScenes.Prepare(destination);
+                    if (preparation.Success)
+                    {
+                        var content = InstanceScenes.ContentState(destination);
+                        // Content that is still loading is acknowledged once it has (TickInstancePreparations); content
+                        // with no loaders is acknowledged at once, as before.
+                        if (content == InstanceContentState.Loading)
+                        {
+                            _pendingPreparations.Add(new PendingPreparation { Peer = _gatewayPeer, Message = preparation, GiveUpAt = Now + InstanceScenes.ContentWaitLimitSeconds });
+                            break;
+                        }
+                        preparation.Success = content == InstanceContentState.Ready;
+                    }
                     _writer.Reset(); preparation.Write(_writer, MsgId.InstanceReady);
                     _transport.Send(_gatewayPeer, Delivery.ReliableOrdered, _writer.ToSegment());
                     break;

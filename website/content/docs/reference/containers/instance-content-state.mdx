@@ -1,0 +1,20 @@
+---
+title: "InstanceContentState"
+description: "Whether an instance part's content is still loading, ready, or failed."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/IInstanceContentLoader.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/IInstanceContentLoader.cs)</div>
+
+```csharp
+public enum InstanceContentState
+```
+
+Whether an instance part's content is still loading, ready, or failed. [`IInstanceContentLoader.State`](/docs/reference/containers/i-instance-content-loader#state) reports it.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="loading"></span>`Loading` |  | The content is still being built or loaded. A crossing into it waits. |
+| <span id="ready"></span>`Ready` |  | The content is complete. A crossing into it can be acknowledged. |
+| <span id="failed"></span>`Failed` |  | The content cannot be completed. A crossing into it is refused, as for a missing content resource. |
