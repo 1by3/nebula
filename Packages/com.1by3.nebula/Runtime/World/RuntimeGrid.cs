@@ -106,7 +106,10 @@ namespace Nebula.World
         /// <summary>
         /// The chunk an id names in this grid, or false when the id is not this grid's. Always true for the public
         /// grid (every 64-bit value unpacks to a coordinate); for a scoped grid it is true for a chunk this process
-        /// has named or adopted from a lease row (<see cref="Adopt"/>).
+        /// has named or adopted from a lease row (<see cref="Adopt"/>). The overload that takes a
+        /// <see cref="PersistedEntityRecord"/> places a saved entity from its record's part id
+        /// (<see cref="PersistedEntityRecord.PartId"/>), adopting the id as it goes, so it works in a process that never
+        /// named the chunk; it is false for a record of another scope, in no runtime container, or inside a carrier.
         /// </summary>
         public bool TryCoordOf(ulong id, out Vector3Int coord)
         {
@@ -130,6 +133,77 @@ namespace Nebula.World
             _coordById[id] = parsed;
             coord = parsed;
             return true;
+        }
+
+        /// <summary>
+        /// The chunk of this grid a persisted record was saved in, from the record alone. False when the record is in
+        /// another scope (<see cref="PersistedEntityRecord.ScopeKey"/> differs from <see cref="ScopeKey"/>), in no
+        /// runtime container, or inside a carrier. A record that carries its chunk's part id
+        /// (<see cref="PersistedEntityRecord.PartId"/>) is placed by <see cref="Adopt"/>, so the grid learns the id
+        /// too and later <see cref="TryCoordOf(ulong, out Vector3Int)"/> calls for it succeed. A record without one
+        /// is placed only when this grid already knows the id: always in the public world, and in a scoped grid
+        /// when this process has named or adopted the chunk. For an older scoped record whose part is unknown, use
+        /// <see cref="TryFindCoordNear"/> with an approximate position.
+        /// </summary>
+        public bool TryCoordOf(PersistedEntityRecord record, out Vector3Int coord)
+        {
+            coord = default;
+            if (record == null || !string.IsNullOrEmpty(record.CarrierKey)) return false;
+            if (!string.Equals(record.ScopeKey ?? "", ScopeKey, StringComparison.Ordinal)) return false;
+            if (!ChunkKeys.TryParseContainerId(record.ContainerId, out ulong id)) return false;
+            if (!string.IsNullOrEmpty(record.PartId) && Adopt(id, record.PartId, out coord)) return true;
+            return TryCoordOf(id, out coord);
+        }
+
+        /// <summary>
+        /// Find the chunk of this grid named by <paramref name="id"/> by trying every coordinate within
+        /// <paramref name="radius"/> cells of <paramref name="around"/>: a square in the y = 0 layer for a
+        /// <see cref="Planar"/> grid, a cube otherwise. Use it for a scoped chunk id this process never named and no
+        /// record or lease row explains, such as a record saved before <see cref="PersistedEntityRecord.PartId"/>
+        /// existed, when the game keeps an approximate position for it. On a match the grid learns the id, as
+        /// <see cref="Adopt"/> does.
+        /// <para>
+        /// The search goes outward ring by ring and stops at the first match. It computes one id per coordinate:
+        /// (2r+1)² for a planar grid and (2r+1)³ for a volumetric one, each a short string hash, so keep the radius to
+        /// what the hint's error needs. An id the grid already knows is answered from what it knows, wherever the
+        /// chunk is; the public grid unpacks the id and reports whether the chunk is within the radius. False for a
+        /// negative radius, or when no coordinate in range matches.
+        /// </para>
+        /// </summary>
+        public bool TryFindCoordNear(ulong id, Vector3Int around, int radius, out Vector3Int coord)
+        {
+            coord = default;
+            if (radius < 0) return false;
+            around = Normalize(around);
+            if (_coordById == null)
+            {
+                coord = Normalize(UnpackId(id));
+                return IsNear(coord, around, radius);
+            }
+            if (_coordById.TryGetValue(id, out coord)) return true;
+            int yReach = Planar ? 0 : radius;
+            for (int ring = 0; ring <= radius; ring++)
+            {
+                int dyMax = Math.Min(ring, yReach);
+                for (int dx = -ring; dx <= ring; dx++)
+                    for (int dy = -dyMax; dy <= dyMax; dy++)
+                        for (int dz = -ring; dz <= ring; dz++)
+                        {
+                            // Only the shell of this ring: the cells inside it were tried by the smaller rings.
+                            if (Math.Abs(dx) != ring && Math.Abs(dy) != ring && Math.Abs(dz) != ring) continue;
+                            long x = (long)around.x + dx, y = (long)around.y + dy, z = (long)around.z + dz;
+                            if (x < MinCoordinate || x > MaxCoordinate || y < MinCoordinate || y > MaxCoordinate ||
+                                z < MinCoordinate || z > MaxCoordinate) continue;
+                            var c = new Vector3Int((int)x, (int)y, (int)z);
+                            if (ChunkKeys.RuntimeId(ScopeKey, c) != id) continue;
+                            _idByCoord[c] = id;
+                            _coordById[id] = c;
+                            coord = c;
+                            return true;
+                        }
+            }
+            coord = default;
+            return false;
         }
 
         /// <summary>Whether a container is a chunk of this grid: same scope, and an id this grid can place.</summary>

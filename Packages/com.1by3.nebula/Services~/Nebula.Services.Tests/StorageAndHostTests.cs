@@ -529,6 +529,62 @@ public class StorageAndHostTests
         store.Dispose();
     }
 
+    /// <summary>
+    /// NEB-366: a record keeps its container's part id (a scoped chunk's coordinate) in the <c>part_id</c> column, and
+    /// a database from before the column gains it on open, its rows reading as "part unknown".
+    /// </summary>
+    [Test]
+    public void SqlPersistenceStoreKeepsThePartIdAndMigratesAnOlderTable()
+    {
+        string path = Path.Combine(directory, "parts.db");
+        // The table as the build before NEB-366 created it, with one row in it.
+        using (var old = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=" + path))
+        {
+            old.Open();
+            NebulaDatabase.Execute(old, @"CREATE TABLE nebula_entity (
+                entity_key TEXT PRIMARY KEY, prefab_id INTEGER NOT NULL, prefab_name TEXT NOT NULL, scene_id BIGINT NOT NULL,
+                container_id TEXT NOT NULL, carrier_key TEXT NOT NULL,
+                pos_x REAL NOT NULL, pos_y REAL NOT NULL, pos_z REAL NOT NULL,
+                rot_x REAL NOT NULL, rot_y REAL NOT NULL, rot_z REAL NOT NULL, rot_w REAL NOT NULL,
+                vel_x REAL NOT NULL, vel_y REAL NOT NULL, vel_z REAL NOT NULL,
+                epoch BIGINT NOT NULL, server_driven BOOLEAN NOT NULL, owned BOOLEAN NOT NULL, name TEXT NOT NULL, state BLOB,
+                version BIGINT NOT NULL, saved_at BIGINT NOT NULL, saved_by TEXT NOT NULL, scope_key TEXT NOT NULL DEFAULT '')");
+            NebulaDatabase.Execute(old, @"INSERT INTO nebula_entity VALUES ('legacy', 3, 'Crate', 0, 'rt_42', '',
+                1, 2, 3, 0, 0, 0, 1, 0, 0, 0, 5, 1, 0, 'legacy', NULL, 1, 0, 'w1', 'planet/grid-366')");
+        }
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+        using var db = NebulaDatabase.Open(DatabaseUrl.Parse("sqlite:" + path, ""));
+        var store = new SqlPersistenceStore(db);
+        store.Connect();
+        PersistedEntityRecord? legacy = null;
+        store.Load("legacy", r => legacy = r);
+        WaitUntil(() => legacy != null, store.Tick);
+        Assert.That(legacy!.PartId, Is.EqualTo(""), "a row from before the column: part unknown");
+        Assert.That(legacy.ScopeKey, Is.EqualTo("planet/grid-366"));
+        Assert.That(legacy.ContainerId, Is.EqualTo("rt_42"));
+
+        var scope = "planet/grid-366";
+        var coord = new Vector3Int(5, 0, -3);
+        var saved = Record("crate", ChunkKeys.ContainerId(scope, coord));
+        saved.ScopeKey = scope;
+        saved.PartId = ChunkKeys.PartId(coord);
+        store.Save(saved);
+        legacy.PartId = "c/1/0/1";
+        legacy.Epoch = 6;
+        store.Save(legacy);
+        PersistedEntityRecord? crate = null, updated = null;
+        store.Load("crate", r => crate = r);
+        store.Load("legacy", r => updated = r);
+        WaitUntil(() => crate != null && updated != null, store.Tick);
+        AssertSame(saved, crate!);
+        Assert.That(crate!.PartId, Is.EqualTo("c/5/0/-3"));
+        Assert.That(ChunkKeys.TryCoordOf(crate, out var placed), Is.True);
+        Assert.That(placed, Is.EqualTo(coord));
+        Assert.That(updated!.PartId, Is.EqualTo("c/1/0/1"), "an update writes the part id too");
+        store.Dispose();
+    }
+
     [Test]
     public void RemotePersistenceStoreGoesThroughThePersistenceHost()
     {

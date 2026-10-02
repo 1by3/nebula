@@ -71,3 +71,24 @@ public static string ContainerId(string scopeKey, Vector3Int coord);
 ```
 
 The control-plane container id of a chunk: [`RuntimeId`](#runtimeid) in the `rt_` form.
+
+### TryParseContainerId [#tryparsecontainerid]
+
+```csharp
+public static bool TryParseContainerId(string containerId, out ulong runtimeId);
+```
+
+The 64-bit id in a runtime container id (`rt_<id>`); false for any other form.
+
+### TryCoordOf [#trycoordof]
+
+```csharp
+public static bool TryCoordOf(PersistedEntityRecord record, out Vector3Int coord);
+```
+
+The chunk a persisted record was saved in, from the record alone, so any process can place it without having named the chunk or holding its lease. True when the record's [`PersistedEntityRecord.ContainerId`](/docs/reference/persistence/persisted-entity-record#containerid) is a runtime container id and either:
+
+- its [`PersistedEntityRecord.PartId`](/docs/reference/persistence/persisted-entity-record#partid) is a chunk part id (`c/x/y/z`) that hashes, with the record's scope key, to that very id ([`RuntimeId`](#runtimeid)), so a part id that names another container is never trusted; or
+- the record is in the public world, whose chunk ids are the pinned packing and always unpack.
+
+False for a record in no container, inside a carrier, in a static container or an instance's part, and for a scoped record saved before part ids were recorded, whose part is unknown: place that one with `RuntimeGrid.TryFindCoordNear` and an approximate position. In the public world every runtime id unpacks, so whether the container really was a chunk is for the game to know. `RuntimeGrid.TryCoordOf(PersistedEntityRecord, out Vector3Int)` does the same and also teaches the grid the id.

@@ -23,8 +23,9 @@ namespace Nebula
     {
         /// <summary>Magic and version at the head of the backing file.</summary>
         private const uint FileMagic = 0x504e4245; // "EBNP"
-        // 1: the original record; 2: appends the scope key (EntityLocation.ScopeKey) to every record.
-        private const byte FileVersion = 2;
+        // 1: the original record; 2: appends the scope key (EntityLocation.ScopeKey) to every record; 3: appends the
+        // container's part id (PersistedEntityRecord.PartId). Older files still load: missing fields read as empty.
+        internal const byte FileVersion = 3;
 
         /// <summary>Seconds between rewrites of the backing file while records keep changing.</summary>
         public float WriteIntervalSeconds = 1f;
@@ -298,14 +299,10 @@ namespace Nebula
             {
                 var dir = Path.GetDirectoryName(path);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                var w = new NetworkWriter(4096);
-                w.WriteUInt(FileMagic);
-                w.WriteByte(FileVersion);
-                w.WriteInt(records.Count);
-                for (int i = 0; i < records.Count; i++) WriteRecord(w, records[i]);
+                byte[] bytes = EncodeFile(records, FileVersion);
                 // Write beside the file and move into place: a half-written save is worse than yesterday's.
                 string temp = path + ".tmp";
-                File.WriteAllBytes(temp, w.ToArray());
+                File.WriteAllBytes(temp, bytes);
                 if (File.Exists(path)) File.Replace(temp, path, null);
                 else File.Move(temp, path);
             }
@@ -337,7 +334,22 @@ namespace Nebula
             }
         }
 
-        private static void WriteRecord(NetworkWriter w, PersistedEntityRecord r)
+        /// <summary>
+        /// The backing file's bytes for <paramref name="records"/> in format <paramref name="fileVersion"/>. Only the
+        /// current <see cref="FileVersion"/> is ever written to disk; tests write older versions to check that they
+        /// still load.
+        /// </summary>
+        internal static byte[] EncodeFile(IReadOnlyList<PersistedEntityRecord> records, byte fileVersion)
+        {
+            var w = new NetworkWriter(4096);
+            w.WriteUInt(FileMagic);
+            w.WriteByte(fileVersion);
+            w.WriteInt(records.Count);
+            for (int i = 0; i < records.Count; i++) WriteRecord(w, records[i], fileVersion);
+            return w.ToArray();
+        }
+
+        private static void WriteRecord(NetworkWriter w, PersistedEntityRecord r, byte fileVersion)
         {
             w.WriteString(r.Key);
             w.WriteUShort(r.PrefabId);
@@ -356,7 +368,8 @@ namespace Nebula
             w.WriteULong(r.Version);
             w.WriteLong(r.SavedAt.ToBinary());
             w.WriteString(r.SavedBy);
-            w.WriteString(r.ScopeKey); // version 2
+            if (fileVersion >= 2) w.WriteString(r.ScopeKey);
+            if (fileVersion >= 3) w.WriteString(r.PartId ?? "");
         }
 
         private static PersistedEntityRecord ReadRecord(NetworkReader r, byte fileVersion)
@@ -383,6 +396,7 @@ namespace Nebula
             record.SavedAt = DateTime.FromBinary(r.ReadLong());
             record.SavedBy = r.ReadString();
             record.ScopeKey = fileVersion >= 2 ? r.ReadString() : ""; // a version 1 record is in the public world
+            record.PartId = fileVersion >= 3 ? r.ReadString() ?? "" : ""; // older records: the part is unknown
             return record;
         }
     }

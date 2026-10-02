@@ -273,7 +273,13 @@ namespace Nebula
                 if (carrier != null) record.CarrierKey = carrier.EnsureKey();
                 else NebulaLog.Debugf($"persistence: {identity} is inside {container.ContainerId}, whose carrier is not persistent; saving its pose only");
             }
-            else if (container != null) record.ContainerId = container.ContainerId;
+            else if (container != null)
+            {
+                record.ContainerId = container.ContainerId;
+                // The part id the container's lease row carries: for a scoped chunk its coordinate, which its hashed
+                // container id cannot give back (ChunkKeys.TryCoordOf(record)).
+                record.PartId = container.Instance?.PartId ?? "";
+            }
 
             if (pe.PersistPose)
             {

@@ -32,6 +32,17 @@ namespace Nebula
         public string ScopeKey = "";
         /// <summary>Static or runtime container the entity was in (its <see cref="Container.ContainerId"/>), or "" when it was in none or inside a carrier.</summary>
         public string ContainerId = "";
+        /// <summary>
+        /// The scope part id of the container in <see cref="ContainerId"/> at save time
+        /// (<see cref="InstanceContainerInfo.PartId"/>, the same string the container's lease row carries), or "" when
+        /// the container has none or the record was written before part ids were recorded. For a chunk of a scoped grid
+        /// it is the chunk's coordinate, <c>c/x/y/z</c> (<see cref="ChunkKeys.PartId"/>). A scoped chunk's container
+        /// id is a hash of the scope key and this string and cannot be turned back into a coordinate, so this field is
+        /// how a process that never named the chunk places the record: see
+        /// <see cref="ChunkKeys.TryCoordOf(PersistedEntityRecord, out Vector3Int)"/>. Setting <see cref="Location"/>
+        /// to another scope or container clears it.
+        /// </summary>
+        public string PartId = "";
         /// <summary>When the entity was inside a dynamic container: the persistence key of the carrier. "" otherwise.</summary>
         public string CarrierKey = "";
         /// <summary>Pose in the container's local space (world space when there was no container).</summary>
@@ -43,12 +54,16 @@ namespace Nebula
         /// <see cref="ContainerId"/> and the local pose. For an entity saved inside a carrier the container id is
         /// empty and <see cref="CarrierKey"/> names the carrier instead, because a dynamic container's id lives only
         /// as long as its carrier's net id. Setting it writes the three fields back and leaves <see cref="CarrierKey"/> alone.
+        /// When the scope or the container changes, it also clears <see cref="PartId"/>, which named the old container.
         /// </summary>
         public EntityLocation Location
         {
             get => new EntityLocation(ScopeKey, ContainerId, LocalPosition, LocalRotation);
             set
             {
+                if (!string.Equals(ScopeKey ?? "", value.ScopeKey, StringComparison.Ordinal)
+                    || !string.Equals(ContainerId ?? "", value.ContainerId, StringComparison.Ordinal))
+                    PartId = "";
                 ScopeKey = value.ScopeKey;
                 ContainerId = value.ContainerId;
                 LocalPosition = value.LocalPosition;

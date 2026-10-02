@@ -120,9 +120,10 @@ This grid's control-plane container id for a chunk (`rt_` and [`IdOf`](#idof)).
 
 ```csharp
 public bool TryCoordOf(ulong id, out Vector3Int coord);
+public bool TryCoordOf(PersistedEntityRecord record, out Vector3Int coord);
 ```
 
-The chunk an id names in this grid, or false when the id is not this grid's. Always true for the public grid (every 64-bit value unpacks to a coordinate); for a scoped grid it is true for a chunk this process has named or adopted from a lease row ([`Adopt`](#adopt)).
+The chunk an id names in this grid, or false when the id is not this grid's. Always true for the public grid (every 64-bit value unpacks to a coordinate); for a scoped grid it is true for a chunk this process has named or adopted from a lease row ([`Adopt`](#adopt)). The overload that takes a [`PersistedEntityRecord`](/docs/reference/persistence/persisted-entity-record) places a saved entity from its record's part id ([`PersistedEntityRecord.PartId`](/docs/reference/persistence/persisted-entity-record#partid)), adopting the id as it goes, so it works in a process that never named the chunk; it is false for a record of another scope, in no runtime container, or inside a carrier.
 
 ### Adopt [#adopt]
 
@@ -131,6 +132,16 @@ public bool Adopt(ulong id, string partId, out Vector3Int coord);
 ```
 
 Learn the coordinate of a chunk this process never asked for, from the part id its lease row carries ([`InstanceContainerInfo.PartId`](/docs/reference/protocol/instance-container-info#partid)). Returns false when the part is not a chunk of this grid, which is how an instance's `interior` part is told apart from a chunk.
+
+### TryFindCoordNear [#tryfindcoordnear]
+
+```csharp
+public bool TryFindCoordNear(ulong id, Vector3Int around, int radius, out Vector3Int coord);
+```
+
+Find the chunk of this grid named by `id` by trying every coordinate within `radius` cells of `around`: a square in the y = 0 layer for a [`Planar`](#planar) grid, a cube otherwise. Use it for a scoped chunk id this process never named and no record or lease row explains, such as a record saved before [`PersistedEntityRecord.PartId`](/docs/reference/persistence/persisted-entity-record#partid) existed, when the game keeps an approximate position for it. On a match the grid learns the id, as [`Adopt`](#adopt) does.
+
+The search goes outward ring by ring and stops at the first match. It computes one id per coordinate: (2r+1)² for a planar grid and (2r+1)³ for a volumetric one, each a short string hash, so keep the radius to what the hint's error needs. An id the grid already knows is answered from what it knows, wherever the chunk is; the public grid unpacks the id and reports whether the chunk is within the radius. False for a negative radius, or when no coordinate in range matches.
 
 ### Owns [#owns]
 

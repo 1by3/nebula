@@ -134,7 +134,8 @@ namespace Nebula
                     version BIGINT NOT NULL,
                     saved_at BIGINT NOT NULL,
                     saved_by TEXT NOT NULL,
-                    scope_key TEXT NOT NULL DEFAULT '')");
+                    scope_key TEXT NOT NULL DEFAULT '',
+                    part_id TEXT NOT NULL DEFAULT '')");
                 Execute(c, "CREATE INDEX IF NOT EXISTS nebula_entity_container ON nebula_entity (container_id)");
                 Execute(c, "CREATE INDEX IF NOT EXISTS nebula_entity_carrier ON nebula_entity (carrier_key)");
                 // The scope key (EntityLocation.ScopeKey) was added after the table existed in deployed databases.
@@ -145,6 +146,10 @@ namespace Nebula
                 // Added with the column, so "has this scope anything saved?" (IPersistenceStore.CountRecords) is an
                 // index count rather than a table scan; it has to come after the ALTER on a database that predates it.
                 Execute(c, "CREATE INDEX IF NOT EXISTS nebula_entity_scope ON nebula_entity (scope_key)");
+                // The container's part id (PersistedEntityRecord.PartId) came later still, the same way; a row from
+                // before it reads as "part unknown".
+                try { Execute(c, "ALTER TABLE nebula_entity ADD COLUMN part_id TEXT NOT NULL DEFAULT ''"); }
+                catch (DbException) { }
                 _schemaReady = true;
             }
         }
