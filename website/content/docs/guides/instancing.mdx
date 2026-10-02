@@ -51,6 +51,8 @@ Static content prefabs must not contain `NetworkIdentity` components. Spawn netw
 | `PreparationDistance` | Distance added on each side of the crossing volume to begin preparation. Increase it if players can reach the entrance before loading finishes. |
 | `Personal` | Use `OwnerIdentity` as the destination key when enabled and no custom resolver is set. |
 | `SharedKey` | Key used when `Personal` is disabled and no custom resolver is set. Defaults to `shared`. |
+| `RequireRequest` | Prepare crossings only when your game calls `Request`, not because a player is near. Off by default. See [Prepare crossings on request](#prepare-crossings-on-request). |
+| `ExitMargin` | How far outside `Interior`, in meters, an occupant must go before it leaves the instance. `0`, the default, leaves at the face. See [Stop flickering at the face](#stop-flickering-at-the-face). |
 
 For a single-room apartment, start with matching template-part and interior bounds. For multiple rooms, put the arrival room first and make `Interior` cover the entire private area. Keep the boundary position and the template's instance origin aligned. Boundary rotation and scale do not transform these bounds.
 
@@ -121,6 +123,77 @@ Your game is responsible for the rest:
 - **Turn `ObservePublic` off.** It observes the public world, not the host scope, so occupants cannot see out into the grid. The boundary logs a warning when it is on.
 - **Close the view between the two sides.** The host scope's scenery and the instance's content render in different origin frames on the client, so a player inside cannot look out through the doorway. Put a door, a turn, or a dark passage at the crossing.
 
+## Prepare crossings on request
+
+By default, the boundary prepares a player's crossing whenever they are within `PreparationDistance` of `Interior`, and prepares an occupant's way out for as long as they are inside. To decide yourself when a crossing is prepared, for example only while a door is open or an elevator is moving, turn on `RequireRequest` and call `Request` on the worker that simulates the player:
+
+```csharp title="InstanceDoor.cs"
+using Nebula;
+using UnityEngine;
+
+[RequireComponent(typeof(InstanceBoundary))]
+public sealed class InstanceDoor : MonoBehaviour
+{
+    private InstanceBoundary boundary;
+
+    private void Awake()
+    {
+        boundary = GetComponent<InstanceBoundary>();
+        boundary.RequireRequest = true;
+    }
+
+    // Call on the worker when a player opens the door.
+    public void Open(NetworkIdentity player)
+    {
+        boundary.Request(player, 10f);
+    }
+}
+```
+
+`Request(entity, seconds)` prepares that entity's crossing, in whichever direction it would cross, for `seconds` of unscaled time. Each call replaces the entity's previous request, and a value of `0` or less withdraws it.
+
+With `RequireRequest` on:
+
+- Being near the boundary prepares nothing. A player who reaches the face without a ready crossing is held where they last stood.
+- An occupant leaves only on request too.
+- When a request expires, a crossing prepared under it is dropped and can no longer commit.
+
+With `RequireRequest` off, a request starts preparation early, even beyond `PreparationDistance`, so the crossing can be ready before the player arrives.
+
+Either way, the player must be in the boundary's host scope or its instance, and entry must still pass `CanEnter`.
+
+## Check whether a crossing is ready
+
+To find out whether a player's crossing can commit, call `TryGetPreparation` on the worker. It returns `true` when the crossing is ready. Its `InstanceCrossingState` says which way the crossing leads (`Leaving`) and, when it isn't ready, why (`Status`):
+
+| `Status` | Meaning |
+| --- | --- |
+| `None` | The boundary isn't preparing a crossing for this entity. |
+| `NotRequested` | `RequireRequest` is on and no request is live. |
+| `Refused` | `CanEnter` refused entry. |
+| `NoDestination` | The destination container isn't there yet. |
+| `DestinationNotLeased` | The destination exists, but no worker holds an active lease on it yet. |
+| `PendingWorker` | The worker that owns the destination hasn't finished preparing it. |
+| `PendingContent` | This worker owns the destination, and its content is still loading. |
+| `PendingClient` | The player's client hasn't finished preparing the destination. |
+| `Failed` | Preparation failed. `Error` says why. The boundary prepares the crossing again after it expires. |
+| `Ready` | The crossing commits when the player crosses the face. |
+
+To react when a crossing becomes ready, for example to open a door only once the other side has loaded, subscribe to `CrossingReady`. The worker raises it once per crossing, during its tick and before that tick commits the crossing:
+
+```csharp
+boundary.CrossingReady += (player, state) =>
+{
+    if (!state.Leaving) OpenDoorFor(player);
+};
+```
+
+`OpenDoorFor` stands for your own game code. A ready crossing isn't a reservation: the commit still checks admission, the player's authority and the destination's lease.
+
+## Stop flickering at the face
+
+A player standing exactly at the face of `Interior` can enter on one tick and leave on the next, because the same face is used both ways. Set `ExitMargin` to give the way out some slack: an occupant then leaves only once they are that many meters outside `Interior`. Entry still happens at `Interior`'s face. A margin of half a meter to a meter is usually enough. Within the margin the occupant is still in the instance, and moves against the instance's colliders, not the public ones. Make the template part's bounds and its collision content cover the margin as well.
+
 ## Choose who enters together
 
 With `Personal` enabled, the boundary uses the player's authenticated `OwnerIdentity` as its key. Returning players resolve the same container IDs. With `Personal` disabled, everyone using the same `SharedKey` enters the same instance.
@@ -189,7 +262,7 @@ Follow this sequence on the entity's authoritative worker:
 
 `Ready` alone is not a reservation: the commit checks the entity's authority, its source container and epoch, and the destination lease again. An **epoch** is a version number for authority or assignment. A change invalidates older preparations. `Error` reports a failure; `Finished` also becomes true after a successful commit or an expired/invalidated attempt.
 
-The built-in boundary handles this sequence automatically. If a crossing cannot commit, it holds the player at the last position it recorded. Place spawn points outside the crossing volume so players approach it normally.
+The built-in boundary handles this sequence automatically. If a crossing cannot commit, it holds the player at the last position it recorded. To see where a boundary's crossing stands, call `TryGetPreparation` (see [Check whether a crossing is ready](#check-whether-a-crossing-is-ready)). Place spawn points outside the crossing volume so players approach it normally.
 
 The destination must be a static container. Authored scene entities cannot transfer out of their scene. For a return trip from game code, select a public container and prepare another transfer; do not change only the transform or `InstanceId`.
 
@@ -292,7 +365,8 @@ See [Running locally](/docs/getting-started/running-locally) for build paths and
 | --- | --- |
 | Repeated connection attempts without joining | Compare protocol versions in the gateway log and rebuild all roles together. |
 | Player stops at the entrance | Inspect `InstanceTransfer.Error`, resource paths, client/worker content availability, and destination lease ownership. Check that every `IInstanceContentLoader` in the content reaches `Ready`. Allow enough preparation distance. |
-| Crossing never starts | Confirm the boundary is loaded on the worker, the template is assigned, the identity key is nonempty, and `Interior` covers the doorway. |
+| Crossing never starts | Confirm the boundary is loaded on the worker, the template is assigned, the identity key is nonempty, and `Interior` covers the doorway. With `RequireRequest` on, check that your game calls `Request` on the worker that simulates the player. `TryGetPreparation` reports the reason. |
+| Player flickers in and out at the doorway | Set `ExitMargin` so an occupant must step clear of the face before leaving. |
 | Crossing never starts in a scoped grid | Confirm the boundary is parented under the chunk's content, so `HostInstanceId` is the grid's scope. |
 | Player can't leave an instance in a scoped grid | Check that the chunk outside the doorway is leased; pin it while the instance is occupied. |
 | Two players unexpectedly share a personal room | Compare their `OwnerIdentity` values and any custom `ResolveKey` callback. |

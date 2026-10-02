@@ -13,6 +13,8 @@ Prepares a private area as players approach and crosses its bounds without chang
 
 The boundary works in the scope around it, its [`HostInstanceId`](#hostinstanceid): the public world when it stands in the shared scene, or the scope of the container it is parented under, such as a chunk of a scoped grid whose content the game builds at runtime. Only entities in that scope, or in the boundary's own instance, cross it, and an occupant who leaves returns to a container of that scope. Positions are compared in absolute coordinates, so a host scope with an origin frame of its own crosses at the same place on every worker.
 
+By default a crossing is prepared whenever a player is near the boundary, and an occupant is prepared to leave for as long as it is inside. [`RequireRequest`](#requirerequest) and [`Request`](#request) let the game decide when instead, for example while a door is open. [`TryGetPreparation`](#trygetpreparation) and [`CrossingReady`](#crossingready) report when a crossing can commit, and [`ExitMargin`](#exitmargin) keeps an occupant standing at the face from leaving and entering again on every tick. All of it runs on the worker that simulates the entity.
+
 ## Fields
 
 ### Template [#template]
@@ -71,6 +73,22 @@ public Func<NetworkIdentity, string, bool> CanEnter;
 
 Server-side admission check for entry into the resolved key. When unset, entry is allowed. Occupants can exit without passing this check.
 
+### RequireRequest [#requirerequest]
+
+```csharp
+public bool RequireRequest;
+```
+
+Prepare crossings only on request. When true, being near the boundary prepares nothing: a crossing, in or out, is prepared only while a [`Request`](#request) for that entity is live, and an entity that reaches the face without a ready crossing is held where it last stood. When false, the default, a request only starts or keeps preparation earlier than proximity would.
+
+### ExitMargin [#exitmargin]
+
+```csharp
+public float ExitMargin;
+```
+
+How far outside [`Interior`](#interior), in meters on each side, an occupant must stand before it leaves the instance. Entry still happens at [`Interior`](#interior)'s face, so an entity standing at the face does not leave and enter again on every tick. 0, the default, leaves at the face itself. Within the margin the occupant is still in the instance and moves against its colliders, so the template's parts and collision content should cover the margin too.
+
 ### OriginResolution [#originresolution]
 
 ```csharp
@@ -104,3 +122,43 @@ public Double3 InstanceOrigin { get; }
 ```
 
 Where the instance is prepared: [`AbsolutePosition`](#absoluteposition) rounded to [`OriginResolution`](#originresolution).
+
+## Events
+
+### CrossingReady [#crossingready]
+
+```csharp
+public event Action<NetworkIdentity, InstanceCrossingState> CrossingReady;
+```
+
+Raised on this worker once when an entity's crossing becomes ready to commit, before the tick commits it. It is raised again for a later crossing, after a commit or after the crossing stopped being ready. The state says which way the crossing leads. Handlers run inside the worker's tick and must not throw.
+
+## Methods
+
+### Request [#request]
+
+```csharp
+public void Request(NetworkIdentity entity, float seconds);
+```
+
+Prepare `entity`'s crossing for the next `seconds`, in whichever direction it would cross: into the instance from the host scope, or back out for an occupant. Call it on the worker that simulates the entity. Each call replaces the entity's previous request; 0 or less withdraws it.
+
+With [`RequireRequest`](#requirerequest) on, a live request is the only thing that prepares a crossing, and once it expires a prepared crossing is dropped and can no longer commit. With it off, a request prepares the crossing even beyond [`PreparationDistance`](#preparationdistance), so it can be ready before the entity arrives. Either way the entity must still be in the boundary's host scope or its instance, and entry must still pass [`CanEnter`](#canenter).
+
+| Parameter | Description |
+| --- | --- |
+| `entity` | An authoritative entity owned by a player. |
+| `seconds` | How long the request lasts, in unscaled seconds. |
+
+### TryGetPreparation [#trygetpreparation]
+
+```csharp
+public bool TryGetPreparation(NetworkIdentity entity, out InstanceCrossingState state);
+```
+
+Whether `entity`'s crossing is prepared and ready to commit, with its `state`: which way it leads, and why it is not ready when it is not. The state is the one the worker's last tick found, with the preparation's progress since then. An entity the boundary is not preparing a crossing for reports [`InstanceCrossingStatus.None`](/docs/reference/containers/instance-crossing-status#none).
+
+| Parameter | Description |
+| --- | --- |
+| `entity` | An entity this worker simulates. |
+| `state` | The crossing's state. |

@@ -1,0 +1,56 @@
+---
+title: "InstanceCrossingState"
+description: "The state of one entity's crossing through an InstanceBoundary, as InstanceBoundary.TryGetPreparation and InstanceBoundary.CrossingReady report it."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/InstanceCrossingState.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/InstanceCrossingState.cs)</div>
+
+```csharp
+public readonly struct InstanceCrossingState
+```
+
+The state of one entity's crossing through an [`InstanceBoundary`](/docs/reference/containers/instance-boundary), as [`InstanceBoundary.TryGetPreparation`](/docs/reference/containers/instance-boundary#trygetpreparation) and [`InstanceBoundary.CrossingReady`](/docs/reference/containers/instance-boundary#crossingready) report it.
+
+A ready crossing is not a reservation: the commit still checks admission, the entity's authority and the destination's lease, as [`NebulaWorker.TryCommitTransfer`](/docs/reference/worker/nebula-worker#trycommittransfer) does.
+
+## Properties
+
+### Status [#status]
+
+```csharp
+public InstanceCrossingStatus Status { get; }
+```
+
+Whether the crossing is ready, or the first reason it is not.
+
+### Leaving [#leaving]
+
+```csharp
+public bool Leaving { get; }
+```
+
+True when the entity is inside the boundary's instance and the crossing leads back out to the host scope; false when it leads in.
+
+### Error [#error]
+
+```csharp
+public string Error { get; }
+```
+
+Why the preparation failed, when [`Status`](#status) is [`InstanceCrossingStatus.Failed`](/docs/reference/containers/instance-crossing-status#failed); otherwise null.
+
+### IsReady [#isready]
+
+```csharp
+public bool IsReady { get; }
+```
+
+Whether [`Status`](#status) is [`InstanceCrossingStatus.Ready`](/docs/reference/containers/instance-crossing-status#ready).
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
