@@ -69,6 +69,36 @@ Carriers that spawn in the same frame are read together, the same way containers
 
 A record stores the entity's location as three values: `ScopeKey` (the empty string for the public world, or the instance key inside an instance), `ContainerId`, and the local pose. `PersistedEntityRecord.Location` returns them as one `EntityLocation`, the same value `NetworkIdentity.Location` reports on a live entity, and it does not change across a handover or a restart. The [entity location contract](/docs/specifications/entity-location) defines the three values and what stays stable. A record saved before Nebula recorded scope keys reads as the public world.
 
+### Find the chunk a record was saved in
+
+You might need to know where a saved entity is without restoring it, for example to respawn a player at a parked vehicle after a worker restart. In a chunk grid that belongs to a [scope](/docs/guides/scopes) (any grid but the public world's), a chunk's container ID is a hash of the scope key and the chunk's coordinate. A hash can't be turned back into a coordinate, so `RuntimeGrid.TryCoordOf(ulong id, …)` only knows the chunks this process has named itself or learned from a lease row. A freshly started process knows none.
+
+So every record also stores `PartId`, the part ID of its container. It's the same string the container's lease row carries: `c/x/y/z` for a chunk. Nebula fills it in on every save. To place a record, pass the record itself:
+
+```csharp
+// grid is the RuntimeGrid of the record's scope.
+if (grid.TryCoordOf(record, out Vector3Int chunk))
+{
+    // grid.CenterOf(chunk) is the chunk's center in the grid's frame, and
+    // record.LocalPosition is the entity's position inside that chunk.
+}
+```
+
+`RuntimeGrid.TryCoordOf(record, …)` also teaches the grid the chunk's ID, so later `TryCoordOf(id, …)` calls for it succeed. `ChunkKeys.TryCoordOf(record, …)` gives the same answer without a grid, so a service outside Unity can use it too. Both check that the part ID hashes to the record's container ID and refuse one that doesn't. Both return `false` for a record in no container, in a static container, or inside a carrier.
+
+**A record saved before Nebula stored part IDs** reads with an empty `PartId`, and a scoped one can't be placed from the record alone. If your game keeps an approximate position for the entity, search the chunks around it:
+
+```csharp
+ContainerRegistry.TryParseRuntimeId(record.ContainerId, out ulong id);
+// approximateChunk is a Vector3Int your game kept, for example grid.CoordOf(lastKnownPosition).
+if (grid.TryFindCoordNear(id, approximateChunk, 4, out Vector3Int chunk))
+{
+    // Found. The grid now knows this ID too.
+}
+```
+
+`TryFindCoordNear` hashes every coordinate within the radius of the hint, nearest first, and stops at the first match. That's (2r+1)² hashes on a planar grid and (2r+1)³ on a volumetric one, so keep the radius close to your hint's error. The entity's next save writes its part ID, and you won't need the search for that record again.
+
 ## Opt variables and state in
 
 Mark a `NetworkVariable` field with `[Persist]`:

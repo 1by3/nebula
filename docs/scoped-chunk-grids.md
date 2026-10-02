@@ -101,6 +101,16 @@ A role that mirrors a lease row therefore has everything: the scope key says whi
 cell, the box says where. `RuntimeGrid.Adopt(id, partId)` fills the memo — and refuses a part id that does not
 derive the id it came with, so a malformed or mismatched row cannot place a chunk somewhere it is not.
 
+**D5a A persisted record carries the part id too (NEB-366).** A lease row only exists while the chunk is leased, so
+a process asked about a saved entity in a chunk nobody holds (a worker that just restarted, a scope that retired)
+had no row to adopt from. `PersistedEntityRecord.PartId` is the container's part id at save time, stored by every
+backend (JSON `partId`, local file version 3, SQL column `part_id`, added by `ALTER` on an older table); an older
+record reads it as `""`, "unknown". `ChunkKeys.TryCoordOf(record)` places a record in pure C#, and
+`RuntimeGrid.TryCoordOf(record)` does the same through `Adopt`, so the same hash check applies and the grid learns
+the id. A record from before the field is placed only by `RuntimeGrid.TryFindCoordNear(id, around, radius)`, which
+hashes the coordinates round a hint the game kept. The field stays off `EntityLocation` on purpose: the location
+is on the wire, and the part id is derivable from the container wherever the container is live.
+
 **D6 The grid definition travels in the scope row; a role with no control plane infers it from the chunk.** A
 worker, a gateway and the orchestrator read `ChunkGridDefinition.Of(scope)` from the mirrored scope row. A client
 has no control plane at all — only the container rows its gateway sent it — so
