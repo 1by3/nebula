@@ -284,6 +284,11 @@ public static class LocalMesh
         return null;
     }
 
+    /// <summary>A worker memory figure for the status table: megabytes, or a dash when the worker is older and reports none.</summary>
+    internal static string MemoryCell(JsonNode? n) =>
+        n != null && double.TryParse(n.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var b) && b > 0
+            ? (b / 1048576.0).ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "M" : "-";
+
     public static string Summary(JsonNode s)
     {
         var t = s["totals"];
@@ -317,10 +322,11 @@ public static class LocalMesh
                 string.Join(",", w["containers"]?.AsArray().Select(c => c?.ToString()) ?? Array.Empty<string>()),
                 w["players"]?.ToString() ?? "0", w["bots"]?.ToString() ?? "0", w["serverDriven"]?.ToString() ?? "0",
                 w["tickMs"]?.ToString() ?? "", w["authoritative"]?.ToString() ?? "", w["ghosts"]?.ToString() ?? "",
+                MemoryCell(w["residentBytes"]), MemoryCell(w["nativeAllocatedBytes"]), MemoryCell(w["managedBytes"]),
                 w["heartbeatAgeSeconds"] is { } hb && double.TryParse(hb.ToString(), out var d) ? d.ToString("F1") : "",
             });
         }
-        Ui.Table(new[] { "worker", "state", "address", "containers", "players", "bots", "npcs", "tick ms", "auth", "ghosts", "hb s" }, rows);
+        Ui.Table(new[] { "worker", "state", "address", "containers", "players", "bots", "npcs", "tick ms", "auth", "ghosts", "rss", "native", "managed", "hb s" }, rows);
         var events = s["events"]?.AsArray();
         if (events is { Count: > 0 })
         {

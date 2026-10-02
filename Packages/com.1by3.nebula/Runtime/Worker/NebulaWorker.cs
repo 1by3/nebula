@@ -975,7 +975,7 @@ namespace Nebula
             PlayerCount = players;
             BotCount = bots;
             ServerDrivenCount = serverDriven;
-            return new WorkerStats
+            var stats = new WorkerStats
             {
                 TickCount = TickCount,
                 TickMs = TickMs,
@@ -988,7 +988,13 @@ namespace Nebula
                 HasGlobalEntities = HasGlobalEntities,
                 OldestDirtySeconds = Persistence?.OldestDirtyAgeSeconds ?? 0f,
             };
+            WorkerMemorySampler.Sample(ref stats);
+            _lastMemory = stats;
+            return stats;
         }
+
+        /// <summary>The memory figures of the last heartbeat, so the profile line reads them without sampling again.</summary>
+        private WorkerStats _lastMemory;
 
         /// <summary>
         /// Most ticks the loop is allowed to simulate in one FixedUpdate to catch up with the wall clock. Beyond
@@ -1050,7 +1056,7 @@ namespace Nebula
             int gc = GC.CollectionCount(0);
             int gcs = gc - _lastGcCount;
             _lastGcCount = gc;
-            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} dormant {DormantCount} rpcRejected {NebulaDiagnostics.RejectedAuthorityRpcSends} | {NebulaProfiler.ReportAndReset(_profileTicks)}");
+            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} dormant {DormantCount} rpcRejected {NebulaDiagnostics.RejectedAuthorityRpcSends} mem rss={WorkerMemorySampler.Mb(_lastMemory.ResidentBytes)}MB native={WorkerMemorySampler.Mb(_lastMemory.NativeAllocatedBytes)}MB managed={WorkerMemorySampler.Mb(_lastMemory.ManagedBytes)}MB | {NebulaProfiler.ReportAndReset(_profileTicks)}");
             _profileTicks = 0;
             _profileFrames = 0;
             _profileMaxMs = 0f;

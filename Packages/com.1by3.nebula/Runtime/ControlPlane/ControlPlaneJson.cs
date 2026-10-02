@@ -69,6 +69,11 @@ namespace Nebula
                 w.Prop("serverDrivenCount", x.ServerDrivenCount);
                 w.Prop("hasGlobalEntities", x.HasGlobalEntities);
                 w.Key("oldestDirtySeconds"); Num(w, x.OldestDirtySeconds);
+                w.Prop("residentBytes", (long)x.ResidentBytes);
+                w.Prop("nativeAllocatedBytes", (long)x.NativeAllocatedBytes);
+                w.Prop("nativeReservedBytes", (long)x.NativeReservedBytes);
+                w.Prop("managedBytes", (long)x.ManagedBytes);
+                w.Prop("gcCount", (long)x.GcCount);
                 w.EndObject();
             }
             w.EndArray();
@@ -179,6 +184,11 @@ namespace Nebula
                         ServerDrivenCount = (uint)Num(o, "serverDrivenCount"),
                         HasGlobalEntities = Bool(o, "hasGlobalEntities"),
                         OldestDirtySeconds = (float)Num(o, "oldestDirtySeconds"),
+                        ResidentBytes = (ulong)Num(o, "residentBytes"),
+                        NativeAllocatedBytes = (ulong)Num(o, "nativeAllocatedBytes"),
+                        NativeReservedBytes = (ulong)Num(o, "nativeReservedBytes"),
+                        ManagedBytes = (ulong)Num(o, "managedBytes"),
+                        GcCount = (uint)Num(o, "gcCount"),
                     });
                 }
             }
@@ -405,6 +415,11 @@ namespace Nebula
                         ServerDrivenCount = (uint)Num(o, "serverDrivenCount"),
                         HasGlobalEntities = Bool(o, "hasGlobalEntities"),
                         OldestDirtySeconds = (float)Num(o, "oldestDirtySeconds"),
+                        ResidentBytes = (ulong)Num(o, "residentBytes"),
+                        NativeAllocatedBytes = (ulong)Num(o, "nativeAllocatedBytes"),
+                        NativeReservedBytes = (ulong)Num(o, "nativeReservedBytes"),
+                        ManagedBytes = (ulong)Num(o, "managedBytes"),
+                        GcCount = (uint)Num(o, "gcCount"),
                     };
                     cp.HeartbeatWorker(Str(o, "workerId"), Str(o, "status"), stats);
                     return null;

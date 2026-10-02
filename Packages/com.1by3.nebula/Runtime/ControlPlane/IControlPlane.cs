@@ -35,6 +35,16 @@ namespace Nebula
         /// and docs/persistence-durability.md.
         /// </summary>
         public float OldestDirtySeconds;
+        /// <summary>Resident memory of the worker process (working set / RSS) in bytes; 0 when it could not be read.</summary>
+        public ulong ResidentBytes;
+        /// <summary>Unity's native memory allocated (<c>Profiler.GetTotalAllocatedMemoryLong</c>) in bytes.</summary>
+        public ulong NativeAllocatedBytes;
+        /// <summary>Unity's native memory reserved (<c>Profiler.GetTotalReservedMemoryLong</c>) in bytes.</summary>
+        public ulong NativeReservedBytes;
+        /// <summary>The managed heap in use (<c>GC.GetTotalMemory(false)</c>) in bytes.</summary>
+        public ulong ManagedBytes;
+        /// <summary>Gen-0 garbage collections since the process started (a total; the reader takes differences).</summary>
+        public uint GcCount;
     }
 
     /// <summary>What a worker reports about itself on every heartbeat.</summary>
@@ -59,6 +69,16 @@ namespace Nebula
         /// additive field on the existing heartbeat message: older orchestrators simply do not read it.
         /// </summary>
         public float OldestDirtySeconds;
+        /// <summary>Resident memory of the worker process (working set / RSS) in bytes; 0 when it could not be read.</summary>
+        public ulong ResidentBytes;
+        /// <summary>Unity's native memory allocated (<c>Profiler.GetTotalAllocatedMemoryLong</c>) in bytes.</summary>
+        public ulong NativeAllocatedBytes;
+        /// <summary>Unity's native memory reserved (<c>Profiler.GetTotalReservedMemoryLong</c>) in bytes.</summary>
+        public ulong NativeReservedBytes;
+        /// <summary>The managed heap in use (<c>GC.GetTotalMemory(false)</c>) in bytes.</summary>
+        public ulong ManagedBytes;
+        /// <summary>Gen-0 garbage collections since the process started (a total; the reader takes differences).</summary>
+        public uint GcCount;
     }
 
     /// <summary>Describes the current worker assignment for one container.</summary>
