@@ -252,6 +252,8 @@ For this to work, every gateway of a mesh needs:
 
 ### Load reports
 
+Every worker reports its memory on each heartbeat: resident memory (working set), Unity native allocated and reserved, the managed heap and the GC count. `GET /api/state` publishes them per worker (`residentBytes`, `nativeAllocatedBytes`, `nativeReservedBytes`, `managedBytes`, `gcCount`), `nebula status` shows `rss`, `native` and `managed` columns (local and `--cloud`), the dashboard shows them on each worker card, and the worker's periodic `profile` log line ends its counters with `mem rss=… native=… managed=…`. A worker older than this change reports 0.
+
 Every gateway reports itself on each control-plane heartbeat: welcomed clients with a pawn, clients being authenticated or placed, sessions waiting for a reconnect, packets and bytes per second on the client side, bytes per second on the worker side, CPU as a fraction of one core, memory, the longest loop lag, worker links, and whether it is ready or draining. `GET /api/state` publishes them per gateway (`activeClients`, `joiningClients`, `reconnectingClients`, `packetsIn`, `packetsOut`, `bytesIn`, `bytesOut`, `workerBytesIn`, `workerBytesOut`, `cpu`, `memoryBytes`, `loopLagMs`, `workerConnections`, `ready`, `draining`), together with `incarnation` and `drainRequested`. Size the fleet from these numbers; a connection count alone says nothing about replication cost. The field contract is in the [control plane specification](/docs/specifications/control-plane#gateways).
 
 A gateway whose heartbeat is older than three times `WorkerTimeoutSeconds` is removed from the list, so `/api/state` names the gateways that exist rather than every one that ever registered.

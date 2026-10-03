@@ -438,13 +438,14 @@ public static class CloudStatus
             }));
         Ui.Blank();
         Ui.Info("workers:");
-        Ui.Table(new[] { "worker", "index", "size", "state", "address", "tick ms", "util", "entities", "players", "bots", "hb s" },
+        Ui.Table(new[] { "worker", "index", "size", "state", "address", "tick ms", "util", "entities", "players", "bots", "rss", "native", "managed", "hb s" },
             (s.Workers ?? new List<CloudApi.WorkerStatus>()).OrderBy(w => w.Index ?? 0).Select(w => new[]
             {
                 w.Id, w.Index?.ToString() ?? "", w.Size ?? "", w.State ?? "", w.PrivateAddress ?? "",
                 w.TickMs is { } t ? t.ToString("F1") : "",
                 w.Utilization is { } u ? $"{u * (u <= 1 ? 100 : 1):F0}%" : "",
                 w.Entities?.ToString() ?? "", w.Players?.ToString() ?? "0", w.Bots?.ToString() ?? "0",
+                Bytes(w.ResidentBytes), Bytes(w.NativeAllocatedBytes), Bytes(w.ManagedBytes),
                 Seconds(w.HeartbeatAgeSeconds),
             }));
     }

@@ -64,7 +64,7 @@ The control plane is one JSON document with a version number that grows on every
 
 | Section | One entry per | Fields |
 | --- | --- | --- |
-| `workers` | Registered worker | `workerId`, `workerIndex`, `address`, `port`, `status`, `lastHeartbeat`, `tickCount`, `tickMs`, `entityCount`, `authoritativeCount`, `ghostCount`, `playerCount`, `botCount`, `serverDrivenCount` |
+| `workers` | Registered worker | `workerId`, `workerIndex`, `address`, `port`, `status`, `lastHeartbeat`, `tickCount`, `tickMs`, `entityCount`, `authoritativeCount`, `ghostCount`, `playerCount`, `botCount`, `serverDrivenCount`, `residentBytes`, `nativeAllocatedBytes`, `nativeReservedBytes`, `managedBytes`, `gcCount` |
 | `leases` | Container | `containerId`, `workerId` (`""` = unassigned), `epoch`, `state`, `updatedAt`, `hasBounds`, `center`, `size` |
 | `gateways` | Registered gateway | `gatewayId`, `incarnation`, `address`, `port`, `lastHeartbeat`, `drainRequested`, and the gateway's load report (`pendingJoins`, `activeClients`, `joiningClients`, `reconnectingClients`, `packetsIn`, `packetsOut`, `bytesIn`, `bytesOut`, `workerBytesIn`, `workerBytesOut`, `cpu`, `memoryBytes`, `loopLagMs`, `workerConnections`, `ready`, `draining`) |
 | `settings` | Setting | key and value, both strings |

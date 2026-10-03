@@ -2071,6 +2071,11 @@ namespace Nebula
                 w.Prop("drainRemainingSeconds", retiring ? Math.Max(0f, _retiring[id] - now) : -1f);
                 w.Prop("tickMs", row != null ? row.TickMs : 0f);
                 w.Prop("oldestDirtySeconds", row != null ? row.OldestDirtySeconds : 0f);
+                w.Prop("residentBytes", row != null ? (long)row.ResidentBytes : 0L);
+                w.Prop("nativeAllocatedBytes", row != null ? (long)row.NativeAllocatedBytes : 0L);
+                w.Prop("nativeReservedBytes", row != null ? (long)row.NativeReservedBytes : 0L);
+                w.Prop("managedBytes", row != null ? (long)row.ManagedBytes : 0L);
+                w.Prop("gcCount", row != null ? (long)row.GcCount : 0L);
                 w.Prop("utilization", Loads.Utilization(id));
                 w.Prop("tickCount", row != null ? row.TickCount : 0UL);
                 w.Prop("entities", row != null ? row.EntityCount : 0U);

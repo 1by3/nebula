@@ -444,7 +444,7 @@ public sealed class CloudApi
     public sealed record Counts(int? Active, int? Joining, int? Reconnecting);
     public sealed record Rate(double? In, double? Out, double? Workers);
     public sealed record GatewayStatus(string Id, string? Incarnation, string? Address, string? PrivateAddress, string? State, bool? InLoadBalancer, Counts? Clients, Rate? PacketsPerSecond, Rate? BytesPerSecond, double? Cpu, long? MemoryBytes, double? LoopLagMs, int? WorkerConnections, double? HeartbeatAgeSeconds);
-    public sealed record WorkerStatus(string Id, int? Index, string? Size, string? State, string? PrivateAddress, double? TickMs, double? Utilization, int? Entities, int? Players, int? Bots, double? HeartbeatAgeSeconds);
+    public sealed record WorkerStatus(string Id, int? Index, string? Size, string? State, string? PrivateAddress, double? TickMs, double? Utilization, int? Entities, int? Players, int? Bots, double? HeartbeatAgeSeconds, long? ResidentBytes = null, long? NativeAllocatedBytes = null, long? ManagedBytes = null);
     public sealed record MeshStatus(int? DesiredWorkers, int? LiveWorkers, int? Players, int? Bots, int? PendingJoins, int? Npcs, JsonElement? Scale);
     public sealed record LoadBalancerStatus(string? State, string? Ip, int? HealthyGateways);
     public sealed record DeploymentStatus(Deployment Deployment, Release? Release, string? Health, OrchestratorStatus? Orchestrator, List<GatewayStatus>? Gateways, List<WorkerStatus>? Workers, MeshStatus? Mesh, LoadBalancerStatus? LoadBalancer, string? SampledAt);

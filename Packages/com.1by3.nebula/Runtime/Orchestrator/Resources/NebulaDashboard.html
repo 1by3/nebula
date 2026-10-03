@@ -370,6 +370,7 @@
     return t + frameTags(c);
 
   }
+  function fmtMb(b) { return (Number(b || 0) / 1048576).toFixed(0) + ' MB'; }
   function fmtAge(sec) { if (sec < 0) return '—'; return sec < 10 ? sec.toFixed(1) + 's' : Math.round(sec) + 's'; }
   function fmtRate(bytesPerSecond) { const b = bytesPerSecond * 8; return b >= 1e6 ? (b / 1e6).toFixed(1) + ' Mb/s' : b >= 1e3 ? (b / 1e3).toFixed(0) + ' kb/s' : Math.round(b) + ' b/s'; }
   // Interest management (design §12): how much of what this worker holds actually leaves it, and what the
@@ -513,6 +514,8 @@
             <div class="metric"><div class="v">${w.authoritative}<span class="muted" style="font-size:12px;font-weight:400"> +${w.ghosts}</span></div><div class="l">entities +ghosts</div></div>
             <div class="metric"><div class="v">${w.alive ? w.tickMs.toFixed(2) : '—'}</div><div class="l">tick ms</div></div>
             <div class="metric" title="How long the oldest dirty persistent entity on this worker has been waiting for its next checkpoint. Bounded by docs/persistence-durability.md's durability window; 0 means nothing unsaved."><div class="v">${w.alive ? Number(w.oldestDirtySeconds || 0).toFixed(1) + 's' : '—'}</div><div class="l">oldest dirty</div></div>
+            <div class="metric" title="Worker process resident memory (working set). Native and managed heap in the tooltip of the next tile."><div class="v">${w.alive && w.residentBytes ? fmtMb(w.residentBytes) : '—'}</div><div class="l">memory rss</div></div>
+            <div class="metric" title="Unity native allocated / managed heap in use, and GC count since start"><div class="v">${w.alive && w.residentBytes ? fmtMb(w.nativeAllocatedBytes) + ' / ' + fmtMb(w.managedBytes) : '—'}</div><div class="l">native / managed · gc ${w.gcCount || 0}</div></div>
             ${interestMetrics(w)}
           </div>
           ${(w.interest && w.interest.warning) ? `<div class="meta" style="margin-bottom:8px;color:#e0a33e" title="Interest management bounds who hears about entities, not who simulates them">⚠ ${esc(w.interest.warning)}</div>` : ''}

@@ -77,6 +77,7 @@ Nebula's runtime applies these conventions:
 | `status` | Runtime status, normally `starting` or `ready`. |
 | `lastHeartbeat` | Time of registration or the newest heartbeat. |
 | `tickCount`, `tickMs` | The worker's simulation tick counter and reported time per tick in milliseconds. |
+| `residentBytes`, `nativeAllocatedBytes`, `nativeReservedBytes`, `managedBytes`, `gcCount` | Memory of the worker process, sampled at heartbeat rate: working set (RSS), Unity native allocated and reserved, the managed heap in use, and gen-0 collections since start. Additive: a worker that predates them reads 0. |
 | `entityCount`, `authoritativeCount`, `ghostCount` | All resident entities, the authoritative ones, and the ghosts. |
 | `playerCount`, `botCount`, `serverDrivenCount` | Authoritative entities owned by human clients, by bot clients, and by nobody. |
 
@@ -130,7 +131,7 @@ A request body is `{"ops":[op, op, ...]}`. Each op is an object with an `"op"` n
 | `op` | Arguments | Effect |
 | --- | --- | --- |
 | `RegisterWorker` | `workerId`, `workerIndex`, `address`, `port` | Insert or update; status `starting`, fresh heartbeat. Counters are kept on update. |
-| `HeartbeatWorker` | `workerId`, `status`, `tickCount`, `tickMs`, `entityCount`, `authoritativeCount`, `ghostCount`, `playerCount`, `botCount`, `serverDrivenCount` | Update status, heartbeat, and every counter. No-op for an unknown id. |
+| `HeartbeatWorker` | `workerId`, `status`, `tickCount`, `tickMs`, `entityCount`, `authoritativeCount`, `ghostCount`, `playerCount`, `botCount`, `serverDrivenCount`, `residentBytes`, `nativeAllocatedBytes`, `nativeReservedBytes`, `managedBytes`, `gcCount` | Update status, heartbeat, and every counter. No-op for an unknown id. |
 | `UnregisterWorker` | `workerId` | Remove the worker; every lease it names becomes unassigned and `orphaned`. |
 | `RegisterGateway` | `gatewayId`, `address`, `port`, `incarnation` | Insert or update with a fresh heartbeat. A new `incarnation` clears a stale `drainRequested`. |
 | `HeartbeatGateway` | `gatewayId` and the stats fields of the gateway row (`pendingJoins` through `draining`) | Refresh the heartbeat and replace the stats. No-op for an unknown id. |

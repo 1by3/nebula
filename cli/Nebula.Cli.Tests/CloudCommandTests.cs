@@ -410,7 +410,7 @@ public class CloudCommandTests
             },
             workers = new object[]
             {
-                new { id = "w1", index = 1, size = "small", state = "running", privateAddress = "10.10.0.20", tickMs = 3.2, utilization = 0.45, entities = 812, players = 9, bots = 0, heartbeatAgeSeconds = 0.9 },
+                new { id = "w1", index = 1, size = "small", state = "running", privateAddress = "10.10.0.20", tickMs = 3.2, utilization = 0.45, entities = 812, players = 9, bots = 0, heartbeatAgeSeconds = 0.9, residentBytes = 2147483648L, nativeAllocatedBytes = 314572800L, managedBytes = 125829120L },
                 new { id = "w2", index = 2, size = "small", state = "launching", players = 0, bots = 0 },
             },
             mesh = new { desiredWorkers = 2, liveWorkers = 1, players = 14, bots = 0, pendingJoins = 1, npcs = 50, scale = new { minWorkers = 1, maxWorkers = 4 } },
@@ -437,9 +437,9 @@ public class CloudCommandTests
     gw2#00000001  draining  no   203.0.113.11:7000  2        0        1       10/20       100/200         50          5%   0.1     2        2.0
 
     workers:
-    worker  index  size   state      address     tick ms  util  entities  players  bots  hb s
-    w1      1      small  running    10.10.0.20  3.2      45%   812       9        0     0.9
-    w2      2      small  launching                                       0        0
+    worker  index  size   state      address     tick ms  util  entities  players  bots  rss      native  managed  hb s
+    w1      1      small  running    10.10.0.20  3.2      45%   812       9        0     2048.0M  300.0M  120.0M   0.9
+    w2      2      small  launching                                       0        0     -        -       -
 ";
         Assert.That(r.Out, Is.EqualTo(expected.Replace("\r\n", "\n")));
     }

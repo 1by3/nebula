@@ -117,6 +117,11 @@ namespace Nebula
             w.ServerDrivenCount = stats.ServerDrivenCount;
             w.HasGlobalEntities = stats.HasGlobalEntities;
             w.OldestDirtySeconds = stats.OldestDirtySeconds;
+            w.ResidentBytes = stats.ResidentBytes;
+            w.NativeAllocatedBytes = stats.NativeAllocatedBytes;
+            w.NativeReservedBytes = stats.NativeReservedBytes;
+            w.ManagedBytes = stats.ManagedBytes;
+            w.GcCount = stats.GcCount;
             Touch();
         }
 
