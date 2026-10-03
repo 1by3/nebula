@@ -63,6 +63,19 @@ namespace Nebula
             RawInterestSettings().Validate(issues, worldCellSize, GhostBandMargin);
             if (ChunkRetireSeconds < 0)
                 issues?.Add(new ConfigIssue(ConfigSeverity.Warning, nameof(ChunkRetireSeconds), "ChunkRetireSeconds cannot be negative; chunks are retired as soon as nobody needs them."));
+            if (ChunkedWorld && worldCellSize > 0 && issues != null)
+            {
+                if (ChunkedWorldServerRingMargin < 0)
+                    issues.Add(new ConfigIssue(ConfigSeverity.Warning, nameof(ChunkedWorldServerRingMargin), "ChunkedWorldServerRingMargin cannot be negative; using 0 (the allocator ring is NearCells)."));
+                else
+                {
+                    var interest = ToInterestSettings(worldCellSize);
+                    float lead = interest.ChunkLoadLeadSeconds(worldCellSize, ChunkedWorldServerRingMargin);
+                    if (lead < InterestSettings.MinChunkLoadLeadSeconds)
+                        issues.Add(new ConfigIssue(ConfigSeverity.Warning, nameof(ChunkedWorldServerRingMargin),
+                            $"With ChunkedWorldServerRingMargin {ChunkedWorldServerRingMargin} a pawn moving at InterestMaxFocusSpeed has {lead:0.#} s between a chunk being requested and interest reaching it (cell {worldCellSize} m, near {interest.NearCells(worldCellSize)} cell(s)); a chunk's lease and content take about {InterestSettings.MinChunkLoadLeadSeconds:0.#} s, so a client may be sent an entity standing on a chunk with no content yet. Raise the margin, or the cell size."));
+                }
+            }
         }
 
         /// <summary>

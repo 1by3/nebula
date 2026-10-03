@@ -113,6 +113,7 @@ namespace Nebula
         public bool ChunkedWorld = false;
         public bool ChunkPlanar = true;
         public float ChunkRetireSeconds = 30f;
+        public int ChunkedWorldServerRingMargin = 1;
         public float InterestNearRadius = 30f;
         public float InterestFarRadius = 80f;
         public int InterestMidDivisor = 4;

@@ -78,7 +78,7 @@ replica standing on a cell it has not loaded. (With no world definition — `cel
 short-circuits to `ClientLoadRadiusCells`.)
 
 - [World partition](/docs/guides/world-partition)'s client cell-streaming radius is `NearCells`. `ClientLoadRadiusCells` sets its minimum value.
-- The [runtime chunk allocator](/docs/guides/runtime-containers)'s ring defaults to `NearCells + 1`, so a chunk is leased before a client's interest radius can reach it.
+- The [runtime chunk allocator](/docs/guides/runtime-containers)'s ring defaults to `NearCells + 1` (`NearCells + ChunkedWorldServerRingMargin`), so a chunk is leased before a client's interest radius can reach it.
 - A client's [`ContainerOwnership`](#scoped-container-ownership) window is a box of `NearCells × cell size` around each focus its evaluation authorized (the pawn by default; every focus with a free camera or a policy).
 
 ## Level of detail inside the set

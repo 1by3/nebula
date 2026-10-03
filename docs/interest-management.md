@@ -263,8 +263,10 @@ short-circuits to `max(0, ClientLoadRadiusCells)`.
 
 - Client content streaming (baked: `WorldStreamer` anchor radius; runtime: which containers the client is told about)
   uses `NearCells`.
-- `RuntimeGridAllocator.Ring` is *constructed* as `NearCells + 1` by `NebulaChunkedWorld`, so cells exist before
-  interest needs them; there is no separate setting for validation to police.
+- `RuntimeGridAllocator.Ring` is *constructed* as `NearCells + ChunkedWorldServerRingMargin` (default 1) by
+  `NebulaChunkedWorld`, so cells exist before interest needs them. `NearCells` already holds every chunk interest can
+  reach; the margin is the time to build one, since a pawn crossing a chunk edge requests the new ring only then
+  (`InterestSettings.ChunkLoadLeadSeconds`). Validation warns when a margin leaves under 4 s of that.
 - `ContainerOwnershipMsg` becomes a per-client **delta** (`Full` flag, upserts, removes): a client is told only about
   containers overlapping a `NearCells` window of **every focus its evaluation authorized** — the pawn, the accepted
   focus hint, and the policy's point and box foci — plus its instance and the dynamic containers of entities in its
@@ -294,8 +296,9 @@ logs): near ≤ far ≤ radius; exit margin > 0; cell size > 0 and, with a world
 (else snapped + warned); subscribe margin ≥ max speed / eval Hz; `GhostBandMargin` < interest cell; load radius cells ×
 cell ≥ radius + exit (else auto-raised + warned); max radius ≥ radius, and a **non-positive max radius is set to
 the mesh radius rather than read as "uncapped"** — it is the ceiling on what a prefab may ask a gateway to send,
-so it is a boundary that is never off (**D43**). The allocator ring is *not* validated: `NebulaChunkedWorld`
-constructs it as `NearCells + 1`, so there is no separate value to disagree with. Errors block
+so it is a boundary that is never off (**D43**). The allocator ring is `NearCells + ChunkedWorldServerRingMargin`,
+so it cannot fall below what interest reaches; a negative margin is clamped to 0, and a margin leaving under 4 s of
+chunk-build lead at `InterestMaxFocusSpeed` is warned. Errors block
 start-up only where behaviour would be wrong (non-positive sizes); everything else is clamped and warned.
 
 ## 10. Turnkey chunked world
