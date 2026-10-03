@@ -39,6 +39,8 @@ public static class Program
         public double ReconnectEvery;
         public string? Csv;
         public bool Verbose;
+        /// <summary>The game content version clients announce (<c>--content-version</c>); a gateway refuses clients whose version it doesn't accept (NebulaConfig.GameContentVersion).</summary>
+        public uint ContentVersion;
         /// <summary>Fraction of clients that never send a focus hint and never move their focus: idle players.</summary>
         public double Idle;
         public int Seed = 1;
@@ -290,7 +292,7 @@ public static class Program
             case TransportEvent.Kind.Connected:
                 c.Connected = true;
                 writer.Reset();
-                new HelloMsg { Role = PeerRole.Client, Id = c.Name, Flags = o.Bot ? HelloFlags.Bot : HelloFlags.None, Token = c.IdentityToken, Session = c.SessionToken }.Write(writer);
+                new HelloMsg { Role = PeerRole.Client, Id = c.Name, Flags = o.Bot ? HelloFlags.Bot : HelloFlags.None, Token = c.IdentityToken, Session = c.SessionToken, GameContentVersion = o.ContentVersion }.Write(writer);
                 Send(c, Delivery.ReliableOrdered, writer.ToSegment());
                 break;
             case TransportEvent.Kind.Disconnected:
@@ -630,6 +632,7 @@ public static class Program
                     case "--csv": o.Csv = Next(); break;
                     case "--idle": o.Idle = Math.Clamp(double.Parse(Next(), CultureInfo.InvariantCulture), 0, 1); break;
                     case "--verbose": o.Verbose = true; break;
+                    case "--content-version": o.ContentVersion = uint.Parse(Next(), CultureInfo.InvariantCulture); break;
                     case "--behaviour": case "--behavior": o.MixText = Next(); break;
                     case "--mix": o.MixText = Next(); break;
                     case "--opt":
@@ -658,7 +661,7 @@ public static class Program
 
     private static void Usage()
     {
-        Console.WriteLine("nebula-loadgen --gateway <host:port> --clients <n> --seconds <s> [--ramp <s>] [--input-hz <n>] [--name-prefix <p>] [--bot] [--token <identity token>] [--reconnect-every <s>] [--idle <0..1>] [--csv <file>] [--verbose]");
+        Console.WriteLine("nebula-loadgen --gateway <host:port> --clients <n> --seconds <s> [--ramp <s>] [--input-hz <n>] [--name-prefix <p>] [--bot] [--token <identity token>] [--reconnect-every <s>] [--idle <0..1>] [--csv <file>] [--content-version <n>] [--verbose]");
         Console.WriteLine("Behaviours: [--behaviour <name> | --mix name:weight,...] [--opt name.key=value]... [--profile <json>] [--plugin <dll>]... [--seed <n>] [--max-minutes <m>] [--move-speed <m/s>] [--id-offset <n>] [--tokens-file <file>] [--behaviour-stats <file.jsonl|file.csv>]");
         Console.WriteLine("Built-in behaviours: idle, wander, path, burst, travel, rpc, churn. See the load-testing guide for each one's options and for writing a plugin.");
         Console.WriteLine("--idle is the fraction of clients that stand still and send no focus hint; their replica count and bytes are what must stay flat as the world grows.");

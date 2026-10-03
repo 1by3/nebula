@@ -34,6 +34,7 @@ By default inputs carry no game meaning; [behaviours](#behaviours) shape them. W
 | `--name-prefix P` | Player names are `P0`, `P1`, ... Default `load`. |
 | `--idle <0..1>` | Fraction of clients that stand still and send no focus hint. Default `0`. Their replica count and bytes are what must stay flat as the world grows — see [Interest management](/docs/guides/interest-management). |
 | `--csv file` | Also write the per-second report as CSV. |
+| `--content-version <n>` | The game content version clients announce. A gateway refuses clients outside the versions it accepts (`NebulaConfig.GameContentVersion`), so set it to the deployed build's number. Default 0. |
 | `--verbose` | Print each client's welcome, rejection, and drain events. |
 
 ## Behaviours
