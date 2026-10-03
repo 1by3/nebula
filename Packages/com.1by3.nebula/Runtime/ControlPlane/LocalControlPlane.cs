@@ -122,6 +122,11 @@ namespace Nebula
             w.NativeReservedBytes = stats.NativeReservedBytes;
             w.ManagedBytes = stats.ManagedBytes;
             w.GcCount = stats.GcCount;
+            w.FrameAvgMs = stats.FrameAvgMs;
+            w.FrameP90Ms = stats.FrameP90Ms;
+            w.FrameMaxMs = stats.FrameMaxMs;
+            w.FrameSections = stats.FrameSections;
+            w.ProfileSections = stats.ProfileSections;
             Touch();
         }
 

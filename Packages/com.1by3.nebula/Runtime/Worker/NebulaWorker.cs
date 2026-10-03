@@ -229,6 +229,11 @@ namespace Nebula
         private static readonly ProfileSection ProfBand = NebulaProfiler.Section("band");
         private static readonly ProfileSection ProfPublish = NebulaProfiler.Section("publish");
         private static readonly ProfileSection ProfGap = NebulaProfiler.Section("gap");
+        // The passes between the sections above, so the sections add up to the tick; 'untimed' is what is still left.
+        private static readonly ProfileSection ProfBegin = NebulaProfiler.Section("begin");
+        private static readonly ProfileSection ProfFrameSim = NebulaProfiler.Section("frames.sim");
+        private static readonly ProfileSection ProfReplicate = NebulaProfiler.Section("replicate");
+        private static readonly ProfileSection ProfUntimed = NebulaProfiler.Section("untimed");
         private long _lastTickEnd;
         private float _nextProfileReport;
         private int _profileTicks;
@@ -239,6 +244,10 @@ namespace Nebula
         private int _profileSkippedTicks;
         private uint _lastSimulatedTick;
         private int _lastGcCount;
+        /// <summary>The last profile window's frame figures and section values, sent on every heartbeat until the next window replaces them.</summary>
+        private FrameReport _lastFrame;
+        private string _lastFrameSplit = "";
+        private string _lastProfileSections = "";
 
         private ulong _nextSequence;
         /// <summary>
@@ -427,6 +436,7 @@ namespace Nebula
                 return;
             }
             IsListening = true;
+            FrameProfiler.Install();
             _entityRequests = new EntityRequests(this, key => Persistence?.Find(key), () => ConnectedWorkerIndices);
             _ = ChunkStates; // registers the chunk state message handlers before any peer can send one
             // The row this worker asks the control plane for, settled before anything can read the document: the
@@ -995,6 +1005,11 @@ namespace Nebula
                 ServerDrivenCount = (uint)serverDriven,
                 HasGlobalEntities = HasGlobalEntities,
                 OldestDirtySeconds = Persistence?.OldestDirtyAgeSeconds ?? 0f,
+                FrameAvgMs = _lastFrame.AvgMs,
+                FrameP90Ms = _lastFrame.P90Ms,
+                FrameMaxMs = _lastFrame.MaxMs,
+                FrameSections = _lastFrameSplit,
+                ProfileSections = _lastProfileSections,
             };
             WorkerMemorySampler.Sample(ref stats);
             _lastMemory = stats;
@@ -1055,7 +1070,9 @@ namespace Nebula
         /// when keeping up), average and worst tick, how many FixedUpdates found no new tick to simulate ('dup':
         /// Unity catching up after a slow frame) and how many tick numbers were skipped ('skip': the process fell
         /// further behind the wall clock than <see cref="MaxCatchUpTicks"/>), and every profiler section in ms per
-        /// tick (see <see cref="NebulaProfiler"/>).
+        /// tick (see <see cref="NebulaProfiler"/>), including 'untimed', the part of the tick no section covers. After
+        /// the sections comes the Unity frame itself: its average, p90 and max wall time and its split in ms per
+        /// frame (see <see cref="FrameProfiler"/>); the split adds up to the average, with 'idle' the remainder.
         /// </summary>
         /// <summary>The containers pass's counts for the window, per tick, and the registry's shortcut counters (reset here).</summary>
         private string ResolveCounters(int ticks)
@@ -1074,7 +1091,17 @@ namespace Nebula
             int gc = GC.CollectionCount(0);
             int gcs = gc - _lastGcCount;
             _lastGcCount = gc;
-            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} dormant {DormantCount} resolve {ResolveCounters(_profileTicks)} rpcRejected {NebulaDiagnostics.RejectedAuthorityRpcSends} mem rss={WorkerMemorySampler.Mb(_lastMemory.ResidentBytes)}MB native={WorkerMemorySampler.Mb(_lastMemory.NativeAllocatedBytes)}MB managed={WorkerMemorySampler.Mb(_lastMemory.ManagedBytes)}MB | {NebulaProfiler.ReportAndReset(_profileTicks)}");
+            var frame = FrameProfiler.Take(_profileTotalMs);
+            _lastFrame = frame;
+            _lastFrameSplit = frame.Frames > 0 ? frame.Split() : "";
+            // What the tick spent outside every section above, so the sections add up to the tick (a game's own
+            // sections may nest inside 'simulate', so only Nebula's are summed).
+            long accounted = ProfGhosts.Elapsed + ProfSyncTransforms.Elapsed + ProfSimulate.Elapsed + ProfRecordPose.Elapsed + ProfContainers.Elapsed + ProfBand.Elapsed + ProfInterest.Elapsed + ProfPublish.Elapsed + ProfBegin.Elapsed + ProfFrameSim.Elapsed + ProfReplicate.Elapsed;
+            ProfUntimed.Elapsed = Math.Max(0L, (long)(_profileTotalMs / 1000.0 * Stopwatch.Frequency) - accounted);
+            ProfUntimed.Calls = _profileTicks;
+            string frameText = frame.Frames > 0 ? $" | frame avg {frame.AvgMs:0.0}ms p90 {frame.P90Ms:0.0}ms max {frame.MaxMs:0.0}ms: {_lastFrameSplit}" : "";
+            string sections = NebulaProfiler.ReportAndReset(_profileTicks, out _lastProfileSections);
+            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} dormant {DormantCount} resolve {ResolveCounters(_profileTicks)} rpcRejected {NebulaDiagnostics.RejectedAuthorityRpcSends} mem rss={WorkerMemorySampler.Mb(_lastMemory.ResidentBytes)}MB native={WorkerMemorySampler.Mb(_lastMemory.NativeAllocatedBytes)}MB managed={WorkerMemorySampler.Mb(_lastMemory.ManagedBytes)}MB | {sections}{frameText}");
             _profileTicks = 0;
             _profileFrames = 0;
             _profileMaxMs = 0f;
@@ -1092,6 +1119,7 @@ namespace Nebula
             TickCount++;
             _costMeter.CountTick();
             float dt = NetworkTime.TickInterval;
+            ProfBegin.Begin();
             // Which entities update on this tick (NetworkIdentity.UpdateInterval), decided once for every pass below,
             // and which fall asleep or wake on it (docs/server-owned-entities.md §6).
             int dormant = 0;
@@ -1107,6 +1135,7 @@ namespace Nebula
             ContainerRegistry.RefreshCaches();
             // Interior colliders of every physics frame follow their sources (a ramp lowering, a door opening).
             PhysicsFrames.SyncAllContent();
+            ProfBegin.End();
 
             // 1. Ghosts follow the stream they are driven by (kinematic: no solve of their own).
             ProfGhosts.Begin();
@@ -1162,9 +1191,11 @@ namespace Nebula
                     ProfSyncTransforms.Begin();
                     Physics.SyncTransforms();
                     ProfSyncTransforms.End();
+                    ProfSimulate.Elapsed -= ProfSyncTransforms.LastSpan; // counted under physics.sync, not twice
                 }
             }
             ProfSimulate.End();
+            ProfFrameSim.Begin();
             InstanceScenes.Simulate(dt);
             // Every physics frame is its own scene, still in its own coordinates; and every frame's motion is sampled
             // once the carriers have moved this tick (docs/container-tree.md D14).
@@ -1172,6 +1203,7 @@ namespace Nebula
             PhysicsFrames.UpdateStates(tick, dt);
             // Each frame's floating origin stays near what this worker simulates in it (docs/container-tree.md D19).
             PhysicsFrames.AutoShift(_frameOriginPositions ??= FrameOriginPositions);
+            ProfFrameSim.End();
 
             // Remember where what we simulate ended up this tick, for lag-compensated hit tests and time-sensitive
             // validation (docs/state-history.md). Ghosts record themselves when the owner's stream is applied, with
@@ -1302,9 +1334,11 @@ namespace Nebula
             ProfCHandover.Add(tHandover);
             ProfCLoop.Add(passTotal - tCopy - tResolve - tBoundary - tLease - tHandover);
 
+            ProfReplicate.Begin();
             foreach (var e in _authoritative) e.PrepareReplication(tick, e.DueThisTick);
             // Who may see each Custom behaviour, decided before anything of this tick is written to anyone.
             EvaluateSyncAudiences(tick);
+            ProfReplicate.End();
 
             // 4. Ghost band: create neighboring copies before an entity can cross.
             ProfBand.Begin();

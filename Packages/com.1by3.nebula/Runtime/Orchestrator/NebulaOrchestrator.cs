@@ -2076,6 +2076,11 @@ namespace Nebula
                 w.Prop("nativeReservedBytes", row != null ? (long)row.NativeReservedBytes : 0L);
                 w.Prop("managedBytes", row != null ? (long)row.ManagedBytes : 0L);
                 w.Prop("gcCount", row != null ? (long)row.GcCount : 0L);
+                w.Prop("frameAvgMs", row != null ? row.FrameAvgMs : 0f);
+                w.Prop("frameP90Ms", row != null ? row.FrameP90Ms : 0f);
+                w.Prop("frameMaxMs", row != null ? row.FrameMaxMs : 0f);
+                ControlPlaneJson.SectionsObject(w, "frameSections", row?.FrameSections);
+                ControlPlaneJson.SectionsObject(w, "profileSections", row?.ProfileSections);
                 w.Prop("utilization", Loads.Utilization(id));
                 w.Prop("tickCount", row != null ? row.TickCount : 0UL);
                 w.Prop("entities", row != null ? row.EntityCount : 0U);
