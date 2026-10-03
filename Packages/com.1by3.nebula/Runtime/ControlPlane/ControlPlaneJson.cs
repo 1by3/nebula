@@ -74,6 +74,11 @@ namespace Nebula
                 w.Prop("nativeReservedBytes", (long)x.NativeReservedBytes);
                 w.Prop("managedBytes", (long)x.ManagedBytes);
                 w.Prop("gcCount", (long)x.GcCount);
+                w.Key("frameAvgMs"); Num(w, x.FrameAvgMs);
+                w.Key("frameP90Ms"); Num(w, x.FrameP90Ms);
+                w.Key("frameMaxMs"); Num(w, x.FrameMaxMs);
+                w.Prop("frameSections", x.FrameSections ?? "");
+                w.Prop("profileSections", x.ProfileSections ?? "");
                 w.EndObject();
             }
             w.EndArray();
@@ -189,6 +194,11 @@ namespace Nebula
                         NativeReservedBytes = (ulong)Num(o, "nativeReservedBytes"),
                         ManagedBytes = (ulong)Num(o, "managedBytes"),
                         GcCount = (uint)Num(o, "gcCount"),
+                        FrameAvgMs = (float)Num(o, "frameAvgMs"),
+                        FrameP90Ms = (float)Num(o, "frameP90Ms"),
+                        FrameMaxMs = (float)Num(o, "frameMaxMs"),
+                        FrameSections = Str(o, "frameSections") ?? "",
+                        ProfileSections = Str(o, "profileSections") ?? "",
                     });
                 }
             }
@@ -420,6 +430,11 @@ namespace Nebula
                         NativeReservedBytes = (ulong)Num(o, "nativeReservedBytes"),
                         ManagedBytes = (ulong)Num(o, "managedBytes"),
                         GcCount = (uint)Num(o, "gcCount"),
+                        FrameAvgMs = (float)Num(o, "frameAvgMs"),
+                        FrameP90Ms = (float)Num(o, "frameP90Ms"),
+                        FrameMaxMs = (float)Num(o, "frameMaxMs"),
+                        FrameSections = Str(o, "frameSections") ?? "",
+                        ProfileSections = Str(o, "profileSections") ?? "",
                     };
                     cp.HeartbeatWorker(Str(o, "workerId"), Str(o, "status"), stats);
                     return null;
@@ -545,6 +560,26 @@ namespace Nebula
             if (p.OwnPhysicsFrame) op.Arg("frame", true);
             if (p.FrameInterest != FrameInterestMode.WithCarrier) op.Arg("interest", (long)p.FrameInterest);
             return op;
+        }
+
+        /// <summary>
+        /// Writes a worker's <c>name=ms name=ms</c> profile string (see <see cref="WorkerStats.ProfileSections"/>) as a
+        /// JSON object of numbers, so <c>/api/state</c> readers get a map; an empty or missing string writes <c>{}</c>.
+        /// </summary>
+        public static void SectionsObject(JsonWriter w, string key, string compact)
+        {
+            w.Key(key);
+            w.BeginObject();
+            if (!string.IsNullOrEmpty(compact))
+            {
+                foreach (var pair in compact.Split(' '))
+                {
+                    int eq = pair.LastIndexOf('=');
+                    if (eq <= 0) continue;
+                    if (double.TryParse(pair.Substring(eq + 1), NumberStyles.Float, CultureInfo.InvariantCulture, out double ms)) w.Prop(pair.Substring(0, eq), ms);
+                }
+            }
+            w.EndObject();
         }
 
         public static string Str(Dictionary<string, object> o, string key) => PersistenceJson.GetString(o, key);

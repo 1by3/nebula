@@ -44,7 +44,7 @@ Use `NebulaLog.Info`, `Warn`, `Error`, and `Debugf` in your own components when 
 Every worker writes a profile line every five seconds:
 
 ```text
-[nebula] profile 300 ticks/5s 300 frames avg 6.8ms max 29.6ms dup 4 skip 0 gc 1 auth 331 ghosts 64 | poll=0.03 ghosts=0.07 physics.sync=0.08 simulate=5.40 poses=0.14 containers=0.56 band=0.26 publish=0.28 gap=9.86
+[nebula] profile 300 ticks/5s 300 frames avg 6.8ms max 29.6ms dup 4 skip 0 gc 1 auth 331 ghosts 64 dormant 0 rpcRejected 0 mem rss=812.0MB native=210.3MB managed=64.1MB | poll=0.03 ghosts=0.07 physics.sync=0.08 simulate=5.40 poses=0.14 containers=0.56 band=0.26 publish=0.28 gap=9.86 begin=0.04 frames.sim=0.02 replicate=0.09 untimed=0.03 | frame avg 16.7ms p90 17.4ms max 41.2ms: physics=1.20 fixed=0.10 tick=6.80 update=0.50 late=0.10 idle=8.00
 ```
 
 Use these fields to find a performance problem:
@@ -52,11 +52,14 @@ Use these fields to find a performance problem:
 - `ticks` should average 60 per second, and `frames` should stay close to `ticks`.
 - `dup` counts fixed updates that did not advance to a new network tick. An occasional duplicate is expected.
 - `skip` counts ticks discarded after the worker fell more than `NebulaWorker.MaxCatchUpTicks` behind. A value that keeps increasing means the worker cannot maintain the tick rate.
-- `avg` and `max` report the average and maximum time spent in a Nebula tick.
-- `simulate` includes your `NetworkTick` methods.
-- `gap` includes work outside the Nebula tick, such as the Unity physics step, `Update`, and idle time.
+- `avg` and `max` (before the `|`) report the average and maximum time spent in a Nebula tick.
+- The sections after the first `|` are milliseconds per tick and add up to the tick. `simulate` includes your `NetworkTick` methods. `begin`, `frames.sim` (instance scenes and physics frames) and `replicate` are the passes between the others, and `untimed` is whatever no section covers. `gap` is the time between two ticks.
+- `frame avg`, `p90` and `max` are the wall time of a whole Unity frame, from the start of one frame to the start of the next. A worker holding 60 frames per second averages 16.7 ms; a p90 or max far above it is a stall.
+- The split after the colon is milliseconds per frame and adds up to the frame average. `physics` is the physics step, `fixed` the rest of the FixedUpdate phase (script `FixedUpdate` other than Nebula's tick), `tick` Nebula's tick, `update` the Update phase (including Nebula's transport poll and your `Update` methods), and `late` the PreLateUpdate phase (your `LateUpdate` methods). `idle` is the remainder: waiting for the frame limiter, rendering, the engine's own frame work and garbage collection. A frame that is mostly `idle` has room to spare; one with little `idle` and an average above 16.7 ms is falling behind.
 
-To profile your own game code, create a section with `NebulaProfiler.Section("name")`, then call `Begin()` and `End()` around the work. The section appears in the worker's profile line.
+The worker sends the same figures on every heartbeat, so `GET /api/state` shows them per worker as `frameAvgMs`, `frameP90Ms`, `frameMaxMs`, `frameSections` (the split) and `profileSections` (every tick section), each a map from name to milliseconds. The values are those of the last completed five-second window. A worker older than this reports 0 and empty maps.
+
+To profile your own game code, create a section with `NebulaProfiler.Section("name")` and keep it in a `static readonly` field, then call `Begin()` and `End()` around the work. Asking for the same name again returns the same section. The section appears in the worker's profile line and in `profileSections`, in milliseconds per tick; a section that runs in fewer ticks than the window also shows its call count in parentheses on the profile line. A section nested inside another one (yours inside `simulate`) is counted in both.
 
 To read profile lines from a deployed worker, run `nebula logs --cloud w1 -n 300` and filter for `profile`.
 

@@ -250,7 +250,9 @@ namespace Nebula
                 .Arg("ghostCount", s.GhostCount).Arg("playerCount", s.PlayerCount).Arg("botCount", s.BotCount).Arg("serverDrivenCount", s.ServerDrivenCount).Arg("hasGlobalEntities", s.HasGlobalEntities)
                 .Arg("oldestDirtySeconds", s.OldestDirtySeconds)
                 .Arg("residentBytes", (long)s.ResidentBytes).Arg("nativeAllocatedBytes", (long)s.NativeAllocatedBytes).Arg("nativeReservedBytes", (long)s.NativeReservedBytes)
-                .Arg("managedBytes", (long)s.ManagedBytes).Arg("gcCount", (long)s.GcCount).End());
+                .Arg("managedBytes", (long)s.ManagedBytes).Arg("gcCount", (long)s.GcCount)
+                .Arg("frameAvgMs", s.FrameAvgMs).Arg("frameP90Ms", s.FrameP90Ms).Arg("frameMaxMs", s.FrameMaxMs)
+                .Arg("frameSections", s.FrameSections).Arg("profileSections", s.ProfileSections).End());
 
         public void UnregisterWorker(string workerId) => Enqueue(_op.Op(ControlPlaneJson.UnregisterWorker).Arg("workerId", workerId).End());
         public void RegisterGateway(string gatewayId, string address, ushort port, uint incarnation = 0) =>

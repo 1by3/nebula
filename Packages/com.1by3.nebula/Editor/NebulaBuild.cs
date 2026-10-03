@@ -50,7 +50,7 @@ namespace Nebula.Editor
             }
         }
 
-        [MenuItem("Nebula/Build/Linux Dedicated Server (Mono, development)", priority = 2)]
+        [MenuItem("Nebula/Build/Linux Dedicated Server (per NebulaConfig: Mono, development by default)", priority = 2)]
         public static void BuildLinuxServerMenu()
         {
             var report = BuildLinuxServer();
@@ -146,7 +146,14 @@ namespace Nebula.Editor
                 return null;
             }
             Directory.CreateDirectory(Path.GetDirectoryName(location));
-            PlayerSettings.SetScriptingBackend(named, ScriptingImplementation.Mono2x);
+            // Players are always Mono development builds. The Linux dedicated server follows NebulaConfig (ServerBuildDevelopment,
+            // ServerBuildScriptingBackend), which -nebula-release / -nebula-development / -nebula-il2cpp / -nebula-mono override;
+            // the defaults are the Mono development build every server was before.
+            bool server = subtarget == StandaloneBuildSubtarget.Server;
+            bool development = !server || ServerDevelopment();
+            var backend = server ? ServerBackend() : ScriptingImplementation.Mono2x;
+            var previousBackend = PlayerSettings.GetScriptingBackend(named);
+            PlayerSettings.SetScriptingBackend(named, backend);
             PlayerSettings.runInBackground = true;
             var options = new BuildPlayerOptions
             {
@@ -158,11 +165,21 @@ namespace Nebula.Editor
                 // has reused a game assembly compiled a day earlier while the package assembly was fresh (a build from a
                 // mirrored project), which the worker only reveals at run time as a MissingFieldException. A deploy
                 // build is worth the extra minute.
-                options = BuildOptions.Development | BuildOptions.CleanBuildCache,
+                options = (development ? BuildOptions.Development : BuildOptions.None) | BuildOptions.CleanBuildCache,
             };
-            Debug.Log($"[nebula] building {location} ({target}/{subtarget}) with scenes: {string.Join(", ", scenes)}");
+            Debug.Log($"[nebula] building {location} ({target}/{subtarget}, {(development ? "development" : "release")}, {(backend == ScriptingImplementation.IL2CPP ? "IL2CPP" : "Mono")}) with scenes: {string.Join(", ", scenes)}");
             ServiceExport.Write(Path.GetDirectoryName(location), scenes);
-            var report = BuildPipeline.BuildPlayer(options);
+            BuildReport report;
+            try
+            {
+                report = BuildPipeline.BuildPlayer(options);
+            }
+            finally
+            {
+                // A Mono build leaves Mono set, as it always has. An IL2CPP server build puts back what the project had, so
+                // the next Editor build or Play does not compile through IL2CPP.
+                if (backend == ScriptingImplementation.IL2CPP) PlayerSettings.SetScriptingBackend(named, previousBackend);
+            }
             Debug.Log($"[nebula] build {report.summary.result} in {report.summary.totalTime.TotalSeconds:F0}s, {report.summary.totalErrors} errors");
             if (report.summary.result == BuildResult.Succeeded && !CommandLine.Has("nebula-skip-service-publish"))
                 ServiceExport.Publish(Path.GetDirectoryName(location), target);
@@ -180,6 +197,24 @@ namespace Nebula.Editor
 
         /// <summary>Entry point for batchmode macOS player builds; exits with a non-zero code on failure.</summary>
         public static void BuildMacBatch() => ExitOnFailure(BuildMac());
+
+        /// <summary>Is the dedicated server a development build? -nebula-release / -nebula-development win over NebulaConfig.ServerBuildDevelopment.</summary>
+        private static bool ServerDevelopment()
+        {
+            if (CommandLine.Has("nebula-release")) return false;
+            if (CommandLine.Has("nebula-development")) return true;
+            var config = Resources.Load<NebulaConfig>("NebulaConfig");
+            return config == null || config.ServerBuildDevelopment;
+        }
+
+        /// <summary>The dedicated server's scripting backend. -nebula-il2cpp / -nebula-mono win over NebulaConfig.ServerBuildScriptingBackend.</summary>
+        private static ScriptingImplementation ServerBackend()
+        {
+            if (CommandLine.Has("nebula-il2cpp")) return ScriptingImplementation.IL2CPP;
+            if (CommandLine.Has("nebula-mono")) return ScriptingImplementation.Mono2x;
+            var config = Resources.Load<NebulaConfig>("NebulaConfig");
+            return config != null && config.ServerBuildScriptingBackend == NebulaServerScriptingBackend.IL2CPP ? ScriptingImplementation.IL2CPP : ScriptingImplementation.Mono2x;
+        }
 
         private static void ExitOnFailure(BuildReport report)
         {

@@ -60,11 +60,15 @@ A deploy target must be configured (`nebula cloud login` or `nebula config hetzn
         new OptionSpec("npcs", true, "set the game-defined 'npcs' mesh setting at startup (default from nebula.json)", "N"),
         new OptionSpec("open-ui", false, "open the Nebula Dashboard once it answers"),
         new OptionSpec("skip-build", false, "use the existing Builds/nebula-linux.tar.gz"),
+        new OptionSpec("release-build", false, "build the Linux server as a release (not development) build, whatever NebulaConfig says"),
+        new OptionSpec("development-build", false, "build the Linux server as a development build, whatever NebulaConfig says"),
+        new OptionSpec("il2cpp", false, "build the Linux server with IL2CPP (needs the Linux IL2CPP module in the Unity install)"),
+        new OptionSpec("mono", false, "build the Linux server with Mono"),
         new OptionSpec("skip-publish", false, "do not publish the control-plane and persistence modules"),
         new OptionSpec("skip-upload", false, "only rewrite the service and restart (no build, no upload)"),
         new OptionSpec("reset-persistence", false, "delete every saved entity when the orchestrator starts"),
     };
-    public override string[] Examples => new[] { "nebula deploy --target cloud", "nebula deploy --min 1 --max 8 --open-ui", "nebula deploy --release rel_01h", "nebula deploy --target hetzner --workers 4", "nebula deploy --skip-build" };
+    public override string[] Examples => new[] { "nebula deploy --target cloud", "nebula deploy --min 1 --max 8 --open-ui", "nebula deploy --release rel_01h", "nebula deploy --target hetzner --workers 4", "nebula deploy --skip-build", "nebula deploy --release-build --il2cpp" };
 
     public override int Run(Context ctx, ParsedArgs args)
     {
@@ -94,7 +98,7 @@ A deploy target must be configured (`nebula cloud login` or `nebula config hetzn
 
         // --- build --------------------------------------------------------------------------------------
         if (!skipUpload && !args.Has("skip-build"))
-            UnityBuild.Build(ctx, project, new UnityBuild.Options(BuildTarget.Linux));
+            UnityBuild.Build(ctx, project, new UnityBuild.Options(BuildTarget.Linux, Server: UnityBuild.ServerBuildFlags.FromArgs(args)));
         else if (!skipUpload && !File.Exists(project.LinuxTarball))
             throw new CliError($"no {project.LinuxTarball}", "drop --skip-build, or run `nebula build --linux`");
 

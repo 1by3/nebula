@@ -39,6 +39,19 @@ These fields change only what pressing Play in the Editor starts. Builds ignore 
 | `EditorPersistence` | `DevSaveFile` | `DevSaveFile` keeps the dev server's saved entities in `Library/Nebula/DevSaves/world.bin` between Play sessions. `InMemory` starts every Play from an empty world. |
 | `EditorPortOffset` | `50` | Add this to the gateway, worker and dashboard ports in `MultiplayerPlayMode`, so a mesh started with `nebula start` can run at the same time. `0` uses the configured ports. A checkout's `UserSettings/NebulaEditorPortOffset.txt` overrides it for that checkout. |
 
+### Server build
+
+These fields apply to the Linux dedicated server that `nebula build --linux` and `nebula deploy` build (and to `Nebula > Build`), in the Editor only. The defaults are the build every server was before: a Mono development build.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `ServerBuildDevelopment` | on | A development build: slower, with the profiler and script debugging. Turn it off for a release server. |
+| `ServerBuildScriptingBackend` | Mono | `Mono` or `IL2CPP`. IL2CPP needs the Linux IL2CPP module in the Unity install. |
+
+`nebula build --linux --release-build --il2cpp` (or `--development-build`, `--mono`) overrides them for one build, and `nebula deploy` takes the same flags.
+
+IL2CPP notes. Nebula finds `[ClientRpc]`, `[ServerRpc]` and `[AuthorityRpc]` methods, `NetworkVariable` fields and `INetworkSerializable` types by reflection, so managed stripping must not remove them. The package keeps its own assembly with a `link.xml`; your game's assemblies need the same, for example a `link.xml` beside your scripts with `<assembly fullname="YourGame" preserve="all" />`. Test an IL2CPP server with a bot or client before you deploy it: a stripped RPC fails at run time, not at build time. In a release build `Debug.isDebugBuild` is false; Nebula does not read it.
+
 ### Connections and processes
 
 | Field | Default | What to set |
