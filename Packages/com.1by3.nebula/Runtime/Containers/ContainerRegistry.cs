@@ -1233,7 +1233,9 @@ namespace Nebula
         {
             if (current != null && subject != null && current.IsCarriedBy(subject))
                 return Find(worldPosition, current, current.InstanceId, subject, current.Space, nearestFallback: true);
-            if (current == null) return EnterFrames(Find(worldPosition, null, 0, subject), null, worldPosition, 0, subject);
+            if (current == null) { FullResolves++; RefusedNoCurrent++; return EnterFrames(Find(worldPosition, null, 0, subject), null, worldPosition, 0, subject); }
+            if (!DisableFastResolve && StillAlone(worldPosition, current)) { FastResolves++; return current; }
+            FullResolves++;
             ulong instanceId = current.InstanceId;
             var space = current.InnerSpace;
             if (space != null && space.SignedDistanceInner(worldPosition) > hysteresis)
@@ -1251,6 +1253,63 @@ namespace Nebula
                 : FindInSpace(worldPosition, null, instanceId, subject, space) ?? space;
             var resolved = ResolveAmong(worldPosition, current, candidate, hysteresis, space);
             return resolved == current ? current : EnterFrames(resolved, space, worldPosition, instanceId, subject);
+        }
+
+        /// <summary>Resolves that took the shortcut of <see cref="StillAlone"/>, and those that searched (<see cref="Resolve"/>); for tests and profiling.</summary>
+        internal static int FastResolves, FullResolves;
+        /// <summary>Why a full search ran: no current box, a frame / moving / not-scope-space current box, the point outside it, a neighbour or a moving or carried box that might hold the point.</summary>
+        internal static int RefusedNoCurrent, RefusedFrame, RefusedOutside, RefusedNeighbour, RefusedMoving;
+        internal static void ResetResolveCounters() { FastResolves = FullResolves = RefusedNoCurrent = RefusedFrame = RefusedOutside = RefusedNeighbour = RefusedMoving = 0; }
+        /// <summary>Tests: take the full search every time, the reference the shortcut must agree with.</summary>
+        internal static bool DisableFastResolve;
+
+        /// <summary>
+        /// The point is inside <paramref name="current"/>, a box that stays where it is in the scope's own space, and
+        /// no other box can hold it: then <see cref="Find"/> would answer <paramref name="current"/> and
+        /// <see cref="Resolve"/> keeps it, whatever the hysteresis, so the search is skipped. Why hysteresis and
+        /// overlap priority cannot matter: the search picks the deepest, then smallest, box holding the point and
+        /// <c>ResolveAmong</c> only lets it replace the current box when it is another one; with no other box holding
+        /// the point that candidate is the current box. A box that does hold the point, whether it would win the
+        /// priority or not, makes this refuse, so every such case takes the search. Another box can hold
+        /// the point only if it touches this one (its static <see cref="Container.Neighbors"/>, kept by registration)
+        /// or it moves (carried or fixed in a carrier, scanned linearly like <see cref="Find"/> does); each is
+        /// rejected by the sphere around its bounds (<see cref="MightHold"/>), which encloses the box however it is rotated. Anything unusual (a frame, a
+        /// moving current box, the point outside it) takes the full search.
+        /// </summary>
+        private static bool StillAlone(Vector3 p, Container current)
+        {
+            if (current.Index == ushort.MaxValue || current.OwnPhysicsFrame || current.MayMove || current.Space != null) { RefusedFrame++; return false; }
+            if (!current.Contains(p)) { RefusedOutside++; return false; }
+            var neighbors = current.Neighbors;
+            for (int i = 0; i < neighbors.Count; i++)
+            {
+                var n = neighbors[i];
+                if (n != null && MightHold(n, p)) { RefusedNeighbour++; return false; }
+            }
+            for (int i = 0; i < MovingRuntime.Count; i++)
+            {
+                var m = MovingRuntime[i];
+                if (m != null && m != current && MightHold(m, p)) { RefusedMoving++; return false; }
+            }
+            for (int i = 0; i < DynamicList.Count; i++)
+            {
+                var d = DynamicList[i];
+                if (d != null && d != current && MightHold(d, p)) { RefusedMoving++; return false; }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Whether the point could be in the box. An axis-aligned box is its <see cref="Container.WorldBounds"/>,
+        /// so the answer is exact (a chunk of a grid is, and a point in the next chunk is no candidate). A turned box
+        /// is not: the bounds are its size about its centre, not turned with it, so a rotated ship's real box reaches
+        /// outside them, and the answer is the sphere that encloses it however it is turned: conservative.
+        /// </summary>
+        private static bool MightHold(Container c, Vector3 p)
+        {
+            var b = c.WorldBounds;
+            if (c.IsAxisAligned) return b.Contains(p);
+            return (p - b.center).sqrMagnitude <= b.extents.sqrMagnitude;
         }
 
         /// <summary>The hysteresis rule between the current box and the best candidate, both measured in <paramref name="space"/>.</summary>

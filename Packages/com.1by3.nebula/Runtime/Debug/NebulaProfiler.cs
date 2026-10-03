@@ -22,6 +22,9 @@ namespace Nebula
 
         public void Begin() { _start = Stopwatch.GetTimestamp(); }
 
+        /// <summary>Count <paramref name="elapsed"/> stopwatch ticks gathered in a local over one pass: a section hit per entity adds once per pass, not per entity.</summary>
+        public void Add(long elapsed) { Elapsed += elapsed; Calls++; }
+
         public void End()
         {
             LastSpan = Stopwatch.GetTimestamp() - _start;

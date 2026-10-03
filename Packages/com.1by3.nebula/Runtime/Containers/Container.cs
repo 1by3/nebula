@@ -455,6 +455,7 @@ namespace Nebula
             var s = Vector3.Scale(Size, t.lossyScale);
             _worldBounds = new Bounds(center, new Vector3(Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Abs(s.z)));
             _volume = _worldBounds.size.x * _worldBounds.size.y * _worldBounds.size.z;
+            _axisAligned = Mathf.Abs(_rotation.w) > 0.99999f;
             _cached = true;
             _cacheFrame = Time.frameCount;
             if (IsDynamic) transform.hasChanged = false; // a carrier above keeps its own flag until it refreshes itself
@@ -499,6 +500,10 @@ namespace Nebula
         }
 
         public Bounds WorldBounds { get { EnsureCached(); return _worldBounds; } }
+
+        /// <summary>The box is not turned in world space (cached with <see cref="WorldBounds"/>), so <see cref="WorldBounds"/> is the box itself and not only a size about its centre.</summary>
+        internal bool IsAxisAligned { get { EnsureCached(); return _axisAligned; } }
+        private bool _axisAligned;
 
         /// <summary>World-space volume of the box (nested containers: the smallest one holding a point wins).</summary>
         public float Volume { get { EnsureCached(); return _volume; } }
