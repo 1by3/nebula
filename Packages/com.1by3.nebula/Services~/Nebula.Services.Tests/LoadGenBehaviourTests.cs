@@ -291,13 +291,14 @@ public class LoadGenBehaviourTests
     [Test]
     public void AReportRowIsOneValidJsonLineAndOneCsvLineWithTheHeadersColumns()
     {
-        var row = new BehaviourReportRow { T = 12.5, Behaviour = "strafe,\"x\"", Clients = 10, Connected = 9, Joined = 8, InputsPerSec = 600, ActionsPerSec = 3.25, Actions = 40, Errors = 2, RttP50 = 15.5, BytesInPerSec = 2048 };
+        var row = new BehaviourReportRow { T = 12.5, Behaviour = "strafe,\"x\"", Clients = 10, Connected = 9, Joined = 8, InputsPerSec = 600, ActionsPerSec = 3.25, Actions = 40, Rpcs = 31, Errors = 2, RttP50 = 15.5, BytesInPerSec = 2048 };
         string json = row.ToJson();
         Assert.That(json, Does.Not.Contain("\n"));
         using var doc = JsonDocument.Parse(json);
         Assert.That(doc.RootElement.GetProperty("behaviour").GetString(), Is.EqualTo("strafe,\"x\""));
         Assert.That(doc.RootElement.GetProperty("actionsPerSec").GetDouble(), Is.EqualTo(3.25));
         Assert.That(doc.RootElement.GetProperty("errors").GetInt64(), Is.EqualTo(2));
+        Assert.That(doc.RootElement.GetProperty("rpcs").GetInt64(), Is.EqualTo(31));
         var headerColumns = BehaviourReportRow.CsvHeader.Split(',');
         Assert.That(doc.RootElement.EnumerateObject().Select(p => p.Name), Is.EqualTo(headerColumns));
         string csv = new BehaviourReportRow { Behaviour = "wander", Clients = 3 }.ToCsv();

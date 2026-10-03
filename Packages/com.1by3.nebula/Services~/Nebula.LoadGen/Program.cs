@@ -557,7 +557,7 @@ public static class Program
                 Connected = list.Count(c => c.Connected), Joined = list.Count(c => c.Join == JoinState.Joined),
                 InputsPerSec = inputs / interval, RpcsPerSec = rpcs / interval, TravelsPerSec = travels / interval,
                 ActionsPerSec = (rpcs + travels + custom) / interval,
-                Actions = list.Sum(c => c.Rpcs + c.Travels + c.CustomActions), Errors = list.Sum(c => c.Errors),
+                Actions = list.Sum(c => c.Rpcs + c.Travels + c.CustomActions), Rpcs = list.Sum(c => c.Rpcs), Errors = list.Sum(c => c.Errors),
                 Reconnects = list.Sum(c => c.Reconnects), Rejections = list.Sum(c => c.Rejections), SessionChanges = list.Sum(c => c.SessionChanges), SessionsLeft = list.Sum(c => c.Left),
                 RttP50 = rtts.Count > 0 ? rtts[rtts.Count / 2] : 0, RttP95 = rtts.Count > 0 ? rtts[(int)(rtts.Count * 0.95)] : 0,
                 ReplicasAvg = withWelcome.Count > 0 ? withWelcome.Average(c => c.Replicas.Count) : 0,

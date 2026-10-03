@@ -220,19 +220,19 @@ public sealed class DefaultInputEncoder : IInputEncoder
 /// <summary>One behaviour's totals for one report interval, in a form a results collector reads.</summary>
 public sealed class BehaviourReportRow
 {
-    public const string CsvHeader = "t,behaviour,clients,connected,joined,inputsPerSec,actionsPerSec,rpcsPerSec,travelsPerSec,actions,errors,reconnects,rejections,sessionChanges,sessionsLeft,rttP50,rttP95,replicasAvg,bytesInPerSec";
+    public const string CsvHeader = "t,behaviour,clients,connected,joined,inputsPerSec,actionsPerSec,rpcsPerSec,travelsPerSec,actions,errors,reconnects,rejections,sessionChanges,sessionsLeft,rttP50,rttP95,replicasAvg,bytesInPerSec,rpcs";
 
     public double T;
     public string Behaviour = "";
     public int Clients, Connected, Joined;
     public double InputsPerSec, ActionsPerSec, RpcsPerSec, TravelsPerSec;
-    public long Actions, Errors;
+    public long Actions, Rpcs, Errors;
     public int Reconnects, Rejections, SessionChanges, SessionsLeft;
     public double RttP50, RttP95, ReplicasAvg, BytesInPerSec;
 
     private static string N(double v, string fmt = "0.##") => v.ToString(fmt, CultureInfo.InvariantCulture);
 
-    public string ToCsv() => string.Join(",", N(T, "0.0"), Escape(Behaviour), Clients, Connected, Joined, N(InputsPerSec), N(ActionsPerSec), N(RpcsPerSec), N(TravelsPerSec), Actions, Errors, Reconnects, Rejections, SessionChanges, SessionsLeft, N(RttP50, "0.0"), N(RttP95, "0.0"), N(ReplicasAvg, "0.0"), N(BytesInPerSec, "0"));
+    public string ToCsv() => string.Join(",", N(T, "0.0"), Escape(Behaviour), Clients, Connected, Joined, N(InputsPerSec), N(ActionsPerSec), N(RpcsPerSec), N(TravelsPerSec), Actions, Errors, Reconnects, Rejections, SessionChanges, SessionsLeft, N(RttP50, "0.0"), N(RttP95, "0.0"), N(ReplicasAvg, "0.0"), N(BytesInPerSec, "0"), Rpcs);
 
     /// <summary>One JSON object on one line; <c>t</c> is the seconds since the run started.</summary>
     public string ToJson()
@@ -257,7 +257,8 @@ public sealed class BehaviourReportRow
         F("rttP50", N(RttP50, "0.0"));
         F("rttP95", N(RttP95, "0.0"));
         F("replicasAvg", N(ReplicasAvg, "0.0"));
-        F("bytesInPerSec", N(BytesInPerSec, "0"), true);
+        F("bytesInPerSec", N(BytesInPerSec, "0"));
+        F("rpcs", Rpcs.ToString(CultureInfo.InvariantCulture), true);
         return sb.Append('}').ToString();
     }
 
