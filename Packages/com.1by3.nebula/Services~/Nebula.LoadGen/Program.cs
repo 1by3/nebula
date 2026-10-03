@@ -69,6 +69,9 @@ public static class Program
         public bool Connected;
         public double ConnectedAt, NextInput, NextPing, LastPongAt;
         public uint Tick;
+        /// <summary>Server ticks minus this machine's derived ticks, from the Welcome and each Pong; inputs are stamped with the server's tick clock.</summary>
+        public double TickSkew;
+        public readonly List<ClientInputMsg.Frame> RecentInputs = new();
         public int Reconnects, SessionChanges, PawnLosses, Rejections;
         public double ReconnectAt;
         private string _lastError = "";
@@ -190,12 +193,11 @@ public static class Program
                 {
                     if (now >= c.NextInput && !c.Leaving)
                     {
-                        c.NextInput = now + 1.0 / o.InputHz;
+                        c.NextInput = Math.Max(c.NextInput + 1.0 / o.InputHz, now - 0.05);
                         RunBehaviour(c, now, o);
                         if (c.Leaving) { c.Transport.Flush(); continue; }
                         writer.Reset();
-                        new ClientInputMsg { ClientId = c.SessionId, Frames = new List<ClientInputMsg.Frame> { new() { Tick = ++c.Tick, Payload = InputPayload(c) } } }.Write(writer, MsgId.ClientInput);
-                        Send(c, Delivery.Sequenced, writer.ToSegment());
+                        SendInput(c, writer);
                         c.Inputs++;
                     }
                     if (now >= c.NextPing)
@@ -334,6 +336,7 @@ public static class Program
                 if (reconnect && w.ClientId != c.SessionId) c.SessionChanges++;
                 if (reconnect && !w.Reclaimed && c.Pawn != 0) c.PawnLosses++;
                 c.Welcome = w;
+                c.TickSkew = w.ServerTick - NetworkTime.DerivedTickExact;
                 c.SessionId = w.ClientId;
                 if (!string.IsNullOrEmpty(w.SessionToken)) c.SessionToken = w.SessionToken;
                 if (!string.IsNullOrEmpty(w.Token)) c.IdentityToken = w.Token;
@@ -395,10 +398,23 @@ public static class Program
                 c.Epochs[vars.NetId] = vars.Epoch;
                 break;
             }
+            case MsgId.InstancePrepare:
+            {
+                // A crossing into another scope (a game that moves a joiner somewhere after the spawn): the worker waits for
+                // this client to say its side is ready, and gives up when it doesn't, leaving the pawn where it spawned. A
+                // synthetic client loads no scene, so it is always ready.
+                var preparation = InstancePreparationMsg.Read(r);
+                preparation.Success = true;
+                var answer = new NetworkWriter();
+                preparation.Write(answer, MsgId.InstanceReady);
+                Send(c, Delivery.ReliableOrdered, answer.ToSegment());
+                break;
+            }
             case MsgId.Pong:
             {
                 var pong = PongMsg.Read(r);
                 double rtt = (Now - pong.ClientTime) * 1000;
+                c.TickSkew = pong.ServerTick + rtt / 2 / 1000 * NetworkTime.TickRate - NetworkTime.DerivedTickExact;
                 c.LastPongAt = Now;
                 if (c.Rtts.Count < 200) c.Rtts.Add(rtt); else c.Rtts[c.Index % 200] = rtt;
                 break;
@@ -412,6 +428,28 @@ public static class Program
         Interlocked.Increment(ref _packetsOut);
         Interlocked.Add(ref _bytesOut, payload.Count);
         c.Transport.Send(c.Peer, delivery, payload);
+    }
+
+    /// <summary>
+    /// One input packet the way a real client sends it: a frame for each server tick, stamped with the tick it is for
+    /// (the server's clock plus a lead that covers the trip), the newest three frames in every packet. The worker applies
+    /// an input only on the tick it is stamped with, and drops one for a tick it has simulated, so a counter that starts
+    /// at 1 is never applied: the pawn stands still, whatever the behaviour asks of it.
+    /// </summary>
+    private static void SendInput(Client c, NetworkWriter writer)
+    {
+        double rtt = c.Rtts.Count > 0 ? c.Rtts[c.Index % c.Rtts.Count] : 50;
+        uint lead = (uint)(3 + Math.Ceiling(rtt / 2 / 1000 * NetworkTime.TickRate));
+        uint target = (uint)Math.Max(1, NetworkTime.DerivedTickExact + c.TickSkew) + lead;
+        if (c.Tick == 0 || c.Tick + 30 < target || c.Tick > target + 30) c.Tick = target - 1;
+        while (c.Tick < target)
+        {
+            c.Tick++;
+            c.RecentInputs.Add(new ClientInputMsg.Frame { Tick = c.Tick, Payload = InputPayload(c).ToArray() });
+        }
+        while (c.RecentInputs.Count > 3) c.RecentInputs.RemoveAt(0);
+        new ClientInputMsg { ClientId = c.SessionId, Frames = c.RecentInputs }.Write(writer, MsgId.ClientInput);
+        Send(c, Delivery.Sequenced, writer.ToSegment());
     }
 
     private static readonly byte[] EncodeBuffer = new byte[256];
