@@ -166,5 +166,49 @@ namespace Nebula.Tests
             Assert.AreSame(Reference(p, west, 0.35f), ContainerRegistry.Resolve(p, west, 0.35f));
             Assert.AreSame(ship.Carried, ContainerRegistry.Resolve(p, west, 0.35f), "boarded through the part of the box past its bounds");
         }
+
+        private Container[,] MakeChunkGrid(Vector3 origin, float size)
+        {
+            var grid = new Container[3, 3];
+            for (int x = 0; x < 3; x++)
+                for (int z = 0; z < 3; z++)
+                    grid[x, z] = MakeStatic($"chunk{x}{z}", origin + new Vector3((x - 1) * size, 0, (z - 1) * size), new Vector3(size, 400, size));
+            ContainerRegistry.Rebuild();
+            return grid;
+        }
+
+        [Test]
+        public void AnEntityWellInsideAGridChunkWithEightNeighboursTakesTheFastPath()
+        {
+            var grid = MakeChunkGrid(new Vector3(0, 0, 1000), 256f);
+            var centre = ContainerRegistry.FindById("chunk11");
+            Assume.That(centre.Neighbors.Count, Is.EqualTo(8));
+            ContainerRegistry.FastResolves = ContainerRegistry.FullResolves = 0;
+            Assert.AreSame(centre, ContainerRegistry.Resolve(new Vector3(40, 1, 1000 - 30), centre, 0.35f));
+            Assert.AreEqual(1, ContainerRegistry.FastResolves, "an axis-aligned neighbour does not hold a point in the next chunk");
+            Assert.AreEqual(0, ContainerRegistry.FullResolves);
+        }
+
+        [Test]
+        public void AHundredStationaryEntitiesOverA3x3GridDoOnlyFastResolves()
+        {
+            MakeChunkGrid(new Vector3(0, 0, 1000), 256f);
+            ContainerRegistry.FastResolves = ContainerRegistry.FullResolves = 0;
+            int n = 0;
+            for (int x = 0; x < 3; x++)
+                for (int z = 0; z < 3; z++)
+                {
+                    var chunk = ContainerRegistry.FindById($"chunk{x}{z}");
+                    for (int i = 0; i < 12 && n < 100; i++, n++)
+                    {
+                        // Inside the chunk, clear of its edges and of the hysteresis band.
+                        var p = chunk.transform.position + new Vector3(-100 + 17 * i, 1f, 90 - 15 * i);
+                        Assert.AreSame(chunk, ContainerRegistry.Resolve(p, chunk, 0.35f));
+                    }
+                }
+            Assert.AreEqual(100, n);
+            Assert.AreEqual(100, ContainerRegistry.FastResolves);
+            Assert.AreEqual(0, ContainerRegistry.FullResolves);
+        }
     }
 }

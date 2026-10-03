@@ -1266,7 +1266,11 @@ namespace Nebula
         /// <summary>
         /// The point is inside <paramref name="current"/>, a box that stays where it is in the scope's own space, and
         /// no other box can hold it: then <see cref="Find"/> would answer <paramref name="current"/> and
-        /// <see cref="Resolve"/> keeps it, whatever the hysteresis, so the search is skipped. Another box can hold
+        /// <see cref="Resolve"/> keeps it, whatever the hysteresis, so the search is skipped. Why hysteresis and
+        /// overlap priority cannot matter: the search picks the deepest, then smallest, box holding the point and
+        /// <c>ResolveAmong</c> only lets it replace the current box when it is another one; with no other box holding
+        /// the point that candidate is the current box. A box that does hold the point, whether it would win the
+        /// priority or not, makes this refuse, so every such case takes the search. Another box can hold
         /// the point only if it touches this one (its static <see cref="Container.Neighbors"/>, kept by registration)
         /// or it moves (carried or fixed in a carrier, scanned linearly like <see cref="Find"/> does); each is
         /// rejected by the sphere around its bounds (<see cref="MightHold"/>), which encloses the box however it is rotated. Anything unusual (a frame, a
@@ -1296,13 +1300,15 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Whether the point could be in the box: within the sphere that encloses it however it is rotated.
-        /// <see cref="Container.WorldBounds"/> is the box's size about its centre, not turned with it, so a rotated
-        /// ship's real box reaches outside it and a test against the bounds alone would miss it.
+        /// Whether the point could be in the box. An axis-aligned box is its <see cref="Container.WorldBounds"/>,
+        /// so the answer is exact (a chunk of a grid is, and a point in the next chunk is no candidate). A turned box
+        /// is not: the bounds are its size about its centre, not turned with it, so a rotated ship's real box reaches
+        /// outside them, and the answer is the sphere that encloses it however it is turned: conservative.
         /// </summary>
         private static bool MightHold(Container c, Vector3 p)
         {
             var b = c.WorldBounds;
+            if (c.IsAxisAligned) return b.Contains(p);
             return (p - b.center).sqrMagnitude <= b.extents.sqrMagnitude;
         }
 
