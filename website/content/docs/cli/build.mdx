@@ -6,12 +6,12 @@ description: "Build the Unity player and standalone .NET services"
 To build the Unity player and standalone .NET services, run:
 
 ```bash
-nebula build [worker|client|services] [--linux|--web] [--scratch] [--stop-mesh]
+nebula build [worker|client|services] [--linux|--web] [--release-build|--development-build] [--il2cpp|--mono] [--scratch] [--stop-mesh]
 ```
 
 The default build compiles the Unity player, exports configuration and container geometry, and publishes self-contained .NET orchestrator and gateway executables into the same build folder. `worker` and `client` build the same artifacts. `services` republishes only the .NET services using the last exported game data; run a full build after changing scenes, containers, settings, or persistence fields. Service builds require the .NET 10 SDK. Running the published services does not require a separate .NET installation.
 
-Without --linux, builds target this machine. --linux builds the Linux dedicated server and .NET services into Builds/Linux64 and packs Builds/nebula-linux.tar.gz for `nebula deploy`. --web builds the web client (a Unity Web build that connects over WebRTC) into Builds/Web. A local gateway serves it: after `nebula start`, open the gateway's address in a browser (http://127.0.0.1:7000/ by default). The deploy tarball never includes it: host the web build yourself and point it at the deployed gateway (see the web builds guide). If the Unity Editor has the project open, the build runs from a mirrored copy under ~/.nebula-cli/scratch (the Editor holds an exclusive lock on the project). Builds/unity-build\*.log has the full Unity output.
+Without --linux, builds target this machine. --linux builds the Linux dedicated server and .NET services into Builds/Linux64 and packs Builds/nebula-linux.tar.gz for `nebula deploy`. --web builds the web client (a Unity Web build that connects over WebRTC) into Builds/Web. A local gateway serves it: after `nebula start`, open the gateway's address in a browser (http://127.0.0.1:7000/ by default). The deploy tarball never includes it: host the web build yourself and point it at the deployed gateway (see the web builds guide). The Linux server is a Mono development build unless the project's NebulaConfig says otherwise (Server build: ServerBuildDevelopment, ServerBuildScriptingBackend). --release-build / --development-build and --il2cpp / --mono override that for one build; they apply to --linux only. IL2CPP needs the Linux IL2CPP module in the Unity install. If the Unity Editor has the project open, the build runs from a mirrored copy under ~/.nebula-cli/scratch (the Editor holds an exclusive lock on the project). Builds/unity-build\*.log has the full Unity output.
 
 ## Options
 
@@ -19,6 +19,10 @@ Without --linux, builds target this machine. --linux builds the Linux dedicated 
 | --- | --- |
 | `--linux` | Build the Linux dedicated server and pack the deploy tarball. |
 | `--web` | Build the web client into Builds/Web. |
+| `--release-build` | With --linux: a release (not development) server build, whatever NebulaConfig says. |
+| `--development-build` | With --linux: a development server build, whatever NebulaConfig says. |
+| `--il2cpp` | With --linux: build the server with IL2CPP (needs the Linux IL2CPP module in the Unity install). |
+| `--mono` | With --linux: build the server with Mono. |
 | `--scratch` | Always build from a mirrored copy of the project. |
 | `--force` | Build in place even if the Editor seems to hold the project. |
 | `--stop-mesh` | Stop a running local mesh first (it holds the previous build open). |
@@ -38,6 +42,8 @@ These work with every command and may appear before or after it.
 ```bash
 nebula build
 nebula build worker --linux
+nebula build --linux --release-build
+nebula build --linux --release-build --il2cpp
 nebula build --web
 nebula build --stop-mesh
 ```
