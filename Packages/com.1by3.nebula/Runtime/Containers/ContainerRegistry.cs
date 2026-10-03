@@ -1266,7 +1266,7 @@ namespace Nebula
         /// <see cref="Resolve"/> keeps it, whatever the hysteresis, so the search is skipped. Another box can hold
         /// the point only if it touches this one (its static <see cref="Container.Neighbors"/>, kept by registration)
         /// or it moves (carried or fixed in a carrier, scanned linearly like <see cref="Find"/> does); each is
-        /// rejected by its world bounds, which enclose the box however it is rotated. Anything unusual (a frame, a
+        /// rejected by the sphere around its bounds (<see cref="MightHold"/>), which encloses the box however it is rotated. Anything unusual (a frame, a
         /// moving current box, the point outside it) takes the full search.
         /// </summary>
         private static bool StillAlone(Vector3 p, Container current)
@@ -1276,19 +1276,30 @@ namespace Nebula
             for (int i = 0; i < neighbors.Count; i++)
             {
                 var n = neighbors[i];
-                if (n != null && n.WorldBounds.Contains(p)) return false;
+                if (n != null && MightHold(n, p)) return false;
             }
             for (int i = 0; i < MovingRuntime.Count; i++)
             {
                 var m = MovingRuntime[i];
-                if (m != null && m != current && m.WorldBounds.Contains(p)) return false;
+                if (m != null && m != current && MightHold(m, p)) return false;
             }
             for (int i = 0; i < DynamicList.Count; i++)
             {
                 var d = DynamicList[i];
-                if (d != null && d != current && d.WorldBounds.Contains(p)) return false;
+                if (d != null && d != current && MightHold(d, p)) return false;
             }
             return true;
+        }
+
+        /// <summary>
+        /// Whether the point could be in the box: within the sphere that encloses it however it is rotated.
+        /// <see cref="Container.WorldBounds"/> is the box's size about its centre, not turned with it, so a rotated
+        /// ship's real box reaches outside it and a test against the bounds alone would miss it.
+        /// </summary>
+        private static bool MightHold(Container c, Vector3 p)
+        {
+            var b = c.WorldBounds;
+            return (p - b.center).sqrMagnitude <= b.extents.sqrMagnitude;
         }
 
         /// <summary>The hysteresis rule between the current box and the best candidate, both measured in <paramref name="space"/>.</summary>

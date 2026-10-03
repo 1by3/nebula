@@ -150,5 +150,21 @@ namespace Nebula.Tests
             Assert.AreEqual(0, ContainerRegistry.FastResolves);
             Assert.AreEqual(1, ContainerRegistry.FullResolves);
         }
+
+        [Test]
+        public void ARotatedCarriedBoxThatReachesPastItsUnturnedBoundsStillTakesTheEntity()
+        {
+            // The box is 10 wide and 20 long; turned 90 degrees it is 20 wide along x, which its unturned world bounds
+            // (10 along x) do not cover. A point 8 m from its centre along x is inside the real box.
+            var west = ContainerRegistry.FindById("west");
+            var ship = MakeCarrier("ship", 42, new Vector3(-60, 0, 0), new Vector3(10, 6, 20));
+            ship.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
+            ContainerRegistry.RefreshCaches();
+            var p = new Vector3(-52f, 1f, 0f);
+            Assume.That(ship.Carried.Contains(p), Is.True);
+            Assume.That(ship.Carried.WorldBounds.Contains(p), Is.False, "outside the unturned bounds");
+            Assert.AreSame(Reference(p, west, 0.35f), ContainerRegistry.Resolve(p, west, 0.35f));
+            Assert.AreSame(ship.Carried, ContainerRegistry.Resolve(p, west, 0.35f), "boarded through the part of the box past its bounds");
+        }
     }
 }
