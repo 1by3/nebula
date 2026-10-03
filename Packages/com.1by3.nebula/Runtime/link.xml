@@ -1,0 +1,6 @@
+<linker>
+  <!-- IL2CPP managed stripping: Nebula discovers NetworkVariable fields, RPC methods and INetworkSerializable
+       types by reflection, and Activator creates them, so none may be stripped. A game keeps its own assemblies the
+       same way (a link.xml beside its scripts). -->
+  <assembly fullname="Nebula.Runtime" preserve="all" />
+</linker>

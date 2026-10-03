@@ -32,6 +32,21 @@ namespace Nebula
         [Tooltip("The floating origin moves once the pawn (client) or the centroid of the leased cells (worker) is more than this many cells from the origin cell.")]
         public int OriginShiftThresholdCells = 4;
 
+        [Header("Server build (editor only)")]
+        /// <summary>
+        /// Whether <c>Nebula &gt; Build</c> and <c>nebula build</c> / <c>nebula deploy</c> make the Linux dedicated server
+        /// a development build (the default, as before): slower, with the profiler and script debugging. Turn it off for a
+        /// release server. <c>nebula build --release</c> / <c>--development</c> override it for one build.
+        /// </summary>
+        [Tooltip("Editor only. Linux dedicated server builds are development builds (slower; profiler and script debugging). Untick for a release server. nebula build --release / --development override it for one build.")]
+        public bool ServerBuildDevelopment = true;
+        /// <summary>
+        /// The scripting backend of the Linux dedicated server build. Mono (the default, as before) or IL2CPP, which needs
+        /// the Unity install's Linux IL2CPP module. <c>nebula build --il2cpp</c> / <c>--mono</c> override it for one build.
+        /// </summary>
+        [Tooltip("Editor only. Scripting backend of the Linux dedicated server build: Mono, or IL2CPP (needs the Linux IL2CPP module in the Unity install; read the IL2CPP notes in the build docs first). nebula build --il2cpp / --mono override it for one build.")]
+        public NebulaServerScriptingBackend ServerBuildScriptingBackend = NebulaServerScriptingBackend.Mono;
+
         [Header("Editor dev loop")]
         /// <summary>
         /// What pressing Play in the Editor starts. <see cref="NebulaEditorRunMode.Mesh"/> (the default) runs
