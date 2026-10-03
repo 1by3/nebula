@@ -128,6 +128,14 @@ Only the owner can release. Before retiring, read `worker.RuntimeContainerIdleSe
 
 Entities inside a container that goes away are detached from it, never destroyed with it: ghosts on a worker and every remote entity on a client stay alive and pick up the next container from the following state update.
 
+## Chunk ring
+
+With `ChunkedWorld` on, the worker leases a square of chunks around every pawn it simulates: `NearCells` plus `ChunkedWorldServerRingMargin` cells out (a ring of `r` is `(2r + 1)` chunks on a side, on a planar grid). `NearCells` is the least that holds every chunk a client's interest can reach: the exit radius plus the distance the pawn may travel while an entity is removed, rounded up to whole chunks. The default margin of 1 adds a whole ring on top. A pawn that crosses a chunk edge requests its new ring at that moment, and a chunk's lease, registration and content take a moment, so the extra ring is the time to build a chunk before interest needs it. With 256 m chunks and the default interest settings, `NearCells` is 1: margin 1 leases 5 × 5 chunks per roaming pawn, margin 0 leases 3 × 3.
+
+Set `ChunkedWorldServerRingMargin` to 0 to lease only what interest can reach. `InterestSettings.ChunkLoadLeadSeconds` gives what is left for building a new chunk: the distance the new ring reaches past interest, divided by `InterestMaxFocusSpeed`. Validation warns, at start-up and in `nebula doctor`, when that is under 4 seconds. Two costs remain at 0 whatever the lead time: an entity no player owns, such as an NPC in the outermost chunk, has no neighbouring chunk to ghost into or hand over to unless another pawn leased one, and a pawn faster than `InterestMaxFocusSpeed` outruns the lead. A scoped grid takes the same ring unless its `ChunkGridDefinition.Ring` is set.
+
+A pawn that oscillates across a chunk edge does not churn the ring. The chunks it leaves stay wanted for `ChunkRetireSeconds` (and while any client or ghost stands in them) before the worker releases them, so stepping back and forth re-requests nothing.
+
 ## Assignment policy
 
 Runtime containers are dealt to workers by the orchestrator's assignment policy (`NebulaConfig.AssignmentPolicy`, or `-nebula-assignment`):

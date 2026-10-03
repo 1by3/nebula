@@ -141,7 +141,7 @@ Entities carrying a `PersistentEntity` component are saved and restored. See [Pe
 - Update-rate bands satisfy `InterestNearRadius <= InterestFarRadius <= InterestRadius`.
 - The exit margin is positive, and the subscription margin covers at least one evaluation interval of travel at `InterestMaxFocusSpeed`.
 - Region size is aligned to a divisor of the world cell size. A ghost band at least as wide as a region produces a warning; validation does not change the ghost band.
-- `ClientLoadRadiusCells` is raised to cover `InterestRadius + InterestExitMargin`. The effective streaming radius, [`NearCells`](/docs/guides/interest-management#one-notion-of-near), also includes movement during removal delays. The runtime allocator uses `NearCells + 1`.
+- `ClientLoadRadiusCells` is raised to cover `InterestRadius + InterestExitMargin`. The effective streaming radius, [`NearCells`](/docs/guides/interest-management#one-notion-of-near), also includes movement during removal delays. The runtime allocator uses `NearCells + ChunkedWorldServerRingMargin` (`NearCells + 1` by default).
 - `InterestMaxRadius` is at least `InterestRadius`. Zero does not disable this limit.
 
 ### Gateway extension
@@ -165,6 +165,7 @@ See [Build an infinite runtime world](/docs/guides/infinite-runtime-world) for t
 | `ChunkedWorld` | `false` | Turn on the unbounded chunked world: with `RuntimeWorld` assigned, Nebula builds the chunk grid from its cell size, leases chunks around every pawn on workers, keeps the floating origin near the pawn on clients, and raises `NebulaChunks.Loaded`/`Unloading` on every role. |
 | `ChunkPlanar` | `true` | Chunks are columns: the grid has one layer at `y = 0` and `RuntimeWorld.CellSize.y` is the column height. Turn off for a volumetric world. |
 | `ChunkRetireSeconds` | `30` | Seconds a chunk nobody needs stays leased before the worker retires it. Its persistent contents are checkpointed and restored when the chunk is requested again. |
+| `ChunkedWorldServerRingMargin` | `1` | Chunks the worker leases beyond `NearCells` around every pawn. `0` leases only the chunks interest can reach (9 instead of 25 at near 1) and warns when the time to build a newly requested chunk gets short. See [Chunk ring](/docs/guides/runtime-containers#chunk-ring). |
 
 ### Client update rates and prediction
 

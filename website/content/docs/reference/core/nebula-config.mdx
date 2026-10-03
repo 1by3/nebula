@@ -828,6 +828,14 @@ public float ChunkRetireSeconds = 30f;
 
 Seconds a chunk nobody needs stays leased before the worker retires it (its persistent contents are checkpointed and come back).
 
+### ChunkedWorldServerRingMargin [#chunkedworldserverringmargin]
+
+```csharp
+public int ChunkedWorldServerRingMargin = 1;
+```
+
+Chunks the worker keeps leased beyond what interest can reach (`NearCells`) around every pawn. 1 builds each chunk's content a whole chunk before a client can need it; 0 leases only what interest can reach (9 chunks instead of 25 at near 1) and leaves only the rounding slack to build a new chunk, and the config warns when that is under a few seconds at `InterestMaxFocusSpeed`. Never negative.
+
 ### InterestNearRadius [#interestnearradius]
 
 ```csharp
