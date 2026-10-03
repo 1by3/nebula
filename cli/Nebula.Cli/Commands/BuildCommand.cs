@@ -6,7 +6,7 @@ public sealed class BuildCommand : Command
 {
     public override string Name => "build";
     public override string Summary => "Build the Unity player and standalone .NET services";
-    public override string Usage => "[worker|client|services] [--linux|--web] [--scratch] [--stop-mesh]";
+    public override string Usage => "[worker|client|services] [--linux|--web] [--release-build|--development-build] [--il2cpp|--mono] [--scratch] [--stop-mesh]";
     public override string? Details => @"
 The default build compiles the Unity player, exports configuration and container geometry, and publishes
 self-contained .NET orchestrator and gateway executables into the same build folder. `worker` and `client`
@@ -19,6 +19,9 @@ into Builds/Linux64 and packs Builds/nebula-linux.tar.gz for `nebula deploy`.
 --web builds the web client (a Unity Web build that connects over WebRTC) into Builds/Web. A local gateway serves
 it: after `nebula start`, open the gateway's address in a browser (http://127.0.0.1:7000/ by default). The deploy
 tarball never includes it: host the web build yourself and point it at the deployed gateway (see the web builds guide).
+The Linux server is a Mono development build unless the project's NebulaConfig says otherwise (Server build:
+ServerBuildDevelopment, ServerBuildScriptingBackend). --release-build / --development-build and --il2cpp / --mono
+override that for one build; they apply to --linux only. IL2CPP needs the Linux IL2CPP module in the Unity install.
 If the Unity Editor has the project open, the build runs from a mirrored copy under ~/.nebula-cli/scratch
 (the Editor holds an exclusive lock on the project). Builds/unity-build*.log has the full Unity output.
 ";
@@ -26,11 +29,15 @@ If the Unity Editor has the project open, the build runs from a mirrored copy un
     {
         new OptionSpec("linux", false, "build the Linux dedicated server and pack the deploy tarball"),
         new OptionSpec("web", false, "build the web client into Builds/Web"),
+        new OptionSpec("release-build", false, "with --linux: a release (not development) server build, whatever NebulaConfig says"),
+        new OptionSpec("development-build", false, "with --linux: a development server build, whatever NebulaConfig says"),
+        new OptionSpec("il2cpp", false, "with --linux: build the server with IL2CPP (needs the Linux IL2CPP module in the Unity install)"),
+        new OptionSpec("mono", false, "with --linux: build the server with Mono"),
         new OptionSpec("scratch", false, "always build from a mirrored copy of the project"),
         new OptionSpec("force", false, "build in place even if the Editor seems to hold the project"),
         new OptionSpec("stop-mesh", false, "stop a running local mesh first (it holds the previous build open)"),
     };
-    public override string[] Examples => new[] { "nebula build", "nebula build worker --linux", "nebula build --web", "nebula build --stop-mesh" };
+    public override string[] Examples => new[] { "nebula build", "nebula build worker --linux", "nebula build --linux --release-build", "nebula build --linux --release-build --il2cpp", "nebula build --web", "nebula build --stop-mesh" };
 
     public override int Run(Context ctx, ParsedArgs args)
     {
@@ -57,7 +64,10 @@ If the Unity Editor has the project open, the build runs from a mirrored copy un
             if (target == BuildTarget.Linux) UnityBuild.PackTarball(project.LinuxBuildDir, project.LinuxTarball);
             return 0;
         }
-        UnityBuild.Build(ctx, project, new UnityBuild.Options(target, args.Has("scratch"), args.Has("force"), args.Has("stop-mesh")));
+        var serverFlags = UnityBuild.ServerBuildFlags.FromArgs(args);
+        if (target != BuildTarget.Linux && (serverFlags.Development != null || serverFlags.Backend != null))
+            throw new CliError("--release-build, --development-build, --il2cpp and --mono apply to the Linux server build", "nebula build --linux --release-build");
+        UnityBuild.Build(ctx, project, new UnityBuild.Options(target, args.Has("scratch"), args.Has("force"), args.Has("stop-mesh"), serverFlags));
         Ui.Info(target switch
         {
             BuildTarget.Linux => "to deploy this build, run: nebula deploy",

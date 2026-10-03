@@ -95,6 +95,13 @@ public static class UnityLocator
         return Directory.Exists(variations) && Directory.EnumerateDirectories(variations).Any(d => Path.GetFileName(d).Contains("server", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>Does this editor have the Linux server player variation for a backend and development setting? Variation folders are named like linux64_server_nondevelopment_il2cpp.</summary>
+    public static bool HasLinuxServerVariation(string editorExe, bool development, string backend)
+    {
+        string engines = Platform.IsMac ? DataDir(editorExe) : Path.Combine(DataDir(editorExe), "PlaybackEngines");
+        return Directory.Exists(Path.Combine(engines, "LinuxStandaloneSupport", "Variations", $"linux64_server_{(development ? "development" : "nondevelopment")}_{backend}"));
+    }
+
     /// <summary>Is a Unity Editor process holding this project open?</summary>
     public static bool IsEditorOpen(string projectRoot)
     {
@@ -120,7 +127,32 @@ public enum BuildTarget { Host, Linux, Web }
 /// <summary>Batchmode player builds through Nebula's editor script (Packages/com.1by3.nebula/Editor/NebulaBuild.cs).</summary>
 public static class UnityBuild
 {
-    public sealed record Options(BuildTarget Target, bool Scratch = false, bool Force = false, bool StopMesh = false);
+    public sealed record Options(BuildTarget Target, bool Scratch = false, bool Force = false, bool StopMesh = false, ServerBuildFlags? Server = null);
+
+    /// <summary>
+    /// Per-build overrides of the Linux dedicated server's Development flag and scripting backend. A null field leaves the
+    /// project's NebulaConfig (ServerBuildDevelopment, ServerBuildScriptingBackend; Development and Mono by default) in force.
+    /// </summary>
+    public sealed record ServerBuildFlags(bool? Development, string? Backend)
+    {
+        public static ServerBuildFlags FromArgs(ParsedArgs args)
+        {
+            if (args.Has("release-build") && args.Has("development-build")) throw new CliError("--release-build and --development-build contradict each other");
+            if (args.Has("il2cpp") && args.Has("mono")) throw new CliError("--il2cpp and --mono contradict each other");
+            return new ServerBuildFlags(
+                args.Has("release-build") ? false : args.Has("development-build") ? true : null,
+                args.Has("il2cpp") ? "il2cpp" : args.Has("mono") ? "mono" : null);
+        }
+
+        /// <summary>The switches NebulaBuild reads in the Unity batch process.</summary>
+        public IEnumerable<string> UnityArgs()
+        {
+            if (Development == false) yield return "-nebula-release";
+            if (Development == true) yield return "-nebula-development";
+            if (Backend == "il2cpp") yield return "-nebula-il2cpp";
+            if (Backend == "mono") yield return "-nebula-mono";
+        }
+    }
 
     /// <summary>Relative "file:" package paths in the manifest are relative to Packages/; in a mirror they would point
     /// nowhere, so rewrite them to absolute paths next to the real project.</summary>
@@ -147,6 +179,8 @@ public static class UnityBuild
         Ui.Step($"building the {label} with Unity {project.UnityVersion}");
         if (linux && !UnityLocator.HasLinuxServerModule(unity))
             throw new CliError("this Unity install has no Linux Dedicated Server module", "add 'Linux Dedicated Server Build Support' to the editor in Unity Hub");
+        if (linux && options.Server?.Backend == "il2cpp" && !(options.Server.Development is bool dev ? UnityLocator.HasLinuxServerVariation(unity, dev, "il2cpp") : UnityLocator.HasLinuxServerVariation(unity, true, "il2cpp") || UnityLocator.HasLinuxServerVariation(unity, false, "il2cpp")))
+            throw new CliError("this Unity install has no Linux IL2CPP server support", "add 'Linux Dedicated Server Build Support' and 'Linux Build Support (IL2CPP)' to the editor in Unity Hub");
         if (web && !UnityLocator.HasWebModule(unity))
             throw new CliError("this Unity install has no Web module", "add 'Web Build Support' to the editor in Unity Hub");
 
@@ -205,7 +239,8 @@ public static class UnityBuild
         Directory.CreateDirectory(project.BuildsDir);
         File.Delete(log);
         Ui.Info($"log: {log}");
-        var args = new[] { "-batchmode", "-nographics", "-quit", "-projectPath", projectDir, "-executeMethod", method, "-nebula-skip-service-publish", "-logFile", log };
+        var args = new List<string> { "-batchmode", "-nographics", "-quit", "-projectPath", projectDir, "-executeMethod", method, "-nebula-skip-service-publish", "-logFile", log };
+        if (linux && options.Server != null) args.AddRange(options.Server.UnityArgs());
         var psi = new ProcessStartInfo(unity) { UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         var timer = Stopwatch.StartNew();
