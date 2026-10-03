@@ -71,7 +71,10 @@ public static class Program
         public uint Tick;
         public int Reconnects, SessionChanges, PawnLosses, Rejections;
         public double ReconnectAt;
-        public string LastError = "";
+        private string _lastError = "";
+        /// <summary>Set by any failure or drop; <see cref="LastErrorSeq"/> counts the sets so the verbose report prints each once, not every second.</summary>
+        public string LastError { get => _lastError; set { _lastError = value; LastErrorSeq++; } }
+        public long LastErrorSeq, LastErrorPrinted;
         public readonly List<double> Rtts = new();
         public double NextReconnectDrill;
         /// <summary>
@@ -599,7 +602,13 @@ public static class Program
         ReportBehaviours(clients, t, o);
         if (o.Verbose)
         {
-            foreach (var c in clients.Where(c => c.LastError.Length > 0).Take(5)) Console.WriteLine($"  {c.Name}: {c.LastError}");
+            // Each failure is printed once, when it happens. A client's LastError stays set after it recovers, so printing
+            // the field every second repeated the first five clients' old drops for the whole run.
+            foreach (var c in clients.Where(c => c.LastErrorSeq != c.LastErrorPrinted).Take(10))
+            {
+                c.LastErrorPrinted = c.LastErrorSeq;
+                Console.WriteLine($"  {c.Name}: {c.LastError}");
+            }
         }
     }
 
