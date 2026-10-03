@@ -1233,7 +1233,7 @@ namespace Nebula
         {
             if (current != null && subject != null && current.IsCarriedBy(subject))
                 return Find(worldPosition, current, current.InstanceId, subject, current.Space, nearestFallback: true);
-            if (current == null) { FullResolves++; return EnterFrames(Find(worldPosition, null, 0, subject), null, worldPosition, 0, subject); }
+            if (current == null) { FullResolves++; RefusedNoCurrent++; return EnterFrames(Find(worldPosition, null, 0, subject), null, worldPosition, 0, subject); }
             if (!DisableFastResolve && StillAlone(worldPosition, current)) { FastResolves++; return current; }
             FullResolves++;
             ulong instanceId = current.InstanceId;
@@ -1257,6 +1257,9 @@ namespace Nebula
 
         /// <summary>Resolves that took the shortcut of <see cref="StillAlone"/>, and those that searched (<see cref="Resolve"/>); for tests and profiling.</summary>
         internal static int FastResolves, FullResolves;
+        /// <summary>Why a full search ran: no current box, a frame / moving / not-scope-space current box, the point outside it, a neighbour or a moving or carried box that might hold the point.</summary>
+        internal static int RefusedNoCurrent, RefusedFrame, RefusedOutside, RefusedNeighbour, RefusedMoving;
+        internal static void ResetResolveCounters() { FastResolves = FullResolves = RefusedNoCurrent = RefusedFrame = RefusedOutside = RefusedNeighbour = RefusedMoving = 0; }
         /// <summary>Tests: take the full search every time, the reference the shortcut must agree with.</summary>
         internal static bool DisableFastResolve;
 
@@ -1271,22 +1274,23 @@ namespace Nebula
         /// </summary>
         private static bool StillAlone(Vector3 p, Container current)
         {
-            if (current.Index == ushort.MaxValue || current.OwnPhysicsFrame || current.MayMove || current.Space != null || !current.Contains(p)) return false;
+            if (current.Index == ushort.MaxValue || current.OwnPhysicsFrame || current.MayMove || current.Space != null) { RefusedFrame++; return false; }
+            if (!current.Contains(p)) { RefusedOutside++; return false; }
             var neighbors = current.Neighbors;
             for (int i = 0; i < neighbors.Count; i++)
             {
                 var n = neighbors[i];
-                if (n != null && MightHold(n, p)) return false;
+                if (n != null && MightHold(n, p)) { RefusedNeighbour++; return false; }
             }
             for (int i = 0; i < MovingRuntime.Count; i++)
             {
                 var m = MovingRuntime[i];
-                if (m != null && m != current && MightHold(m, p)) return false;
+                if (m != null && m != current && MightHold(m, p)) { RefusedMoving++; return false; }
             }
             for (int i = 0; i < DynamicList.Count; i++)
             {
                 var d = DynamicList[i];
-                if (d != null && d != current && MightHold(d, p)) return false;
+                if (d != null && d != current && MightHold(d, p)) { RefusedMoving++; return false; }
             }
             return true;
         }

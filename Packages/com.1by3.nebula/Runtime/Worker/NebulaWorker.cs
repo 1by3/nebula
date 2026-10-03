@@ -218,6 +218,14 @@ namespace Nebula
         private static readonly ProfileSection ProfSimulate = NebulaProfiler.Section("simulate");
         private static readonly ProfileSection ProfRecordPose = NebulaProfiler.Section("poses");
         private static readonly ProfileSection ProfContainers = NebulaProfiler.Section("containers");
+        // What the containers pass spends, per entity gathered in locals and added once per pass; they add up to "containers".
+        private static readonly ProfileSection ProfCCopy = NebulaProfiler.Section("c.copy");
+        private static readonly ProfileSection ProfCResolve = NebulaProfiler.Section("c.resolve");
+        private static readonly ProfileSection ProfCBoundary = NebulaProfiler.Section("c.boundary");
+        private static readonly ProfileSection ProfCLease = NebulaProfiler.Section("c.lease");
+        private static readonly ProfileSection ProfCHandover = NebulaProfiler.Section("c.handover");
+        private static readonly ProfileSection ProfCLoop = NebulaProfiler.Section("c.loop");
+        private long _passVisited, _passDue, _passPinned;
         private static readonly ProfileSection ProfBand = NebulaProfiler.Section("band");
         private static readonly ProfileSection ProfPublish = NebulaProfiler.Section("publish");
         private static readonly ProfileSection ProfGap = NebulaProfiler.Section("gap");
@@ -1049,6 +1057,16 @@ namespace Nebula
         /// further behind the wall clock than <see cref="MaxCatchUpTicks"/>), and every profiler section in ms per
         /// tick (see <see cref="NebulaProfiler"/>).
         /// </summary>
+        /// <summary>The containers pass's counts for the window, per tick, and the registry's shortcut counters (reset here).</summary>
+        private string ResolveCounters(int ticks)
+        {
+            double t = Math.Max(1, ticks);
+            var s = $"visited={_passVisited / t:0.0} due={_passDue / t:0.0} pinned={_passPinned / t:0.0} fast={ContainerRegistry.FastResolves / t:0.0} full={ContainerRegistry.FullResolves / t:0.0} (nocur={ContainerRegistry.RefusedNoCurrent / t:0.0} frame={ContainerRegistry.RefusedFrame / t:0.0} outside={ContainerRegistry.RefusedOutside / t:0.0} neighbour={ContainerRegistry.RefusedNeighbour / t:0.0} moving={ContainerRegistry.RefusedMoving / t:0.0})";
+            _passVisited = _passDue = _passPinned = 0;
+            ContainerRegistry.ResetResolveCounters();
+            return s;
+        }
+
         private void ReportProfile()
         {
             if (_profileTicks == 0) return;
@@ -1056,7 +1074,7 @@ namespace Nebula
             int gc = GC.CollectionCount(0);
             int gcs = gc - _lastGcCount;
             _lastGcCount = gc;
-            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} dormant {DormantCount} rpcRejected {NebulaDiagnostics.RejectedAuthorityRpcSends} mem rss={WorkerMemorySampler.Mb(_lastMemory.ResidentBytes)}MB native={WorkerMemorySampler.Mb(_lastMemory.NativeAllocatedBytes)}MB managed={WorkerMemorySampler.Mb(_lastMemory.ManagedBytes)}MB | {NebulaProfiler.ReportAndReset(_profileTicks)}");
+            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} dormant {DormantCount} resolve {ResolveCounters(_profileTicks)} rpcRejected {NebulaDiagnostics.RejectedAuthorityRpcSends} mem rss={WorkerMemorySampler.Mb(_lastMemory.ResidentBytes)}MB native={WorkerMemorySampler.Mb(_lastMemory.NativeAllocatedBytes)}MB managed={WorkerMemorySampler.Mb(_lastMemory.ManagedBytes)}MB | {NebulaProfiler.ReportAndReset(_profileTicks)}");
             _profileTicks = 0;
             _profileFrames = 0;
             _profileMaxMs = 0f;
@@ -1172,8 +1190,11 @@ namespace Nebula
 
             // 3. Container membership (with hysteresis) and authority transfers.
             ProfContainers.Begin();
+            long passStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            long tCopy, tResolve = 0, tBoundary = 0, tLease = 0, tHandover = 0, ts;
             _scratchEntities.Clear();
             _scratchEntities.AddRange(_authoritative);
+            tCopy = System.Diagnostics.Stopwatch.GetTimestamp() - passStart;
             // A fenced worker hands nothing over: its view of who owns what may be stale, and the receiver would hold
             // a copy of something that is being restored elsewhere (docs/persistence-durability.md D8).
             bool fenced = IsFenced;
@@ -1186,25 +1207,38 @@ namespace Nebula
             foreach (var e in _scratchEntities)
             {
                 if (!e.HasAuthority) continue; // handed over as the contents of a carrier earlier in this pass
+                _passVisited++;
                 // Its container is resolved on its update ticks only (NetworkIdentity.UpdateInterval). In between,
                 // and while it sleeps, it does not move: only the lease of the container it is in can have moved, and
                 // it follows the lease (a dormant entity is handed over too, and stays asleep).
                 if (!e.DueThisTick)
                 {
-                    if (followLeases && !fenced && FollowLease(e, tick)) leasePending = true;
+                    if (followLeases && !fenced)
+                    {
+                        ts = System.Diagnostics.Stopwatch.GetTimestamp();
+                        if (FollowLease(e, tick)) leasePending = true;
+                        tLease += System.Diagnostics.Stopwatch.GetTimestamp() - ts;
+                    }
                     continue;
                 }
+                _passDue++;
+                ts = System.Diagnostics.Stopwatch.GetTimestamp();
                 _gameMode?.PrepareSpatialFrame(e);
                 InstanceBoundary.Tick(this, e);
+                tBoundary += System.Diagnostics.Stopwatch.GetTimestamp() - ts;
                 // A carrier never resolves into a container it carries: its own box (its origin is inside it), nor
                 // the box of another carrier riding inside it, which is how two overlapping ships would each end up
                 // inside the other.
                 // An entity fixed to its container (FrameAttachment) keeps it, wherever its origin is: it is never
                 // moved into a neighbouring container or across a frame's boundary. The owner check below still runs,
                 // so it follows its container to whichever worker owns it (docs/frame-bodies.md D8).
+                ts = System.Diagnostics.Stopwatch.GetTimestamp();
+                if (e.ContainerPinned) _passPinned++;
                 var resolved = e.ContainerPinned ? e.Container : ContainerRegistry.Resolve(e.transform.position, e.Container, Config.HandoverHysteresis, e);
+                tResolve += System.Diagnostics.Stopwatch.GetTimestamp() - ts;
                 if (resolved != e.Container)
                 {
+                    ts = System.Diagnostics.Stopwatch.GetTimestamp();
                     var previous = e.Container;
                     // Crossing a physics frame's boundary needs the frame's pose at this tick, which only its pose
                     // owner knows exactly: anyone else hands the entity to it, unconverted (docs/container-tree.md D15).
@@ -1212,6 +1246,7 @@ namespace Nebula
                     if (frame != null && !IsPoseOwner(frame))
                     {
                         if (!fenced) HandToPoseOwner(e, frame);
+                        tHandover += System.Diagnostics.Stopwatch.GetTimestamp() - ts;
                         continue;
                     }
                     if (frame != null && PhysicsFrames.Ask(e, frame.Frame, leaving, previous, resolved) != FrameCrossing.Allow) resolved = previous;
@@ -1229,6 +1264,7 @@ namespace Nebula
                             NebulaLog.Debugf($"local handover {e} {previous?.ContainerId} -> {resolved.ContainerId}");
                         }
                     }
+                    tHandover += System.Diagnostics.Stopwatch.GetTimestamp() - ts;
                 }
                 var owner = e.Container != null ? e.Container.OwnerWorkerId : "";
                 if (_crossingHold.Count > 0 && _crossingHold.TryGetValue(e.NetId, out uint holdUntil))
@@ -1242,7 +1278,9 @@ namespace Nebula
                 if (fenced) continue;
                 if (_workerPeersById.TryGetValue(owner, out var peer) && peer.HelloReceived)
                 {
+                    ts = System.Diagnostics.Stopwatch.GetTimestamp();
                     TransferAuthority(e, peer);
+                    tHandover += System.Diagnostics.Stopwatch.GetTimestamp() - ts;
                 }
                 else if (Time.unscaledTime >= _nextUnownedWarning)
                 {
@@ -1256,6 +1294,13 @@ namespace Nebula
                 _followLeasesAgain = leasePending || fenced;
             }
             ProfContainers.End();
+            long passTotal = System.Diagnostics.Stopwatch.GetTimestamp() - passStart;
+            ProfCCopy.Add(tCopy);
+            ProfCResolve.Add(tResolve);
+            ProfCBoundary.Add(tBoundary);
+            ProfCLease.Add(tLease);
+            ProfCHandover.Add(tHandover);
+            ProfCLoop.Add(passTotal - tCopy - tResolve - tBoundary - tLease - tHandover);
 
             foreach (var e in _authoritative) e.PrepareReplication(tick, e.DueThisTick);
             // Who may see each Custom behaviour, decided before anything of this tick is written to anyone.
