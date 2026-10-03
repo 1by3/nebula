@@ -22,9 +22,13 @@ namespace Nebula
     /// <item><b>gateway / orchestrator</b>: passive. They need the container arithmetic and nothing else.</item>
     /// </list>
     /// <para>
-    /// The allocator's ring is <see cref="InterestSettings.NearCells"/> + 1, so a
+    /// The allocator's ring is <see cref="InterestSettings.NearCells"/> plus
+    /// <see cref="NebulaConfig.ChunkedWorldServerRingMargin"/> (1 unless set), so a
     /// chunk is always leased — and its content built — before interest can put an entity standing on it into a
     /// client's set. Raising <c>InterestRadius</c> therefore widens the chunk ring by itself; nothing to keep in step.
+    /// NearCells alone already holds every chunk interest can reach; the margin is the time to build one (a pawn
+    /// crossing a chunk edge requests the new ring at that moment), so a margin of 0 is only as safe as
+    /// <see cref="InterestSettings.ChunkLoadLeadSeconds"/> says.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(-500)]
@@ -76,7 +80,7 @@ namespace Nebula
 
             var settings = config.ToInterestSettings();
             int nearCells = settings.NearCells(Mathf.Max(Grid.CellSize.x, Grid.CellSize.z));
-            Ring = nearCells + 1;
+            Ring = settings.ChunkRing(Mathf.Max(Grid.CellSize.x, Grid.CellSize.z), config.ChunkedWorldServerRingMargin);
             _originRing = Mathf.Max(1, config.OriginShiftThresholdCells);
 
             if (worker != null)
@@ -96,7 +100,7 @@ namespace Nebula
             _roles = roles;
             NebulaChunks.Activate(Grid, roles, IsHeadless(roles), Allocator);
             ContainerRegistry.RuntimeRegistered += OnRuntimeRegistered;
-            NebulaLog.Info($"chunked world: cell {Grid.CellSize}{(Grid.Planar ? " (planar)" : "")}, near {nearCells} cell(s), allocator ring {Ring}, retire after {config.ChunkRetireSeconds}s");
+            NebulaLog.Info($"chunked world: cell {Grid.CellSize}{(Grid.Planar ? " (planar)" : "")}, near {nearCells} cell(s), allocator ring {Ring} (margin {Ring - nearCells}), retire after {config.ChunkRetireSeconds}s");
         }
 
         // ---------------------------------------------------------------------------------- scoped grids

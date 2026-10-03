@@ -97,6 +97,37 @@ namespace Nebula.Tests
 
         private bool Alive(NetworkIdentity e) => e != null && W.Find(e.NetId) == e;
 
+        /// <summary>
+        /// The ring an allocator leases around its anchor is a (2 × ring + 1) square of planar chunks, and
+        /// <see cref="InterestSettings.ChunkRing"/> turns <c>NearCells</c> and <c>ChunkedWorldServerRingMargin</c>
+        /// into that ring: the default stays <c>NearCells + 1</c>, 0 is <c>NearCells</c> (NEB-380).
+        /// </summary>
+        [TestCase(0, 9)]
+        [TestCase(1, 25)]
+        [TestCase(2, 49)]
+        public void TheRingAroundAnAnchorFollowsNearCellsPlusTheMargin(int margin, int expectedChunks)
+        {
+            var grid = new RuntimeGrid(new Vector3(256f, 512f, 256f), planar: true);
+            var interest = new InterestSettings { Radius = 120f, ExitMargin = 16f, MaxFocusSpeed = 12f, LingerSeconds = 1f, EvalHz = 4f, ClientLoadRadiusCells = 1 };
+            Assert.That(interest.NearCells(256f), Is.EqualTo(1));
+            var allocator = new RuntimeGridAllocator(W.Instance, grid)
+            {
+                TickIntervalSeconds = 0f,
+                RetireAfterSeconds = RetireAfter,
+                Ring = interest.ChunkRing(256f, margin),
+            };
+            allocator.AddAnchor(Vector3Int.zero);
+            Tick(allocator);
+            Assert.That(_plane.Leases.Count, Is.EqualTo(expectedChunks));
+        }
+
+        [Test]
+        public void TheDefaultMarginKeepsTheRingAtNearCellsPlusOne()
+        {
+            var interest = new InterestSettings { Radius = 120f, ExitMargin = 16f, MaxFocusSpeed = 12f, LingerSeconds = 1f, EvalHz = 4f, ClientLoadRadiusCells = 1 };
+            Assert.That(interest.ChunkRing(256f, new NebulaConfig().ChunkedWorldServerRingMargin), Is.EqualTo(interest.NearCells(256f) + 1));
+        }
+
         [Test]
         public void AChunkIsNotReleasedWhileAnotherWorkerSimulatesSomethingFiledInIt()
         {

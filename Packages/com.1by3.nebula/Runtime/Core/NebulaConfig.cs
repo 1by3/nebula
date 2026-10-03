@@ -290,6 +290,16 @@ namespace Nebula
         public bool ChunkPlanar = true;
         [Tooltip("Seconds a chunk nobody needs stays leased before the worker retires it (its persistent contents are checkpointed and come back).")]
         public float ChunkRetireSeconds = 30f;
+        /// <summary>
+        /// Chunks the worker keeps leased beyond <see cref="InterestSettings.NearCells"/> around every pawn
+        /// (<see cref="InterestSettings.ChunkRing"/>). 1 is the default: a chunk's content is built a whole chunk of
+        /// travel before interest can reach it. 0 leases only the chunks interest can reach, which costs a whole ring
+        /// less (25 to 9 containers at near 1) and leaves only the rounding slack of
+        /// <see cref="InterestSettings.ChunkLoadLeadSeconds"/> to build a newly requested chunk.
+        /// A scoped grid's <see cref="ChunkGridDefinition.Ring"/> overrides the resulting ring for that grid.
+        /// </summary>
+        [Tooltip("Chunks the worker keeps leased beyond what interest can reach (NearCells) around every pawn. 1 builds each chunk's content a whole chunk before a client can need it; 0 leases only what interest can reach (9 chunks instead of 25 at near 1) and leaves only the rounding slack to build a new chunk, and the config warns when that is under a few seconds at InterestMaxFocusSpeed. Never negative.")]
+        public int ChunkedWorldServerRingMargin = 1;
 
         [Header("Rate tiers inside the interest set")]
         [Tooltip("Entities within this many metres of a client's pawn get every tick of the world-state stream.")]

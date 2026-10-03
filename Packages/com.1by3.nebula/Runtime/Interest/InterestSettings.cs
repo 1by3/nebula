@@ -164,6 +164,31 @@ namespace Nebula
             return Math.Max(Math.Max(0, ClientLoadRadiusCells), needed);
         }
 
+        /// <summary>Seconds of lead a chunk load needs at the least: the allocator's 4 Hz tick, the lease round trip, registration and building the chunk's content.</summary>
+        public const float MinChunkLoadLeadSeconds = 4f;
+
+        /// <summary>
+        /// The Chebyshev ring of chunks a worker keeps leased around every pawn: <see cref="NearCells"/> plus
+        /// <paramref name="margin"/> extra cells (never fewer than <see cref="NearCells"/>, which is the least that
+        /// has every chunk interest can reach). <c>NebulaConfig.ChunkedWorldServerRingMargin</c> is the margin; 1
+        /// builds content one whole chunk before interest needs it.
+        /// </summary>
+        public int ChunkRing(float cellSize, int margin) => NearCells(cellSize) + Math.Max(0, margin);
+
+        /// <summary>
+        /// Seconds between a pawn at <see cref="MaxFocusSpeed"/> walking into a chunk and the first chunk its new ring
+        /// adds being needed by interest: the ring reaches <c>ring × cell</c> metres from the chunk edge it just
+        /// crossed, and interest reaches the exit radius plus the overshoot. Zero margin leaves only the slack
+        /// <see cref="NearCells"/> rounds up by (up to one cell, none when the radius is a whole number of cells);
+        /// each further margin cell adds a cell of travel. Infinity when nothing moves or there is no cell size.
+        /// </summary>
+        public float ChunkLoadLeadSeconds(float cellSize, int margin)
+        {
+            if (cellSize <= 0 || MaxFocusSpeed <= 0) return float.PositiveInfinity;
+            float reach = Math.Max(0f, MaxFocusSpeed) * (Math.Max(0f, LingerSeconds) + EvalInterval);
+            return Math.Max(0f, ChunkRing(cellSize, margin) * cellSize - ExitRadius - reach) / MaxFocusSpeed;
+        }
+
         /// <summary>
         /// Most container rows one client may be told about in one evaluation: the ceiling on the
         /// <c>NearCells</c> windows the gateway opens around a client's foci. Derived rather than configured,
