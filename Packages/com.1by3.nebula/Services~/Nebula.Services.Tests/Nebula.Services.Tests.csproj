@@ -7,6 +7,8 @@
          process exactly as it sits next to a published gateway. The tests name it by file name and never use
          its types: what is under test is the gateway loading it from configuration. -->
     <ProjectReference Include="../Nebula.SampleExtension/Nebula.SampleExtension.csproj" />
+    <ProjectReference Include="../Nebula.LoadGen.Sdk/Nebula.LoadGen.Sdk.csproj" />
+    <ProjectReference Include="../Nebula.LoadGen.SamplePlugin/Nebula.LoadGen.SamplePlugin.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="NUnit" Version="3.14.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />

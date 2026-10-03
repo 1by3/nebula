@@ -17,7 +17,7 @@ Each client completes the same handshake a game client does: it connects, sends 
 
 When the gateway tells it to reconnect (`GatewayDraining`), refuses it with a retry hint, or drops its link, the client reconnects to the same address with its session token. A load balancer in front of the fleet sends that reconnection to another gateway, which reclaims the session from the worker. The client records whether it got the same session id back and whether it kept its pawn.
 
-Inputs carry no game meaning. Workers decode them with your game's input type, so use `--bot` when your game mode treats bots differently, or point the tool at a mesh whose game ignores malformed input.
+By default inputs carry no game meaning; [behaviours](#behaviours) shape them. Workers decode them with your game's input type, so use `--bot` when your game mode treats bots differently, or point the tool at a mesh whose game ignores malformed input.
 
 ## Options
 
@@ -34,7 +34,126 @@ Inputs carry no game meaning. Workers decode them with your game's input type, s
 | `--name-prefix P` | Player names are `P0`, `P1`, ... Default `load`. |
 | `--idle <0..1>` | Fraction of clients that stand still and send no focus hint. Default `0`. Their replica count and bytes are what must stay flat as the world grows — see [Interest management](/docs/guides/interest-management). |
 | `--csv file` | Also write the per-second report as CSV. |
+| `--content-version <n>` | The game content version clients announce. A gateway refuses clients outside the versions it accepts (`NebulaConfig.GameContentVersion`), so set it to the deployed build's number. Default 0. |
 | `--verbose` | Print each client's welcome, rejection, and drain events. |
+
+## Behaviours
+
+By default every client stands still. A behaviour decides what a client does once it has joined: where it moves, which action bits it presses, which RPCs it sends, when it asks for a scope change and when it leaves. Choose them with a weighted mix:
+
+```bash
+dotnet run --project Packages/com.1by3.nebula/Services~/Nebula.LoadGen -- --gateway 127.0.0.1:7000 --clients 200 --seconds 600 \
+  --mix wander:70,travel:20,idle:10 --opt wander.radius=40 --opt travel.every-minutes=2 --opt travel.targets=a|b --seed 7 \
+  --behaviour-stats results.jsonl
+```
+
+Counts are exact (200 clients of that mix are 140, 40 and 20) and seeded: the same `--seed` gives the same client the same behaviour and the same random choices, so a run repeats. `--behaviour <name>` is a mix of one.
+
+| Option | Meaning |
+| --- | --- |
+| `--mix name:weight,...` | Spread behaviours over the clients by weight (default weight 1). |
+| `--behaviour name` | Every client runs this behaviour. |
+| `--opt name.key=value` | An option for a behaviour in the mix. Repeat for more. Lists use `\|`: `path.points=10,0\|10,10`. |
+| `--profile file.json` | Read the mix and settings from JSON. The command line overrides it. |
+| `--plugin file.dll` | Load a [plugin](#write-a-plugin) assembly. Repeat for more. |
+| `--seed N` | Seed for the assignment and every client's random choices. Default 1. |
+| `--max-minutes M` | A hard limit: the run ends after this long even if `--seconds` is longer. |
+| `--move-speed S` | Meters a second a client is assumed to move at (for dead reckoning). Default 5. |
+| `--id-offset N` | Name clients `P<N>`, `P<N+1>`, ... and seed them by that index. Give each loadgen process of a distributed run its own range. |
+| `--tokens-file file` | One identity token per line, one per client, for meshes that require sign-in. Client `i` uses line `i`. |
+| `--behaviour-stats file` | Write per-behaviour stats once a second: JSON lines, or CSV if the name ends in `.csv`. |
+
+A profile looks like this. Every field is optional, and a relative plugin path is relative to the profile:
+
+```json
+{
+  "seed": 7, "maxMinutes": 30, "inputHz": 30, "moveSpeed": 5,
+  "plugins": ["MyGame.LoadGen.dll"],
+  "mix": [
+    { "behaviour": "wander", "weight": 70, "options": { "radius": 40 } },
+    { "behaviour": "travel", "weight": 20, "options": { "every-minutes": 2, "targets": "a|b" } },
+    { "behaviour": "idle", "weight": 10 }
+  ]
+}
+```
+
+### Built-in behaviours
+
+| Behaviour | What it does | Options (default) |
+| --- | --- | --- |
+| `idle` | Stands still. | |
+| `wander` | Random walk inside a radius of where the pawn spawned, with stops and sprints. | `radius` (30), `stop-chance` (0.25), `stop-min` (1), `stop-max` (4), `sprint-chance` (0.2), `leg-max` (8) |
+| `path` | Follows waypoints. | `points` (`x,z\|x,z`, required), `relative` (true), `mode` (`loop`, `pingpong`, `once`), `arrive` (1), `pause` (0), `sprint` (false) |
+| `burst` | Presses an action bit on a rhythm, such as fire. | `bit` (0), `every` (1), `hold` (0.1), `jitter` (0.2) |
+| `travel` | Asks the game for a scope change every N minutes, through the plugin's scope-travel handler. | `every-minutes` (5), `targets` (`a\|b`), `order` (`random`, `cycle`) |
+| `rpc` | Sends a server RPC at a rate (Poisson). | `method` (name or `0x` hash, required), `entity` (`pawn`), `behaviour` (0), `args` (hex), `rate` (1) |
+| `churn` | Joins and leaves in waves: says goodbye after `on` seconds and rejoins as a new session after `off`. | `on` (60), `off` (10), `jitter` (0.5) |
+
+Nebula does not know your input format or how your game changes scope, so the loadgen sends a generic input (a 16 byte payload: tick, client index, sprint flag, move x and z as float32, action bits as uint32) and `travel` does nothing until a plugin registers a scope-travel handler. A plugin supplies both.
+
+### Behaviour stats
+
+`--behaviour-stats` writes one row per behaviour per second. The columns are `t, behaviour, clients, connected, joined, inputsPerSec, actionsPerSec, rpcsPerSec, travelsPerSec, actions, errors, reconnects, rejections, sessionChanges, sessionsLeft, rttP50, rttP95, replicasAvg, bytesInPerSec`. Actions are RPCs, scope travels and the actions a behaviour counts itself; inputs are counted apart. `errors` counts failed sends, behaviours that threw, a missing scope-travel handler and bad packets. The totals (`actions`, `errors`, `reconnects`, ...) are cumulative; the `...PerSec` columns are rates over the last interval. Rows from several processes merge by concatenating the files and summing by `behaviour` and `t`.
+
+### Write a plugin
+
+A plugin is a class library that references `Nebula.LoadGen.Sdk` (it depends on nothing else from Nebula, so no game type enters Nebula) and has one public class implementing `ILoadGenPlugin`. `Packages/com.1by3.nebula/Services~/Nebula.LoadGen.SamplePlugin` is a complete example, with a `strafe` behaviour:
+
+```xml
+<ItemGroup>
+  <ProjectReference Include="path/to/Nebula.LoadGen.Sdk.csproj" Private="false" ExcludeAssets="runtime" />
+</ItemGroup>
+```
+
+Reference the SDK with `Private=false`: the loadgen already carries it, and two copies would be two sets of types. If your game consumes Nebula as a package, reference the `Nebula.LoadGen.Sdk.dll` that sits beside the published `nebula-loadgen` instead. Build the plugin with `dotnet build -c Release` and load it by path:
+
+```bash
+nebula-loadgen --gateway ... --plugin path/to/MyGame.LoadGen.dll --mix strafe:50,idle:50 --opt strafe.length=20
+```
+
+The interface (namespace `Nebula.LoadGen`):
+
+```csharp
+public interface ILoadGenPlugin { void Register(IBehaviourRegistry registry); }
+
+public interface IBehaviourRegistry
+{
+    void Add(string name, Func<BehaviourOptions, ILoadGenBehaviour> factory); // one instance per client
+    void SetInputEncoder(IInputEncoder encoder);       // write the game's own input bytes
+    void SetScopeTravel(ScopeTravelHandler handler);   // how a client asks for a scope change
+}
+
+public interface ILoadGenBehaviour
+{
+    void OnJoined(IClientContext client) { }           // session and pawn ready (every rejoin too)
+    void Tick(IClientContext client, double dt);       // once per input interval, just before the input is encoded
+    void OnLeft(IClientContext client) { }             // link lost, refused or left
+}
+
+public interface IInputEncoder { int Encode(in InputSnapshot input, byte[] buffer); }   // buffer >= 256 bytes
+public delegate bool ScopeTravelHandler(IClientContext client, string target);
+```
+
+`IClientContext` is what a behaviour reads and does:
+
+```csharp
+int Index; string Name; string BehaviourName; double Time; Random Rng;   // Rng is seeded: runs repeat
+bool Connected; bool Joined; ulong SessionId; ulong PawnNetId;
+ReplicaInfo? Pawn; IReadOnlyCollection<ulong> Replicas; bool TryGetReplica(ulong netId, out ReplicaInfo replica);
+Vector3 EstimatedPosition; void SetEstimatedPosition(Vector3 position);  // System.Numerics
+void SetMove(Vector2 direction, bool sprint = false);     // x is world x, y is world z; stays set
+void SetActions(uint bits);  void SetRawInput(byte[]? payload);
+void SendServerRpc(ulong netId, byte behaviourIndex, uint methodHash, ReadOnlySpan<byte> args);   // netId 0 = pawn
+void SendServerRpc(ulong netId, byte behaviourIndex, string method, ReadOnlySpan<byte> args);
+bool RequestScopeTravel(string target);                    // calls your ScopeTravelHandler
+void SetFocusHint(double x, double y, double z);  void ClearFocusHint();
+void Leave(double rejoinAfterSeconds);                     // goodbye, then a new session; negative never rejoins
+void CountAction();  void ReportError(string message);     // per-behaviour stats
+```
+
+`ReplicaInfo` carries `NetId`, `PrefabId`, `OwnerClientId`, `SpawnPosition`, and `Vars` (the newest replicated variables bytes, which your game decodes) with a `VarsVersion` that rises on each change. `BehaviourOptions` reads `--opt` and profile options: `GetString`, `GetDouble`, `GetInt`, `GetBool`, `GetList`, `Has`. `InputSnapshot` has `Tick`, `ClientIndex`, `Move`, `Sprint` and `Actions`.
+
+The loadgen cannot decode your game's pose, so `EstimatedPosition` is the spawn position plus the loadgen's own dead reckoning of `SetMove` at `--move-speed`. If your game's replicated variables hold the real position, decode them in `Tick` and correct it with `SetEstimatedPosition`. A behaviour runs on the loadgen's single loop thread, so never block in it, and an exception is caught, counted as an error and does not stop the run.
 
 ## Reading the report
 
