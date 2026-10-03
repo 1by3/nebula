@@ -45,6 +45,12 @@ namespace Nebula
         public ulong ManagedBytes;
         /// <summary>Gen-0 garbage collections since the process started (a total; the reader takes differences).</summary>
         public uint GcCount;
+        /// <summary>Wall time per Unity frame over the worker's last profile window, in milliseconds: average, 90th percentile and worst. 0 until a window has completed, or from an older worker.</summary>
+        public float FrameAvgMs, FrameP90Ms, FrameMaxMs;
+        /// <summary>That window's frame split as <c>name=ms</c> pairs separated by spaces, in ms per frame (physics, fixed, tick, update, late, idle). Empty from an older worker.</summary>
+        public string FrameSections;
+        /// <summary>That window's profiler sections (Nebula's and the game's) as <c>name=ms</c> pairs separated by spaces, in ms per tick. Empty from an older worker.</summary>
+        public string ProfileSections;
     }
 
     /// <summary>What a worker reports about itself on every heartbeat.</summary>
@@ -79,6 +85,12 @@ namespace Nebula
         public ulong ManagedBytes;
         /// <summary>Gen-0 garbage collections since the process started (a total; the reader takes differences).</summary>
         public uint GcCount;
+        /// <summary>Wall time per Unity frame over the worker's last profile window, in milliseconds: average, 90th percentile and worst. 0 until a window has completed, or from an older worker.</summary>
+        public float FrameAvgMs, FrameP90Ms, FrameMaxMs;
+        /// <summary>That window's frame split as <c>name=ms</c> pairs separated by spaces, in ms per frame (physics, fixed, tick, update, late, idle). Empty from an older worker.</summary>
+        public string FrameSections;
+        /// <summary>That window's profiler sections (Nebula's and the game's) as <c>name=ms</c> pairs separated by spaces, in ms per tick. Empty from an older worker.</summary>
+        public string ProfileSections;
     }
 
     /// <summary>Describes the current worker assignment for one container.</summary>
