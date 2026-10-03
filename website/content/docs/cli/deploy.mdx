@@ -44,6 +44,10 @@ A deploy target must be configured (`nebula cloud login` or `nebula config hetzn
 | `--npcs <N>` | Set the game-defined 'npcs' mesh setting at startup (default from nebula.json). |
 | `--open-ui` | Open the Nebula Dashboard once it answers. |
 | `--skip-build` | Use the existing Builds/nebula-linux.tar.gz. |
+| `--release-build` | Build the Linux server as a release (not development) build, whatever NebulaConfig says. |
+| `--development-build` | Build the Linux server as a development build, whatever NebulaConfig says. |
+| `--il2cpp` | Build the Linux server with IL2CPP (needs the Linux IL2CPP module in the Unity install). |
+| `--mono` | Build the Linux server with Mono. |
 | `--skip-publish` | Do not publish the control-plane and persistence modules. |
 | `--skip-upload` | Only rewrite the service and restart (no build, no upload). |
 | `--reset-persistence` | Delete every saved entity when the orchestrator starts. |
@@ -66,4 +70,5 @@ nebula deploy --min 1 --max 8 --open-ui
 nebula deploy --release rel_01h
 nebula deploy --target hetzner --workers 4
 nebula deploy --skip-build
+nebula deploy --release-build --il2cpp
 ```

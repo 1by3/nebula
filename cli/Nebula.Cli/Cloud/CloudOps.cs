@@ -139,7 +139,7 @@ public static class CloudDeploy
         }
         else
         {
-            if (!o.SkipBuild) UnityBuild.Build(ctx, project, new UnityBuild.Options(BuildTarget.Linux));
+            if (!o.SkipBuild) UnityBuild.Build(ctx, project, new UnityBuild.Options(BuildTarget.Linux, Server: UnityBuild.ServerBuildFlags.FromArgs(args)));
             else if (!File.Exists(project.LinuxTarball)) throw new CliError($"no {project.LinuxTarball}", "drop --skip-build, or run `nebula build --linux`");
             release = CreateRelease(ctx, api, project, target.Project.Id, o.Label);
         }
