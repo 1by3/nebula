@@ -365,6 +365,7 @@ the frames the pawn is in or rides in, which the policy's focus and the enclosin
 | 22 | A root 10,000 km from the origin placed within a centimetre | `ConformanceContainerTreeTests.PlacementFarFromTheOriginIsExact` |
 | 23 | A planet with its own frame and eight octants leased to two workers with a base leased on its own; a ship flies in and lands in the other worker's octant without error; rotation changes neither local positions nor region keys; the ship leaves through the planet's pose owner; a frame's origin follows its worker; a ship at 1 km/s with a leased engine room, crew walking between the two workers and leaving through an airlock policy | `ConformanceFramedWorldTests`, plus `FrameRegionSpaceTests` for the region keys and per-space foci |
 | 41 | A planet's ground as a grid hosted by the planet (D22), nothing leased statically: allocated around a ground pawn on one worker, a second pawn on the other and a ship flying scenario 40's lap at 300 m/s; the ship never stands in the box outside a leased chunk, each chunk it enters was leased ahead of it, the ground behind it retires, and a restart brings back a crate standing in a hosted chunk under the planet's own restored container | `ConformanceCarrierHostedGridTests`, plus `HostedChunkGridTests` |
+| 43 | An `InstanceBoundary` in a chunk hosted by a framed carrier (NEB-394): its position is read out of the carrier's frame, as an entity's is, so the instance is prepared at the door; a player on the planet enters it and leaves back into the planet's chunk, in its frame | `ConformanceFramedInstanceBoundaryTests` |
 
 Tier limit (B, `ConformanceMesh`): the container registry is process-wide, so of two workers' copies of one carrier
 only the last registered owns the box and its frame. Scenario 21's two-worker case keeps the copies' poses in step.
@@ -373,6 +374,7 @@ only the last registered owns the box and its frame. Scenario 21's two-worker ca
 
 - Every process that holds a framed container holds its frame scene.
 - Raycasts do not pass from one frame into another; the game casts again in the space around a frame.
+- An `InstanceBoundary` reads its own position and an entity's in the scope's own space, out of any physics frame (NEB-394), and leaves an occupant into the deepest container holding the point, descending into frames (`InstanceBoundary.FindDestination`). Its `Interior` is still axis-aligned in the scope, so a boundary on a turning frame would sweep: keep doors on frames that turn off, or turn them with the frame in a later change.
 - A client predicts in the frame of its own player only.
 - Runtime containers inside a frame are scanned linearly, not hashed per frame.
 - A hosted grid's chunks are runtime containers inside its host's frame, so the line above bounds them too: keep a

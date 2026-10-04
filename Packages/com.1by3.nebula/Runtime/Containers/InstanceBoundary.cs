@@ -185,8 +185,20 @@ namespace Nebula
             }
         }
 
-        /// <summary>This boundary's position in absolute coordinates: its host scope's origin frame taken away.</summary>
-        public Double3 AbsolutePosition => ContainerRegistry.ToAbsolutePrecise(transform.position, HostInstanceId);
+        /// <summary>
+        /// This boundary's position in absolute coordinates: read in its host scope's own space (out of any physics frame
+        /// it stands in, such as a planet's that carries the chunk it is built in), then its host scope's origin frame
+        /// taken away. The same space <see cref="AbsoluteOf"/> reads an entity in, so the two compare.
+        /// </summary>
+        public Double3 AbsolutePosition
+        {
+            get
+            {
+                ulong host = HostInstanceId; // resolves the host container
+                var space = _host != null ? _host.InnerSpace : null;
+                return ContainerRegistry.ToAbsolutePrecise(PhysicsFrames.ToScope(transform.position, space), host);
+            }
+        }
 
         /// <summary>Where the instance is prepared: <see cref="AbsolutePosition"/> rounded to <see cref="OriginResolution"/>.</summary>
         public Double3 InstanceOrigin
@@ -397,7 +409,7 @@ namespace Nebula
             {
                 // Leaving: a container of the host scope that holds the point, never the nearest box of some other
                 // scope. None while that ground is not leased here yet: the occupant waits inside.
-                var destination = privateSide ? ContainerRegistry.FindInSpace(there, null, host, entity, null) : PrepareEntry(worker, key, host);
+                var destination = privateSide ? FindDestination(there, host, entity) : PrepareEntry(worker, key, host);
                 if (destination == null) crossing.Blocked = InstanceCrossingStatus.NoDestination;
                 else if (!LeaseState.IsOwning(destination.LeaseState)) crossing.Blocked = InstanceCrossingStatus.DestinationNotLeased;
                 else
@@ -432,6 +444,24 @@ namespace Nebula
             }
             crossing.LastPosition = AbsoluteOf(entity);
             crossing.HasPosition = true;
+        }
+
+        /// <summary>
+        /// Leaving: the deepest container of the host scope that holds <paramref name="scopePoint"/> (a point of the scope's
+        /// own space), descending into physics frames: a boundary built in a chunk carried by a framed container (a
+        /// planet, <c>docs/container-tree.md</c> D22) is left into that chunk, not the carrier's own box. Null while nothing
+        /// holds the point here (that ground is not leased yet).
+        /// </summary>
+        internal static Container FindDestination(Vector3 scopePoint, ulong host, NetworkIdentity entity)
+        {
+            var found = ContainerRegistry.FindInSpace(scopePoint, null, host, entity, null);
+            for (int depth = 0; depth < ContainerRegistry.ChainBound && found != null && found.OwnPhysicsFrame; depth++)
+            {
+                var inner = ContainerRegistry.FindInSpace(PhysicsFrames.Convert(scopePoint, null, found), null, host, entity, found);
+                if (inner == null) break;
+                found = inner;
+            }
+            return found;
         }
 
         /// <summary>Whether <paramref name="entity"/> is a companion of a crossing entity this worker still simulates.</summary>
