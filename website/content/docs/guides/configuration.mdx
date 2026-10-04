@@ -143,6 +143,7 @@ Entities carrying a `PersistentEntity` component are saved and restored. See [Pe
 | `InterestMaxRadius` | `1024` m | Ceiling on a prefab's `RelevanceRadius`, and the farthest a wide entity may reach. Never uncapped: a value of 0 or less is reported and replaced with `InterestRadius`. |
 | `InterestMaxFoci` | `8` | Most foci one client may have at once. |
 | `InterestHintMaxDistance` | `60` m | How far a client's focus hint may sit from its pawn before it is clamped. |
+| `InterestFrameApproachMargin` | `4000` m | How close a client's pawn must be to the box of a framed container with regions of its own (a planet, a station) to also look into it. `0` disables it. |
 | `InterestHintMaxHz` | `5` | Most focus hints accepted from one client per second. |
 | `InterestMaxExplicitPerClient` | `16` | Most entities one client's policy may subscribe to by ID. |
 | `InterestMaxFocusSpeed` | `12` m/s | The fastest a player is expected to travel, used to check `InterestSubscribeMargin`. |

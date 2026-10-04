@@ -105,6 +105,7 @@ namespace Nebula
         public float InterestMaxRadius = 1024f;
         public int InterestMaxFoci = 8;
         public float InterestHintMaxDistance = 60f;
+        public float InterestFrameApproachMargin = 4000f;
         public float InterestHintMaxHz = 5f;
         public int InterestMaxExplicitPerClient = 16;
         public float InterestMaxFocusSpeed = 12f;

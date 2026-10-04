@@ -49,6 +49,7 @@ Every field lives on `NebulaConfig` (`Resources/NebulaConfig.asset`), with a mat
 | `InterestMaxRadius` | 1,024 m | Ceiling on a prefab's `RelevanceRadius`, and the farthest a wide entity (one whose radius exceeds `InterestRadius`) may reach. It is a cost and security boundary, so it is never uncapped: setting it to 0 or less is reported and falls back to `InterestRadius`. |
 | `InterestMaxFoci` | 8 | Most foci one client may have at once. Extra foci from a policy are dropped. |
 | `InterestHintMaxDistance` | 60 m | How far a client's focus hint may sit from its pawn before it is clamped. |
+| `InterestFrameApproachMargin` | 4,000 m | How close a client's pawn must be to the box of a framed container with regions of its own (a planet, a station) to also look into it, from the point of its box nearest the pawn. `0` turns it off. |
 | `InterestHintMaxHz` | 5 | Most focus hints accepted from one client per second. |
 | `InterestMaxExplicitPerClient` | 16 | Most entities one client's policy may subscribe to by ID (party members, quest targets). |
 | `InterestMaxFocusSpeed` | 12 m/s | The fastest a player is expected to travel. Used only to check that `InterestSubscribeMargin` covers the distance a focus can move between two evaluations. |

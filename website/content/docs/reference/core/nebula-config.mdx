@@ -764,6 +764,14 @@ public float InterestHintMaxDistance = 60f;
 
 How far a client's focus hint may sit from its pawn, in metres. A further hint is clamped to this distance; a hint is an input, never authority.
 
+### InterestFrameApproachMargin [#interestframeapproachmargin]
+
+```csharp
+public float InterestFrameApproachMargin = 4000f;
+```
+
+How close a client's pawn must be to the box of a framed container with regions of its own (a planet, a station) for the client to also look into it, in metres. Inside the margin the client gets a focus in that frame, at the point of its box nearest the pawn, so it sees what stands on the planet below it; beyond it the frame's regions are not subscribed. 0 turns it off.
+
 ### InterestHintMaxHz [#interesthintmaxhz]
 
 ```csharp

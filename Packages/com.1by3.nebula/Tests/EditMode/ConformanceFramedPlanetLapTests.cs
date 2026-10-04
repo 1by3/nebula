@@ -631,9 +631,9 @@ namespace Nebula.Tests
 
         /// <summary>
         /// The crew member's client should hold the ground pawn whenever the ship is within the pawn's radius, inside the
-        /// planet's box or above it. NEB-386: a client outside a planet's box does not see what stands on it, so the pawn
-        /// is lost the moment the ship leaves the box, hundreds of metres inside its radius, and only comes back when the
-        /// ship is inside the box again.
+        /// planet's box or above it. Above the box it does so through the focus the gateway adds in the planet's frame while
+        /// the pawn is within <c>InterestFrameApproachMargin</c> of its box (NEB-386, <c>docs/container-tree.md</c> D23, scenario 42):
+        /// before it, the pawn was lost the moment the ship left the box and came back only when it was inside it again.
         /// </summary>
         [TestCase(false, TestName = "TheCrewSeesTheGroundUntilInterestMaxRadius(planet still)")]
         [TestCase(true, TestName = "TheCrewSeesTheGroundUntilInterestMaxRadius(planet turning)")]
@@ -643,9 +643,7 @@ namespace Nebula.Tests
             float max = _mesh.Config.InterestMaxRadius;
             var view = lap.CrewSeesGround;
             Assert.That(view.Lines.Count, Is.GreaterThanOrEqualTo(1), "the crew client held the ground pawn at the start");
-            if (view.RegainedWhere.Contains("in the box") && lap.ShipAltitudeEnteringBox > 0f && view.RegainedAt < max - 100f)
-                Assert.Inconclusive($"NEB-386 draft: on the way down the crew client gained the ground pawn only at {view.RegainedAt:0} m ({view.RegainedWhere}), after the ship entered the planet's box at {lap.ShipAltitudeEnteringBox:0} m; "
-                    + $"above the box it is invisible although inside InterestMaxRadius ({max} m). Its region was subscribed again at {view.ResubscribedAt:0} m. {lap.CrewKnownChunksInSpace} of 4 chunk rows known just outside the box.");
+            StringAssert.Contains("in space", view.RegainedWhere, "regained above the box, before the ship is in it again (ship entered the box at " + lap.ShipAltitudeEnteringBox.ToString("0") + " m)");
             Assert.That(view.RegainedAt, Is.GreaterThan(max - 100f), "regained as soon as the ship is back within InterestMaxRadius");
         }
 
