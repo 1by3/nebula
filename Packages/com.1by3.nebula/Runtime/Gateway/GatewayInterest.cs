@@ -1801,6 +1801,10 @@ namespace Nebula
                     px = world.x; py = world.y; pz = world.z;
                 }
                 AddWindow(px, py, pz, 0, 0, 0, reach);
+                // And in the frame it stands in, when that frame has regions of its own (a planet that is a carrier):
+                // the runtime containers fixed in it (its hosted ground, D22) are boxes in its coordinates, which no
+                // query in the scope's space finds (NEB-394).
+                if (root.FrameKey != 0) AddFrameWindow(root.FrameKey, root.AbsX, root.AbsY, root.AbsZ, 0, 0, 0, reach);
                 if (scope != null) Add(scope.ContainerId);
                 if (scope != null || pawn.Container.IsNone) TrackHostViews(client, scopeInstance, px, py, pz);
                 observeHost = TryGetObservedHost(client, scope, out host);
@@ -1817,8 +1821,11 @@ namespace Nebula
                         var focus = foci[i];
                         if (focus.IsBox != (pass == 1)) continue;
                         // The pawn's focus is the window above; a policy naming it again must not pay twice.
-                        if (!focus.IsBox && focus.SourceNetId != 0 && focus.SourceNetId == pawnNetId) continue;
-                        AddWindow(focus.X, focus.Y, focus.Z, focus.HalfX, focus.HalfY, focus.HalfZ, (float)focus.Scaled(reach));
+                        // A focus in a frame's region space (D18, D23) is in that frame's coordinates: its window is there,
+                        // and the pawn's own window above does not cover it, even when the pawn is its source (an approach focus).
+                        if (focus.Space == 0 && !focus.IsBox && focus.SourceNetId != 0 && focus.SourceNetId == pawnNetId) continue;
+                        if (focus.Space != 0) AddFrameWindow(focus.Space, focus.X, focus.Y, focus.Z, focus.HalfX, focus.HalfY, focus.HalfZ, (float)focus.Scaled(reach));
+                        else AddWindow(focus.X, focus.Y, focus.Z, focus.HalfX, focus.HalfY, focus.HalfZ, (float)focus.Scaled(reach));
                     }
             }
             // The host's window after the client's own: the budget can only ever withhold ground it is not standing on.
@@ -1863,6 +1870,24 @@ namespace Nebula
                 {
                     if (budget <= 0) { truncated = true; return; }
                     if (Add(_containerScratch[i].ContainerId)) budget--;
+                }
+            }
+            // Every runtime container fixed in a carried frame (a row whose parent is the carrier with frame key
+            // frameKey) whose box, in the carrier's coordinates, overlaps the window there. Read from the lease rows,
+            // so a gateway with no copy of the carrier finds them too.
+            void AddFrameWindow(ulong frameKey, double x, double y, double z, double halfX, double halfY, double halfZ, float window)
+            {
+                if (budget <= 0) { truncated = true; return; }
+                var box = new Bounds(new Vector3((float)x, (float)y, (float)z),
+                    new Vector3((float)(2 * (halfX + window)), (float)(2 * (halfY + window)), (float)(2 * (halfZ + window))));
+                foreach (var kv in _ownershipById)
+                {
+                    var row = kv.Value;
+                    if (!row.HasPlacement || row.Placement.IsRoot || !ContainerRegistry.IsDynamicId(row.Placement.ParentId)) continue;
+                    if (RegionKeys.FrameKeyOf(ContainerRef.Dynamic(ContainerRegistry.CarrierNetIdOf(row.Placement.ParentId))) != frameKey) continue;
+                    if (!box.Intersects(new Bounds(row.Placement.Center.ToVector3(), row.Placement.Size))) continue;
+                    if (budget <= 0) { truncated = true; return; }
+                    if (Add(kv.Key)) budget--;
                 }
             }
             // The window the pawn had where it left the host, queried in the host's scope only: the public world's rows

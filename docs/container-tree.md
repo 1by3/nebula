@@ -258,7 +258,7 @@ own coordinates, the host being a container with its own physics frame (a planet
 - **Activation and propagation.** Activation is one mesh setting row, `nebula.hostedGrid/<gridKey>` =
   `{"scope","host","grid"}` (`IControlPlane.SetSetting`). No new control-plane operation and no wire change: every
   worker applies the rows twice a second (`NebulaChunkedWorld.EnsureHostedGrid`), building the grid and an allocator,
-  and replaces a grid whose host or definition changed. A client or a gateway infers the grid from a chunk's row: the
+  and replaces a grid whose host or definition changed. A gateway sends a client the rows of the hosted chunks round its pawn and its foci in the host's frame, read from the lease rows in the host's coordinates (NEB-396). A client or a gateway infers the grid from a chunk's row: the
   part id gives the key and the coordinate, the parent the host, the box the cell, and a box centred on its host's
   y = 0 a column. A worker that sees a chunk before the setting row infers it the same way. A carrier that comes back
   under another container id (carried ids are `label#netId`, and a restore gives a new net id) is hosted again by
