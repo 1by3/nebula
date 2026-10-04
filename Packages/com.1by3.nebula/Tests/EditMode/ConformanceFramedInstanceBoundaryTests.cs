@@ -251,6 +251,89 @@ namespace Nebula.Tests
             Assert.IsTrue(ground.Owns(player.Container));
         }
 
+        /// <summary>Walk the player from beside the door into the instance; returns the hall it entered.</summary>
+        private Container Enter(NetworkIdentity player, NetworkIdentity planet)
+        {
+            Tick();
+            Tick();
+            AcknowledgeClients();
+            player.transform.position = planet.Carried.Frame.LocalToSimulation(Door + new Vector3(0f, 1f, 1f));
+            Tick();
+            var hall = ContainerRegistry.GetRuntime(NebulaWorker.InstanceKey("vault/" + Owner + "/hall"));
+            Assume.That(player.Container, Is.SameAs(hall), "entered");
+            return hall;
+        }
+
+        /// <summary>A committed transfer of <paramref name="entity"/> into <paramref name="destination"/> at a pose in the scope's own space.</summary>
+        private bool Transfer(NetworkIdentity entity, Container destination, Vector3 scopePosition)
+        {
+            var transfer = W.Instance.PrepareTransfer(entity, destination);
+            for (int i = 0; i < 5 && !transfer.Ready && transfer.Error == null; i++) { transfer.ClientReady = true; Tick(); }
+            Assert.IsNull(transfer.Error, "the preparation succeeds");
+            Assert.IsTrue(transfer.Ready, "and is ready");
+            return W.Instance.TryCommitTransfer(transfer, scopePosition, Quaternion.identity);
+        }
+
+        /// <summary>
+        /// A floor below the lobby and back (a dungeon's elevator: transfers between two instances of the player's), then
+        /// walking out of the lobby: the boundary still lets the player back onto the planet, into its chunk.
+        /// </summary>
+        [Test]
+        public void AfterARoundTripToAnotherInstanceThePlayerStillWalksOutOntoThePlanet()
+        {
+            var chunk = Build(out var planet, out _);
+            var door = PlanetAt + Door;
+            var player = Player(chunk, planet, Door + new Vector3(0f, 1f, -8f));
+            var hall = Enter(player, planet);
+
+            var below = new Double3(door.x, door.y - 40.0, door.z);
+            var floorRef = W.Instance.PrepareInstance(_template, Owner + "|1", below)[0];
+            Tick();
+            var floor = floorRef.Resolve();
+            Assert.IsNotNull(floor, "the floor below is prepared");
+            Assert.IsTrue(Transfer(player, floor, ContainerRegistry.ToFrame(below + new Double3(0, 1, 0), floor.InstanceId)), "down the elevator");
+            Assert.AreSame(floor, player.Container);
+            Assert.IsTrue(Transfer(player, hall, ContainerRegistry.ToFrame(Double3.From(door + new Vector3(0f, 1f, 1f)), hall.InstanceId)), "and back up");
+            Assert.AreSame(hall, player.Container);
+
+            player.transform.position += new Vector3(0f, 0f, -7f);
+            Tick();
+            AcknowledgeClients();
+            player.transform.position += new Vector3(0f, 0f, -7f);
+            Tick();
+            Assert.AreSame(chunk, player.Container, "out of the lobby into the planet's chunk");
+            Assert.AreSame(planet.Carried, player.Space);
+            AreClose(Door + new Vector3(0f, 1f, -6f), planet.Carried.Frame.SimulationToLocal(player.transform.position), "where it walked out");
+        }
+
+        /// <summary>
+        /// A transfer from the instance straight into another chunk of the planet (a respawn in town from inside a
+        /// dungeon): committed at a pose in the scope's own space, it lands in the chunk, in the planet's frame, at the
+        /// planet-local point that pose names.
+        /// </summary>
+        [Test]
+        public void ATransferFromTheInstanceLandsInAChunkOfThePlanet()
+        {
+            var chunk = Build(out var planet, out var ground);
+            var player = Player(chunk, planet, Door + new Vector3(0f, 1f, -8f));
+            Enter(player, planet);
+
+            var town = new Vector3(-200f, 1f, -300f);
+            var coord = ground.CoordOfAbsolute(town);
+            var info = new InstanceContainerInfo { InstanceId = ScopeKeys.Hash(Scope), ScopeKey = Scope, PartId = ground.PartIdOf(coord) };
+            _plane.EnsureRuntimeContainer(ground.ContainerIdOf(coord), ground.PlacementOf(coord), W.Id, info);
+            Mirror();
+            var townChunk = ContainerRegistry.GetRuntime(ground.IdOf(coord));
+            Assume.That(townChunk, Is.Not.Null);
+
+            var scopePosition = PhysicsFrames.ToScope(planet.Carried.Frame.LocalToSimulation(town), planet.Carried);
+            Assert.IsTrue(Transfer(player, townChunk, scopePosition), "committed");
+            Assert.AreSame(townChunk, player.Container, "in the town's chunk");
+            Assert.AreSame(planet.Carried, player.Space, "in the planet's frame");
+            Assert.AreEqual(ScopeKeys.Hash(Scope), player.InstanceId);
+            AreClose(town, planet.Carried.Frame.SimulationToLocal(player.transform.position), "at the planet-local point");
+        }
+
         /// <summary>The scope frame arithmetic the tests need, without a game's layout.</summary>
         private static class SystemLayoutFree
         {

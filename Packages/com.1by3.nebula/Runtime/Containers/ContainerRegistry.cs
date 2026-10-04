@@ -81,6 +81,15 @@ namespace Nebula
         /// <summary>Runtime rows waiting for their parent to become resolvable on this process.</summary>
         public static int PendingRuntimeCount => PendingChildren.Count;
 
+        /// <summary>
+        /// Whether the runtime container <paramref name="runtimeId"/> has a row here held for a parent that is a carried
+        /// container this process does not hold (a chunk of a grid hosted by a planet whose carrier this client has not
+        /// been sent, <c>docs/container-tree.md</c> D22). Its content is that carrier's scope's, which arrives with the
+        /// carrier once the process is in that scope.
+        /// </summary>
+        public static bool IsHeldForCarrier(ulong runtimeId) =>
+            PendingChildren.TryGetValue(runtimeId, out var pending) && IsDynamicId(pending.Placement.ParentId);
+
         /// <summary>The ids of the runtime rows waiting for their parent (see <see cref="PendingRuntimeCount"/>).</summary>
         public static IEnumerable<ulong> PendingRuntimeIds => PendingChildren.Keys;
 
