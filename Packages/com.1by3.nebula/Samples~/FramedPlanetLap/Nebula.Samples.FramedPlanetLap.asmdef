@@ -1,0 +1,5 @@
+{
+    "name": "Nebula.Samples.FramedPlanetLap",
+    "references": ["Nebula.Runtime"],
+    "autoReferenced": true
+}

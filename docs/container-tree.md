@@ -278,5 +278,8 @@ only the last registered owns the box and its frame. Scenario 21's two-worker ca
 - A client predicts in the frame of its own player only.
 - Runtime containers inside a frame are scanned linearly, not hashed per frame.
 - A client outside a planet's box does not see what stands on the planet (`OwnRegions`).
-- The star-system demo's planet → space → planet lap has not been re-run on this implementation; its planets are
-  still separate grid scopes joined by transfers.
+- The planet → space → planet lap runs in one process as scenario 40 (`ConformanceFramedPlanetLapTests`, two workers
+  and a gateway, no client process; the sample `Samples~/FramedPlanetLap`). Not yet on a live mesh. What it found
+  beyond the line above: a frame's angular velocity reads zero below a few degrees a second, so crossings of a slowly
+  turning frame miss ω × r; and a carrier is a region entity, so a gateway receives a ship only within about
+  `InterestRadius` of a player, whatever its `RelevanceRadius`.
