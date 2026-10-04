@@ -56,6 +56,8 @@ namespace Nebula.Tests
         private ushort _planetPrefab, _stationPrefab, _pawnPrefab;
         private NetworkIdentity _planet, _station;
         private readonly List<Container> _chunks = new List<Container>();
+        private readonly List<Vector3> _chunkCenters = new List<Vector3>();
+        private readonly List<Vector3> _chunkSizes = new List<Vector3>();
         private GameObject _gatewayHost;
         private NebulaGateway _gateway;
         private ConformanceMesh.Worker W1 => _mesh[0];
@@ -99,6 +101,8 @@ namespace Nebula.Tests
         {
             if (_gatewayHost != null) Object.DestroyImmediate(_gatewayHost);
             _chunks.Clear();
+            _chunkCenters.Clear();
+            _chunkSizes.Clear();
             _mesh.Dispose();
             PhysicsFrames.DrainPool();
             PhysicsFrames.SceneFactory = null;
@@ -111,16 +115,21 @@ namespace Nebula.Tests
         private NetworkIdentity BuildPlanet()
         {
             _planet = W1.SpawnServerDriven(_planetPrefab, _space, PlanetAt, Quaternion.identity);
-            for (int i = 0; i < 4; i++)
-            {
-                var center = new Vector3(-3000f + ChunkWidth * i, PlanetBoxCenter.y, 0f);
-                var chunk = ContainerRegistry.RegisterRuntime(2000UL + (ulong)i,
-                    ContainerPlacement.Child(_planet.Carried.ContainerId, center, new Vector3(ChunkWidth, PlanetBox.y, PlanetBox.z), ContainerAuthority.Leased));
-                Assert.IsNotNull(chunk);
-                ContainerRegistry.ApplyLease(chunk.ContainerId, W1.Id, W1.Index, 1);
-                _chunks.Add(chunk);
-            }
+            for (int i = 0; i < 4; i++) AddChunk(new Vector3(-3000f + ChunkWidth * i, PlanetBoxCenter.y, 0f), new Vector3(ChunkWidth, PlanetBox.y, PlanetBox.z));
             return SpawnIn(_pawnPrefab, _chunks[1], GroundAt);
+        }
+
+        /// <summary>A runtime chunk fixed in the planet's frame at <paramref name="center"/> (planet coordinates), leased to the worker.</summary>
+        private Container AddChunk(Vector3 center, Vector3 size)
+        {
+            var chunk = ContainerRegistry.RegisterRuntime(2000UL + (ulong)_chunks.Count,
+                ContainerPlacement.Child(_planet.Carried.ContainerId, center, size, ContainerAuthority.Leased));
+            Assert.IsNotNull(chunk);
+            ContainerRegistry.ApplyLease(chunk.ContainerId, W1.Id, W1.Index, 1);
+            _chunks.Add(chunk);
+            _chunkCenters.Add(center);
+            _chunkSizes.Add(size);
+            return chunk;
         }
 
         private NetworkIdentity SpawnIn(ushort prefab, Container container, Vector3 local)
@@ -168,8 +177,7 @@ namespace Nebula.Tests
                 {
                     ContainerId = chunk.ContainerId, WorkerId = W1.Id, Epoch = 1, State = LeaseState.Active,
                     HasBounds = true, ParentId = _planet.Carried.ContainerId,
-                    Center = Double3.From(new Vector3(-3000f + ChunkWidth * i, PlanetBoxCenter.y, 0f)),
-                    BoundsSize = new Vector3(ChunkWidth, PlanetBox.y, PlanetBox.z), Authority = ContainerAuthority.Leased,
+                    Center = Double3.From(_chunkCenters[i]), BoundsSize = _chunkSizes[i], Authority = ContainerAuthority.Leased,
                 };
                 var entry = ContainerOwnershipEntry.Of(row, ContainerRef.RuntimeIndex, W1.Index);
                 ownership.Add(entry);
@@ -373,6 +381,78 @@ namespace Nebula.Tests
             Call("FrameExtent", args);
             Assert.AreEqual(new Vector3(-4000f, -400f, -4000f), (Vector3)args[2], "the four chunks' boxes, side by side");
             Assert.AreEqual(new Vector3(4000f, 600f, 4000f), (Vector3)args[3]);
+        }
+
+        // ------------------------------------------------------------------------------------ the ground's rows (NEB-396)
+
+        /// <summary>A row of small chunks across the planet, 512 m wide: the planet's own ground, streamed as a hosted grid would lease it.</summary>
+        private const float SmallChunk = 512f;
+        private const int SmallChunks = 16;
+
+        private void BuildGroundRow()
+        {
+            _planet = W1.SpawnServerDriven(_planetPrefab, _space, PlanetAt, Quaternion.identity);
+            for (int i = 0; i < SmallChunks; i++)
+                AddChunk(new Vector3(-4096f + SmallChunk * (i + 0.5f), PlanetBoxCenter.y, 0f), new Vector3(SmallChunk, PlanetBox.y, SmallChunk));
+        }
+
+        private static int ChunkAt(float x) => Mathf.FloorToInt((x + 4096f) / SmallChunk);
+
+        private static HashSet<string> Rows(object client) => Of<HashSet<string>>(client, "KnownContainers");
+
+        private static void SetPawn(object client, NetworkIdentity pawn) =>
+            GatewayType.GetNestedType("ClientConn", BindingFlags.NonPublic).GetField("PawnNetId").SetValue(client, pawn.NetId);
+
+        /// <summary>
+        /// A client is told the rows of the chunks it needs to build round it. Chunks fixed in a planet's frame are
+        /// boxes in the planet's coordinates, which a window in the scope's own space never overlaps, so a pawn standing
+        /// on the planet was told only of the chunk it stood in (NEB-396). It is now told of the chunks round it in the
+        /// planet's frame, and still not of those far away.
+        /// </summary>
+        [Test]
+        public void APawnOnAPlanetIsToldTheRowsOfTheGroundRoundIt()
+        {
+            BuildGroundRow();
+            var at = new Vector3(500f, 1f, 0f); // 12 m from the next chunk's edge
+            var ground = SpawnIn(_pawnPrefab, _chunks[ChunkAt(at.x)], at);
+            W1.Tick(1); _mesh.Pump();
+            StartGateway();
+            Announce(_planet);
+            var client = Client(GroundClient, 8);
+            SetPawn(client, ground);
+            Announce(ground, GroundClient);
+            Call("EvaluateClient", client, 100.0);
+
+            var rows = Rows(client);
+            Assert.That(rows, Does.Contain(_chunks[ChunkAt(at.x)].ContainerId), "the chunk it stands in");
+            Assert.That(rows, Does.Contain(_chunks[ChunkAt(at.x) + 1].ContainerId), "and the chunk 12 m away, in the planet's frame");
+            Assert.That(rows, Does.Not.Contain(_chunks[ChunkAt(3800f)].ContainerId), "not the far ground, 3 km away");
+        }
+
+        /// <summary>
+        /// A pilot above the planet's box looks into it through its approach focus (D23), on the box's face below it: it is
+        /// told the rows of the ground round that focus, in the planet's frame, so what it sees standing there has ground
+        /// to stand on; and not of ground far from it.
+        /// </summary>
+        [Test]
+        public void APilotAboveAPlanetIsToldTheRowsOfTheGroundUnderItsFocus()
+        {
+            BuildGroundRow();
+            var above = PlanetAt + new Vector3(500f, PlanetBoxTop + 50f, 0f);
+            var pilot = SpawnIn(_pawnPrefab, _space, above);
+            pilot.transform.position = above;
+            W1.Tick(1); _mesh.Pump();
+            StartGateway();
+            Announce(_planet);
+            var client = Client(PilotClient, 7);
+            SetPawn(client, pilot);
+            Announce(pilot, PilotClient);
+            Call("EvaluateClient", client, 100.0);
+
+            var rows = Rows(client);
+            Assert.That(rows, Does.Contain(_chunks[ChunkAt(500f)].ContainerId), "the ground under the pilot's focus on the box's top");
+            Assert.That(rows, Does.Contain(_chunks[ChunkAt(500f) + 1].ContainerId), "and beside it");
+            Assert.That(rows, Does.Not.Contain(_chunks[ChunkAt(3800f)].ContainerId), "not ground far from it");
         }
 
         /// <summary>
