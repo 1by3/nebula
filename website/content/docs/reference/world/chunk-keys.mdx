@@ -56,13 +56,37 @@ public static bool TryParsePartId(string partId, out Vector3Int coord);
 
 Inverse of [`PartId`](#partid). False for any other part id (an instance's "interior").
 
+### HostedPartId [#hostedpartid]
+
+```csharp
+public static string HostedPartId(string gridKey, Vector3Int coord);
+```
+
+The part id of a chunk of a hosted grid (`docs/container-tree.md` D22): the grid's key, then the chunk's own part id, `<gridKey>/c/x/y/z`. A hosted chunk belongs to the scope its host lives in, so its lease row and its records carry that scope's key; the grid key travels here instead, and a role that was only handed the row (a client, a gateway) learns from it which grid and which chunk the box is. Its container id is still [`RuntimeId`](#runtimeid) of the grid key and the coordinate, which is the hash of this very string.
+
+### TryParseHostedPartId [#tryparsehostedpartid]
+
+```csharp
+public static bool TryParseHostedPartId(string partId, out string gridKey, out Vector3Int coord);
+```
+
+Inverse of [`HostedPartId`](#hostedpartid): the grid key and the coordinate. False for a root chunk's part id (`c/x/y/z`, with no grid key in front) and for any other part id.
+
+### TryHostedCoordOf [#tryhostedcoordof]
+
+```csharp
+public static bool TryHostedCoordOf(PersistedEntityRecord record, out string gridKey, out Vector3Int coord);
+```
+
+The chunk of a hosted grid a persisted record was saved in, from the record alone: its grid key and coordinate, when its [`PersistedEntityRecord.PartId`](/docs/reference/persistence/persisted-entity-record#partid) is a hosted part id ([`HostedPartId`](#hostedpartid)) that hashes to the record's container id. False for a record in a root chunk (see [`TryCoordOf`](#trycoordof)), inside a carrier, or in any other container.
+
 ### RuntimeId [#runtimeid]
 
 ```csharp
 public static ulong RuntimeId(string scopeKey, Vector3Int coord);
 ```
 
-The 64-bit runtime container id of chunk `coord` in `scopeKey`. An empty key is the public world and gets the pinned packing; any other key gets the scope's hash.
+The 64-bit runtime container id of chunk `coord` in `scopeKey`. An empty key is the public world and gets the pinned packing; any other key gets the scope's hash. A hosted grid's chunks pass the grid's own key here, not its scope's.
 
 ### ContainerId [#containerid]
 

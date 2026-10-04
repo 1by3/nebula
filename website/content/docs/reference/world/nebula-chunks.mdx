@@ -13,6 +13,8 @@ Reports the runtime chunks available on each role so your game can load their co
 
 Each scope, a separately identified simulation area, has its own grid. [`Grid`](#grid) returns the public world's grid. Activate additional grids with [`NebulaChunkedWorld.ActivateGrid`](/docs/reference/world/nebula-chunked-world#activategrid) and retrieve them with [`GridFor`](#gridfor). Each grid has its own cell size, planar setting, allocator, container assignments, and persistence identifiers.
 
+A scope can also hold grids hosted by a container with a physics frame of its own, such as a planet carried through the scope ([`NebulaChunkedWorld.ActivateHostedGrid`](/docs/reference/world/nebula-chunked-world#activatehostedgrid), `docs/container-tree.md` D22). A hosted grid is registered under its own grid key, so [`GridFor`](#gridfor), [`EnsureAt`](#ensureat) and [`AllocatorFor`](#allocatorfor) take that key exactly as they take a scope's; its chunks report the scope they are in ([`ChunkContext.ScopeKey`](/docs/reference/world/chunk-context#scopekey)).
+
 Chunks are Nebula runtime containers, so "which chunks exist" means something slightly different per role and that is exactly the point: a worker sees the cells it and its neighbors lease, a client sees the containers the gateway told it about (its interest window), and both learn about them through the same two events. A game's callback therefore never needs to know which role it is running on, nor to poll.
 
 [`Loaded`](#loaded) back-fills: subscribing after chunks already exist raises the event for each of them at once, so a handler added from `Start` on a late-loaded scene object cannot miss a chunk and no game has to write the "and now walk the existing ones" loop that every hand-rolled chunk loader begins with.
@@ -73,7 +75,7 @@ Every grid active in this process, public world first if it has one.
 public static IEnumerable<string> ActiveScopeKeys { get; }
 ```
 
-The scope keys with a grid in this process (`""` is the public world).
+The keys with a grid in this process (`""` is the public world): scope keys for scopes' root grids, and the grid keys of hosted grids.
 
 ### All [#all]
 
@@ -117,7 +119,7 @@ A chunk is about to go: its container object, and everything under [`ChunkContex
 public static RuntimeGrid GridFor(string scopeKey);
 ```
 
-The grid of a scope (`""` for the public world), or null when that scope has no grid here.
+The grid registered under a key, or null when there is none here: a scope's root grid by the scope's key (`""` for the public world), or a hosted grid by its own grid key.
 
 ### AllocatorFor [#allocatorfor]
 
@@ -125,7 +127,7 @@ The grid of a scope (`""` for the public world), or null when that scope has no 
 public static RuntimeGridAllocator AllocatorFor(string scopeKey);
 ```
 
-The worker-side allocator of a scope's grid, or null (not a worker, or no such grid).
+The worker-side allocator of the grid registered under a key ([`GridFor`](#gridfor)), or null (not a worker, or no such grid).
 
 ### IsActiveFor [#isactivefor]
 
@@ -133,7 +135,15 @@ The worker-side allocator of a scope's grid, or null (not a worker, or no such g
 public static bool IsActiveFor(string scopeKey);
 ```
 
-Whether a scope has a grid in this process.
+Whether a grid is registered under a key in this process ([`GridFor`](#gridfor)).
+
+### HostedGridsIn [#hostedgridsin]
+
+```csharp
+public static IReadOnlyList<RuntimeGrid> HostedGridsIn(string scopeKey);
+```
+
+The grids hosted in a scope that this process knows (`docs/container-tree.md` D22); empty when there are none.
 
 ### GridOf [#gridof]
 
@@ -158,7 +168,7 @@ The grid of the chunk `container` stands in, at any depth: the container itself 
 public static string ScopeOf(Container container);
 ```
 
-The scope key a container belongs to (`""` for the public world and for anything not in a grid).
+The scope key a container belongs to (`""` for the public world and for anything not in a grid). A chunk of a hosted grid belongs to the scope its host is in, not to the grid's key.
 
 ### BoundsOfId [#boundsofid]
 

@@ -157,6 +157,7 @@ namespace Nebula
             RuntimeRegistered = null;
             RuntimeUnregistering = null;
             RuntimeBoundsInFrame = null;
+            RuntimeClaims = null;
             WorkerIdByIndex = index => NebulaRuntime.IsServer && index == NebulaRuntime.LocalWorkerIndex ? NebulaRuntime.LocalWorkerId : "";
         }
 
@@ -519,6 +520,15 @@ namespace Nebula
         /// Clear this callback when its world unloads. It is reset when a new play session starts.
         /// </summary>
         public static Func<ulong, Bounds, Bounds> RuntimeBoundsInFrame { get; set; }
+
+        /// <summary>
+        /// Optional say over whether a runtime container placed inside another (a chunk of a hosted grid,
+        /// <c>docs/container-tree.md</c> D22) holds a point that its box holds: given the container and the point in its
+        /// space, false keeps the container out of resolution (D3) for that point. A grid whose cells' boxes overlap,
+        /// such as a curved surface's, decides membership by the cell instead of the box. Null, or true, keeps the box's
+        /// answer. <see cref="Nebula.World.NebulaChunks"/> installs it. Reset when a new play session starts.
+        /// </summary>
+        public static Func<Container, Vector3, bool> RuntimeClaims { get; set; }
 
         /// <summary>
         /// Register a static box that is not in the baked set, named by a 64-bit id the game chose (a chunk
@@ -1185,6 +1195,8 @@ namespace Nebula
                 // Boxes inside a physics frame are in that frame's coordinates, which overlap everybody else's.
                 if (c.Space != space) continue;
                 float d = c.SignedDistance(worldPosition);
+                // A box that holds the point may still not be the cell the point belongs to (D22): overlapping cells.
+                if (d <= 0f && c.FixedParent != null && c.IsRuntime && RuntimeClaims != null && !RuntimeClaims(c, worldPosition)) continue;
                 if (d <= 0f)
                 {
                     // The deepest box on the branch wins, the smaller one breaking ties (docs/container-tree.md D3).

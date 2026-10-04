@@ -98,6 +98,14 @@ namespace Nebula
         public Vector3 Origin { get; internal set; }
 
         /// <summary>
+        /// The worker's automatic origin shifts (<see cref="PhysicsFrames.AutoShift"/>) move this frame's origin across,
+        /// never up or down. Set by a planar chunk grid hosted in the frame (<c>docs/container-tree.md</c> D22), whose
+        /// columns, like a planar root grid's, never shift vertically; a game may set it for a frame of its own.
+        /// <see cref="PhysicsFrames.ShiftOrigin"/> called directly still moves the origin wherever it is told.
+        /// </summary>
+        public bool KeepOriginLevel { get; set; }
+
+        /// <summary>
         /// Raised after this frame's origin moved: the delta every cached simulation-space position of this frame gets
         /// (pose history, interpolation buffers and game caches are moved by Nebula for its own entities).
         /// </summary>
@@ -669,9 +677,11 @@ namespace Nebula
                 var mean = Vector3.zero;
                 for (int p = 0; p < _points.Count; p++) mean += _points[p];
                 mean /= _points.Count;
+                if (frame.KeepOriginLevel) mean.y = frame.Origin.y;
                 if ((mean - frame.Origin).magnitude <= OriginShiftThreshold) continue;
                 float step = Mathf.Max(1f, OriginShiftStep);
                 var snapped = new Vector3(Mathf.Round(mean.x / step) * step, Mathf.Round(mean.y / step) * step, Mathf.Round(mean.z / step) * step);
+                if (frame.KeepOriginLevel) snapped.y = frame.Origin.y;
                 ShiftOrigin(frame, snapped);
             }
             _points.Clear();

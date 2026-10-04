@@ -579,6 +579,10 @@ namespace Nebula
         internal void EnsureRuntimeContainer(ulong id, Bounds frameBounds, InstanceContainerInfo instance) =>
             Request(id, RootPlacement(frameBounds, instance), ContainerHint.Default, writeHint: false, instance: instance, touch: false);
 
+        /// <summary><see cref="EnsureRuntimeContainer(ulong, Bounds, InstanceContainerInfo)"/> from a placement: a pinned chunk of a hosted grid.</summary>
+        internal void EnsureRuntimeContainer(ulong id, ContainerPlacement placement, InstanceContainerInfo instance) =>
+            Request(id, placement, ContainerHint.Default, writeHint: false, instance: instance, touch: false);
+
         private void Request(ulong id, ContainerPlacement placement, in ContainerHint hint, bool writeHint, InstanceContainerInfo instance, bool touch = true)
         {
             if (!_registered || !ControlPlane.IsConnected)

@@ -15,6 +15,10 @@ A cell counts as occupied while a client owns an entity anywhere inside it, incl
 
 With `NebulaConfig.ChunkedWorld` enabled, [`NebulaChunkedWorld`](/docs/reference/world/nebula-chunked-world) constructs and updates the allocator. For a custom allocation workflow, construct this class and call [`Tick`](#tick) from your worker's update loop.
 
+With [`LeadSeconds`](#leadseconds) set, a moving pawn also has a ring leased around every cell on the line to where its velocity takes it in that time: a capsule ahead of it rather than a wider ring all round. The velocity is measured from the pawn's position in the grid's own coordinates between two policy ticks, so it is the same for a pawn on foot, a pilot aboard a ship and a ship crossing into or out of a physics frame.
+
+For a grid hosted by a container ([`RuntimeGrid.IsHosted`](/docs/reference/world/runtime-grid#ishosted), `docs/container-tree.md` D22) the ring is computed in the host's own coordinates, every chunk is requested as a leased child of the host, and only pawns inside the host's box, or within [`Reach`](#reach) metres of it, count. Nothing is requested while the host is not in this process.
+
 ## Constructors
 
 ### RuntimeGridAllocator [#runtimegridallocator]
@@ -48,6 +52,30 @@ public float TickIntervalSeconds { get; set; } = 0.25f;
 ```
 
 How often [`Tick`](#tick) actually recomputes interest; calls between are no-ops.
+
+### LeadSeconds [#leadseconds]
+
+```csharp
+public float LeadSeconds { get; set; }
+```
+
+Seconds of travel leased ahead of a moving pawn ([`ChunkGridDefinition.LeadSeconds`](/docs/reference/world/chunk-grid-definition#leadseconds)): a ring of [`Ring`](#ring) around every cell on the line from the pawn to its position this many seconds ahead. 0 (the default) leases the ring around the pawn alone, as before.
+
+### MaxLeadSpeed [#maxleadspeed]
+
+```csharp
+public float MaxLeadSpeed { get; set; } = 2000f;
+```
+
+Speeds above this, in metres per second, are read as a jump (a teleport, a respawn) rather than travel, and lead nothing.
+
+### Reach [#reach]
+
+```csharp
+public float Reach { get; set; }
+```
+
+A hosted grid only ([`ChunkGridDefinition.Reach`](/docs/reference/world/chunk-grid-definition#reach)): how far outside the host's box, in metres, a pawn (or the point its lead reaches) still counts. 0 counts pawns inside the box only.
 
 ### Grid [#grid]
 

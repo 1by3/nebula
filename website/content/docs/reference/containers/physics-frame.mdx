@@ -69,6 +69,14 @@ public Vector3 Origin { get; }
 
 The frame's floating origin (`docs/container-tree.md` D19): the frame-local point that sits at Unity's origin in simulation space. Zero until the worker moves it with [`PhysicsFrames.ShiftOrigin`](/docs/reference/containers/physics-frames#shiftorigin); a planet's frame is large, and physics a few thousand kilometres from Unity's origin would be imprecise.
 
+### KeepOriginLevel [#keeporiginlevel]
+
+```csharp
+public bool KeepOriginLevel { get; set; }
+```
+
+The worker's automatic origin shifts ([`PhysicsFrames.AutoShift`](/docs/reference/containers/physics-frames#autoshift)) move this frame's origin across, never up or down. Set by a planar chunk grid hosted in the frame (`docs/container-tree.md` D22), whose columns, like a planar root grid's, never shift vertically; a game may set it for a frame of its own. [`PhysicsFrames.ShiftOrigin`](/docs/reference/containers/physics-frames#shiftorigin) called directly still moves the origin wherever it is told.
+
 ## Events
 
 ### Shifted [#shifted]

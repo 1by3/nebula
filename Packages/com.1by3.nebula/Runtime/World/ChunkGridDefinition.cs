@@ -31,6 +31,19 @@ namespace Nebula
         public float RetireSeconds;
         /// <summary>The chunk activation creates: the scope's guaranteed spawn area, and the anchor the allocator keeps.</summary>
         public Vector3Int Anchor;
+        /// <summary>
+        /// Seconds of travel the allocator leases ahead of a moving pawn: besides the ring around the pawn's chunk, a
+        /// ring around every chunk on the line from the pawn to where its velocity takes it in this many seconds, so a
+        /// fast vehicle finds its next chunks leased before it gets there without a wider ring all round. 0 (the
+        /// default) leases the ring alone.
+        /// </summary>
+        public float LeadSeconds;
+        /// <summary>
+        /// A hosted grid only (<see cref="NebulaChunkedWorld.ActivateHostedGrid(IControlPlane, string, string, string, ChunkGridDefinition)"/>):
+        /// how far outside its host container's box, in metres, a pawn still has chunks leased around it. 0 (the
+        /// default) leases only for pawns inside the box. A root grid ignores it.
+        /// </summary>
+        public float Reach;
 
         /// <summary>The reason this grid cannot be activated, or null when it is well formed.</summary>
         public string Validate()
@@ -39,6 +52,8 @@ namespace Nebula
             var anchor = Planar ? new Vector3Int(Anchor.x, 0, Anchor.z) : Anchor;
             if (!ChunkKeys.IsValidCoordinate(anchor)) return "the anchor chunk is outside the packable coordinate range";
             if (Ring < 0) return "a chunk grid's ring cannot be negative";
+            if (LeadSeconds < 0f) return "a chunk grid's lead cannot be negative";
+            if (Reach < 0f) return "a chunk grid's reach cannot be negative";
             return null;
         }
 
@@ -67,6 +82,10 @@ namespace Nebula
             w.Prop("retire", RetireSeconds);
             w.Key("anchor");
             w.BeginArray(); w.Value(Anchor.x); w.Value(Anchor.y); w.Value(Anchor.z); w.EndArray();
+            // Written only when set: a scope row activated before these existed must read back byte for byte, or
+            // the allocator would take the unchanged grid for a changed definition.
+            if (LeadSeconds > 0f) w.Prop("lead", LeadSeconds);
+            if (Reach > 0f) w.Prop("reach", Reach);
             w.EndObject();
             return sb.ToString();
         }
@@ -75,12 +94,21 @@ namespace Nebula
         public static ChunkGridDefinition FromJson(string json)
         {
             if (string.IsNullOrEmpty(json) || !PersistenceJson.TryParseObject(json, out var o, out _)) return null;
+            return FromObject(o);
+        }
+
+        /// <summary><see cref="FromJson"/> of an object already parsed. Null when it is not a grid payload.</summary>
+        internal static ChunkGridDefinition FromObject(Dictionary<string, object> o)
+        {
+            if (o == null) return null;
             var d = new ChunkGridDefinition
             {
                 CellSize = ControlPlaneJson.Vec(o, "cell"),
                 Planar = ControlPlaneJson.Bool(o, "planar"),
                 Ring = (int)ControlPlaneJson.Num(o, "ring"),
                 RetireSeconds = (float)ControlPlaneJson.Num(o, "retire"),
+                LeadSeconds = (float)ControlPlaneJson.Num(o, "lead"),
+                Reach = (float)ControlPlaneJson.Num(o, "reach"),
             };
             if (o.TryGetValue("anchor", out var a) && a is List<object> list && list.Count >= 3)
                 d.Anchor = new Vector3Int((int)Num(list[0]), (int)Num(list[1]), (int)Num(list[2]));
@@ -174,8 +202,58 @@ namespace Nebula
         }
 
         /// <summary>
+        /// The part id of a chunk of a hosted grid (<c>docs/container-tree.md</c> D22): the grid's key, then the
+        /// chunk's own part id, <c>&lt;gridKey&gt;/c/x/y/z</c>. A hosted chunk belongs to the scope its host lives in,
+        /// so its lease row and its records carry that scope's key; the grid key travels here instead, and a role that
+        /// was only handed the row (a client, a gateway) learns from it which grid and which chunk the box is. Its
+        /// container id is still <see cref="RuntimeId"/> of the grid key and the coordinate, which is the hash of this
+        /// very string.
+        /// </summary>
+        public static string HostedPartId(string gridKey, Vector3Int coord) => gridKey + "/" + PartId(coord);
+
+        /// <summary>
+        /// Inverse of <see cref="HostedPartId"/>: the grid key and the coordinate. False for a root chunk's part id
+        /// (<c>c/x/y/z</c>, with no grid key in front) and for any other part id.
+        /// </summary>
+        public static bool TryParseHostedPartId(string partId, out string gridKey, out Vector3Int coord)
+        {
+            gridKey = null;
+            coord = default;
+            if (string.IsNullOrEmpty(partId)) return false;
+            // The chunk's own part is always the last four segments; the key in front may hold slashes of its own.
+            int at = partId.Length;
+            for (int i = 0; i < 4; i++)
+            {
+                at = at > 0 ? partId.LastIndexOf('/', at - 1) : -1;
+                if (at <= 0) return false;
+            }
+            if (!TryParsePartId(partId.Substring(at + 1), out coord)) return false;
+            gridKey = partId.Substring(0, at);
+            return true;
+        }
+
+        /// <summary>
+        /// The chunk of a hosted grid a persisted record was saved in, from the record alone: its grid key and
+        /// coordinate, when its <see cref="PersistedEntityRecord.PartId"/> is a hosted part id
+        /// (<see cref="HostedPartId"/>) that hashes to the record's container id. False for a record in a root
+        /// chunk (see <see cref="TryCoordOf"/>), inside a carrier, or in any other container.
+        /// </summary>
+        public static bool TryHostedCoordOf(PersistedEntityRecord record, out string gridKey, out Vector3Int coord)
+        {
+            gridKey = null;
+            coord = default;
+            if (record == null || !string.IsNullOrEmpty(record.CarrierKey)) return false;
+            if (!TryParseContainerId(record.ContainerId, out ulong id)) return false;
+            if (!TryParseHostedPartId(record.PartId, out var key, out var parsed) || !IsValidCoordinate(parsed) || RuntimeId(key, parsed) != id) return false;
+            gridKey = key;
+            coord = parsed;
+            return true;
+        }
+
+        /// <summary>
         /// The 64-bit runtime container id of chunk <paramref name="coord"/> in <paramref name="scopeKey"/>. An
-        /// empty key is the public world and gets the pinned packing; any other key gets the scope's hash.
+        /// empty key is the public world and gets the pinned packing; any other key gets the scope's hash. A hosted
+        /// grid's chunks pass the grid's own key here, not its scope's.
         /// </summary>
         public static ulong RuntimeId(string scopeKey, Vector3Int coord)
         {

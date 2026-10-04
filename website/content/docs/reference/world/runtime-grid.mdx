@@ -82,13 +82,61 @@ public bool IsPublic { get; }
 
 Whether this is the public world's grid, whose ids are the pinned packing and nothing else.
 
+### GridKey [#gridkey]
+
+```csharp
+public string GridKey { get; }
+```
+
+The key this grid is registered under ([`NebulaChunks.GridFor`](/docs/reference/world/nebula-chunks#gridfor)) and its chunk ids derive from ([`IdOf`](#idof)). A scope's root grid's is its [`ScopeKey`](#scopekey); a hosted grid's is its own, distinct from the scope it lives in (`docs/container-tree.md` D22).
+
+### HostContainerId [#hostcontainerid]
+
+```csharp
+public string HostContainerId { get; }
+```
+
+The container a hosted grid's chunks are leased under, by id: a container with a physics frame of its own, typically a carrier's (a planet, a station). Null for a scope's root grid, whose chunks are roots.
+
+### IsHosted [#ishosted]
+
+```csharp
+public bool IsHosted { get; }
+```
+
+Whether this grid is hosted by a container (`docs/container-tree.md` D22) rather than being its scope's root grid: its chunks are children of [`HostContainerId`](#hostcontainerid), its coordinates are the host's own (carrier-local), and its [`Frame`](#frame) follows the host's floating origin.
+
+### Geometry [#geometry]
+
+```csharp
+public IChunkGridGeometry Geometry { get; }
+```
+
+The grid's shape: which cell a point is in, each cell's box, its neighbours and its id. A root grid's is always a [`ChunkLattice`](/docs/reference/world/chunk-lattice) of [`CellSize`](#cellsize); a hosted grid's may be any [`IChunkGridGeometry`](/docs/reference/world/i-chunk-grid-geometry) a game supplies ([`NebulaChunkedWorld.HostedGeometry`](/docs/reference/world/nebula-chunked-world#hostedgeometry)), and every hosted-grid answer below goes through it.
+
+### Host [#host]
+
+```csharp
+public Container Host { get; }
+```
+
+A hosted grid's host container in this process, or null while it is not here (a carrier not spawned or not yet seen) or for a root grid. A planar grid makes its host's frame keep its origin level ([`PhysicsFrame.KeepOriginLevel`](/docs/reference/containers/physics-frame#keeporiginlevel)), and the frame's origin shifts are this grid's ([`ScopeFrame.Shifted`](/docs/reference/world/scope-frame#shifted)).
+
+### LeadStep [#leadstep]
+
+```csharp
+public float LeadStep { get; }
+```
+
+How far apart the allocator samples a pawn's lead line ([`IChunkGridGeometry.LeadStep`](/docs/reference/world/i-chunk-grid-geometry#leadstep)).
+
 ### Frame [#frame]
 
 ```csharp
 public ScopeFrame Frame { get; }
 ```
 
-This grid's floating-origin frame: [`WorldOrigin`](/docs/reference/world/world-origin) for the public world, and a frame of its own for every other scope. Every piece of arithmetic below is relative to it, which is what lets two scopes on one worker both sit near Unity's origin (`docs/scope-frames.md`).
+This grid's floating-origin frame: [`WorldOrigin`](/docs/reference/world/world-origin) for the public world, and a frame of its own for every other scope. Every piece of arithmetic below is relative to it, which is what lets two scopes on one worker both sit near Unity's origin (`docs/scope-frames.md`). A hosted grid's frame follows its host's floating origin ([`ScopeFrame.IsFollowing`](/docs/reference/world/scope-frame#isfollowing)): its [`ScopeFrame.OriginOffset`](/docs/reference/world/scope-frame#originoffset) turns the host's own coordinates into simulation space and back, on a worker and on a client while it predicts; a client draws the host where it is ([`PhysicsFrame.ToParent`](/docs/reference/containers/physics-frame#toparent)).
 
 ## Methods
 
@@ -99,6 +147,62 @@ public static RuntimeGrid From(ChunkGridDefinition definition, string scopeKey);
 ```
 
 The grid a [`ChunkGridDefinition`](/docs/reference/world/chunk-grid-definition) describes, for the scope it was activated under.
+
+### Hosted [#hosted]
+
+```csharp
+public static RuntimeGrid Hosted(ChunkGridDefinition definition, string scopeKey, string gridKey, string hostContainerId, IChunkGridGeometry geometry = null);
+```
+
+A grid hosted by a container (`docs/container-tree.md` D22): chunks of `definition`'s size leased as children of `hostContainerId`, laid out in the host's own coordinates, in scope `scopeKey`, with ids derived from `gridKey` and the coordinate. A planar one is a single layer of columns centred on the host's y = 0. The scope key must not be empty (the public world hosts no grids) and the grid key must not be any scope's key. `geometry` replaces the lattice the definition describes with a shape of the game's own (a cube-sphere's faces); its cell size then only sizes the grid's frame. [`NebulaChunkedWorld.ActivateHostedGrid`](/docs/reference/world/nebula-chunked-world#activatehostedgrid) makes one on every worker; build one directly only for a custom allocation workflow.
+
+### TryHostPosition [#tryhostposition]
+
+```csharp
+public bool TryHostPosition(NetworkIdentity entity, out Vector3 local);
+```
+
+A hosted grid: the position of `entity` in the host's own coordinates, wherever it is (in a chunk of this grid, in the host's frame at any depth, or outside the host altogether). False when the host is not in this process, or for a root grid.
+
+### CoordOfAbsolute [#coordofabsolute]
+
+```csharp
+public Vector3Int CoordOfAbsolute(Vector3 absolute);
+```
+
+Which cell a position in this grid's absolute coordinates falls in: the scope's absolute world for a root grid, the host's own coordinates for a hosted one. No floating origin enters into it.
+
+### AbsoluteCenterOf [#absolutecenterof]
+
+```csharp
+public Vector3 AbsoluteCenterOf(Vector3Int coord);
+```
+
+Centre of a cell in this grid's absolute coordinates (the host's own, for a hosted grid). A planar grid's column is centred on y = 0.
+
+### AbsoluteBoundsOf [#absoluteboundsof]
+
+```csharp
+public Bounds AbsoluteBoundsOf(Vector3Int coord);
+```
+
+A cell's box in this grid's absolute coordinates (the host's own, for a hosted grid).
+
+### PlacementOf [#placementof]
+
+```csharp
+public ContainerPlacement PlacementOf(Vector3Int coord);
+```
+
+The placement a chunk's lease row carries: a root at its absolute centre (in double) for a root grid, a leased child of the host at its centre in the host's coordinates for a hosted one.
+
+### PartIdOf [#partidof]
+
+```csharp
+public string PartIdOf(Vector3Int coord);
+```
+
+The part id a chunk's lease row and its records carry: `c/x/y/z`, after the grid key for a hosted grid.
 
 ### IdOf [#idof]
 

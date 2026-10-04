@@ -1,11 +1,11 @@
 # One container concept, and physics frames — design
 
-Status: design of record for **NEB-264**, implemented. Decisions made without asking are marked **D#**. Protocol
+Status: design of record for **NEB-264**, implemented; D22 (hosted chunk grids) for **NEB-389**. Decisions made without asking are marked **D#**. Protocol
 stays **18**: every wire change is additive (a trailing optional field or section read with `Remaining > 0`, see
 `docs/compatibility-policy.md` D3). User-facing pages: `website/content/docs/concepts/containers-and-handover.mdx`
 (§ The container tree), `website/content/docs/guides/physics-frames.mdx`, `guides/runtime-containers.mdx`
 (§ Place a container inside another), `guides/dynamic-containers.mdx` (§ Lease a dynamic container). Conformance:
-scenarios 20–23 of `docs/conformance-suite.md`.
+scenarios 20–23, 40 and 41 of `docs/conformance-suite.md`.
 
 ## 0. Problem
 
@@ -105,7 +105,8 @@ runtime containers; `ComputeRuntimeAssignment` skips inherited rows. Persistence
 before; a nested runtime container restores once its row and its parent's are here. A retiring runtime container
 takes its inherited children's rows with it (`ReleaseRuntimeContainer`); a leased child keeps its row and waits.
 
-**D9 `RuntimeGrid`/`RuntimeGridAllocator` stay.** A chunk grid is one way to lay out leased root containers.
+**D9 `RuntimeGrid`/`RuntimeGridAllocator` stay.** A chunk grid is one way to lay out leased root containers, and
+since D22 leased children of a host container.
 Nothing in them changed except that their rows carry `Center` in double.
 An entity's cell (`RuntimeGrid.CoordOf(NetworkIdentity)`) comes from its container only when that is a root chunk of
 the grid's scope; anywhere else, a rider aboard a carrier at any depth included, it comes from the entity's position
@@ -214,6 +215,71 @@ interest and leased octants (runtime containers whose `ParentId` is the planet's
 carrier whose frame holds a leased engine room. The gateway positions and buckets a runtime container fixed inside a
 carrier through that carrier (`TryCarrierOf` reads the placements on the lease rows it mirrors).
 
+## 5b. Chunk grids hosted by a container
+
+**D22 A scope can hold chunk grids hosted by containers, besides its root grid.** D9 kept grids to leased *root*
+containers, so a planet that is a carrier (D20) in a system's scope had its ground leased statically, and a scope held
+one grid (`NebulaChunkedWorld.ActivateGrid`). A hosted grid is a `ChunkGridDefinition` laid out in a host container's
+own coordinates, the host being a container with its own physics frame (a planet's, a station's, a capital ship's).
+`NebulaChunkedWorld.ActivateHostedGrid(controlPlane, scopeKey, gridKey, hostContainerId, definition)`:
+
+- **Keys.** The grid is registered under a **grid key** of its own, distinct from the scope's key and from every
+  other scope's, so `NebulaChunks.GridFor`, `EnsureAt` and `AllocatorFor` take it exactly as they take a scope key.
+  A chunk's container id is `ChunkKeys.RuntimeId(gridKey, coord)`, the same derivation as a root chunk with the grid
+  key in place of the scope key, so it does not depend on the host's id. The chunk belongs to the host's scope: its
+  lease row's `Instance` carries the scope's id and key, what stands in it is in that scope, and the scope's lifecycle
+  (`docs/scope-lifecycle.md`) checkpoints and retires it with the rest of the scope.
+- **Part ids.** A hosted chunk's part id is `<gridKey>/c/x/y/z` (`ChunkKeys.HostedPartId`), whose hash is the
+  container id. It travels on the lease row and in persisted records as every part id does, so a role handed only the
+  row (a client, a gateway) learns the grid and the coordinate from it, and a record saved in a hosted chunk names it
+  (`ChunkKeys.TryHostedCoordOf`). `ChunkKeys.TryParsePartId` and a root grid reject it, so a hosted chunk is never
+  read as a root chunk of the scope.
+- **Placement.** Each chunk is a leased runtime child of the host (`RuntimeGrid.PlacementOf`: `ParentId` the host,
+  centre in the host's coordinates), so D7 and D20 apply unchanged: its owner simulates it in the host's frame. A
+  planar grid is one layer of columns centred on the host's y = 0, and makes the host's frame keep its origin level
+  (`PhysicsFrame.KeepOriginLevel`: `AutoShift` moves it across, never up or down), the rule a planar root grid keeps
+  for its own origin. The grid has no origin of its own: its `Frame` follows the host frame's
+  (`ScopeFrame.IsFollowing`; `OriginOffset` is where the host's (0,0,0) sits in simulation space, and the host frame's
+  shifts are raised as the grid frame's), so `grid.Frame.OriginOffset` converts between the host's coordinates and
+  simulation space as it converts a root grid's absolute coordinates. `ShiftOrigin` and `KeepOriginNear` do nothing
+  on it, a worker's centroid rule skips it, and a client standing in a hosted chunk follows its scope's root grid,
+  where the host is.
+- **Geometry.** A hosted grid's shape is an `IChunkGridGeometry`: point to cell (`CellOf`, decided by the cell, not by
+  which box holds the point), cell to box (`BoundsOf`, the leased container's box in the host's coordinates), the
+  canonical cell (`Normalize`), the ring in steps of adjacency (`Neighborhood`, which the allocator rings and leads in),
+  the container id (`IdOf`, `ChunkKeys.RuntimeId` by default; a geometry may pack its own) and the lead sampling step.
+  `ChunkLattice` (planar or volumetric boxes) is built in and the default; a game supplies another, such as a
+  cube-sphere's six faces, through `NebulaChunkedWorld.HostedGeometry` on every process. Cells stay named by a
+  `Vector3Int` the geometry gives meaning to (a face and level can be folded into it), which is what part ids carry.
+  Where neighbouring cells' boxes overlap, as on a sphere, D3's "deepest, then smallest box holding the point" would
+  pick either; `ContainerRegistry.RuntimeClaims`, installed by `NebulaChunks`, lets the geometry veto a hosted chunk
+  whose box holds the point but whose cell does not (`NebulaChunks.Claims`). A lattice's boxes tile, so its chunks
+  skip it and resolve exactly as before.
+- **Activation and propagation.** Activation is one mesh setting row, `nebula.hostedGrid/<gridKey>` =
+  `{"scope","host","grid"}` (`IControlPlane.SetSetting`). No new control-plane operation and no wire change: every
+  worker applies the rows twice a second (`NebulaChunkedWorld.EnsureHostedGrid`), building the grid and an allocator,
+  and replaces a grid whose host or definition changed. A client or a gateway infers the grid from a chunk's row: the
+  part id gives the key and the coordinate, the parent the host, the box the cell, and a box centred on its host's
+  y = 0 a column. A worker that sees a chunk before the setting row infers it the same way. A carrier that comes back
+  under another container id (carried ids are `label#netId`, and a restore gives a new net id) is hosted again by
+  activating with the new id. A chunk row still naming a parent that is not here is removed and requested again under
+  the current host by the next allocator that wants it. A record in a hosted chunk restores into it once the chunk
+  registers, which needs the host, so after the carrier's own record has restored.
+- **Allocation.** `RuntimeGridAllocator` on a hosted grid reads each pawn's position in the host's coordinates
+  (`RuntimeGrid.TryHostPosition`, through every frame in between with `PhysicsFrames.Convert`), counts the pawn only
+  inside the host's box grown by `ChunkGridDefinition.Reach`, and requests nothing while the host is not in its
+  process. Dealing is unchanged: a chunk row is created assigned to the worker that asked, and the orchestrator
+  re-deals it like any leased runtime container. The anchor is not pinned.
+- **Lead.** `ChunkGridDefinition.LeadSeconds` (any grid; 0 by default, so root grids keep today's ring) adds a ring
+  around every cell on the line from the pawn to where its velocity takes it in that time: a capsule along the path,
+  not a wider ring. The velocity is measured from the pawn's position in the grid's absolute coordinates between two
+  policy ticks, so a pilot aboard a ship leads with the ship, and a frame crossing does not disturb it. A speed above
+  `RuntimeGridAllocator.MaxLeadSpeed` (2 km/s) is read as a jump and leads nothing. Scenario 41 measures the lead a
+  ship gets at 300 m/s.
+- **Compatibility.** No protocol bump and no persistence format change: the part id is an opaque string everywhere it
+  travels. `lead` and `reach` are written into a definition only when set, so a scope row written before them reads
+  back unchanged and its allocator does not take it for a changed definition.
+
 ## 5a. One component: `DynamicContainer` folded into `Container`
 
 **D21 A container on an entity's root is carried by that entity; nothing else makes a container carried.** A
@@ -267,6 +333,7 @@ client is refused with its range instead of being admitted into a world it would
 | 21 | Physics frame: a still scene with synced collider copies, a rigidbody resting on the container's own floor with the container on its side, frame state, crossings in and out by the pose owner at 1 km/s, a non-pose-owner handing over unconverted, a walk between two owners inside a frame, veto and defer | `ConformancePhysicsFrameTests` |
 | 22 | A root 10,000 km from the origin placed within a centimetre | `ConformanceContainerTreeTests.PlacementFarFromTheOriginIsExact` |
 | 23 | A planet with its own frame and eight octants leased to two workers with a base leased on its own; a ship flies in and lands in the other worker's octant without error; rotation changes neither local positions nor region keys; the ship leaves through the planet's pose owner; a frame's origin follows its worker; a ship at 1 km/s with a leased engine room, crew walking between the two workers and leaving through an airlock policy | `ConformanceFramedWorldTests`, plus `FrameRegionSpaceTests` for the region keys and per-space foci |
+| 41 | A planet's ground as a grid hosted by the planet (D22), nothing leased statically: allocated around a ground pawn on one worker, a second pawn on the other and a ship flying scenario 40's lap at 300 m/s; the ship never stands in the box outside a leased chunk, each chunk it enters was leased ahead of it, the ground behind it retires, and a restart brings back a crate standing in a hosted chunk under the planet's own restored container | `ConformanceCarrierHostedGridTests`, plus `HostedChunkGridTests` |
 
 Tier limit (B, `ConformanceMesh`): the container registry is process-wide, so of two workers' copies of one carrier
 only the last registered owns the box and its frame. Scenario 21's two-worker case keeps the copies' poses in step.
@@ -277,9 +344,19 @@ only the last registered owns the box and its frame. Scenario 21's two-worker ca
 - Raycasts do not pass from one frame into another; the game casts again in the space around a frame.
 - A client predicts in the frame of its own player only.
 - Runtime containers inside a frame are scanned linearly, not hashed per frame.
+- A hosted grid's chunks are runtime containers inside its host's frame, so the line above bounds them too: keep a
+  hosted grid's ring and lead to a few dozen chunks per pawn and its leased total in the hundreds.
+- A hosted grid lives in a scope; the public world hosts none. Its key must not be a scope key in use.
+- A geometry of a game's own (D22) is consulted for resolution inside the host's frame only. The gateway buckets and
+  places a hosted chunk by its box like any runtime container, and `ContainerRegistry`'s fast path and hysteresis
+  still measure boxes: with overlapping cells an entity near a cell edge enters the right cell, and leaves it by the
+  box's hysteresis.
+- `grid.Frame.OriginOffset` of a hosted grid converts in simulation space only. A client draws the host posed (D11):
+  convert a host-local point for rendering with `PhysicsFrame.ToParent`.
 - A client outside a planet's box does not see what stands on the planet (`OwnRegions`).
 - The planet → space → planet lap runs in one process as scenario 40 (`ConformanceFramedPlanetLapTests`, two workers
-  and a gateway, no client process; the sample `Samples~/FramedPlanetLap`). Not yet on a live mesh. What it found
+  and a gateway, no client process; the sample `Samples~/FramedPlanetLap`) over ground leased statically, and as
+  scenario 41 over a hosted grid streamed around players (D22). Not yet on a live mesh. What it found
   beyond the line above: a frame's angular velocity reads zero below a few degrees a second, so crossings of a slowly
   turning frame miss ω × r; and a carrier is a region entity, so a gateway receives a ship only within about
   `InterestRadius` of a player, whatever its `RelevanceRadius`.
