@@ -287,6 +287,8 @@ namespace Nebula
         public int InterestMaxFoci = 8;
         [Tooltip("How far a client's focus hint may sit from its pawn, in metres. A further hint is clamped to this distance; a hint is an input, never authority.")]
         public float InterestHintMaxDistance = 60f;
+        [Tooltip("How close a client's pawn must be to the box of a framed container with regions of its own (a planet, a station) for the client to also look into it, in metres. Inside the margin the client gets a focus at the pawn's place in the frame, so it sees what stands on the planet below it; beyond it the frame's regions are not subscribed. A frame whose box is unknown to the gateway is measured from the box of its lease rows, else from its origin. 0 turns it off.")]
+        public float InterestFrameApproachMargin = 4000f;
         [Tooltip("Most focus hints accepted from one client per second. The rest are dropped.")]
         public float InterestHintMaxHz = 5f;
         [Tooltip("Most entities one client's policy may subscribe by id (party members, quest targets).")]

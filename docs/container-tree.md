@@ -192,7 +192,7 @@ published with their root carrier, which is right for ships and vehicles; frames
 carrier are converted out of. On the gateway an `EntityRecord` keeps its position in its region space
 (`AbsX/Y/Z` plus `FrameKey`), `InterestEntity.Space` and `InterestFocus.Space` name the space, `ClientInterest` scans
 and measures each focus in its own space only, and the gateway adds a focus at the player's position in every
-space around the player's frame (`AddEnclosingSpaceFoci`), so ships overhead stay in view. The workers that hold a
+space around the player's frame (`AddEnclosingSpaceFoci`), so ships overhead stay in view (and, the other way, D23). The workers that hold a
 frame's region are the owners of every container fixed in the frame and of the frame itself (`FrameOwners`).
 Carried rows tell gateways which carriers are such frames: `EnsureContainer` carries the frame flags. A custom
 interest policy must give its player focus `client.PawnSpace`.
@@ -314,6 +314,37 @@ wrong behaviour on every carrier without noticing, and there is no trailing fiel
 `HelloMsg.ProtocolVersion` and `HelloMsg.MinProtocolVersion` both moved to 19 (`docs/protocol-versions.md`): an older
 client is refused with its range instead of being admitted into a world it would misread.
 
+**D23 A client outside a framed container's box looks into it while it is near (NEB-386).** D18's enclosing foci look
+outward from a frame; this is the mirror, inward. A pawn in the space around a frame with regions of its own (a
+planet, a station) that is within `InterestFrameApproachMargin` (default 4,000 m, 0 turns it off) of the frame's box
+gets one more focus, in that frame's region space (`InterestFocus.Space`), so `ClientInterest` scans the frame's
+buckets with it: a pilot over a planet sees the outposts, ships and players standing on it, and the same rule serves a
+ship looking at a station or a fighter at a capital ship's deck. The gateway adds it beside the enclosing foci
+(`AddFrameApproachFoci`), for every such frame in the pawn's scope and in any of the spaces around the pawn, and skips
+the frames the pawn is in or rides in, which the policy's focus and the enclosing foci already cover.
+
+- *Where the focus is.* At the point of the frame's box nearest the pawn, in the frame's coordinates, not at the
+  pawn's own place in the frame. A focus at the pawn's own place would put what stands on the planet at the pawn's true
+  distance, 3 km for a pilot 3 km up, further than any entity's radius reaches (`InterestMaxRadius`, 1,024 m), so the
+  planet would be invisible from exactly where a pilot wants to see it. From the box's face the pilot sees what stands
+  at or near the face at the radius it asks for, as a player on the ground would from the edge of the box, and the
+  margin alone bounds how far off the planet the pilot looks in. A projection onto "the ground" was not taken, because
+  a frame has no surface to project onto; a game that wants the pilot to see the ground sizes the box so its top is near it.
+- *Hysteresis.* A frame looked into stays looked into to the margin plus a tenth of it (at least `InterestExitMargin`),
+  so a pawn hovering at the margin does not make the planet's regions come and go; the entities then linger one second
+  as they always do.
+- *The box.* A container the gateway's registry holds gives its own box (a baked frame; any, when a worker shares the
+  process). A carried frame is not on a gateway of its own and its lease row carries no box, so the boxes of the
+  runtime containers fixed in it stand for it (a planet's chunks: where there is ground, which is where anything can
+  stand). With neither, the box is the frame's origin point. Giving a carried frame's lease row its box is the one change
+  that would make this exact, and it is a wire change: not made here.
+- *Workers.* The decision is the gateway's, and so is the one the workers act on: a gateway dials the owners of a
+  frame (`FrameOwners`) because one of its clients has a focus in the frame (`LinkNearbyOwners`), subscribes the regions
+  around it (`UpdateClientRegions`) and tells the workers the foci (`_fociRegions`) they match their wide entities
+  with. The approach focus is an ordinary focus in all three, so no worker code changed and the wire is as it was.
+- Only frames fixed in a scope or carried (a planet, a station, a ship) are looked into. A frame fixed inside another
+  frame (an octant with a frame of its own) is not.
+
 ## 6. Wire and storage
 
 - `LeaseInfo`: `ParentId`, `Center` (`Double3`), `Authority`, `OwnPhysicsFrame`, `FrameInterest`; new lease state
@@ -353,10 +384,10 @@ only the last registered owns the box and its frame. Scenario 21's two-worker ca
   box's hysteresis.
 - `grid.Frame.OriginOffset` of a hosted grid converts in simulation space only. A client draws the host posed (D11):
   convert a host-local point for rendering with `PhysicsFrame.ToParent`.
-- A client outside a planet's box does not see what stands on the planet (`OwnRegions`).
+- A client outside a planet's box sees what stands on it only within `InterestFrameApproachMargin` of the box, and from the box's face, not from where it is (D23). A gateway of its own knows a carried planet's box only from its chunks' leases.
 - The planet → space → planet lap runs in one process as scenario 40 (`ConformanceFramedPlanetLapTests`, two workers
   and a gateway, no client process; the sample `Samples~/FramedPlanetLap`) over ground leased statically, and as
   scenario 41 over a hosted grid streamed around players (D22). Not yet on a live mesh. What it found
-  beyond the line above: a frame's angular velocity reads zero below a few degrees a second, so crossings of a slowly
+  besides the box limit, which D23 closed: a frame's angular velocity reads zero below a few degrees a second, so crossings of a slowly
   turning frame miss ω × r; and a carrier is a region entity, so a gateway receives a ship only within about
   `InterestRadius` of a player, whatever its `RelevanceRadius`.

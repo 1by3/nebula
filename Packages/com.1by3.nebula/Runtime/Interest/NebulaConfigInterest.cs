@@ -36,6 +36,7 @@ namespace Nebula
             MaxRadius = InterestMaxRadius,
             MaxFoci = InterestMaxFoci,
             HintMaxDistance = InterestHintMaxDistance,
+            FrameApproachMargin = InterestFrameApproachMargin,
             HintMaxHz = InterestHintMaxHz,
             MaxExplicitPerClient = InterestMaxExplicitPerClient,
             MaxFocusSpeed = InterestMaxFocusSpeed,

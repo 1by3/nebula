@@ -284,7 +284,7 @@ short-circuits to `max(0, ClientLoadRadiusCells)`.
 New: `InterestRadius` 120, `InterestExitMargin` 16, `InterestLingerSeconds` 1, `InterestCellSize` 64,
 `InterestPlanar` true, `InterestEvalHz` 4, `InterestSubscribeMargin` 32, `InterestRegionLingerSeconds` 3,
 `InterestLinkLingerSeconds` 10, `InterestMaxRadius` 1024, `InterestMaxFoci` 8, `InterestHintMaxDistance` 60,
-`InterestMaxExplicitPerClient` 16, `PartitionWarnEntities` 2000, `PartitionWarnFilterMs` 2. Kept:
+`InterestMaxExplicitPerClient` 16, `InterestFrameApproachMargin` 4000 (a client within it of a framed container's box also looks into it, `container-tree.md` D22), `PartitionWarnEntities` 2000, `PartitionWarnFilterMs` 2. Kept:
 `InterestNearRadius`, `InterestFarRadius`, divisors (LOD inside the set). Chunked world: `ChunkedWorld`,
 `ChunkPlanar`, `ChunkRetireSeconds` (§10).
 

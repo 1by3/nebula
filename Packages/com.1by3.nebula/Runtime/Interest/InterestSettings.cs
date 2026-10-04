@@ -62,6 +62,11 @@ namespace Nebula
         public int MaxFoci;
         /// <summary>Meters a client's focus hint may sit from its pawn before it is clamped.</summary>
         public float HintMaxDistance;
+        /// <summary>
+        /// Meters from the box of a framed container with regions of its own (<see cref="FrameInterestMode.OwnRegions"/>)
+        /// within which a client whose pawn is outside it also looks into it. 0 turns it off.
+        /// </summary>
+        public float FrameApproachMargin;
         /// <summary>Most focus hints accepted from one client per second; the rest are dropped.</summary>
         public float HintMaxHz;
         /// <summary>Most explicit per-entity subscriptions one client's policy may ask for.</summary>
@@ -106,6 +111,7 @@ namespace Nebula
             MaxRadius = 1024f,
             MaxFoci = 8,
             HintMaxDistance = 60f,
+            FrameApproachMargin = 4000f,
             HintMaxHz = 5f,
             MaxExplicitPerClient = 16,
             MaxFocusSpeed = 12f,
@@ -307,6 +313,7 @@ namespace Nebula
             if (e.MaxFoci < 1) { Warn(InterestMaxFociField, "InterestMaxFoci must be at least 1; using 1."); e.MaxFoci = 1; }
             if (e.MaxExplicitPerClient < 0) { Warn(InterestMaxExplicitPerClientField, "InterestMaxExplicitPerClient cannot be negative; using 0."); e.MaxExplicitPerClient = 0; }
             if (e.HintMaxDistance < 0) { Warn(InterestHintMaxDistanceField, "InterestHintMaxDistance cannot be negative; using 0 (hints snap to the pawn)."); e.HintMaxDistance = 0; }
+            if (e.FrameApproachMargin < 0) { Warn(InterestFrameApproachMarginField, "InterestFrameApproachMargin cannot be negative; using 0 (a client outside a frame's box does not look into it)."); e.FrameApproachMargin = 0; }
             if (e.HintMaxHz < 0) { Warn(InterestHintMaxHzField, "InterestHintMaxHz cannot be negative; using 0 (hints are ignored)."); e.HintMaxHz = 0; }
 
             // Content must exist before interest can spawn an entity standing on it.
@@ -368,6 +375,7 @@ namespace Nebula
         private const string InterestMaxFociField = "InterestMaxFoci";
         private const string InterestMaxExplicitPerClientField = "InterestMaxExplicitPerClient";
         private const string InterestHintMaxDistanceField = "InterestHintMaxDistance";
+        private const string InterestFrameApproachMarginField = "InterestFrameApproachMargin";
         private const string InterestHintMaxHzField = "InterestHintMaxHz";
     }
 }

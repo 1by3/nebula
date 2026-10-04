@@ -870,6 +870,7 @@ namespace Nebula
             _policy.Collect(snapshot, client.Query);
             AddObservationWindows(client, snapshot, client.Query);
             AddEnclosingSpaceFoci(client, snapshot, client.Query);
+            AddFrameApproachFoci(client, snapshot, client.Query);
             if (client.Query.Overflowed) WarnOnce(client, $"its policy asked for more than {_interest.MaxFoci} foci or {_interest.MaxExplicitPerClient} explicit entities; the rest are dropped.");
             if (client.Query.BoxesClamped) WarnOnce(client, $"a box focus was wider than InterestMaxRadius ({_interest.MaxRadius} m) and was shrunk to it about its center.");
 
@@ -947,6 +948,126 @@ namespace Nebula
             var position = new Vector3((float)root.AbsX, (float)root.AbsY, (float)root.AbsZ);
             for (int hops = 0; hops < 8 && TryLiftOut(ref frame, ref position, ref key); hops++)
                 query.AddFocus(InterestFocus.Point(position.x, position.y, position.z, 1f, client.PawnNetId, key));
+        }
+
+        private readonly ulong[] _chainKeys = new ulong[10];
+        private readonly Vector3[] _chainPositions = new Vector3[10];
+        /// <summary>The box (frame-local min and max) of each frame with regions of its own, by frame key; see <see cref="FrameExtent"/>.</summary>
+        private readonly Dictionary<ulong, (Vector3 Min, Vector3 Max)> _frameExtents = new Dictionary<ulong, (Vector3, Vector3)>();
+
+        /// <summary>
+        /// The mirror of <see cref="AddEnclosingSpaceFoci"/>: a pawn in the space around a frame with regions of its own
+        /// (a planet, a station) that is within <see cref="InterestSettings.FrameApproachMargin"/> of the frame's box
+        /// also gets a focus <i>in</i> that frame, so a pilot over a planet sees the outposts and players standing on it
+        /// (<c>docs/container-tree.md</c> D18, D23). The focus is at the point of the frame's box nearest the pawn, in the
+        /// frame's coordinates: a focus at the pawn's own place would be at the pawn's true distance from the ground, further
+        /// than any entity's radius reaches from a few kilometres up, so the planet would be invisible from where a pilot
+        /// wants to see it. The margin bounds how far off the box the pawn looks in (and the regions a planar grid would
+        /// otherwise subscribe from any height). Every space around the pawn is tried; the frames the pawn is already in,
+        /// or rides in, are skipped because the policy's focus and the enclosing foci cover them.
+        /// The same focus is what links the frame's workers to this gateway and tells them the client's regions
+        /// (<see cref="LinkNearbyOwners"/>, <see cref="UpdateClientRegions"/>), so there is no second rule on the workers.
+        /// </summary>
+        private void AddFrameApproachFoci(ClientConn client, in InterestClient snapshot, InterestQuery query)
+        {
+            float margin = _interest.FrameApproachMargin;
+            if (margin <= 0 || _ownRegionFrames.Count == 0 || !snapshot.HasPawn || !_entities.TryGetValue(client.PawnNetId, out var pawn)) return;
+            var root = RootOf(pawn);
+            ulong key = root.FrameKey;
+            var space = FrameOfRecordSpace(root.Container, key);
+            var position = new Vector3((float)root.AbsX, (float)root.AbsY, (float)root.AbsZ);
+            int levels = 0;
+            _chainKeys[levels] = key; _chainPositions[levels++] = position;
+            for (int hops = 0; hops < 8 && TryLiftOut(ref space, ref position, ref key); hops++)
+            {
+                _chainKeys[levels] = key; _chainPositions[levels++] = position;
+            }
+            ulong instance = InstanceOf(client);
+            foreach (string id in _ownRegionFrames)
+            {
+                var frame = RefOfId(id);
+                // A frame fixed inside a carrier's frame (an octant) is lifted out through its parent's placement, not here.
+                if (frame.IsNone || frame.IsRuntime) continue;
+                ulong frameKey = RegionKeys.FrameKeyOf(frame);
+                int inside = -1;
+                for (int i = 0; i < levels && inside < 0; i++) if (_chainKeys[i] == frameKey) inside = i;
+                if (inside >= 0) { client.ApproachFrames.Remove(frameKey); continue; }
+                // Where the frame is in the space around it, and which of the pawn's spaces that is.
+                var origin = Vector3.zero;
+                ulong outerKey = frameKey;
+                var lifted = frame;
+                if (!TryLiftOut(ref lifted, ref origin, ref outerKey)) continue;
+                int level = -1;
+                for (int i = 0; i < levels && level < 0; i++) if (_chainKeys[i] == outerKey) level = i;
+                if (level < 0) continue;
+                // Two worlds standing on the same ground are two sets of regions: only the client's own scope.
+                ulong frameInstance = ulong.MaxValue;
+                if (frame.IsDynamic) { if (_entities.TryGetValue(frame.NetId, out var carrier)) frameInstance = InstanceOf(carrier); }
+                else { var fixedBox = ContainerRegistry.Resolve(frame); if (fixedBox != null) frameInstance = fixedBox.InstanceId; }
+                if (frameInstance != instance) continue;
+                // The frame's axes in that space: a point maps to origin + M * point, and the pawn is mapped back by the inverse.
+                // Sampled over a long step, so float rounding at a planet's distance from the origin stays negligible.
+                const float Step = 1024f;
+                if (!LiftPoint(frame, frameKey, new Vector3(Step, 0f, 0f), out var ex)
+                    || !LiftPoint(frame, frameKey, new Vector3(0f, Step, 0f), out var ey)
+                    || !LiftPoint(frame, frameKey, new Vector3(0f, 0f, Step), out var ez)) continue;
+                var map = Matrix4x4.identity;
+                map.SetColumn(0, (ex - origin) / Step);
+                map.SetColumn(1, (ey - origin) / Step);
+                map.SetColumn(2, (ez - origin) / Step);
+                map.SetColumn(3, new Vector4(origin.x, origin.y, origin.z, 1f));
+                if (Mathf.Abs(map.determinant) < 1e-9f) continue;
+                var inFrame = map.inverse.MultiplyPoint3x4(_chainPositions[level]);
+                FrameExtent(frame, frameKey, out var min, out var max);
+                var nearest = Vector3.Max(min, Vector3.Min(max, inFrame));
+                float distance = Vector3.Distance(_chainPositions[level], map.MultiplyPoint3x4(nearest));
+                bool held = client.ApproachFrames.Contains(frameKey);
+                if (distance > (held ? margin + Math.Max(_interest.ExitMargin, margin * 0.1f) : margin)) { client.ApproachFrames.Remove(frameKey); continue; }
+                client.ApproachFrames.Add(frameKey);
+                query.AddFocus(InterestFocus.Point(nearest.x, nearest.y, nearest.z, 1f, client.PawnNetId, frameKey));
+            }
+        }
+
+        /// <summary>A point of a frame in the region space around it (<see cref="TryLiftOut"/> for one point).</summary>
+        private bool LiftPoint(ContainerRef frame, ulong frameKey, Vector3 local, out Vector3 outer)
+        {
+            outer = local;
+            return TryLiftOut(ref frame, ref outer, ref frameKey);
+        }
+
+        /// <summary>
+        /// The box of a frame with regions of its own, in the frame's coordinates, as far as this gateway can know it.
+        /// A container the registry holds (a baked one, or any when a worker shares the process) gives its own box. A
+        /// carried one is not on the gateway, whose lease rows carry no box for it, so the boxes of the runtime
+        /// containers fixed in it stand for it: where a planet has ground, which is where anything can stand. With
+        /// neither it is the frame's origin, and only a pawn right over that point is near it.
+        /// </summary>
+        private void FrameExtent(ContainerRef frame, ulong frameKey, out Vector3 min, out Vector3 max)
+        {
+            if (_frameExtents.TryGetValue(frameKey, out var known)) { min = known.Min; max = known.Max; return; }
+            min = max = Vector3.zero;
+            var c = ContainerRegistry.Resolve(frame);
+            if (c != null)
+            {
+                min = c.Center - c.Size * 0.5f;
+                max = c.Center + c.Size * 0.5f;
+            }
+            else
+            {
+                bool any = false;
+                foreach (var kv in _ownershipById)
+                {
+                    var entry = kv.Value;
+                    if (!entry.HasBounds || !entry.HasPlacement || !kv.Key.StartsWith("rt_", StringComparison.Ordinal)) continue;
+                    var center = Vector3.zero;
+                    if (!TryOwnRegionsAncestor(RefOfId(kv.Key), ref center, out var owner) || RegionKeys.FrameKeyOf(owner) != frameKey) continue;
+                    var half = entry.Placement.Size * 0.5f;
+                    min = any ? Vector3.Min(min, center - half) : center - half;
+                    max = any ? Vector3.Max(max, center + half) : center + half;
+                    any = true;
+                }
+            }
+            _frameExtents[frameKey] = (min, max);
         }
 
         /// <summary>

@@ -69,6 +69,8 @@ namespace Nebula
             public readonly HashSet<string> KnownContainers = new HashSet<string>();
             /// <summary>An interest limit this client ran into (foci, box size, container rows) has been reported; said once, not four times a second.</summary>
             public bool InterestLimitWarned;
+            /// <summary>Frames (<see cref="RegionKeys.FrameKeyOf"/>) this client is looking into from outside their box, held until it is a little further than <see cref="InterestSettings.FrameApproachMargin"/>, so a pawn hovering at the margin does not flap.</summary>
+            public readonly HashSet<ulong> ApproachFrames = new HashSet<ulong>();
             /// <summary>Evaluate at the next tick rather than waiting for this client's turn in <see cref="InterestSchedule"/> (pawn, instance, carrier, focus mode, focus region or policy changed).</summary>
             public bool InterestDirty = true;
             /// <summary>A game-set tag a policy filters on (<see cref="NebulaGateway.SetClientTag"/>).</summary>
@@ -1093,6 +1095,7 @@ namespace Nebula
             _ownershipById.Clear();
             _ownRegionFrames.Clear();
             _ownRegionCarriers.Clear();
+            _frameExtents.Clear();
             foreach (var lease in ControlPlane.Leases)
             {
                 // Dynamic containers have no registry entry here (the gateway holds no entities); their leases are
