@@ -31,6 +31,11 @@
       "displayName": "Driven vehicle",
       "description": "A car players drive: a kinematic vehicle model the driver's client predicts, and a driving seat that hands the controls to the seated player's client on the worker.",
       "path": "Samples~/DrivenVehicle"
+    },
+    {
+      "displayName": "Framed planet lap",
+      "description": "A ship flies from a planet's ground into space and back in one scope: a turning planet with its own physics frame and leased ground, a scripted flight in the planet's coordinates, and a client probe for jumps at frame crossings.",
+      "path": "Samples~/FramedPlanetLap"
     }
   ]
 }
