@@ -248,12 +248,39 @@ If you replace the interest policy, give a focus at the player the space the pla
 
 A frame's coordinates can be large. Each worker keeps a floating origin per frame near the entities it simulates in it: when their average position is farther than `PhysicsFrames.OriginShiftThreshold` (2,048 m) from the frame's origin, the worker moves the origin to them, in steps of `PhysicsFrames.OriginShiftStep` (1,024 m). Container-local coordinates, and so everything on the wire and every region key, do not change. Subscribe to `PhysicsFrame.Shifted` to move positions your game caches in simulation space.
 
+## Stream a planet's ground around players
+
+Instead of leasing a planet's areas yourself, you can host a chunk grid in the planet: its chunks are leased runtime children of the planet's container, laid out in the planet's own coordinates, and each worker leases them around the players it simulates on or near the planet.
+
+To host a grid, call `NebulaChunkedWorld.ActivateHostedGrid` once the planet's container exists, from any process with a control plane:
+
+```csharp
+NebulaChunkedWorld.ActivateHostedGrid(worker.ControlPlane, planet.Carried, "planet/terra", new ChunkGridDefinition
+{
+    CellSize    = new Vector3(256f, 4096f, 256f), // a column 4 km tall, centred on the planet's y = 0
+    Planar      = true,
+    Ring        = 2,     // chunks leased around each player's chunk
+    LeadSeconds = 2f,    // and along their velocity, two seconds ahead
+    Reach       = 3000f, // for players up to 3 km outside the planet's box
+});
+```
+
+- The grid has its own key, here `"planet/terra"`. Use it with `NebulaChunks.GridFor`, `NebulaChunks.EnsureAt` and `NebulaChunks.AllocatorFor`, exactly as you would use a scope key. The key must not be the key of any scope.
+- Its chunks belong to the scope the planet is in. Entities in them are in that scope, and the scope's lifecycle checkpoints and retires them with the rest of the scope.
+- A chunk's container ID depends only on the grid key and the chunk coordinate, so persisted entities come back in the same chunk after a restart. Activate the grid again with the planet's new container after the planet is restored; a chunk can only exist once the planet's container does.
+- `LeadSeconds` leases a band of chunks along each player's path, so a ship at 300 m/s finds its next chunks leased before it reaches them without a much wider ring all round.
+- A planar grid keeps the planet frame's floating origin level: workers shift it across, never up or down.
+- `grid.Frame.OriginOffset` converts between the planet's coordinates and simulation space. A client draws the planet where it is, so convert a planet point for rendering with `planet.Carried.Frame.ToParent`.
+
+For a grid whose cells are not boxes in a row, such as the six faces of a cube-sphere, implement `IChunkGridGeometry` and return it from `NebulaChunkedWorld.HostedGeometry` on every process. Nebula then asks it which cell a point is in, each cell's box, and each cell's neighbours.
+
 ## Limits
 
 - Every process that holds a framed container also holds its frame scene.
 - Raycasts do not pass from one frame into another. A shot fired out of a ship's open ramp hits nothing outside the ship's frame unless your game casts again in the space around it.
 - A client predicts in the frame of its own player only. Other entities in other frames are shown at their replicated poses.
 - Leased containers inside a frame are found by a linear scan. Keep their number in the hundreds per frame, not the thousands.
+- A hosted grid lives in a scope. The public world cannot host one.
 - A client places its copies of moving hull parts directly, so a pawn it predicts on a moving ramp is predicted against a copy that jumps from pose to pose.
 - `CargoPolicy.Stow` stows only the riders the despawning worker simulates. A rider that another worker simulates, in an interior leased to that worker, is set down.
 - An entity attached in a carrier without a frame moves with the carrier through its transform, so bodies resting on it are moved the same way as bodies resting on the carrier's own colliders.

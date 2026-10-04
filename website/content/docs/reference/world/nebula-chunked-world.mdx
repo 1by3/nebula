@@ -17,7 +17,9 @@ The whole server and client side of an unbounded chunked world, wired from confi
 - **client**: the origin follows the content anchor — the local pawn by default, or whatever `NebulaClient.SetContentAnchor` was given (a strategy camera).
 - **gateway / orchestrator**: passive. They need the container arithmetic and nothing else.
 
-The allocator's ring is [`InterestSettings.NearCells`](/docs/reference/interest/interest-settings#nearcells) + 1, so a chunk is always leased — and its content built — before interest can put an entity standing on it into a client's set. Raising `InterestRadius` therefore widens the chunk ring by itself; nothing to keep in step.
+The allocator's ring is [`InterestSettings.NearCells`](/docs/reference/interest/interest-settings#nearcells) plus [`NebulaConfig.ChunkedWorldServerRingMargin`](/docs/reference/core/nebula-config#chunkedworldserverringmargin) (1 unless set), so a chunk is always leased — and its content built — before interest can put an entity standing on it into a client's set. Raising `InterestRadius` therefore widens the chunk ring by itself; nothing to keep in step. NearCells alone already holds every chunk interest can reach; the margin is the time to build one (a pawn crossing a chunk edge requests the new ring at that moment), so a margin of 0 is only as safe as [`InterestSettings.ChunkLoadLeadSeconds`](/docs/reference/interest/interest-settings#chunkloadleadseconds) says.
+
+Besides its root grid, a scope can hold chunk grids hosted by containers with physics frames of their own ([`ActivateHostedGrid`](#activatehostedgrid), `docs/container-tree.md` D22): a planet's ground carried through a system's space, a station's decks.
 
 ## Properties
 
@@ -71,6 +73,14 @@ public IReadOnlyDictionary<string, RuntimeGridAllocator> ScopedAllocators { get;
 
 The scoped grids' allocators on a worker, by scope key. Empty on every other role.
 
+### HostedGeometry [#hostedgeometry]
+
+```csharp
+public static System.Func<string, ChunkGridDefinition, IChunkGridGeometry> HostedGeometry { get; set; }
+```
+
+The shape of hosted grids ([`IChunkGridGeometry`](/docs/reference/world/i-chunk-grid-geometry)), asked with each grid's key and definition when this process builds the grid. Null, or a null answer, gives the definition's [`ChunkLattice`](/docs/reference/world/chunk-lattice). Set it at boot on every process (workers, gateways that build grids, clients) for a grid whose cells are not a box lattice, such as a cube-sphere's faces.
+
 ## Methods
 
 ### ActivateGrid [#activategrid]
@@ -90,3 +100,32 @@ public RuntimeGrid EnsureLocalGrid(string scopeKey, ChunkGridDefinition definiti
 ```
 
 Make sure this process has a local grid for a scope whose row the control plane shows, and — on a worker — an allocator for it. Called for a scope the first time one of its containers turns up here, which is the one rule that works on every role: a worker gets the anchor dealt to it or an entity transferred into it, a client is told about a chunk of the scope it joined, a gateway mirrors the lease. A process that never touches a scope never pays for it.
+
+### ActivateHostedGrid [#activatehostedgrid]
+
+```csharp
+public static void ActivateHostedGrid(IControlPlane controlPlane, string scopeKey, string gridKey, string hostContainerId, ChunkGridDefinition definition);
+public static void ActivateHostedGrid(IControlPlane controlPlane, Container host, string gridKey, ChunkGridDefinition definition);
+```
+
+Host a chunk grid in a container of a scope (`docs/container-tree.md` D22): chunks of `definition`'s size, leased as children of `hostContainerId` (a container with a physics frame of its own, usually a carrier's: a planet, a station), laid out in the host's own coordinates. A planar grid is one layer of columns centred on the host's y = 0, and its host's frame never shifts its origin vertically.
+
+The grid is registered under `gridKey`, its own key, which must not be any scope's: every role finds it with [`NebulaChunks.GridFor`](/docs/reference/world/nebula-chunks#gridfor), [`NebulaChunks.EnsureAt`](/docs/reference/world/nebula-chunks#ensureat) and [`NebulaChunks.AllocatorFor`](/docs/reference/world/nebula-chunks#allocatorfor) by that key, and its chunk ids are [`ChunkKeys.RuntimeId`](/docs/reference/world/chunk-keys#runtimeid) of that key and the coordinate. Its chunks belong to `scopeKey`: what stands in them is in that scope, and the scope's lifecycle retires them with the rest of it.
+
+One control-plane write, a mesh setting row ([`IControlPlane.SetSetting`](/docs/reference/control-plane/i-control-plane#setsetting)), which every worker applies: each builds the grid and an allocator that leases chunks around the pawns it simulates on or near the host ([`ChunkGridDefinition.Reach`](/docs/reference/world/chunk-grid-definition#reach)), ahead of them by [`ChunkGridDefinition.LeadSeconds`](/docs/reference/world/chunk-grid-definition#leadseconds). Clients and gateways learn the grid from the chunks' own rows. Calling it again with the same arguments changes nothing; a carrier that came back under a new container id (a restart) is hosted again by calling it with the new id, and chunk rows still naming the old one are replaced. Nothing is leased while the host is not in a worker's process. The anchor is not pinned: pin chunks that must stay with [`RuntimeGridAllocator.AddPin`](/docs/reference/world/runtime-grid-allocator#addpin).
+
+### DeactivateHostedGrid [#deactivatehostedgrid]
+
+```csharp
+public static void DeactivateHostedGrid(IControlPlane controlPlane, string gridKey);
+```
+
+Stop hosting a grid: every worker forgets it and leases nothing more for it. Chunk rows already leased are not removed; they retire as usual once nobody wants them, or with their scope.
+
+### EnsureHostedGrid [#ensurehostedgrid]
+
+```csharp
+public RuntimeGrid EnsureHostedGrid(string scopeKey, string gridKey, string hostContainerId, ChunkGridDefinition definition);
+```
+
+Make sure this process has a hosted grid ([`ActivateHostedGrid`](#activatehostedgrid)) and, on a worker, its allocator. A worker calls it for every hosted-grid row the control plane shows; a grid already here with another host or another definition is replaced. Returns the grid.

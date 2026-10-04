@@ -30,6 +30,8 @@ namespace Nebula.World
         private Vector3Int _cell;
         private Vector3 _cellSize;
         private int _shiftCount;
+        /// <summary>A hosted grid's frame: where its host's coordinates (0,0,0) sit right now, read from the host.</summary>
+        private readonly Func<Vector3> _follow;
 
         internal ScopeFrame(string scopeKey, ulong instanceId, Vector3 cellSize)
         {
@@ -38,8 +40,39 @@ namespace Nebula.World
             _cellSize = cellSize;
         }
 
-        /// <summary>The cell of this scope's grid that sits at Unity's origin.</summary>
-        public Vector3Int Cell => IsPublic ? WorldOrigin.Cell : _cell;
+        /// <summary>
+        /// The frame of a hosted grid (<c>docs/container-tree.md</c> D22): it has no origin cell of its own but follows
+        /// the floating origin of the container that hosts the grid, which <paramref name="offset"/> reads. Not
+        /// registered in <see cref="ScopeFrames"/>; the grid holds it.
+        /// </summary>
+        internal ScopeFrame(string scopeKey, ulong instanceId, Vector3 cellSize, Func<Vector3> offset) : this(scopeKey, instanceId, cellSize)
+        {
+            _follow = offset;
+        }
+
+        /// <summary>
+        /// Whether this frame follows the floating origin of a host container instead of keeping an origin cell (a
+        /// hosted grid's frame, <c>docs/container-tree.md</c> D22). Its absolute coordinates are the host's own.
+        /// </summary>
+        public bool IsFollowing => _follow != null;
+
+        /// <summary>
+        /// The cell of this scope's grid that sits at Unity's origin. A following frame reports the cell its origin
+        /// falls in, which it never chose.
+        /// </summary>
+        public Vector3Int Cell
+        {
+            get
+            {
+                if (IsPublic) return WorldOrigin.Cell;
+                if (_follow == null) return _cell;
+                var offset = _follow();
+                return new Vector3Int(
+                    Mathf.FloorToInt(-offset.x / _cellSize.x),
+                    Mathf.FloorToInt(-offset.y / _cellSize.y),
+                    Mathf.FloorToInt(-offset.z / _cellSize.z));
+            }
+        }
 
         /// <summary>Size of one cell of this scope's grid, in metres. The public frame's is the world definition's.</summary>
         public Vector3 CellSize
@@ -63,8 +96,11 @@ namespace Nebula.World
         /// </summary>
         public event Action<Vector3> Shifted;
 
-        /// <summary>Where absolute (0,0,0) sits in this scope's frame: what turns an absolute box into a frame box.</summary>
-        public Vector3 OriginOffset => new Vector3(
+        /// <summary>
+        /// Where absolute (0,0,0) sits in this scope's frame: what turns an absolute box into a frame box. For a
+        /// following frame, where the host's (0,0,0) sits in simulation space.
+        /// </summary>
+        public Vector3 OriginOffset => _follow != null ? _follow() : new Vector3(
             (float)(-(long)Cell.x * (double)CellSize.x),
             (float)(-(long)Cell.y * (double)CellSize.y),
             (float)(-(long)Cell.z * (double)CellSize.z));
@@ -75,6 +111,14 @@ namespace Nebula.World
         /// </summary>
         public void OriginOffsetPrecise(out double x, out double y, out double z)
         {
+            if (_follow != null)
+            {
+                var offset = _follow();
+                x = offset.x;
+                y = offset.y;
+                z = offset.z;
+                return;
+            }
             x = -(long)Cell.x * (double)CellSize.x;
             y = -(long)Cell.y * (double)CellSize.y;
             z = -(long)Cell.z * (double)CellSize.z;
@@ -105,6 +149,14 @@ namespace Nebula.World
         }
 
         internal void Raise(Vector3 delta) => Shifted?.Invoke(delta);
+
+        /// <summary>A following frame's host moved its origin: count it and tell this frame's listeners and <see cref="ScopeFrames.AnyShifted"/>.</summary>
+        internal void RaiseFollowed(Vector3 delta)
+        {
+            _shiftCount++;
+            Shifted?.Invoke(delta);
+            ScopeFrames.RaiseShifted(this, delta);
+        }
 
         public override string ToString() => $"frame({(IsPublic ? "public" : ScopeKey)} @ {Cell}, cell {CellSize})";
     }

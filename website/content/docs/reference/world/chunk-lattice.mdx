@@ -1,0 +1,72 @@
+---
+title: "ChunkLattice"
+description: "The built-in IChunkGridGeometry: a lattice of equal boxes, either one layer of columns centred on y = 0 (Planar) or a volumetric lattice, cell (x, y, z) spanning [x, x + 1) cells on each axis."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/ChunkGridGeometry.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/ChunkGridGeometry.cs)</div>
+
+```csharp
+public sealed class ChunkLattice : IChunkGridGeometry
+```
+
+The built-in [`IChunkGridGeometry`](/docs/reference/world/i-chunk-grid-geometry): a lattice of equal boxes, either one layer of columns centred on y = 0 ([`Planar`](#planar)) or a volumetric lattice, cell (x, y, z) spanning \[x, x + 1) cells on each axis.
+
+## Constructors
+
+### ChunkLattice [#chunklattice]
+
+```csharp
+public ChunkLattice(Vector3 cellSize, bool planar);
+```
+
+## Properties
+
+### CellSize [#cellsize]
+
+```csharp
+public Vector3 CellSize { get; }
+```
+
+### Planar [#planar]
+
+```csharp
+public bool Planar { get; }
+```
+
+### LeadStep [#leadstep]
+
+```csharp
+public float LeadStep { get; }
+```
+
+## Methods
+
+### CellOf [#cellof]
+
+```csharp
+public Vector3Int CellOf(Vector3 local);
+```
+
+### BoundsOf [#boundsof]
+
+```csharp
+public Bounds BoundsOf(Vector3Int cell);
+```
+
+### Normalize [#normalize]
+
+```csharp
+public Vector3Int Normalize(Vector3Int cell);
+```
+
+### Neighborhood [#neighborhood]
+
+```csharp
+public void Neighborhood(Vector3Int cell, int ring, List<Vector3Int> into);
+```
+
+### IdOf [#idof]
+
+```csharp
+public ulong IdOf(string gridKey, Vector3Int cell);
+```

@@ -1,0 +1,66 @@
+---
+title: "IChunkGridGeometry"
+description: "The shape of a hosted chunk grid (docs/container-tree.md D22): which cell a point of the host belongs to, each cell's box, which cells surround a cell, and what id each cell's container gets."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/ChunkGridGeometry.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/ChunkGridGeometry.cs)</div>
+
+```csharp
+public interface IChunkGridGeometry
+```
+
+The shape of a hosted chunk grid (`docs/container-tree.md` D22): which cell a point of the host belongs to, each cell's box, which cells surround a cell, and what id each cell's container gets. A cell is named by a `Vector3Int` the geometry gives meaning to; it is what part ids carry ([`ChunkKeys.HostedPartId`](/docs/reference/world/chunk-keys#hostedpartid)) and what the allocator rings and leads in. Every coordinate here is the host's own.
+
+[`ChunkLattice`](/docs/reference/world/chunk-lattice) (planar or volumetric boxes) is the built-in geometry and the default. A game supplies another, such as a cube-sphere's faces, with [`NebulaChunkedWorld.HostedGeometry`](/docs/reference/world/nebula-chunked-world#hostedgeometry) on every process.
+
+## Properties
+
+### LeadStep [#leadstep]
+
+```csharp
+float LeadStep { get; }
+```
+
+How far apart, in metres, the allocator samples a pawn's lead line so that it steps over no cell.
+
+## Methods
+
+### CellOf [#cellof]
+
+```csharp
+Vector3Int CellOf(Vector3 local);
+```
+
+The cell a point belongs to. Decided by the cell's own extent, not by which box holds the point: on a curved surface the boxes of neighbouring cells overlap.
+
+### BoundsOf [#boundsof]
+
+```csharp
+Bounds BoundsOf(Vector3Int cell);
+```
+
+The cell's bounding box: the leased container's box, axis-aligned in the host's coordinates.
+
+### Normalize [#normalize]
+
+```csharp
+Vector3Int Normalize(Vector3Int cell);
+```
+
+The canonical name of a cell: drop or fold whatever the geometry does not use (a planar lattice's y).
+
+### Neighborhood [#neighborhood]
+
+```csharp
+void Neighborhood(Vector3Int cell, int ring, List<Vector3Int> into);
+```
+
+Append every cell within `ring` steps of adjacency of `cell`, itself included, to `into`. Steps across a face edge count like any other.
+
+### IdOf [#idof]
+
+```csharp
+ulong IdOf(string gridKey, Vector3Int cell);
+```
+
+The 64-bit container id of a cell of the grid `gridKey`. The default derivation is [`ChunkKeys.RuntimeId`](/docs/reference/world/chunk-keys#runtimeid); a geometry that packs its own must still keep two grids' ids apart.

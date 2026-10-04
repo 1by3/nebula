@@ -44,6 +44,34 @@ namespace Nebula.World
         /// <summary>Whether this is the public world's grid, whose ids are the pinned packing and nothing else.</summary>
         public bool IsPublic => InstanceId == 0;
 
+        /// <summary>
+        /// The key this grid is registered under (<see cref="NebulaChunks.GridFor"/>) and its chunk ids derive from
+        /// (<see cref="IdOf"/>). A scope's root grid's is its <see cref="ScopeKey"/>; a hosted grid's is its own, distinct
+        /// from the scope it lives in (<c>docs/container-tree.md</c> D22).
+        /// </summary>
+        public string GridKey { get; }
+
+        /// <summary>
+        /// The container a hosted grid's chunks are leased under, by id: a container with a physics frame of its own,
+        /// typically a carrier's (a planet, a station). Null for a scope's root grid, whose chunks are roots.
+        /// </summary>
+        public string HostContainerId { get; }
+
+        /// <summary>
+        /// Whether this grid is hosted by a container (<c>docs/container-tree.md</c> D22) rather than being its scope's
+        /// root grid: its chunks are children of <see cref="HostContainerId"/>, its coordinates are the host's own
+        /// (carrier-local), and its <see cref="Frame"/> follows the host's floating origin.
+        /// </summary>
+        public bool IsHosted => HostContainerId != null;
+
+        /// <summary>
+        /// The grid's shape: which cell a point is in, each cell's box, its neighbours and its id. A root grid's is always
+        /// a <see cref="ChunkLattice"/> of <see cref="CellSize"/>; a hosted grid's may be any
+        /// <see cref="IChunkGridGeometry"/> a game supplies (<see cref="NebulaChunkedWorld.HostedGeometry"/>), and every
+        /// hosted-grid answer below goes through it.
+        /// </summary>
+        public IChunkGridGeometry Geometry { get; }
+
         // A scoped grid's ids are a hash, so they cannot be unpacked. Both directions are memoised as coordinates
         // are named (by this process) or adopted from a lease row (by any other process); a chunk nobody has
         // mentioned costs nothing.
@@ -56,13 +84,19 @@ namespace Nebula.World
 
         public RuntimeGrid(Vector3 cellSize, bool planar) : this(cellSize, planar, "") { }
 
-        public RuntimeGrid(Vector3 cellSize, bool planar, string scopeKey)
+        public RuntimeGrid(Vector3 cellSize, bool planar, string scopeKey) : this(cellSize, planar, scopeKey, null, null) { }
+
+        private RuntimeGrid(Vector3 cellSize, bool planar, string scopeKey, string gridKey, string hostContainerId, IChunkGridGeometry geometry = null)
         {
             if (cellSize.x <= 0f || cellSize.y <= 0f || cellSize.z <= 0f)
                 throw new ArgumentOutOfRangeException(nameof(cellSize), "Cell size must be positive on every axis.");
             CellSize = cellSize;
-            Planar = planar;
+            Geometry = geometry ?? new ChunkLattice(cellSize, planar);
+            // A geometry of the game's own is not a lattice of columns, whatever the definition says.
+            Planar = Geometry is ChunkLattice lattice ? lattice.Planar : false;
             ScopeKey = scopeKey ?? "";
+            GridKey = string.IsNullOrEmpty(gridKey) ? ScopeKey : gridKey;
+            HostContainerId = string.IsNullOrEmpty(hostContainerId) ? null : hostContainerId;
             InstanceId = ScopeKey.Length == 0 ? 0UL : ScopeKeys.Hash(ScopeKey);
             if (InstanceId == 0) return;
             _idByCoord = new Dictionary<Vector3Int, ulong>();
@@ -73,14 +107,130 @@ namespace Nebula.World
         public static RuntimeGrid From(ChunkGridDefinition definition, string scopeKey) =>
             definition == null ? null : new RuntimeGrid(definition.CellSize, definition.Planar, scopeKey);
 
+        /// <summary>
+        /// A grid hosted by a container (<c>docs/container-tree.md</c> D22): chunks of <paramref name="definition"/>'s
+        /// size leased as children of <paramref name="hostContainerId"/>, laid out in the host's own coordinates, in
+        /// scope <paramref name="scopeKey"/>, with ids derived from <paramref name="gridKey"/> and the coordinate. A
+        /// planar one is a single layer of columns centred on the host's y = 0. The scope key must not be empty (the
+        /// public world hosts no grids) and the grid key must not be any scope's key. <paramref name="geometry"/> replaces
+        /// the lattice the definition describes with a shape of the game's own (a cube-sphere's faces); its cell size
+        /// then only sizes the grid's frame.
+        /// <see cref="NebulaChunkedWorld.ActivateHostedGrid(IControlPlane, string, string, string, ChunkGridDefinition)"/>
+        /// makes one on every worker; build one directly only for a custom allocation workflow.
+        /// </summary>
+        public static RuntimeGrid Hosted(ChunkGridDefinition definition, string scopeKey, string gridKey, string hostContainerId, IChunkGridGeometry geometry = null)
+        {
+            if (definition == null) throw new ArgumentNullException(nameof(definition));
+            if (string.IsNullOrEmpty(scopeKey)) throw new ArgumentException("A hosted grid lives in a scope; the public world hosts none.", nameof(scopeKey));
+            if (string.IsNullOrEmpty(gridKey)) throw new ArgumentException("A hosted grid needs a key of its own.", nameof(gridKey));
+            if (string.IsNullOrEmpty(hostContainerId)) throw new ArgumentException("A hosted grid needs the id of the container that hosts it.", nameof(hostContainerId));
+            return new RuntimeGrid(definition.CellSize, definition.Planar, scopeKey, gridKey, hostContainerId, geometry);
+        }
+
+        private Container _host;
+        private PhysicsFrame _hostFrame;
+
+        /// <summary>
+        /// A hosted grid's host container in this process, or null while it is not here (a carrier not spawned or not
+        /// yet seen) or for a root grid. A planar grid makes its host's frame keep its origin level
+        /// (<see cref="PhysicsFrame.KeepOriginLevel"/>), and the frame's origin shifts are this grid's
+        /// (<see cref="ScopeFrame.Shifted"/>).
+        /// </summary>
+        public Container Host
+        {
+            get
+            {
+                if (HostContainerId == null) return null;
+                if (_host == null || _host.ContainerId != HostContainerId) _host = ContainerRegistry.FindById(HostContainerId);
+                var frame = _host != null ? _host.Frame : null;
+                if (frame != _hostFrame)
+                {
+                    if (_hostFrame != null) _hostFrame.Shifted -= OnHostShifted;
+                    _hostFrame = frame;
+                    if (frame != null)
+                    {
+                        frame.Shifted += OnHostShifted;
+                        if (Planar) frame.KeepOriginLevel = true;
+                    }
+                }
+                return _host;
+            }
+        }
+
+        private void OnHostShifted(Vector3 delta) => _frame?.RaiseFollowed(delta);
+
+        /// <summary>Where the host's (0,0,0) sits in this process's simulation space: its frame's floating origin taken off.</summary>
+        private Vector3 HostOffset()
+        {
+            var host = Host;
+            return host != null && host.Frame != null ? host.Frame.RootOffset : Vector3.zero;
+        }
+
+        /// <summary>
+        /// A hosted grid: the position of <paramref name="entity"/> in the host's own coordinates, wherever it is (in a
+        /// chunk of this grid, in the host's frame at any depth, or outside the host altogether). False when the host is
+        /// not in this process, or for a root grid.
+        /// </summary>
+        public bool TryHostPosition(NetworkIdentity entity, out Vector3 local)
+        {
+            local = default;
+            var host = entity != null ? Host : null;
+            if (host == null) return false;
+            var p = PhysicsFrames.Convert(entity.transform.position, entity.Space, host);
+            local = host.Frame != null ? host.Frame.SimulationToLocal(p) : p;
+            return true;
+        }
+
+        /// <summary>
+        /// Which cell a position in this grid's absolute coordinates falls in: the scope's absolute world for a root
+        /// grid, the host's own coordinates for a hosted one. No floating origin enters into it.
+        /// </summary>
+        public Vector3Int CoordOfAbsolute(Vector3 absolute) => Geometry.CellOf(absolute);
+
+        /// <summary>
+        /// Centre of a cell in this grid's absolute coordinates (the host's own, for a hosted grid). A planar grid's
+        /// column is centred on y = 0.
+        /// </summary>
+        public Vector3 AbsoluteCenterOf(Vector3Int coord) => Geometry.BoundsOf(Normalize(coord)).center;
+
+        /// <summary>A cell's box in this grid's absolute coordinates (the host's own, for a hosted grid).</summary>
+        public Bounds AbsoluteBoundsOf(Vector3Int coord) => Geometry.BoundsOf(Normalize(coord));
+
+        /// <summary>How far apart the allocator samples a pawn's lead line (<see cref="IChunkGridGeometry.LeadStep"/>).</summary>
+        public float LeadStep => Geometry.LeadStep;
+
+        /// <summary>
+        /// The placement a chunk's lease row carries: a root at its absolute centre (in double) for a root grid, a
+        /// leased child of the host at its centre in the host's coordinates for a hosted one.
+        /// </summary>
+        public ContainerPlacement PlacementOf(Vector3Int coord)
+        {
+            coord = Normalize(coord);
+            if (IsHosted)
+            {
+                var box = Geometry.BoundsOf(coord);
+                return ContainerPlacement.Child(HostContainerId, box.center, box.size, ContainerAuthority.Leased);
+            }
+            var center = new Double3((coord.x + 0.5) * CellSize.x, Planar ? 0.0 : (coord.y + 0.5) * CellSize.y, (coord.z + 0.5) * CellSize.z);
+            return ContainerPlacement.Root(center, CellSize);
+        }
+
+        /// <summary>The part id a chunk's lease row and its records carry: <c>c/x/y/z</c>, after the grid key for a hosted grid.</summary>
+        public string PartIdOf(Vector3Int coord) =>
+            IsHosted ? ChunkKeys.HostedPartId(GridKey, Normalize(coord)) : ChunkKeys.PartId(Normalize(coord));
+
         private ScopeFrame _frame;
 
         /// <summary>
         /// This grid's floating-origin frame: <see cref="WorldOrigin"/> for the public world, and a frame of its own
         /// for every other scope. Every piece of arithmetic below is relative to it, which is what lets two scopes on
-        /// one worker both sit near Unity's origin (<c>docs/scope-frames.md</c>).
+        /// one worker both sit near Unity's origin (<c>docs/scope-frames.md</c>). A hosted grid's frame follows its host's
+        /// floating origin (<see cref="ScopeFrame.IsFollowing"/>): its <see cref="ScopeFrame.OriginOffset"/> turns the host's
+        /// own coordinates into simulation space and back, on a worker and on a client while it predicts; a client
+        /// draws the host where it is (<see cref="PhysicsFrame.ToParent(Vector3)"/>).
         /// </summary>
-        public ScopeFrame Frame => _frame ??= IsPublic ? ScopeFrames.Public : ScopeFrames.Ensure(ScopeKey, InstanceId, CellSize);
+        public ScopeFrame Frame => _frame ??= IsHosted ? new ScopeFrame(ScopeKey, InstanceId, CellSize, HostOffset)
+            : IsPublic ? ScopeFrames.Public : ScopeFrames.Ensure(ScopeKey, InstanceId, CellSize);
 
         // ------------------------------------------------------------------------------------------ ids
 
@@ -94,7 +244,7 @@ namespace Nebula.World
             coord = Normalize(coord);
             if (_idByCoord == null) return PackId(coord);
             if (_idByCoord.TryGetValue(coord, out ulong id)) return id;
-            id = ChunkKeys.RuntimeId(ScopeKey, coord);
+            id = IsHosted ? Geometry.IdOf(GridKey, coord) : ChunkKeys.RuntimeId(GridKey, coord);
             _idByCoord[coord] = id;
             _coordById[id] = coord;
             return id;
@@ -125,10 +275,15 @@ namespace Nebula.World
         public bool Adopt(ulong id, string partId, out Vector3Int coord)
         {
             coord = default;
-            if (!ChunkKeys.TryParsePartId(partId, out var parsed)) return false;
+            Vector3Int parsed;
+            if (IsHosted)
+            {
+                if (!ChunkKeys.TryParseHostedPartId(partId, out var key, out parsed) || !string.Equals(key, GridKey, StringComparison.Ordinal)) return false;
+            }
+            else if (!ChunkKeys.TryParsePartId(partId, out parsed)) return false;
             parsed = Normalize(parsed);
             if (_coordById == null) { coord = parsed; return PackId(parsed) == id; }
-            if (ChunkKeys.RuntimeId(ScopeKey, parsed) != id) return false;
+            if ((IsHosted ? Geometry.IdOf(GridKey, parsed) : ChunkKeys.RuntimeId(GridKey, parsed)) != id) return false;
             _idByCoord[parsed] = id;
             _coordById[id] = parsed;
             coord = parsed;
@@ -195,7 +350,7 @@ namespace Nebula.World
                             if (x < MinCoordinate || x > MaxCoordinate || y < MinCoordinate || y > MaxCoordinate ||
                                 z < MinCoordinate || z > MaxCoordinate) continue;
                             var c = new Vector3Int((int)x, (int)y, (int)z);
-                            if (ChunkKeys.RuntimeId(ScopeKey, c) != id) continue;
+                            if ((IsHosted ? Geometry.IdOf(GridKey, c) : ChunkKeys.RuntimeId(GridKey, c)) != id) continue;
                             _idByCoord[c] = id;
                             _coordById[id] = c;
                             coord = c;
@@ -237,6 +392,7 @@ namespace Nebula.World
         /// <summary>Which cell a position in this grid's own floating-origin frame falls in.</summary>
         public Vector3Int CoordOf(Vector3 framePosition)
         {
+            if (IsHosted) return CoordOfAbsolute(framePosition - HostOffset());
             var origin = Frame.Cell;
             return new Vector3Int(
                 origin.x + Mathf.FloorToInt(framePosition.x / CellSize.x),
@@ -254,12 +410,19 @@ namespace Nebula.World
         public Vector3Int CoordOf(NetworkIdentity entity)
         {
             var container = entity.Container;
-            // Only a root of this grid's scope is a chunk (docs/container-tree.md D9). The public grid unpacks any
-            // id, so a runtime container of another kind (a room fixed in a frame, another scope's box) would
-            // otherwise be read as a cell it is not.
-            if (container == null || !container.IsRuntime || container.Parent != null || container.InstanceId != InstanceId
-                || !TryCoordOf(container.RuntimeId, out var c))
-                return CoordOf(entity.ToScope(entity.transform.position));
+            // Only a root of this grid's scope is a chunk (docs/container-tree.md D9), and for a hosted grid only a child
+            // of its host (D22). The public grid unpacks any id, so a runtime container of another kind (a room fixed in
+            // a frame, another scope's box) would otherwise be read as a cell it is not.
+            bool chunk = container != null && container.IsRuntime && container.InstanceId == InstanceId
+                && (IsHosted ? container.Parent != null && container.Parent.ContainerId == HostContainerId : container.Parent == null);
+            if (!chunk || !TryCoordOf(container.RuntimeId, out var c))
+            {
+                if (!IsHosted) return CoordOf(entity.ToScope(entity.transform.position));
+                return TryHostPosition(entity, out var hostPosition) ? CoordOfAbsolute(hostPosition) : CoordOf(entity.transform.position);
+            }
+            // In a hosted chunk: the chunk's place in its host plus the entity's place in the chunk, asked of the geometry,
+            // which alone knows where one cell ends and the next begins.
+            if (IsHosted) return Geometry.CellOf(container.transform.localPosition + entity.LocalPosition);
             var local = entity.LocalPosition;
             return new Vector3Int(
                 c.x + Mathf.FloorToInt((local.x + CellSize.x / 2) / CellSize.x),
@@ -274,6 +437,7 @@ namespace Nebula.World
         /// </summary>
         public Vector3 CenterOf(Vector3Int coord)
         {
+            if (IsHosted) return AbsoluteCenterOf(Normalize(coord)) + HostOffset();
             var origin = Frame.Cell;
             return new Vector3(
                 (float)(((long)coord.x - origin.x + 0.5) * CellSize.x),
@@ -284,7 +448,7 @@ namespace Nebula.World
         }
 
         /// <summary>Box of a cell in the current floating-origin frame.</summary>
-        public Bounds BoundsOf(Vector3Int coord) => new Bounds(CenterOf(coord), CellSize);
+        public Bounds BoundsOf(Vector3Int coord) => IsHosted ? new Bounds(CenterOf(coord), Geometry.BoundsOf(Normalize(coord)).size) : new Bounds(CenterOf(coord), CellSize);
 
         /// <summary><see cref="BoundsOf"/> of the cell a packed runtime id names. Matches the
         /// <see cref="ContainerRegistry.RuntimeBoundsInFrame"/> delegate signature; see <see cref="UseAsRuntimeBounds"/>.</summary>
@@ -314,6 +478,7 @@ namespace Nebula.World
         public void Neighborhood(Vector3Int center, int ring, List<Vector3Int> into)
         {
             if (into == null) return;
+            if (IsHosted) { Geometry.Neighborhood(center, ring, into); return; }
             int yLow = Planar ? 0 : -ring, yHigh = Planar ? 0 : ring;
             int cy = Planar ? 0 : center.y;
             for (int x = -ring; x <= ring; x++)
@@ -326,7 +491,7 @@ namespace Nebula.World
         }
 
         /// <summary>Drop the vertical component of a coordinate when this grid is <see cref="Planar"/>, so a caller's arithmetic cannot leave the single layer.</summary>
-        public Vector3Int Normalize(Vector3Int coord) => Planar ? new Vector3Int(coord.x, 0, coord.z) : coord;
+        public Vector3Int Normalize(Vector3Int coord) => IsHosted ? Geometry.Normalize(coord) : Planar ? new Vector3Int(coord.x, 0, coord.z) : coord;
 
         /// <summary>
         /// Point <see cref="ContainerRegistry.RuntimeBoundsInFrame"/> at this grid, so a game that registers runtime
@@ -365,6 +530,8 @@ namespace Nebula.World
         /// </summary>
         public void ShiftOrigin(Vector3Int target)
         {
+            // A hosted grid has no origin of its own to move: it follows its host's frame (docs/container-tree.md D19, D22).
+            if (IsHosted) return;
             if (Planar) target = new Vector3Int(target.x, Frame.Cell.y, target.z);
             if (IsPublic) { ShiftOriginTo(target); return; }
             if (target == Frame.Cell) return;
@@ -423,6 +590,7 @@ namespace Nebula.World
         /// </summary>
         public void KeepOriginNear(Vector3Int cell, int ring = 1)
         {
+            if (IsHosted) return;
             var origin = Frame.Cell;
             if (Planar) cell = new Vector3Int(cell.x, origin.y, cell.z);
             if (!IsNear(cell, origin, ring)) ShiftOrigin(cell);

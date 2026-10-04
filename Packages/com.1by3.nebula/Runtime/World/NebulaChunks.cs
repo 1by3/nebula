@@ -74,6 +74,13 @@ namespace Nebula.World
     /// allocator, container assignments, and persistence identifiers.
     /// </para>
     /// <para>
+    /// A scope can also hold grids hosted by a container with a physics frame of its own, such as a planet carried
+    /// through the scope (<see cref="NebulaChunkedWorld.ActivateHostedGrid(IControlPlane, string, string, string, ChunkGridDefinition)"/>,
+    /// <c>docs/container-tree.md</c> D22). A hosted grid is registered under its own grid key, so <see cref="GridFor"/>,
+    /// <see cref="EnsureAt(Vector3Int, string, Action{Container})"/> and <see cref="AllocatorFor"/> take that key exactly
+    /// as they take a scope's; its chunks report the scope they are in (<see cref="ChunkContext.ScopeKey"/>).
+    /// </para>
+    /// <para>
     /// Chunks are Nebula runtime containers, so "which chunks exist" means something slightly different per role and
     /// that is exactly the point: a worker sees the cells it and its neighbors lease, a client sees the containers
     /// the gateway told it about (its interest window), and both learn about them through the same two events. A
@@ -87,8 +94,12 @@ namespace Nebula.World
     /// </summary>
     public static class NebulaChunks
     {
+        /// <summary>Every grid by its key: a scope's root grid under the scope key, a hosted grid under its own (<see cref="RuntimeGrid.GridKey"/>).</summary>
         private static readonly Dictionary<string, RuntimeGrid> GridsByScope = new Dictionary<string, RuntimeGrid>(StringComparer.Ordinal);
+        /// <summary>Root grids only, by their scope's isolation id.</summary>
         private static readonly Dictionary<ulong, RuntimeGrid> GridsByInstance = new Dictionary<ulong, RuntimeGrid>();
+        /// <summary>Hosted grids, by the isolation id of the scope they live in (<c>docs/container-tree.md</c> D22).</summary>
+        private static readonly Dictionary<ulong, List<RuntimeGrid>> HostedByInstance = new Dictionary<ulong, List<RuntimeGrid>>();
         private static readonly Dictionary<string, RuntimeGridAllocator> AllocatorsByScope = new Dictionary<string, RuntimeGridAllocator>(StringComparer.Ordinal);
         private static bool _hooked;
 
@@ -110,19 +121,32 @@ namespace Nebula.World
         /// <summary>Every grid active in this process, public world first if it has one.</summary>
         public static IEnumerable<RuntimeGrid> Grids => GridsByScope.Values;
 
-        /// <summary>The scope keys with a grid in this process (<c>""</c> is the public world).</summary>
+        /// <summary>
+        /// The keys with a grid in this process (<c>""</c> is the public world): scope keys for scopes' root grids, and
+        /// the grid keys of hosted grids.
+        /// </summary>
         public static IEnumerable<string> ActiveScopeKeys => GridsByScope.Keys;
 
-        /// <summary>The grid of a scope (<c>""</c> for the public world), or null when that scope has no grid here.</summary>
+        /// <summary>
+        /// The grid registered under a key, or null when there is none here: a scope's root grid by the scope's key
+        /// (<c>""</c> for the public world), or a hosted grid by its own grid key.
+        /// </summary>
         public static RuntimeGrid GridFor(string scopeKey) =>
             GridsByScope.TryGetValue(scopeKey ?? "", out var g) ? g : null;
 
-        /// <summary>The worker-side allocator of a scope's grid, or null (not a worker, or no such grid).</summary>
+        /// <summary>The worker-side allocator of the grid registered under a key (<see cref="GridFor"/>), or null (not a worker, or no such grid).</summary>
         public static RuntimeGridAllocator AllocatorFor(string scopeKey) =>
             AllocatorsByScope.TryGetValue(scopeKey ?? "", out var a) ? a : null;
 
-        /// <summary>Whether a scope has a grid in this process.</summary>
+        /// <summary>Whether a grid is registered under a key in this process (<see cref="GridFor"/>).</summary>
         public static bool IsActiveFor(string scopeKey) => GridsByScope.ContainsKey(scopeKey ?? "");
+
+        /// <summary>The grids hosted in a scope that this process knows (<c>docs/container-tree.md</c> D22); empty when there are none.</summary>
+        public static IReadOnlyList<RuntimeGrid> HostedGridsIn(string scopeKey)
+        {
+            if (string.IsNullOrEmpty(scopeKey)) return Array.Empty<RuntimeGrid>();
+            return HostedByInstance.TryGetValue(ScopeKeys.Hash(scopeKey), out var list) ? list : (IReadOnlyList<RuntimeGrid>)Array.Empty<RuntimeGrid>();
+        }
 
         /// <summary>Chunks resident in this process right now, across every scope.</summary>
         public static IReadOnlyList<Container> All => ContainerRegistry.Runtime;
@@ -144,8 +168,13 @@ namespace Nebula.World
         public static RuntimeGrid GridOf(Container container)
         {
             if (container == null || !container.IsRuntime) return null;
-            if (!GridsByInstance.TryGetValue(container.InstanceId, out var grid)) return null;
-            return grid.TryCoordOf(container.RuntimeId, out _) || Adopt(grid, container) ? grid : null;
+            ulong instance = container.InstanceId;
+            if (GridsByInstance.TryGetValue(instance, out var grid) && (grid.TryCoordOf(container.RuntimeId, out _) || Adopt(grid, container))) return grid;
+            // A child of a container may be a chunk of a grid that container hosts (docs/container-tree.md D22).
+            if (container.Parent == null || !HostedByInstance.TryGetValue(instance, out var hosted)) return null;
+            for (int i = 0; i < hosted.Count; i++)
+                if (hosted[i].TryCoordOf(container.RuntimeId, out _) || Adopt(hosted[i], container)) return hosted[i];
+            return null;
         }
 
         /// <summary>
@@ -155,7 +184,10 @@ namespace Nebula.World
         /// </summary>
         public static RuntimeGrid GridHolding(Container container) => container != null ? GridOf(container.ScopeRoot) : null;
 
-        /// <summary>The scope key a container belongs to (<c>""</c> for the public world and for anything not in a grid).</summary>
+        /// <summary>
+        /// The scope key a container belongs to (<c>""</c> for the public world and for anything not in a grid). A
+        /// chunk of a hosted grid belongs to the scope its host is in, not to the grid's key.
+        /// </summary>
         public static string ScopeOf(Container container) => GridOf(container)?.ScopeKey ?? "";
 
         /// <summary>
@@ -183,6 +215,29 @@ namespace Nebula.World
         {
             var grid = GridOf(id);
             return grid != null ? grid.BoundsOfId(id, fallback) : fallback;
+        }
+
+        /// <summary>
+        /// The resolution hook (<see cref="ContainerRegistry.RuntimeClaims"/>) for hosted grids whose geometry is not a
+        /// box lattice: a chunk holds a point only when the geometry puts the point in that chunk's cell, since such cells'
+        /// boxes overlap. A lattice's boxes tile, so its chunks keep the box's answer.
+        /// </summary>
+        internal static bool Claims(Container chunk, Vector3 point)
+        {
+            if (chunk.FixedParent == null || !HostedByInstance.TryGetValue(chunk.InstanceId, out var hosted)) return true;
+            for (int i = 0; i < hosted.Count; i++)
+            {
+                var grid = hosted[i];
+                if (grid.Geometry is ChunkLattice || grid.HostContainerId != chunk.FixedParent.ContainerId) continue;
+                if (!grid.TryCoordOf(chunk.RuntimeId, out var cell) && !Adopt(grid, chunk)) continue;
+                grid.TryCoordOf(chunk.RuntimeId, out cell);
+                var host = chunk.FixedParent;
+                // The point is in the chunk's space, the host's frame: simulation space on a worker, posed on a client.
+                var local = host.Frame == null ? point
+                    : PhysicsFrames.InSimulationPose(host) ? host.Frame.SimulationToLocal(point) : host.Frame.FromParent(point);
+                return grid.Normalize(grid.CoordOfAbsolute(local)) == grid.Normalize(cell);
+            }
+            return true;
         }
 
         /// <summary>
@@ -338,10 +393,16 @@ namespace Nebula.World
                 ContainerRegistry.RuntimeUnregistering += OnUnregistering;
                 _hooked = true;
             }
-            string scope = grid.ScopeKey;
-            bool newlyActive = !GridsByScope.ContainsKey(scope);
+            string scope = grid.GridKey;
+            bool newlyActive = !GridsByScope.TryGetValue(scope, out var previous) || (grid.IsHosted && previous != grid);
+            if (previous != null && previous != grid && previous.IsHosted) RemoveHosted(previous);
             GridsByScope[scope] = grid;
-            GridsByInstance[grid.InstanceId] = grid;
+            if (!grid.IsHosted) GridsByInstance[grid.InstanceId] = grid;
+            else
+            {
+                if (!HostedByInstance.TryGetValue(grid.InstanceId, out var hosted)) HostedByInstance[grid.InstanceId] = hosted = new List<RuntimeGrid>();
+                hosted.Add(grid);
+            }
             // A scoped grid owns its floating origin from the moment it exists here: registering the frame up
             // front is what keeps its containers out of the public world's origin shifts (docs/scope-frames.md D2).
             _ = grid.Frame;
@@ -352,10 +413,12 @@ namespace Nebula.World
             IsHeadless = headless;
             // Every grid resolves its own ids; one hook for all of them, so a second scope cannot take the first's.
             ContainerRegistry.RuntimeBoundsInFrame = BoundsOfId;
+            if (grid.IsHosted) ContainerRegistry.RuntimeClaims = Claims;
             // Containers of this scope that turned up before the grid did were placed in the public frame, because
             // nothing here could say otherwise yet. A zero-delta shift of the new frame re-asks the bounds hook for
             // every one of them, so each is recomputed from its coordinate in its own frame (docs/scope-frames.md D5).
-            if (!grid.IsPublic) ContainerRegistry.ShiftRuntime(grid.InstanceId, Vector3.zero);
+            // A hosted grid's chunks are children placed in their host's frame, which no bounds hook ever moves.
+            if (!grid.IsPublic && !grid.IsHosted) ContainerRegistry.ShiftRuntime(grid.InstanceId, Vector3.zero);
             if (!newlyActive) return;
             var snapshot = new List<Container>(ContainerRegistry.Runtime);
             for (int i = 0; i < snapshot.Count; i++)
@@ -370,11 +433,19 @@ namespace Nebula.World
         {
             var grid = GridFor(scopeKey);
             if (grid == null) return;
-            GridsByScope.Remove(grid.ScopeKey);
+            GridsByScope.Remove(grid.GridKey);
+            AllocatorsByScope.Remove(grid.GridKey);
+            if (grid.IsHosted) { RemoveHosted(grid); return; }
             GridsByInstance.Remove(grid.InstanceId);
-            AllocatorsByScope.Remove(grid.ScopeKey);
             ScopeFrames.Remove(grid.ScopeKey);
             if (grid.IsPublic) { Grid = null; Allocator = null; }
+        }
+
+        private static void RemoveHosted(RuntimeGrid grid)
+        {
+            if (!HostedByInstance.TryGetValue(grid.InstanceId, out var hosted)) return;
+            hosted.Remove(grid);
+            if (hosted.Count == 0) HostedByInstance.Remove(grid.InstanceId);
         }
 
         private static void OnRegistered(Container c)
@@ -494,6 +565,7 @@ namespace Nebula.World
             Allocator = null;
             GridsByScope.Clear();
             GridsByInstance.Clear();
+            HostedByInstance.Clear();
             AllocatorsByScope.Clear();
             Role = NebulaRoles.None;
             IsHeadless = true;

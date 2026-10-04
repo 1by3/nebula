@@ -103,6 +103,14 @@ public static Func<ulong, Bounds, Bounds> RuntimeBoundsInFrame { get; set; }
 
 Optional mapping from a public runtime container's stable ID to bounds in the current origin frame. Called during registration and origin shifts. Calculate the center from precise coordinates before converting to floats. Origin shifts use only the returned center; container sizes remain unchanged. Clear this callback when its world unloads. It is reset when a new play session starts.
 
+### RuntimeClaims [#runtimeclaims]
+
+```csharp
+public static Func<Container, Vector3, bool> RuntimeClaims { get; set; }
+```
+
+Optional say over whether a runtime container placed inside another (a chunk of a hosted grid, `docs/container-tree.md` D22) holds a point that its box holds: given the container and the point in its space, false keeps the container out of resolution (D3) for that point. A grid whose cells' boxes overlap, such as a curved surface's, decides membership by the cell instead of the box. Null, or true, keeps the box's answer. `Nebula.World.NebulaChunks` installs it. Reset when a new play session starts.
+
 ## Events
 
 ### Rebuilt [#rebuilt]

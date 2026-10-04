@@ -54,6 +54,22 @@ public Vector3Int Anchor;
 
 The chunk activation creates: the scope's guaranteed spawn area, and the anchor the allocator keeps.
 
+### LeadSeconds [#leadseconds]
+
+```csharp
+public float LeadSeconds;
+```
+
+Seconds of travel the allocator leases ahead of a moving pawn: besides the ring around the pawn's chunk, a ring around every chunk on the line from the pawn to where its velocity takes it in this many seconds, so a fast vehicle finds its next chunks leased before it gets there without a wider ring all round. 0 (the default) leases the ring alone.
+
+### Reach [#reach]
+
+```csharp
+public float Reach;
+```
+
+A hosted grid only ([`NebulaChunkedWorld.ActivateHostedGrid`](/docs/reference/world/nebula-chunked-world#activatehostedgrid)): how far outside its host container's box, in metres, a pawn still has chunks leased around it. 0 (the default) leases only for pawns inside the box. A root grid ignores it.
+
 ## Methods
 
 ### Validate [#validate]

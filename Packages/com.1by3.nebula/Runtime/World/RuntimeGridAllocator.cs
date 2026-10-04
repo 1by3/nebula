@@ -24,6 +24,18 @@ namespace Nebula.World
     /// the allocator. For a custom allocation workflow, construct this class and call <see cref="Tick"/>
     /// from your worker's update loop.
     /// </para>
+    /// <para>
+    /// With <see cref="LeadSeconds"/> set, a moving pawn also has a ring leased around every cell on the line to where
+    /// its velocity takes it in that time: a capsule ahead of it rather than a wider ring all round. The velocity is
+    /// measured from the pawn's position in the grid's own coordinates between two policy ticks, so it is the same
+    /// for a pawn on foot, a pilot aboard a ship and a ship crossing into or out of a physics frame.
+    /// </para>
+    /// <para>
+    /// For a grid hosted by a container (<see cref="RuntimeGrid.IsHosted"/>, <c>docs/container-tree.md</c> D22) the ring
+    /// is computed in the host's own coordinates, every chunk is requested as a leased child of the host, and only
+    /// pawns inside the host's box, or within <see cref="Reach"/> metres of it, count. Nothing is requested while the
+    /// host is not in this process.
+    /// </para>
     /// </summary>
     public sealed class RuntimeGridAllocator
     {
@@ -38,6 +50,10 @@ namespace Nebula.World
         private readonly List<ulong> scratch = new List<ulong>();
         private readonly List<Vector3Int> ring = new List<Vector3Int>();
         private readonly List<NetworkIdentity> contents = new List<NetworkIdentity>();
+        /// <summary>Each pawn's position in the grid's absolute coordinates at the last policy tick, and when, for its velocity.</summary>
+        private readonly Dictionary<ulong, (Vector3 Position, float Time)> lastSeen = new Dictionary<ulong, (Vector3, float)>();
+        private readonly List<ulong> seenScratch = new List<ulong>();
+        private readonly HashSet<ulong> seenThisTick = new HashSet<ulong>();
         /// <summary>The scope blob each chunk's lease row is born with; null (and never built) for the public world.</summary>
         private readonly Dictionary<ulong, InstanceContainerInfo> instances;
         private float next;
@@ -55,6 +71,22 @@ namespace Nebula.World
         public float RetireAfterSeconds { get; set; } = 60f;
         /// <summary>How often <see cref="Tick"/> actually recomputes interest; calls between are no-ops.</summary>
         public float TickIntervalSeconds { get; set; } = 0.25f;
+        /// <summary>
+        /// Seconds of travel leased ahead of a moving pawn (<see cref="ChunkGridDefinition.LeadSeconds"/>): a ring of
+        /// <see cref="Ring"/> around every cell on the line from the pawn to its position this many seconds ahead. 0 (the
+        /// default) leases the ring around the pawn alone, as before.
+        /// </summary>
+        public float LeadSeconds { get; set; }
+        /// <summary>
+        /// Speeds above this, in metres per second, are read as a jump (a teleport, a respawn) rather than travel, and
+        /// lead nothing.
+        /// </summary>
+        public float MaxLeadSpeed { get; set; } = 2000f;
+        /// <summary>
+        /// A hosted grid only (<see cref="ChunkGridDefinition.Reach"/>): how far outside the host's box, in metres, a
+        /// pawn (or the point its lead reaches) still counts. 0 counts pawns inside the box only.
+        /// </summary>
+        public float Reach { get; set; }
 
         public RuntimeGridAllocator(NebulaWorker worker, RuntimeGrid grid)
         {
@@ -82,7 +114,8 @@ namespace Nebula.World
             {
                 InstanceId = grid.InstanceId,
                 ScopeKey = grid.ScopeKey,
-                PartId = ChunkKeys.PartId(grid.Normalize(coord)),
+                // A hosted chunk's part id names its grid as well (docs/container-tree.md D22).
+                PartId = grid.PartIdOf(coord),
             };
             instances[id] = info;
             return info;
@@ -130,13 +163,16 @@ namespace Nebula.World
             var scope = ReadScope();
             if (definitionChanged) return;
             bool retiring = scope?.State == ScopeState.Retiring;
-            if (MayAllocate(scope))
+            seenThisTick.Clear();
+            // A hosted grid's coordinates are its host's: with the host not here, nothing can be placed in them.
+            var host = grid.IsHosted ? grid.Host : null;
+            if (MayAllocate(scope) && (!grid.IsHosted || host != null))
             {
                 foreach (var a in anchors) AddRing(a);
                 foreach (var entity in worker.Authoritative)
                     // Only this grid's own pawns: a player standing in another scope must not drag this world's
                     // chunks into being at the coordinate he happens to occupy over there.
-                    if (entity != null && entity.OwnerClientId != 0 && entity.InstanceId == grid.InstanceId) AddRing(grid.CoordOf(entity));
+                    if (entity != null && entity.OwnerClientId != 0 && entity.InstanceId == grid.InstanceId) AddPawn(entity, host, unscaledTime);
                 for (int i = 0; i < pins.Count; i++)
                 {
                     ulong pinned = grid.IdOf(pins[i]);
@@ -144,15 +180,16 @@ namespace Nebula.World
                 }
             }
 
+            // Forget the velocity of pawns that are gone (or no longer count) so a returning one does not lead from stale data.
+            seenScratch.Clear();
+            foreach (var entry in lastSeen) if (!seenThisTick.Contains(entry.Key)) seenScratch.Add(entry.Key);
+            foreach (var id in seenScratch) lastSeen.Remove(id);
+
             foreach (var id in wanted)
             {
                 lastWanted[id] = unscaledTime;
                 if (!grid.TryCoordOf(id, out var coord)) continue;
-                // A pin only keeps the row in existence. Every worker that knows a scope pins its anchor, and if each
-                // re-stamped it the scope's idle clock would never run (docs/scope-lifecycle.md D4).
-                if (pinnedOnly.Contains(id)) worker.EnsureRuntimeContainer(id, grid.BoundsOf(coord), InstanceOf(id, coord));
-                // Touch existing foreign leases too: their owner must not retire our neighbours.
-                else worker.RequestRuntimeContainer(id, grid.BoundsOf(coord), InstanceOf(id, coord));
+                Request(id, coord, pinnedOnly.Contains(id));
             }
 
             scratch.Clear();
@@ -223,6 +260,88 @@ namespace Nebula.World
             return wanted.Contains(id) || worker.RuntimeContainerIdleSeconds(id) < RetireAfterSeconds;
         }
 
+        /// <summary>
+        /// Ask for one wanted chunk. A pin only keeps the row in existence: every worker that knows a scope pins its
+        /// anchor, and if each re-stamped it the scope's idle clock would never run (docs/scope-lifecycle.md D4).
+        /// Anything else is requested, which touches existing foreign leases too: their owner must not retire our
+        /// neighbours.
+        /// </summary>
+        private void Request(ulong id, Vector3Int coord, bool pinned)
+        {
+            if (!grid.IsHosted)
+            {
+                if (pinned) worker.EnsureRuntimeContainer(id, grid.BoundsOf(coord), InstanceOf(id, coord));
+                else worker.RequestRuntimeContainer(id, grid.BoundsOf(coord), InstanceOf(id, coord));
+                return;
+            }
+            // A row left under a host that is no longer here (a carrier that came back with another id after a
+            // restart) would wait for that parent for ever: it is dropped and asked for again under the host we have
+            // (at once on a local control plane; on a remote one, whose rows lag our writes, on the next tick).
+            var plane = worker.ControlPlane;
+            var lease = plane != null && plane.IsConnected ? plane.FindLease(ContainerRegistry.RuntimeContainerId(id)) : null;
+            if (lease != null && !string.Equals(lease.ParentId, grid.HostContainerId, StringComparison.Ordinal)
+                && (string.IsNullOrEmpty(lease.ParentId) || ContainerRegistry.FindById(lease.ParentId) == null))
+            {
+                plane.RemoveContainer(lease.ContainerId);
+            }
+            var placement = grid.PlacementOf(coord);
+            if (pinned) worker.EnsureRuntimeContainer(id, placement, InstanceOf(id, coord));
+            else worker.RequestRuntimeContainer(id, placement, InstanceOf(id, coord));
+        }
+
+        /// <summary>
+        /// The cells one pawn wants: the ring around its cell and, with <see cref="LeadSeconds"/> set, a ring around
+        /// every cell on the line to where it will be. For a hosted grid only a pawn inside the host's box, or within
+        /// <see cref="Reach"/> of it at either end of the line, counts.
+        /// </summary>
+        private void AddPawn(NetworkIdentity entity, Container host, float now)
+        {
+            Vector3 position;
+            if (grid.IsHosted)
+            {
+                if (!grid.TryHostPosition(entity, out position)) return;
+            }
+            else if (LeadSeconds > 0f) position = entity.ToScope(entity.transform.position) - grid.Frame.OriginOffset;
+            else { AddRing(grid.CoordOf(entity)); return; }
+
+            var ahead = position;
+            if (LeadSeconds > 0f)
+            {
+                seenThisTick.Add(entity.NetId);
+                if (lastSeen.TryGetValue(entity.NetId, out var last) && now > last.Time)
+                {
+                    var velocity = (position - last.Position) / (now - last.Time);
+                    if (velocity.sqrMagnitude <= MaxLeadSpeed * MaxLeadSpeed) ahead = position + velocity * LeadSeconds;
+                }
+                lastSeen[entity.NetId] = (position, now);
+            }
+
+            if (grid.IsHosted && !NearHost(host, position) && !NearHost(host, ahead)) return;
+            var from = grid.CoordOf(entity);
+            AddRing(from);
+            if (ahead == position) return;
+            // Sample the line every half cell, so no cell it passes through is stepped over.
+            float step = Mathf.Max(0.01f, grid.LeadStep);
+            float length = Vector3.Distance(position, ahead);
+            int samples = Mathf.Min(256, Mathf.CeilToInt(length / step));
+            var previous = from;
+            for (int i = 1; i <= samples; i++)
+            {
+                var cell = grid.Normalize(grid.CoordOfAbsolute(Vector3.Lerp(position, ahead, (float)i / samples)));
+                if (cell == previous) continue;
+                previous = cell;
+                AddRing(cell);
+            }
+        }
+
+        /// <summary>Whether a point in the host's coordinates is inside the host's box grown by <see cref="Reach"/>.</summary>
+        private bool NearHost(Container host, Vector3 local)
+        {
+            var d = local - host.Center;
+            var half = host.Size * 0.5f;
+            return Mathf.Abs(d.x) <= half.x + Reach && Mathf.Abs(d.y) <= half.y + Reach && Mathf.Abs(d.z) <= half.z + Reach;
+        }
+
         private void AddRing(Vector3Int center)
         {
             // Through the grid, not the static helper: a planar grid must not want a layer of cells above and
@@ -271,7 +390,7 @@ namespace Nebula.World
             ulong id = grid.IdOf(coord);
             var existing = ContainerRegistry.GetRuntime(id);
             if (existing != null) { onReady(existing); return; }
-            worker.RequestRuntimeContainer(id, grid.BoundsOf(coord), InstanceOf(id, coord));
+            Request(id, coord, pinned: false);
             Action<Container> handler = null;
             handler = c =>
             {
