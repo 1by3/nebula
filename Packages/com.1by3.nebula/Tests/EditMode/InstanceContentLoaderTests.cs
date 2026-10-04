@@ -388,7 +388,7 @@ namespace Nebula.Tests
                 RequestId = request, EntityId = 42, Destination = destination.Ref, SourceWorker = 1, LeaseEpoch = destination.LeaseEpoch,
             }.Write(w, MsgId.InstancePrepare));
 
-            private void Receive(Action<NetworkWriter> write)
+            public void Receive(Action<NetworkWriter> write)
             {
                 var writer = new NetworkWriter();
                 write(writer);
@@ -421,6 +421,40 @@ namespace Nebula.Tests
             Assert.That(answers.Count, Is.EqualTo(1), "acknowledged in the same frame, as before");
             Assert.That(answers[0].Success, Is.True);
             Assert.That(answers[0].RequestId, Is.EqualTo(1u));
+        }
+
+        /// <summary>
+        /// NEB-394: a player in an instance crossing back onto a planet that is a carrier (a dungeon's door, a respawn from
+        /// inside it) is prepared into a chunk under the carrier, which this client isn't sent while it's in the instance.
+        /// The gateway sends the chunk's row, held for its parent; the client acknowledges, since the carrier and the
+        /// ground come with the scope once the crossing commits. A row held for a parent that is no carrier still fails.
+        /// </summary>
+        [Test]
+        public void AClientAcknowledgesADestinationHeldForACarrierItIsNotSent()
+        {
+            using var rig = new ClientRig();
+            const ulong chunkId = 0xC4A1UL, orphanId = 0xC4A2UL;
+            var instance = new InstanceContainerInfo { InstanceId = 0xBEEFUL, ScopeKey = "space/1", PartId = "planet/1/0/c/0/0/0" };
+            Assert.IsNull(ContainerRegistry.RegisterRuntime(chunkId, ContainerPlacement.Child("planet#77", new Vector3(128f, 0f, 128f), new Vector3(256f, 400f, 256f), ContainerAuthority.Leased), instance),
+                "the chunk's row waits for its carrier");
+            Assert.IsTrue(ContainerRegistry.IsHeldForCarrier(chunkId));
+            rig.Receive(w => new InstancePreparationMsg
+            {
+                RequestId = 5, EntityId = 42, Destination = new ContainerRef(ContainerRef.RuntimeIndex, chunkId), SourceWorker = 1, LeaseEpoch = 2,
+            }.Write(w, MsgId.InstancePrepare));
+            var answers = rig.Transport.Answers();
+            Assert.That(answers.Count, Is.EqualTo(1));
+            Assert.That(answers[0].Success, Is.True, "ready: the carrier's ground comes with its scope");
+
+            Assert.IsNull(ContainerRegistry.RegisterRuntime(orphanId, ContainerPlacement.Child("rt_123", Vector3.zero, Vector3.one * 10f, ContainerAuthority.Leased), instance));
+            Assert.IsFalse(ContainerRegistry.IsHeldForCarrier(orphanId), "held for a fixed parent, not a carrier");
+            rig.Receive(w => new InstancePreparationMsg
+            {
+                RequestId = 6, EntityId = 42, Destination = new ContainerRef(ContainerRef.RuntimeIndex, orphanId), SourceWorker = 1, LeaseEpoch = 2,
+            }.Write(w, MsgId.InstancePrepare));
+            answers = rig.Transport.Answers();
+            Assert.That(answers.Count, Is.EqualTo(2));
+            Assert.That(answers[1].Success, Is.False, "an unknown destination is still unavailable");
         }
 
         [Test]

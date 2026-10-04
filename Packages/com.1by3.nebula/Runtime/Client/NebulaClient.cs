@@ -1295,6 +1295,16 @@ namespace Nebula
                 {
                     var preparation = InstancePreparationMsg.Read(r);
                     var destination = preparation.Destination.Resolve();
+                    if (destination == null && preparation.Destination.IsRuntime && ContainerRegistry.IsHeldForCarrier(preparation.Destination.RuntimeId))
+                    {
+                        // A chunk under a carrier this client isn't sent while it's elsewhere (a planet's ground, seen
+                        // from an instance; NEB-394): the gateway sent the chunk's row, and the carrier, with the ground
+                        // standing in it, comes with the scope once the crossing commits. Nothing to prepare here.
+                        preparation.Success = true;
+                        _writer.Reset(); preparation.Write(_writer, MsgId.InstanceReady);
+                        _transport.Send(_gatewayPeer, Delivery.ReliableOrdered, _writer.ToSegment());
+                        break;
+                    }
                     preparation.Success = destination != null && destination.LeaseEpoch == preparation.LeaseEpoch && InstanceScenes.Prepare(destination);
                     if (preparation.Success)
                     {
