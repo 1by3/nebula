@@ -337,6 +337,33 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void APawnHighOverCellsThatDontFillTheHostLeasesNothing()
+        {
+            // The overlapping cells' boxes are 100 m tall round the host's y = 0, in a host 1,000 m tall: the shape of a
+            // sphere's cells in its bounding cube, where most of the box is above the cells.
+            using (var f = new Fixture(0f, 0f))
+            {
+                try
+                {
+                    var grid = RuntimeGrid.Hosted(Ground, Scope, "faces/8", f.Planet.Carried.ContainerId, new OverlappingCells());
+                    NebulaChunks.Activate(grid, NebulaRoles.Worker, true, null);
+                    var allocator = new RuntimeGridAllocator(f.Mesh[0].Instance, grid) { TickIntervalSeconds = 0f, Reach = 300f };
+                    f.Allocator = allocator;
+                    f.PawnAt(new Vector3(-50f, 0f, 0f));
+                    f.Tick(0f);
+                    Assert.AreEqual(2, allocator.WantedIds.Count, "on its cell");
+                    f.PawnAt(new Vector3(-50f, 340f, 0f)); // 290 m over its cell's box
+                    f.Tick(1f);
+                    Assert.AreEqual(2, allocator.WantedIds.Count, "within reach of its cell's box");
+                    f.PawnAt(new Vector3(-50f, 400f, 0f)); // 350 m over it, still well inside the host's box
+                    f.Tick(2f);
+                    Assert.AreEqual(0, allocator.WantedIds.Count, "inside the host but beyond reach of the cell under it: nothing");
+                }
+                finally { NebulaChunks.ResetForNewSession(); }
+            }
+        }
+
+        [Test]
         public void AMovingPawnLeasesACapsuleAlongItsVelocity()
         {
             using (var f = new Fixture(2f, 0f))

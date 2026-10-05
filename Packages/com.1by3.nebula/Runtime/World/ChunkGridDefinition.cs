@@ -41,7 +41,9 @@ namespace Nebula
         /// <summary>
         /// A hosted grid only (<see cref="NebulaChunkedWorld.ActivateHostedGrid(IControlPlane, string, string, string, ChunkGridDefinition)"/>):
         /// how far outside its host container's box, in metres, a pawn still has chunks leased around it. 0 (the
-        /// default) leases only for pawns inside the box. A root grid ignores it.
+        /// default) leases only for pawns inside the box. The same distance is measured from the box of the cell the pawn
+        /// is over, so a pawn high over a grid whose cells don't fill the host's box (a sphere's in its bounding cube)
+        /// leases nothing. A root grid ignores it.
         /// </summary>
         public float Reach;
 

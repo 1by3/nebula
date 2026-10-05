@@ -75,7 +75,7 @@ Speeds above this, in metres per second, are read as a jump (a teleport, a respa
 public float Reach { get; set; }
 ```
 
-A hosted grid only ([`ChunkGridDefinition.Reach`](/docs/reference/world/chunk-grid-definition#reach)): how far outside the host's box, in metres, a pawn (or the point its lead reaches) still counts. 0 counts pawns inside the box only.
+A hosted grid only ([`ChunkGridDefinition.Reach`](/docs/reference/world/chunk-grid-definition#reach)): how far outside the host's box, in metres, a pawn (or the point its lead reaches) still counts. 0 counts pawns inside the box only. The pawn must also be within this distance of the box of the cell it is over ([`IChunkGridGeometry.BoundsOf`](/docs/reference/world/i-chunk-grid-geometry#boundsof)): where the cells' boxes fill the host, as a lattice's columns do, that is the same rule; where they don't, as a sphere's cells inside its bounding cube, a pawn high over the cells leases nothing.
 
 ### Grid [#grid]
 

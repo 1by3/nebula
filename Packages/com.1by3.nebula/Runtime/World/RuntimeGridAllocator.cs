@@ -84,7 +84,10 @@ namespace Nebula.World
         public float MaxLeadSpeed { get; set; } = 2000f;
         /// <summary>
         /// A hosted grid only (<see cref="ChunkGridDefinition.Reach"/>): how far outside the host's box, in metres, a
-        /// pawn (or the point its lead reaches) still counts. 0 counts pawns inside the box only.
+        /// pawn (or the point its lead reaches) still counts. 0 counts pawns inside the box only. The pawn must also be
+        /// within this distance of the box of the cell it is over (<see cref="IChunkGridGeometry.BoundsOf"/>): where the
+        /// cells' boxes fill the host, as a lattice's columns do, that is the same rule; where they don't, as a sphere's
+        /// cells inside its bounding cube, a pawn high over the cells leases nothing.
         /// </summary>
         public float Reach { get; set; }
 
@@ -292,7 +295,8 @@ namespace Nebula.World
         /// <summary>
         /// The cells one pawn wants: the ring around its cell and, with <see cref="LeadSeconds"/> set, a ring around
         /// every cell on the line to where it will be. For a hosted grid only a pawn inside the host's box, or within
-        /// <see cref="Reach"/> of it at either end of the line, counts.
+        /// <see cref="Reach"/> of it at either end of the line, counts, and only within <see cref="Reach"/> of the box of
+        /// the cell it is over.
         /// </summary>
         private void AddPawn(NetworkIdentity entity, Container host, float now)
         {
@@ -334,11 +338,20 @@ namespace Nebula.World
             }
         }
 
-        /// <summary>Whether a point in the host's coordinates is inside the host's box grown by <see cref="Reach"/>.</summary>
+        /// <summary>
+        /// Whether a point in the host's coordinates is inside the host's box grown by <see cref="Reach"/>, and inside the
+        /// box of the cell it is over grown by as much.
+        /// </summary>
         private bool NearHost(Container host, Vector3 local)
         {
-            var d = local - host.Center;
-            var half = host.Size * 0.5f;
+            if (!Within(local, host.Center, host.Size * 0.5f)) return false;
+            var cell = grid.Geometry.BoundsOf(grid.Normalize(grid.CoordOfAbsolute(local)));
+            return Within(local, cell.center, cell.extents);
+        }
+
+        private bool Within(Vector3 local, Vector3 center, Vector3 half)
+        {
+            var d = local - center;
             return Mathf.Abs(d.x) <= half.x + Reach && Mathf.Abs(d.y) <= half.y + Reach && Mathf.Abs(d.z) <= half.z + Reach;
         }
 

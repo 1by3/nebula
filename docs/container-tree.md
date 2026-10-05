@@ -267,8 +267,10 @@ own coordinates, the host being a container with its own physics frame (a planet
   registers, which needs the host, so after the carrier's own record has restored.
 - **Allocation.** `RuntimeGridAllocator` on a hosted grid reads each pawn's position in the host's coordinates
   (`RuntimeGrid.TryHostPosition`, through every frame in between with `PhysicsFrames.Convert`), counts the pawn only
-  inside the host's box grown by `ChunkGridDefinition.Reach`, and requests nothing while the host is not in its
-  process. Dealing is unchanged: a chunk row is created assigned to the worker that asked, and the orchestrator
+  inside the host's box grown by `ChunkGridDefinition.Reach` and inside the box of the cell it is over grown by as much
+  (a lattice's columns fill the host's box, so for them the second test changes nothing; a sphere's cells inside its
+  bounding cube leave most of the cube empty, and a pawn high over them leases nothing), and requests nothing while the
+  host is not in its process. Dealing is unchanged: a chunk row is created assigned to the worker that asked, and the orchestrator
   re-deals it like any leased runtime container. The anchor is not pinned.
 - **Lead.** `ChunkGridDefinition.LeadSeconds` (any grid; 0 by default, so root grids keep today's ring) adds a ring
   around every cell on the line from the pawn to where its velocity takes it in that time: a capsule along the path,
