@@ -20,6 +20,7 @@ namespace Nebula.Tests
             foreach (var go in _objects) if (go != null) Object.DestroyImmediate(go);
             _objects.Clear();
             ContainerRegistry.ResetForNewSession();
+            ContainerRegistry.RuntimeBucketSize = 256f;
             ContainerRegistry.Rebuild();
         }
 
@@ -116,6 +117,38 @@ namespace Nebula.Tests
             // Registration marks the broad phase dirty, so the next query sees the newcomer without a refresh.
             var late = MakeCarried("late", 999, new Vector3(10, 0, 10), new Vector3(10, 6, 10));
             CollectionAssert.Contains(CarriedNeighbors(zone), late);
+        }
+
+        /// <summary>
+        /// A carried box as big as a planet (412 km, a planet's frame) spans tens of millions of hash buckets. Its
+        /// neighbours used to be found by looking up every one of them, about 600 ms per call, which the ghost band
+        /// pays per entity standing directly in the box every tick: a pilot who flew up out of the ground's chunks
+        /// into the planet's frame stalled the worker until the control plane declared it dead. The query now visits
+        /// only the buckets that hold something, and a box too big to hash is a candidate of every query.
+        /// </summary>
+        [TestCase(1)]
+        [TestCase(40)] // above the size at which carried boxes are hashed
+        public void APlanetSizedCarriedBoxFindsItsNeighboursWithoutVisitingEveryBucket(int ships)
+        {
+            ContainerRegistry.Rebuild();
+            ContainerRegistry.RuntimeBucketSize = 1024f; // a 256 m chunk grid's
+            var chunk = ContainerRegistry.RegisterRuntime(42UL, new Bounds(new Vector3(0f, 205000f, 0f), new Vector3(256f, 2400f, 256f)));
+            var planet = MakeCarried("planet", 1, Vector3.zero, new Vector3(412000f, 412000f, 412000f));
+            for (int i = 1; i < ships; i++) MakeCarried($"ship{i}", (ulong)(100 + i), new Vector3(i * 5000f, 300000f, 0f), new Vector3(20, 8, 40));
+            var ship = MakeCarried("near", 99, new Vector3(0f, 206000f, 0f), new Vector3(20, 8, 40));
+            ContainerRegistry.RefreshCaches();
+
+            var found = new List<Container>();
+            ContainerRegistry.NeighborsOf(planet, found); // warm up
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            for (int i = 0; i < 10; i++) ContainerRegistry.NeighborsOf(planet, found);
+            watch.Stop();
+
+            CollectionAssert.Contains(found, chunk, "the chunk inside the planet's box");
+            CollectionAssert.Contains(found, ship, "the ship inside the planet's box");
+            Assert.Less(watch.Elapsed.TotalMilliseconds / 10.0, 5.0, "one query over a planet-sized box");
+            // The other way round, a small box still finds the planet it is inside.
+            CollectionAssert.Contains(CarriedNeighbors(ship), planet);
         }
     }
 }
