@@ -44,7 +44,14 @@ namespace Nebula
         private static readonly Dictionary<Vector3Int, List<Container>> DynamicHash = new Dictionary<Vector3Int, List<Container>>();
         private static readonly List<Container> DynamicCandidates = new List<Container>();
         private static readonly HashSet<Container> DynamicSeen = new HashSet<Container>();
+        /// <summary>
+        /// Carried boxes too big to hash (more than <see cref="MaxHashedBuckets"/> buckets, such as a planet's), which
+        /// every query returns as candidates instead of entering them into millions of buckets.
+        /// </summary>
+        private static readonly List<Container> OversizedDynamic = new List<Container>();
         private static bool _dynamicHashDirty = true;
+        /// <summary>A box spanning more buckets than this is not entered into a hash bucket by bucket.</summary>
+        private const long MaxHashedBuckets = 4096;
         /// <summary>Below this many carried containers the exact linear scan is cheaper than hashing them.</summary>
         private const int DynamicHashThreshold = 16;
         private static readonly List<NetworkIdentity> EntityScratch = new List<NetworkIdentity>();
@@ -151,6 +158,7 @@ namespace Nebula
             DynamicList.Clear();
             DynamicByNetId.Clear();
             DynamicHash.Clear();
+            OversizedDynamic.Clear();
             _dynamicHashDirty = true;
             PendingLeases.Clear();
             RuntimeList.Clear();
@@ -198,6 +206,7 @@ namespace Nebula
             DynamicList.Clear();
             DynamicByNetId.Clear();
             DynamicHash.Clear();
+            OversizedDynamic.Clear();
             _dynamicHashDirty = true;
             PendingLeases.Clear();
             _grid = gridded ? new Dictionary<Vector3Int, List<Container>>() : null;
@@ -922,6 +931,38 @@ namespace Nebula
             return new Vector3Int(Mathf.FloorToInt(p.x / s), Mathf.FloorToInt(p.y / s), Mathf.FloorToInt(p.z / s));
         }
 
+        /// <summary>How many buckets the range <paramref name="min"/> to <paramref name="max"/> spans, as a long: a planet-sized box spans hundreds of millions.</summary>
+        private static long BucketSpan(Vector3Int min, Vector3Int max) =>
+            (long)(max.x - min.x + 1) * (max.y - min.y + 1) * (max.z - min.z + 1);
+
+        /// <summary>
+        /// Distinct containers of <paramref name="hash"/> in any bucket from <paramref name="min"/> to <paramref name="max"/>,
+        /// appended to <paramref name="result"/>. Visits whichever is fewer: the buckets the range spans, or the buckets
+        /// the hash holds. A query box as big as a planet would otherwise look up every bucket inside it, tens of
+        /// millions of empty ones, on every call.
+        /// </summary>
+        private static void CollectHashed(Dictionary<Vector3Int, List<Container>> hash, HashSet<Container> seen, Vector3Int min, Vector3Int max, List<Container> result)
+        {
+            if (BucketSpan(min, max) > hash.Count)
+            {
+                foreach (var kv in hash)
+                {
+                    var k = kv.Key;
+                    if (k.x < min.x || k.x > max.x || k.y < min.y || k.y > max.y || k.z < min.z || k.z > max.z) continue;
+                    var list = kv.Value;
+                    for (int i = 0; i < list.Count; i++) if (seen.Add(list[i])) result.Add(list[i]);
+                }
+                return;
+            }
+            for (int x = min.x; x <= max.x; x++)
+                for (int y = min.y; y <= max.y; y++)
+                    for (int z = min.z; z <= max.z; z++)
+                    {
+                        if (!hash.TryGetValue(new Vector3Int(x, y, z), out var list)) continue;
+                        for (int i = 0; i < list.Count; i++) if (seen.Add(list[i])) result.Add(list[i]);
+                    }
+        }
+
         private static void AddToHash(Container c)
         {
             if (c.MayMove)
@@ -975,12 +1016,14 @@ namespace Nebula
         {
             _dynamicHashDirty = false;
             foreach (var list in DynamicHash.Values) list.Clear();
+            OversizedDynamic.Clear();
             for (int i = 0; i < DynamicList.Count; i++)
             {
                 var c = DynamicList[i];
                 var b = c.WorldBounds;
                 var min = BucketOf(b.min - Vector3.one * _runtimeBucketSize);
                 var max = BucketOf(b.max + Vector3.one * _runtimeBucketSize);
+                if (BucketSpan(min, max) > MaxHashedBuckets) { OversizedDynamic.Add(c); continue; }
                 for (int x = min.x; x <= max.x; x++)
                     for (int y = min.y; y <= max.y; y++)
                         for (int z = min.z; z <= max.z; z++)
@@ -1005,15 +1048,8 @@ namespace Nebula
             if (DynamicList.Count <= DynamicHashThreshold) { result.AddRange(DynamicList); return; }
             if (_dynamicHashDirty) RehashDynamic();
             DynamicSeen.Clear();
-            var min = BucketOf(bounds.min);
-            var max = BucketOf(bounds.max);
-            for (int x = min.x; x <= max.x; x++)
-                for (int y = min.y; y <= max.y; y++)
-                    for (int z = min.z; z <= max.z; z++)
-                    {
-                        if (!DynamicHash.TryGetValue(new Vector3Int(x, y, z), out var list)) continue;
-                        for (int i = 0; i < list.Count; i++) if (DynamicSeen.Add(list[i])) result.Add(list[i]);
-                    }
+            for (int i = 0; i < OversizedDynamic.Count; i++) if (OversizedDynamic[i] != null && DynamicSeen.Add(OversizedDynamic[i])) result.Add(OversizedDynamic[i]);
+            CollectHashed(DynamicHash, DynamicSeen, BucketOf(bounds.min), BucketOf(bounds.max), result);
             DynamicSeen.Clear();
         }
 
@@ -1024,15 +1060,7 @@ namespace Nebula
             for (int i = 0; i < MovingRuntime.Count; i++) if (MovingRuntime[i] != null) result.Add(MovingRuntime[i]);
             if (RuntimeHash.Count == 0) return;
             RuntimeSeen.Clear();
-            var min = BucketOf(bounds.min);
-            var max = BucketOf(bounds.max);
-            for (int x = min.x; x <= max.x; x++)
-                for (int y = min.y; y <= max.y; y++)
-                    for (int z = min.z; z <= max.z; z++)
-                    {
-                        if (!RuntimeHash.TryGetValue(new Vector3Int(x, y, z), out var list)) continue;
-                        for (int i = 0; i < list.Count; i++) if (RuntimeSeen.Add(list[i])) result.Add(list[i]);
-                    }
+            CollectHashed(RuntimeHash, RuntimeSeen, BucketOf(bounds.min), BucketOf(bounds.max), result);
             RuntimeSeen.Clear();
         }
 
