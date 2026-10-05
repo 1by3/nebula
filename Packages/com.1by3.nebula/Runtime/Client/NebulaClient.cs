@@ -1082,8 +1082,9 @@ namespace Nebula
                 if (!pawn) continue;
                 if (_driven.Count > 0) Physics.SyncTransforms();
                 // A pawn inside a physics frame predicts in the frame's own coordinates, exactly as its worker simulates
-                // it: the frame root goes back to the identity pose for the step (docs/container-tree.md D11).
-                PhysicsFrames.BeginSimulation(LocalPlayer.Container != null ? LocalPlayer.Container.InnerSpace : null);
+                // it: the frame root goes to its simulation pose for the step, about an origin near the pawn
+                // (docs/container-tree.md D11, D19).
+                PhysicsFrames.BeginSimulation(LocalPlayer.Container != null ? LocalPlayer.Container.InnerSpace : null, LocalPlayer.transform);
                 try
                 {
                     _inputWriter.Reset();
@@ -1123,7 +1124,7 @@ namespace Nebula
         {
             if (e == null || e.Predicted == null) return;
             if (!_drivenInputs.TryGetValue(e.NetId, out var frames)) _drivenInputs[e.NetId] = frames = new List<ClientInputMsg.Frame>();
-            PhysicsFrames.BeginSimulation(e.Container != null ? e.Container.InnerSpace : null);
+            PhysicsFrames.BeginSimulation(e.Container != null ? e.Container.InnerSpace : null, e.transform);
             try
             {
                 _inputWriter.Reset();
@@ -1999,8 +2000,8 @@ namespace Nebula
             if (container == null && msg.Container.MayArriveLater) return; // the container is not here yet; the next report will do
             if (container != target.Container) target.SetContainer(container);
             _reader.Set(new ArraySegment<byte>(msg.State));
-            // A correction replays inputs, which is simulation: in the pawn's frame at the identity pose (D11).
-            PhysicsFrames.BeginSimulation(container != null ? container.InnerSpace : null);
+            // A correction replays inputs, which is simulation: in the pawn's frame at its simulation pose (D11).
+            PhysicsFrames.BeginSimulation(container != null ? container.InnerSpace : null, target.transform);
             try { target.Predicted.ClientReconcile(msg.Tick, _reader); }
             finally { PhysicsFrames.EndSimulation(); }
             if (target != LocalPlayer) target.Carried?.RefreshCache();
