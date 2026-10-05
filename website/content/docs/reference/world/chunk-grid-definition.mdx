@@ -68,7 +68,7 @@ Seconds of travel the allocator leases ahead of a moving pawn: besides the ring 
 public float Reach;
 ```
 
-A hosted grid only ([`NebulaChunkedWorld.ActivateHostedGrid`](/docs/reference/world/nebula-chunked-world#activatehostedgrid)): how far outside its host container's box, in metres, a pawn still has chunks leased around it. 0 (the default) leases only for pawns inside the box. A root grid ignores it.
+A hosted grid only ([`NebulaChunkedWorld.ActivateHostedGrid`](/docs/reference/world/nebula-chunked-world#activatehostedgrid)): how far outside its host container's box, in metres, a pawn still has chunks leased around it. 0 (the default) leases only for pawns inside the box. The same distance is measured from the box of the cell the pawn is over, so a pawn high over a grid whose cells don't fill the host's box (a sphere's in its bounding cube) leases nothing. A root grid ignores it.
 
 ## Methods
 

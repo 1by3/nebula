@@ -261,7 +261,7 @@ NebulaChunkedWorld.ActivateHostedGrid(worker.ControlPlane, planet.Carried, "plan
     Planar      = true,
     Ring        = 2,     // chunks leased around each player's chunk
     LeadSeconds = 2f,    // and along their velocity, two seconds ahead
-    Reach       = 3000f, // for players up to 3 km outside the planet's box
+    Reach       = 3000f, // for players up to 3 km outside the planet's box and above their chunk
 });
 ```
 
@@ -272,7 +272,7 @@ NebulaChunkedWorld.ActivateHostedGrid(worker.ControlPlane, planet.Carried, "plan
 - A planar grid keeps the planet frame's floating origin level: workers shift it across, never up or down.
 - `grid.Frame.OriginOffset` converts between the planet's coordinates and simulation space. A client draws the planet where it is, so convert a planet point for rendering with `planet.Carried.Frame.ToParent`.
 
-For a grid whose cells are not boxes in a row, such as the six faces of a cube-sphere, implement `IChunkGridGeometry` and return it from `NebulaChunkedWorld.HostedGeometry` on every process. Nebula then asks it which cell a point is in, each cell's box, and each cell's neighbours.
+For a grid whose cells are not boxes in a row, such as the six faces of a cube-sphere, implement `IChunkGridGeometry` and return it from `NebulaChunkedWorld.HostedGeometry` on every process. Nebula then asks it which cell a point is in, each cell's box, and each cell's neighbours. A player leases chunks only within `Reach` of the box of the cell below them, so a ship flying high inside a sphere's bounding cube leases no ground until it comes down.
 
 ## Limits
 
