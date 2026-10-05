@@ -93,7 +93,9 @@ namespace Nebula
         /// <summary>
         /// The frame's floating origin (<c>docs/container-tree.md</c> D19): the frame-local point that sits at Unity's
         /// origin in simulation space. Zero until the worker moves it with <see cref="PhysicsFrames.ShiftOrigin"/>; a
-        /// planet's frame is large, and physics a few thousand kilometres from Unity's origin would be imprecise.
+        /// planet's frame is large, and physics a few thousand kilometres from Unity's origin would be imprecise. A
+        /// client keeps one too, near what it predicts in the frame, by the same rule
+        /// (<see cref="PhysicsFrames.BeginSimulation(Container, Transform)"/>).
         /// </summary>
         public Vector3 Origin { get; internal set; }
 
@@ -677,14 +679,26 @@ namespace Nebula
                 var mean = Vector3.zero;
                 for (int p = 0; p < _points.Count; p++) mean += _points[p];
                 mean /= _points.Count;
-                if (frame.KeepOriginLevel) mean.y = frame.Origin.y;
-                if ((mean - frame.Origin).magnitude <= OriginShiftThreshold) continue;
-                float step = Mathf.Max(1f, OriginShiftStep);
-                var snapped = new Vector3(Mathf.Round(mean.x / step) * step, Mathf.Round(mean.y / step) * step, Mathf.Round(mean.z / step) * step);
-                if (frame.KeepOriginLevel) snapped.y = frame.Origin.y;
-                ShiftOrigin(frame, snapped);
+                if (NextOrigin(frame, mean, out var snapped)) ShiftOrigin(frame, snapped);
             }
             _points.Clear();
+        }
+
+        /// <summary>
+        /// Where <paramref name="frame"/>'s origin goes for what is simulated about the frame-local point
+        /// <paramref name="near"/>: nowhere (false) while it is within <see cref="OriginShiftThreshold"/> of the origin,
+        /// else <paramref name="near"/> snapped to <see cref="OriginShiftStep"/>, level with the origin for a frame that
+        /// keeps it level. The worker's rule and the predicting client's, so both simulate about the same point.
+        /// </summary>
+        internal static bool NextOrigin(PhysicsFrame frame, Vector3 near, out Vector3 origin)
+        {
+            origin = frame.Origin;
+            if (frame.KeepOriginLevel) near.y = frame.Origin.y;
+            if ((near - frame.Origin).magnitude <= OriginShiftThreshold) return false;
+            float step = Mathf.Max(1f, OriginShiftStep);
+            origin = new Vector3(Mathf.Round(near.x / step) * step, Mathf.Round(near.y / step) * step, Mathf.Round(near.z / step) * step);
+            if (frame.KeepOriginLevel) origin.y = frame.Origin.y;
+            return true;
         }
 
         private static readonly List<Vector3> _points = new List<Vector3>();
@@ -727,9 +741,9 @@ namespace Nebula
         public static Collider SourceOf(Collider hit) => hit != null && CloneSources.TryGetValue(hit, out var source) && source != null ? source : hit;
 
         /// <summary>
-        /// Whether <paramref name="space"/>'s frame root is at the identity pose right now, so a position read from a
-        /// transform inside it is frame-local: always on a worker, and on a client during a prediction step
-        /// (<see cref="BeginSimulation"/>). False for the scope's own space.
+        /// Whether <paramref name="space"/>'s frame root is at its simulation pose right now (the identity less the
+        /// frame's floating origin, <see cref="PhysicsFrame.LocalToSimulation"/>): always on a worker, and on a client
+        /// during a prediction step (<see cref="BeginSimulation(Container, Transform)"/>). False for the scope's own space.
         /// </summary>
         public static bool InSimulationPose(Container space) => space != null && space.Frame != null && (!RendersFrames || _simulating == space.Frame);
 
@@ -777,16 +791,31 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Client: put <paramref name="space"/>'s frame root back at the identity pose for a prediction step, so the
-        /// predicted pawn simulates exactly as its worker does (D11). Pair with <see cref="EndSimulation"/>.
+        /// Client: put <paramref name="space"/>'s frame root at its simulation pose for a prediction step, so the
+        /// predicted pawn simulates exactly as its worker does (D11): the identity less the frame's floating origin.
+        /// Pair with <see cref="EndSimulation"/>. <see cref="BeginSimulation(Container, Transform)"/> first moves that
+        /// origin near what is predicted.
         /// </summary>
-        public static void BeginSimulation(Container space)
+        public static void BeginSimulation(Container space) => BeginSimulation(space, null);
+
+        /// <summary>
+        /// Client: <see cref="BeginSimulation(Container)"/> for <paramref name="predicted"/> (the pawn, or a vehicle the
+        /// client drives), the frame's floating origin first following it by the worker's rule (D19,
+        /// <see cref="NextOrigin"/>). A worker holds what it simulates far out in a large frame (a planet's ground, a
+        /// few hundred kilometres from its centre) about an origin near it; at the frame's own coordinates floats are a
+        /// centimetre or more apart, and a client predicting there drifted from its worker by centimetres every replay.
+        /// The origin moves on the client's frame alone: nothing the client records is in simulation space (predicted
+        /// history is container-local), so nothing is shifted and <see cref="PhysicsFrame.Shifted"/> is not raised.
+        /// </summary>
+        public static void BeginSimulation(Container space, Transform predicted)
         {
             if (!RendersFrames) return;
             var frame = space != null ? space.Frame : null;
             _simulating = frame;
             if (frame == null || frame.Root == null) return;
-            frame.Root.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            // The root is at its render pose here, so this is the predicted entity's frame-local position.
+            if (predicted != null && NextOrigin(frame, frame.Root.InverseTransformPoint(predicted.position), out var origin)) frame.Origin = origin;
+            frame.Root.SetPositionAndRotation(-frame.Origin, Quaternion.identity);
             frame.Root.localScale = Vector3.one;
             Physics.SyncTransforms();
         }

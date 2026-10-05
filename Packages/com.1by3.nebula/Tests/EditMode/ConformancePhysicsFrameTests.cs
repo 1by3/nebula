@@ -185,6 +185,109 @@ namespace Nebula.Tests
             Assert.That(frame.State.PointVelocity(new Vector3(0f, 0f, 10f)).x, Is.EqualTo(1000f + 10f * 30f * Mathf.Deg2Rad).Within(1f), "v + ω × r");
         }
 
+        /// <summary>
+        /// A client predicts about an origin near what it predicts, as its worker simulates about its own (D11, D19). A
+        /// worker holds what stands a few hundred kilometres out in a large frame (a planet's ground) about a floating
+        /// origin near it; the client put the frame's root at the identity pose for a prediction step, so it predicted at
+        /// the frame's own coordinates, where floats are 8 to 16 mm apart, and every replay drifted centimetres from the
+        /// worker: a walk there corrected 15 to 38 times every 5 s. Now the client's frame origin follows the predicted
+        /// entity by the worker's rule, the step runs about it, and the render pose comes back after.
+        /// </summary>
+        [Test]
+        public void AClientPredictsFarOutInAFrameAboutAnOriginNearThePawn()
+        {
+            MeshWith(1);
+            var ship = W1.SpawnServerDriven(_shipPrefab, _yard, new Vector3(20f, 1f, 0f), Quaternion.Euler(0f, 30f, 0f));
+            var box = ship.Carried;
+            var frame = box.Frame;
+            // A chunk of a planet's ground fixed in the frame, tilted as a sphere's are, and a pawn standing in it: at
+            // Frontier Town on a 204.8 km planet, from its centre. The pawn's pose is container-local, as Nebula keeps it.
+            var far = new Vector3(3.2f, 117475.3f, 167757.8f);
+            var chunk = new GameObject("chunk");
+            _objects.Add(chunk);
+            chunk.transform.SetParent(frame.Root, false);
+            chunk.transform.SetLocalPositionAndRotation(new Vector3(0f, 117480f, 167760f), Quaternion.Euler(-55f, 0f, 0f));
+            var c = chunk.transform;
+            var start = Quaternion.Inverse(c.localRotation) * (far - c.localPosition);
+            var pawn = new GameObject("pawn");
+            _objects.Add(pawn);
+            pawn.transform.SetParent(c, false);
+            var origin = new Vector3(0f, 115f * 1024f, 164f * 1024f); // far, snapped to OriginShiftStep
+
+            bool wasServer = NebulaRuntime.IsServer, wasClient = NebulaRuntime.IsClient;
+            NebulaRuntime.IsServer = false;
+            NebulaRuntime.IsClient = true;
+            try
+            {
+                Assume.That(PhysicsFrames.RendersFrames);
+                PhysicsFrames.PoseForRender();
+                pawn.transform.localPosition = start;
+                var shown = pawn.transform.position;
+
+                PhysicsFrames.BeginSimulation(box, pawn.transform);
+                Assert.That(Vector3.Distance(origin, frame.Origin), Is.LessThan(1e-3f), "the frame's origin moved to the pawn, snapped");
+                Assert.That(Vector3.Distance(-origin, frame.Root.position), Is.LessThan(1e-3f), "the root sits at the identity less the origin");
+                Assert.AreEqual(Quaternion.identity, frame.Root.rotation);
+                Assert.IsTrue(PhysicsFrames.InSimulationPose(box));
+                Assert.That(pawn.transform.position.magnitude, Is.LessThan(PhysicsFrames.OriginShiftThreshold), "the pawn simulates near Unity's origin");
+                Assert.That(Vector3.Distance(frame.LocalToSimulation(far), c.position + c.rotation * start), Is.LessThan(0.02f), "frame-local to simulation agrees with the root");
+
+                // A second's walk, as a motor makes it, about three origins: the client's, a worker's a few steps off (it
+                // shifted when the pawn first came over 2 km from its last origin), and the old identity pose. A game keeps
+                // a pose precise far out in a frame by working it out through its parent's pose, which the frame's origin
+                // keeps small (Unity's own transform.position adds the chunk's offset first and rounds there).
+                var random = new System.Random(445);
+                var steps = new Vector3[60];
+                for (int i = 0; i < steps.Length; i++)
+                    steps[i] = new Vector3((float)random.NextDouble() * 0.2f - 0.1f, (float)random.NextDouble() * 0.02f - 0.01f, (float)random.NextDouble() * 0.2f - 0.1f);
+                Vector3 WalkAbout(Vector3 at)
+                {
+                    frame.Root.position = -at;
+                    pawn.transform.localPosition = start;
+                    foreach (var step in steps)
+                    {
+                        var up = c.up;
+                        var p = c.position + c.rotation * pawn.transform.localPosition;
+                        p += up * 0.42f; // the capsule's cast origin, the move, back down to the ground
+                        p += step;
+                        p -= up * 0.42f;
+                        pawn.transform.localPosition = Quaternion.Inverse(c.rotation) * (p - c.position);
+                    }
+                    return pawn.transform.localPosition;
+                }
+                var client = WalkAbout(frame.Origin);
+                var worker = WalkAbout(frame.Origin + new Vector3(1024f, -1024f, 2048f));
+                var identity = WalkAbout(Vector3.zero);
+                TestContext.WriteLine($"a second's walk at {far}: about the client's origin {Vector3.Distance(client, worker) * 1000f:0.000} mm from the worker, at the identity pose {Vector3.Distance(identity, worker) * 1000f:0.0} mm");
+                Assert.That(Vector3.Distance(client, worker), Is.LessThan(0.001f), "within a millimetre of the worker");
+                Assert.That(Vector3.Distance(identity, worker), Is.GreaterThan(0.01f), "the identity pose drifts centimetres from it");
+                frame.Root.position = -frame.Origin;
+                pawn.transform.localPosition = start;
+
+                PhysicsFrames.EndSimulation();
+                Assert.IsFalse(PhysicsFrames.InSimulationPose(box));
+                Assert.That(Vector3.Distance(ship.transform.position, frame.Root.position), Is.LessThan(1e-3f), "back at the render pose");
+                Assert.That(Vector3.Distance(shown, pawn.transform.position), Is.LessThan(0.05f), "and the pawn drawn where it was");
+
+                // Without an entity to follow (or with one still near it) the origin stays where it is.
+                var kept = frame.Origin;
+                pawn.transform.localPosition = start + new Vector3(500f, 0f, -300f);
+                PhysicsFrames.BeginSimulation(box, pawn.transform);
+                Assert.AreEqual(kept, frame.Origin, "within the threshold the origin holds");
+                PhysicsFrames.EndSimulation();
+                PhysicsFrames.BeginSimulation(box);
+                Assert.AreEqual(kept, frame.Origin);
+                Assert.That(Vector3.Distance(-kept, frame.Root.position), Is.LessThan(1e-3f));
+                PhysicsFrames.EndSimulation();
+            }
+            finally
+            {
+                PhysicsFrames.EndSimulation();
+                NebulaRuntime.IsServer = wasServer;
+                NebulaRuntime.IsClient = wasClient;
+            }
+        }
+
         // ------------------------------------------------------------------------------------ placing in the scope (NEB-310)
 
         /// <summary>A ship at a pose that is not the identity, with a crew member taken aboard by the pose owner.</summary>
