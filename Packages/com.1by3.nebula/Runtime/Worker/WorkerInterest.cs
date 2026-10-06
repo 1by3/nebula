@@ -89,6 +89,10 @@ namespace Nebula
         public int SubscribedRegions => _publisher.SubscribedRegions;
         /// <summary>Authoritative entities that are in every client's set, so gateways must link this worker to hear them.</summary>
         public bool HasGlobalEntities => _index.GlobalCount > 0;
+        /// <summary>Whether this worker is authoritative for an entity with a far relevance radius (reported in the heartbeat, NEB-388).</summary>
+        public bool HasFarEntities { get; private set; }
+        /// <summary>Far-tier entries sent to gateways (one per entity per gateway mask send), for diagnostics and tests.</summary>
+        public long FarEntriesSent { get; private set; }
         /// <summary>State entries actually sent to gateways since start-up, and what an unfiltered worker would have sent.</summary>
         public long InterestEntriesSent { get; private set; }
         public long InterestEntriesTotal { get; private set; }
@@ -550,6 +554,8 @@ namespace Nebula
             // it orphaned are announced or forgotten here.
             if (carried) PublishCarried();
             _wideMask.Remove(netId);
+            // Handed over (the new owner takes the tier over) or despawned (its despawn went to the far mask too).
+            _far.Forget(netId);
             _carrierCycleWarned.Remove(netId);
             // It is not ours any more, so there is nothing to announce to a gateway that has yet to link here.
             if (_awaitedByGateway.Count > 0) foreach (var ids in _awaitedByGateway.Values) ids.Remove(netId);
@@ -786,6 +792,7 @@ namespace Nebula
             if (gateway.Subscription != null) gateway.Subscription.Changed -= OnSubscriptionChanged;
             gateway.Subscription = null;
             ulong bit = RegionPublisher.Bit(gateway.GatewayBit);
+            _far.RemoveGateway(gateway.GatewayBit);
             gateway.GatewayBit = -1;
             RebuildExplicitMask(announce: false);
             _wideScratch.Clear();
@@ -832,6 +839,7 @@ namespace Nebula
             _publisher.ApplyChanges(gateway.GatewayBit, receiver);
             RebuildExplicitMask(announce: true);
             _nextWideEval = 0f; // new foci: re-match the wide list on the next publish rather than at the next interval
+            _far.EvaluateSoon();
             ulong bit = RegionPublisher.Bit(gateway.GatewayBit);
             if (_reach.Count > 0 && receiver.Removed.Count > 0) ForgetUnreachedCarriers(receiver.Removed, bit);
             var added = receiver.Added;
@@ -1213,6 +1221,83 @@ namespace Nebula
             }
             if (_spawnOrder.Count == 0) return;
             SendSpawnsInCarrierOrder(bit);
+        }
+
+        // ------------------------------------------------------------------------------------------- far tier
+
+        private readonly FarPublisher _far = new FarPublisher();
+        private Action<ulong> _sendFar;
+
+        /// <summary>The gateways that hold an entity in their far tier (also told when it despawns).</summary>
+        private ulong FarMaskOf(ulong netId) => _far.MaskOf(netId);
+
+        /// <summary>
+        /// The far relevance tier (<c>docs/interest-management.md</c> §16, NEB-388): every entity this worker is
+        /// authoritative for that declares a <see cref="NetworkIdentity.FarRelevanceRadius"/> and rides in nothing is matched
+        /// against each gateway's foci of its scope's own space at the interest rate, and its pose, absolute in its scope
+        /// and in double, is sent to the gateways it reaches at its <see cref="NetworkIdentity.FarUpdateRate"/>. Passengers
+        /// are not far entities of their own: what a marker stands for is the ship.
+        /// </summary>
+        private void PublishFar(double now)
+        {
+            _sendFar ??= mask => SendToMask(mask, Delivery.ReliableOrdered);
+            _far.EvalInterval = _interest.EvalInterval;
+            _far.ExitMargin = _interest.ExitMargin;
+            _far.Begin(now);
+            bool any = false;
+            for (int i = 0; i < _authoritative.Count; i++)
+            {
+                var e = _authoritative[i];
+                if (e == null || !(e.FarRelevanceRadius > 0f) || e.NetId == 0) continue;
+                if (_index.CarrierOf(e.NetId) != 0) continue;
+                any = true;
+                if (!_far.IsDue(e.NetId)) { _far.Keep(e.NetId); continue; }
+                var entry = FarEntryOf(e);
+                _far.Offer(entry, RegionKeys.SaltOf(e.InstanceId), _publisher, _interestGrid);
+            }
+            _far.End();
+            HasFarEntities = any;
+            if (_far.Out.Count == 0) return;
+            for (int i = 0; i < _far.Out.Count; i++) if (_far.Out[i].Entry.Kind == FarEntryKind.State) FarEntriesSent++;
+            _far.Flush(_writer, _sendFar);
+        }
+
+        /// <summary>
+        /// An entity's far-tier entry: its pose converted out of every physics frame it stands in into its scope's own
+        /// space, then made absolute in double (<see cref="ContainerRegistry.ToAbsolutePrecise"/>), the space the gateway's
+        /// foci are in. The conversion out of a frame happens in this worker's simulation space, in float, so the position
+        /// is good to that float's step there (a centimetre or two a few hundred kilometres from this worker's origin); the
+        /// wire adds nothing to that.
+        /// </summary>
+        internal static FarEntityEntry FarEntryOf(NetworkIdentity e)
+        {
+            var t = e.transform;
+            Vector3 position = t.position;
+            Quaternion rotation = t.rotation;
+            Vector3 velocity = e.Motion.Velocity;
+            var space = e.Space;
+            if (space != null)
+            {
+                velocity = PhysicsFrames.ConvertVelocity(velocity, position, space, null);
+                rotation = PhysicsFrames.Convert(rotation, space, null);
+                position = PhysicsFrames.Convert(position, space, null);
+            }
+            var absolute = ContainerRegistry.ToAbsolutePrecise(position, e.InstanceId);
+            return new FarEntityEntry
+            {
+                NetId = e.NetId,
+                Epoch = e.Epoch,
+                Kind = FarEntryKind.State,
+                PrefabId = e.PrefabId,
+                InterestGroup = e.InterestGroup,
+                Radius = e.FarRelevanceRadius,
+                UpdateRate = e.EffectiveFarUpdateRate,
+                OwnerClientId = e.OwnerClientId,
+                InstanceId = e.InstanceId,
+                X = absolute.X, Y = absolute.Y, Z = absolute.Z,
+                Rotation = rotation,
+                Velocity = velocity,
+            };
         }
 
         // ------------------------------------------------------------------------------------------- warnings

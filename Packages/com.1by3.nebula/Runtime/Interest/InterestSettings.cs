@@ -71,6 +71,11 @@ namespace Nebula
         public float HintMaxHz;
         /// <summary>Most explicit per-entity subscriptions one client's policy may ask for.</summary>
         public int MaxExplicitPerClient;
+        /// <summary>
+        /// Most entities one client holds in the far relevance tier (<see cref="FarRelevance"/>), nearest first. 0 turns
+        /// the tier off on the gateway.
+        /// </summary>
+        public int FarMaxEntities;
         /// <summary>The fastest a focus is expected to move, in meters per second. Only used to validate <see cref="SubscribeMargin"/>.</summary>
         public float MaxFocusSpeed;
         /// <summary>Rate tier inside the set: entities within this radius get every tick.</summary>
@@ -114,6 +119,7 @@ namespace Nebula
             FrameApproachMargin = 4000f,
             HintMaxHz = 5f,
             MaxExplicitPerClient = 16,
+            FarMaxEntities = 64,
             MaxFocusSpeed = 12f,
             NearRadius = 30f,
             FarRadius = 80f,
@@ -312,6 +318,7 @@ namespace Nebula
             if (e.ResyncSeconds <= 0) { Warn(InterestResyncSecondsField, $"InterestResyncSeconds must be greater than 0; using {Default.ResyncSeconds}."); e.ResyncSeconds = Default.ResyncSeconds; }
             if (e.MaxFoci < 1) { Warn(InterestMaxFociField, "InterestMaxFoci must be at least 1; using 1."); e.MaxFoci = 1; }
             if (e.MaxExplicitPerClient < 0) { Warn(InterestMaxExplicitPerClientField, "InterestMaxExplicitPerClient cannot be negative; using 0."); e.MaxExplicitPerClient = 0; }
+            if (e.FarMaxEntities < 0) { Warn(InterestFarMaxEntitiesField, "InterestFarMaxEntities cannot be negative; using 0 (no far tier)."); e.FarMaxEntities = 0; }
             if (e.HintMaxDistance < 0) { Warn(InterestHintMaxDistanceField, "InterestHintMaxDistance cannot be negative; using 0 (hints snap to the pawn)."); e.HintMaxDistance = 0; }
             if (e.FrameApproachMargin < 0) { Warn(InterestFrameApproachMarginField, "InterestFrameApproachMargin cannot be negative; using 0 (a client outside a frame's box does not look into it)."); e.FrameApproachMargin = 0; }
             if (e.HintMaxHz < 0) { Warn(InterestHintMaxHzField, "InterestHintMaxHz cannot be negative; using 0 (hints are ignored)."); e.HintMaxHz = 0; }
@@ -377,5 +384,6 @@ namespace Nebula
         private const string InterestHintMaxDistanceField = "InterestHintMaxDistance";
         private const string InterestFrameApproachMarginField = "InterestFrameApproachMargin";
         private const string InterestHintMaxHzField = "InterestHintMaxHz";
+        private const string InterestFarMaxEntitiesField = "InterestFarMaxEntities";
     }
 }

@@ -293,6 +293,8 @@ namespace Nebula
         public float InterestHintMaxHz = 5f;
         [Tooltip("Most entities one client's policy may subscribe by id (party members, quest targets).")]
         public int InterestMaxExplicitPerClient = 16;
+        [Tooltip("Most entities one client holds in the far relevance tier at once (entities with a FarRelevanceRadius, seen as markers beyond the normal radius). The nearest are kept. 0 turns the far tier off for every client.")]
+        public int InterestFarMaxEntities = 64;
         [Tooltip("The fastest a player is expected to travel, in metres per second. Only used to check that InterestSubscribeMargin covers one evaluation of travel.")]
         public float InterestMaxFocusSpeed = 12f;
         [Tooltip("A worker warns when one container holds more than this many entities: the world wants partitioning, because one container is one worker's simulation budget. 0 turns the warning off.")]

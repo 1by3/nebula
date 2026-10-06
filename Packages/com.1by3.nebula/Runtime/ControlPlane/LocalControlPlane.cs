@@ -116,6 +116,7 @@ namespace Nebula
             w.BotCount = stats.BotCount;
             w.ServerDrivenCount = stats.ServerDrivenCount;
             w.HasGlobalEntities = stats.HasGlobalEntities;
+            w.HasFarEntities = stats.HasFarEntities;
             w.OldestDirtySeconds = stats.OldestDirtySeconds;
             w.ResidentBytes = stats.ResidentBytes;
             w.NativeAllocatedBytes = stats.NativeAllocatedBytes;

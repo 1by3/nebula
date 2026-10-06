@@ -108,6 +108,7 @@ namespace Nebula
         public float InterestFrameApproachMargin = 4000f;
         public float InterestHintMaxHz = 5f;
         public int InterestMaxExplicitPerClient = 16;
+        public int InterestFarMaxEntities = 64;
         public float InterestMaxFocusSpeed = 12f;
         public int PartitionWarnEntities = 2000;
         public float PartitionWarnFilterMs = 2f;
