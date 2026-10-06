@@ -72,13 +72,14 @@ namespace Nebula
         /// derived from a bucket. It is not asked about anything that is not wide.
         /// </para>
         /// </summary>
-        public void Capture<T>(InterestIndex<T> index, ulong root, RegionPublisher publisher, Func<ulong, ulong> wideMaskOf = null)
+        public void Capture<T>(InterestIndex<T> index, ulong root, RegionPublisher publisher, Func<ulong, ulong> wideMaskOf = null, Func<ulong, ulong> reachMaskOf = null)
         {
+            _reachMaskOf = reachMaskOf;
             _ids.Clear();
             _slots.Clear();
             if (index == null) return;
             if (index.TryGetPlacement(root, out var placement, out ulong region))
-                _slots.Add(new Slot { Id = root, From = placement, FromRegion = region, Before = MaskOf(publisher, wideMaskOf, root, placement, region) });
+                _slots.Add(new Slot { Id = root, From = placement, FromRegion = region, Before = MaskOf(publisher, wideMaskOf, _reachMaskOf, root, placement, region) });
             if (!index.HasCarried(root)) return;
             index.CollectCarried(root, _ids);
             for (int i = 0; i < _ids.Count; i++)
@@ -88,7 +89,7 @@ namespace Nebula
                 _slots.Add(new Slot
                 {
                     Id = id, From = childPlacement, FromRegion = childRegion,
-                    Before = MaskOf(publisher, wideMaskOf, id, childPlacement, childRegion),
+                    Before = MaskOf(publisher, wideMaskOf, _reachMaskOf, id, childPlacement, childRegion),
                 });
             }
         }
@@ -114,6 +115,7 @@ namespace Nebula
         /// </summary>
         public void Resolve<T>(InterestIndex<T> index, RegionPublisher publisher, Func<ulong, ulong> wideMaskOf = null, HandoverScope handover = null)
         {
+            if (index == null) return;
             for (int i = 0; i < _slots.Count; i++)
             {
                 var slot = _slots[i];
@@ -131,13 +133,17 @@ namespace Nebula
                 // and the entity really is where the index now says. Only the publication is suppressed.
                 slot.After = handover != null && handover.Follows(slot.Id)
                     ? slot.Before
-                    : MaskOf(publisher, wideMaskOf, slot.Id, to, toRegion);
+                    : MaskOf(publisher, wideMaskOf, _reachMaskOf, slot.Id, to, toRegion);
                 _slots[i] = slot;
             }
         }
 
-        /// <summary>The gateways one entity reaches, by the rule its placement implies. Pure.</summary>
-        private static ulong MaskOf(RegionPublisher publisher, Func<ulong, ulong> wideMaskOf, ulong id, InterestPlacement where, ulong region)
+        /// <summary>
+        /// The gateways one entity reaches, by the rule its placement implies. A region entity also reaches what its root
+        /// carrier's own radius reaches, when the host says it has one (<paramref name="reachMaskOf"/>, a carrier whose
+        /// relevance radius is over the mesh radius: NEB-391). Pure.
+        /// </summary>
+        private static ulong MaskOf(RegionPublisher publisher, Func<ulong, ulong> wideMaskOf, Func<ulong, ulong> reachMaskOf, ulong id, InterestPlacement where, ulong region)
         {
             if (publisher == null) return 0;
             return where switch
@@ -146,9 +152,11 @@ namespace Nebula
                 // stops being global - which is what boarding an ordinary ship does to it.
                 InterestPlacement.Global => publisher.LinkedMask,
                 InterestPlacement.Wide => wideMaskOf != null ? wideMaskOf(id) : 0,
-                _ => publisher.MaskOf(region),
+                _ => publisher.MaskOf(region) | (reachMaskOf != null ? reachMaskOf(id) : 0),
             };
         }
+
+        private Func<ulong, ulong> _reachMaskOf;
 
         /// <summary>Forget the captured subtree (a host that abandons a move rather than publishing it).</summary>
         public void Clear()

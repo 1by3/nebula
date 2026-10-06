@@ -256,6 +256,8 @@ namespace Nebula.Tests
             public readonly List<uint> CrossingTicks = new List<uint>();
             public readonly View GroundSeesShip = new View(), CrewSeesGround = new View();
             public float ShipAltitudeLeavingBox = -1f, ShipAltitudeEnteringBox = -1f;
+            /// <summary>Whether the ship's worker honours the ship's radius as a carrier reach at the end of the lap (NEB-391).</summary>
+            public bool ShipHasReach;
             public int CrewKnownChunksInSpace = -1, CrewKnownChunksInBox = -1;
 
             public void Add(uint tick, string what) => Events.Add(new Event { Tick = tick, What = what });
@@ -481,6 +483,7 @@ namespace Nebula.Tests
             lap.MedianTickMs = tickMs[tickMs.Count / 2];
             var landed = Authoritative(shipId, out var finalOwner);
             lap.Add(tick, $"landed in {Where(landed)} on {finalOwner.Id} at planet-local {PlanetLocal(landed)}");
+            lap.ShipHasReach = finalOwner.Instance.TryGetCarrierReach(shipId, out _);
             TestContext.WriteLine($"--- lap, planet {(turning ? "turning at " + TurnDegreesPerSecond + " deg/s" : "still")} ---");
             TestContext.WriteLine(lap.Report());
             return lap;
@@ -610,9 +613,12 @@ namespace Nebula.Tests
         /// <summary>
         /// The ground pawn's client holds the ship (whose radius is clamped to <c>InterestMaxRadius</c>) until it is that
         /// far away plus the exit margin and linger, and holds it again on the way down once it is back within the radius,
-        /// in space above the box. But a carrier is a region entity on its worker (a wide carrier would strand what it
-        /// carries), so the gateway only receives it while it subscribes the ship's region: within
-        /// <c>InterestRadius</c> + <c>InterestSubscribeMargin</c> of the client, not <c>InterestMaxRadius</c>.
+        /// in space above the box. A carrier stays bucketed by region on its worker (a wide carrier would strand what it
+        /// carries), and the gateway stops subscribing the ship's region at <c>InterestRadius</c> plus margins; since
+        /// NEB-391 the worker honours the ship's own radius as a reach on top of its region, so the gateway keeps
+        /// receiving it, crew and all, out to that radius (shown on a linked gateway by
+        /// <c>ConformanceFarRelevanceWorkerTests.ACarrierReachesTheGatewayAtItsOwnRadiusWithItsCrewAndIsForgottenBeyondIt</c>).
+        /// This harness feeds the gateway spawns directly, so here it checks the worker holds the reach.
         /// </summary>
         [TestCase(false, TestName = "TheGroundSeesTheShipToInterestMaxRadiusBothWays(planet still)")]
         [TestCase(true, TestName = "TheGroundSeesTheShipToInterestMaxRadiusBothWays(planet turning)")]
@@ -624,9 +630,7 @@ namespace Nebula.Tests
             Assert.That(view.LostAt, Is.GreaterThan(max).And.LessThan(max + 16f + TopSpeed * 1.5f), "out of the set at InterestMaxRadius plus the exit margin and linger");
             Assert.That(view.RegainedAt, Is.GreaterThan(0f).And.LessThanOrEqualTo(max), "and back in it inside the radius on the way down");
             StringAssert.Contains("in space", view.RegainedWhere, "while the ship is still above the planet's box");
-            if (view.UnsubscribedAt >= 0f && view.UnsubscribedAt < max)
-                Assert.Inconclusive($"Nebula draft (carrier reach): the ship is in the ground client's set out to {view.LostAt:0} m, but a carrier is bucketed by region, and the gateway stopped subscribing the ship's region at {view.UnsubscribedAt:0} m "
-                    + $"(InterestRadius {_mesh.Config.InterestRadius} + margins) and took it again at {view.ResubscribedAt:0} m: past that a worker sends it no state.");
+            Assert.IsTrue(lap.ShipHasReach, $"the ship's worker publishes it by its own radius, not only its region (the gateway stopped subscribing that region at {view.UnsubscribedAt:0} m)");
         }
 
         /// <summary>
