@@ -788,6 +788,14 @@ public int InterestMaxExplicitPerClient = 16;
 
 Most entities one client's policy may subscribe by id (party members, quest targets).
 
+### InterestFarMaxEntities [#interestfarmaxentities]
+
+```csharp
+public int InterestFarMaxEntities = 64;
+```
+
+Most entities one client holds in the far relevance tier at once (entities with a FarRelevanceRadius, seen as markers beyond the normal radius). The nearest are kept. 0 turns the far tier off for every client.
+
 ### InterestMaxFocusSpeed [#interestmaxfocusspeed]
 
 ```csharp

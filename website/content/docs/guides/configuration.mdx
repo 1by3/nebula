@@ -146,6 +146,7 @@ Entities carrying a `PersistentEntity` component are saved and restored. See [Pe
 | `InterestFrameApproachMargin` | `4000` m | How close a client's pawn must be to the box of a framed container with regions of its own (a planet, a station) to also look into it. `0` disables it. |
 | `InterestHintMaxHz` | `5` | Most focus hints accepted from one client per second. |
 | `InterestMaxExplicitPerClient` | `16` | Most entities one client's policy may subscribe to by ID. |
+| `InterestFarMaxEntities` | `64` | Most entities one client holds in the far tier at once, nearest first. `0` turns the far tier off. |
 | `InterestMaxFocusSpeed` | `12` m/s | The fastest a player is expected to travel, used to check `InterestSubscribeMargin`. |
 | `PartitionWarnEntities` | `2000` | A worker warns when one container holds more entities than this. `0` disables the warning. |
 | `PartitionWarnFilterMs` | `2` ms | A worker warns when per-gateway filtering takes longer than this per tick. `0` disables the warning. |

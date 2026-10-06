@@ -39,6 +39,7 @@ run the **same** code:
 - `ClientInterest` — per-client set, hysteresis, evaluation (§4).
 - `InterestSchedule` — whose turn it is to be evaluated on this tick: the rotation of D48.
 - `RegionPublisher` — worker-side bucketing by subscriber mask (§6).
+- `FarPublisher`, `FarRelevance` — the far relevance tier's worker bookkeeping and arithmetic (§16).
 
 ## 3. The interest grid
 
@@ -72,7 +73,9 @@ run the **same** code:
 - **Wide and global lists.** An entity whose relevance radius exceeds `InterestRadius` (per-prefab override, clamped to
   `InterestMaxRadius`) is not found by widening every client's region scan; it lives in a small *wide list* checked
   directly (distance from focus ≤ its radius). `AlwaysRelevant` prefabs live in the *global list*. Both exist on the
-  worker (to decide which gateways hear about them) and on the gateway (to decide which clients do).
+  worker (to decide which gateways hear about them) and on the gateway (to decide which clients do). A carrier
+  with such a radius stays in its region and reaches further on top of it (§17); an entity with a far radius is also
+  seen, as a marker only, out to that (§16).
 - Rebucketing happens only when the key changes: the gateway recomputes a key when it relays a state entry with a
   position change (one multiply/floor per axis), the worker once per tick per authoritative entity.
 - **Scope salt (D100, NEB-241).** With per-scope origin frames (`docs/scope-frames.md`) two scopes may legitimately
@@ -284,7 +287,7 @@ short-circuits to `max(0, ClientLoadRadiusCells)`.
 New: `InterestRadius` 120, `InterestExitMargin` 16, `InterestLingerSeconds` 1, `InterestCellSize` 64,
 `InterestPlanar` true, `InterestEvalHz` 4, `InterestSubscribeMargin` 32, `InterestRegionLingerSeconds` 3,
 `InterestLinkLingerSeconds` 10, `InterestMaxRadius` 1024, `InterestMaxFoci` 8, `InterestHintMaxDistance` 60,
-`InterestMaxExplicitPerClient` 16, `InterestFrameApproachMargin` 4000 (a client within it of a framed container's box also looks into it, `container-tree.md` D22), `PartitionWarnEntities` 2000, `PartitionWarnFilterMs` 2. Kept:
+`InterestMaxExplicitPerClient` 16, `InterestFarMaxEntities` 64 (the far tier's per-client budget, §16), `InterestFrameApproachMargin` 4000 (a client within it of a framed container's box also looks into it, `container-tree.md` D22), `PartitionWarnEntities` 2000, `PartitionWarnFilterMs` 2. Kept:
 `InterestNearRadius`, `InterestFarRadius`, divisors (LOD inside the set). Chunked world: `ChunkedWorld`,
 `ChunkPlanar`, `ChunkRetireSeconds` (§10).
 
@@ -581,7 +584,8 @@ the turnkey chunked world, and **D38-D41** out of integrating the three and runn
   second rebucket path for entities that by definition have no region), `NebulaWorker.InterestAdd` downgrades a
   carrier to `Region` placement and logs the prefab once. A ship that must be seen further away needs a larger
   `InterestRadius`, not a per-prefab override. This is why `nebula-shootergame`'s Starhopper keeps the mesh
-  default radius.
+  default radius. *Superseded by D108 (§17, NEB-391):* the carrier still stays in `Region` placement, but its radius
+  is now honoured as a reach on top of it, so the warning is gone.
 - **D39. A carried entity inherits its root carrier's radius and always-relevance, not only its position.**
   `InterestSource.Describe` was taking the position from the root (per D3) but the relevance radius and the
   `AlwaysRelevant` flag from the entity itself, so a passenger prefab with a different radius from its ship
@@ -1032,3 +1036,104 @@ the turnkey chunked world, and **D38-D41** out of integrating the three and runn
   `NebulaWorker` (its own `TransferAuthority`, `InterestRemove` and `RemoveLocal`) over a recording transport
   with one gateway link, so deleting the suppression, the evacuation, the `using` or the `finally` each fails
   a test rather than only the fixture's copy of the idea.
+
+## 16. Far relevance tier (NEB-388)
+
+`InterestMaxRadius` (1,024 m) is a ceiling on the normal tier and `AlwaysRelevant` is global; neither lets a ship
+50 km away in orbit be a dot a player can see and target. The far tier does, without making it a replica.
+
+**D101 Declaration.** `NetworkIdentity.FarRelevanceRadius` (metres, 0 = off, not clamped by `InterestMaxRadius`) and
+`NetworkIdentity.FarUpdateRate` (updates a second, default 1, clamped to 0.1..30 by `FarRelevance.ClampRate`). Beyond
+the entity's normal radius and within its far radius of a client's focus, the client receives the entity's pose at
+the far rate and the facts a marker needs (net id, epoch, prefab id, owner, interest group, scope, far radius and
+rate), and nothing else: no variables, no maps, no RPCs, no sync state, no container row. A passenger is not a far
+entity of its own (its ship is). Set it on the prefab; a runtime change on the authority does not travel with a
+handover.
+
+**D102 A message of its own, not a flag on the spawn.** The ticket proposed a flag on `EntitySpawn` and a far rate on
+the state path. Both would make a far entity a half-replica: a spawn names a container the client must hold a row
+for, a state entry is container-local float32, and placing it needs every physics frame between the entity and the
+client posed on the client. A ship standing on a planet 300 km away would need the planet's carrier, its chunk rows
+and its frame on every client that sees the dot. So far entities travel as `FarEntities` (message 26, protocol 26):
+`[count:u16]{u64 net_id, u32 epoch, u8 kind}` and, for `kind = State`, `u8 flags, u16 prefab, u8 group, f32 radius,
+f32 rate, [u64 owner], [u64 scope], f64 x, f64 y, f64 z, u32 rotation (smallest three), 3 x f16 velocity` (59 bytes,
+plus 8 for each of owner and scope when set); `kind = Gone` is the 13-byte header. The same message goes worker to
+gateway and gateway to client. Promotion to a replica is the ordinary `EntitySpawn`: the client drops the marker when
+the replica's spawn arrives (`FarEntityRemoval.Replicated`), with no "gone" and no despawn in between.
+
+**D103 Precision.** The position is absolute in the entity's scope, in double: the space region keys, the gateway's
+`AbsX/Y/Z` and its foci are already in (`ContainerRegistry.ToAbsolutePrecise`), converted out of every physics frame
+the entity stands in (`PhysicsFrames.Convert` to the scope). The wire adds nothing: a double resolves 1e-10 m at
+1e6 m. What bounds it is the worker's own conversion, done in float in its simulation space: the float step of the
+coordinate there, about 1.6 cm at 200 km and 6 cm at 500 km from that worker's origin, and nothing measurable for an
+entity near its worker's origin, which is where workers keep their origins (`docs/scope-frames.md` D4,
+`docs/container-tree.md` D19). Measured: a ship on a planet 120 km out, still or turned 90 degrees, is sent within a
+centimetre of where the planet carries it (`ConformanceFarRelevanceWorkerTests`). Rotation is smallest-three (about
+0.1 degree), velocity half floats (about 0.1 m/s at 300 m/s), for extrapolation between updates
+(`FarEntity.PredictedWorldPosition`). This is independent of NEB-387: the normal tier's container-local float32 is
+unchanged.
+
+**D104 Worker: matched against foci of the scope's own space.** `FarPublisher` (`Runtime/Interest`, shared by the
+worker and the service tests' fake worker): at the interest rate each far entity the worker is authoritative for, and
+that rides in nothing, is matched against every linked gateway's foci regions salted with its scope and frame key 0,
+at its far radius, and held to the radius plus `FarRelevance.StayMargin` (5 % of the radius, at least
+`InterestExitMargin`). Every client with a pawn has a focus there: its own, or the enclosing focus
+`AddEnclosingSpaceFoci` adds around a pawn on a planet (`docs/container-tree.md` D18). So the tier crosses frames both
+ways (a pilot in space sees a ship parked on a planet, a player on the planet sees ships in orbit) with no frame
+conversion on the gateway and no new foci. A gateway that gains the entity is sent its entry at once, one that loses it
+a `Gone`; in between each entity is sent at its own rate, timed by ticks. A despawn goes to the far mask with the
+normal despawn mask, and the gateway treats it as a "gone". On a planar grid the worker's match is horizontal; the
+gateway's test is exact.
+
+**D105 Linking.** A gateway dials a worker only for a reason (section 5), and nothing in a far entity's neighbourhood
+gives one. The worker heartbeat gains `HasFarEntities` (additive JSON, `hasFarEntities`), and a gateway links such
+workers (`InterestLinkReason.Far`) and sends them its foci, as it does for `HasGlobalEntities`. The cost: every gateway
+holds a link to every worker with a far entity, and receives each far entity its foci reach at its rate (about 60
+bytes a second each).
+
+**D106 Gateway: per client, nearest first.** The gateway keeps the newest entry per far entity (`FarRecord`, dropped
+after three of its intervals or 5 s without one, so a worker's death or a lost "gone" cannot leave a marker for ever)
+and evaluates each client's far tier at its interest evaluation, right after the replica set: far entities of the
+client's own scope, not held as replicas, within their far radius of one of the client's foci in the scope's own space
+(exact, in double), that the policy's `Authorize` allows (a throwing policy denies), nearest first, at most
+`InterestFarMaxEntities` (64 by default; 0 turns the tier off). The rest leave with a `Gone`. A new pose is relayed to
+the clients holding the entity as it arrives, on the reliable batch. A client that negotiated protocol 25 is never sent
+the message (`HelloMsg.FarEntitiesVersion`).
+
+**D107 Client.** `NebulaClient.FarEntities` (net id to `FarEntity`: `Position` as a `Double3` absolute in the scope,
+`WorldPosition` in this client's Unity space, `Rotation`, `Velocity`, `PrefabId`, `OwnerClientId`, `InterestGroup`,
+`ReceivedAt`, `PredictedWorldPosition`), and the events `FarEntityAdded`, `FarEntityUpdated` and
+`FarEntityRemoved(far, why)`. An entry for a net id the client holds as a replica is ignored.
+
+Limits: the tier is per scope (no far entities across scopes or through `ObservePublic` windows); a pawn-less client
+with no policy focus has no far tier; a passenger's own far radius is ignored while it rides; every gateway pays for
+every far entity one of its foci reaches.
+
+Conformance scenario 44: `Services~/Nebula.Services.Tests/ConformanceFarRelevanceTests.cs` (two ships 50 km apart see
+each other at 1 Hz and nothing else, a third beyond its far radius is never sent, closing within the normal radius
+upgrades with no respawn and opening out drops back, the budget keeps the nearest, a despawn removes it, a protocol-25
+client is sent nothing), `Tests/EditMode/ConformanceFarRelevanceWorkerTests.cs` (the real worker: rate, absolute
+double pose, the despawn, a ship on a still and a turned planet within a centimetre) and
+`Tests/EditMode/FarEntityClientTests.cs` (the client's dictionary, events and promotion).
+
+## 17. Carrier reach (NEB-391)
+
+A carrier (an entity with a `Container` on its root, other than a frame with regions of its own) must stay bucketed
+by region on its worker, or its subtree would be left where it was boarded (D3). Until NEB-391
+`WorkerInterest.InterestAdd` therefore downgraded a carrier whose `RelevanceRadius` was above `InterestRadius`, or that
+was `AlwaysRelevant`, to a plain region entity with a one-time warning, while the gateway (which files a record by its
+own radius) kept it in a client's set out to `InterestMaxRadius`: between about 200 m and 1 km the client held a frozen
+copy or lost it, and two ships 500 m apart did not see each other.
+
+**D108 A carrier's radius is a reach on top of its region.** The carrier stays a region entity. Its own radius (or,
+when it is always relevant, every link) is matched at the interest rate against the gateways' foci as a wide entity's
+is, and everything bucketed with it, the carrier and its whole subtree, is published to its region's subscribers and
+to the gateways its reach covers (`BuildPublishMasks`, `PublishMaskOf`, and `CarriedTransition` through a
+`reachMaskOf` callback, so boarding, rebucketing and orphaning account for it). A change of reach spawns the subtree
+carrier first to the gateways gained and forgets it contents first from the ones lost, skipping any gateway that keeps
+an entity for its region, its owner or an explicit subscription. A gateway that stops subscribing regions holding a
+reaching carrier that does not reach it is sent forgets for them, because it files them by radius and would otherwise
+keep them frozen. The warning is gone. Whether an entity is a carrier is read from the object (a `Container` on its
+root, D21), not from the registry. Tested by `ConformanceFarRelevanceWorkerTests` (a ship with a 600 m radius 500 m
+from the gateway's focus is sent with its crew, keeps streaming, and is forgotten crew first beyond 616 m; two ships
+500 m apart at default settings) and scenario 40, whose inconclusive "carrier reach" case is now an assertion.

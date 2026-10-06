@@ -6,7 +6,7 @@ The policy itself, and why it is shaped this way, is `docs/compatibility-policy.
 ## The rule, in one paragraph
 
 A **client** may talk to a **gateway** that accepts its protocol: the accepted range is
-`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 24..25; protocols 18 to 23 are not supported. Anything outside that is refused
+`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 25..26; protocols 18 to 24 are not supported. Anything outside that is refused
 with `JoinRejectReason.ProtocolUnsupported` and the gateway's range, so the client can tell "update the game"
 from "this server has not been upgraded yet". A **gateway, worker and orchestrator of one mesh** must speak the
 **same** protocol, exactly; a mismatch is refused with a logged reason. The game's own content version is a
@@ -37,7 +37,7 @@ Protocol numbers are read from `HelloMsg.ProtocolVersion` at each release tag (`
 | v0.1.0-alpha.31 – alpha.32 | 19 | `DynamicContainer` folded into `Container` (NEB-264, `docs/container-tree.md` D21); **not additive**, so the minimum is 19 too |
 | v0.1.0-beta.0 | 20 | sync audiences (NEB-321, `docs/sync-audience.md` D10); **additive**, so the minimum stays 19 |
 | v0.1.0-beta.1 | 24 | relevance tiers (NEB-359, `docs/server-owned-entities.md` D5); **additive** for clients, so the window is 23..24. 21 (replicated maps, NEB-335), 22 (forwarded token claims, NEB-357) and 23 (deliberate session endings, recovering hold, owner-connected flag, NEB-354 to NEB-356; **closes the window to 23..23**, pre-1.0, see `docs/compatibility-policy.md` D1) were never released under a tag |
-| unreleased | 25 | driven vehicles (NEB-361, `docs/driven-vehicles.md` §4); **additive** for clients, so the window is 24..25 |
+| unreleased | 26 | the far relevance tier (NEB-388, `docs/interest-management.md` §16); **additive** for clients, so the window is 25..26. 25 (driven vehicles, NEB-361, `docs/driven-vehicles.md` §4; window 24..25) was never released under a tag, so this release refuses clients of `0.1.0-beta.1` (24) |
 
 Every step in that table was breaking, because until now there was no window to be additive inside: a gateway
 required an exact match, and `HelloMsg.Write` could not even announce a version other than the one it was built
@@ -104,6 +104,15 @@ always carries it, so the handover's later fields moved between workers, which m
 frozen protocol-24 decoder (`Fixtures/Protocol24GatewayDecoder.cs`, the protocol-23 one with its literals raised: 24 only
 added flag bits in a byte it skips), the protocol-23 recording and decoder were removed, and `protocol-25-handshake.json`
 was recorded for the next bump.
+
+26 is additive for clients: a new message, `FarEntities` (26), that a gateway sends only to clients that negotiated 26
+(`HelloMsg.FarEntitiesVersion`), and nothing else a client sends or reads changed. Between workers and gateways the same
+message goes worker to gateway, and the worker heartbeat gains `hasFarEntities` (control-plane JSON, additive). The
+window is 25..26: `MinProtocolVersion` is 25 and a protocol-24 client, a client of `v0.1.0-beta.1`, is now refused
+although nothing it reads changed, because 25 was never released under a tag. The protocol-25 recording replays as N-1
+through a frozen protocol-25 decoder (`Fixtures/Protocol25GatewayDecoder.cs`, the protocol-24 one with its literals
+raised: 25 added a message a client sends and a trailing spawn field it leaves unread), the protocol-24 recording was
+removed, and `protocol-26-handshake.json` was recorded for the next bump.
 
 ## Bumping the protocol
 
