@@ -80,6 +80,12 @@ public static bool TryHostedCoordOf(PersistedEntityRecord record, out string gri
 
 The chunk of a hosted grid a persisted record was saved in, from the record alone: its grid key and coordinate, when its [`PersistedEntityRecord.PartId`](/docs/reference/persistence/persisted-entity-record#partid) is a hosted part id ([`HostedPartId`](#hostedpartid)) that hashes to the record's container id. False for a record in a root chunk (see [`TryCoordOf`](#trycoordof)), inside a carrier, or in any other container.
 
+```csharp
+public static bool TryHostedCoordOf(PersistedEntityRecord record, Func<string, IChunkGridGeometry> geometryOf, out string gridKey, out Vector3Int coord);
+```
+
+The same, for grids whose [`IChunkGridGeometry`](/docs/reference/world/i-chunk-grid-geometry) names its own container ids. `geometryOf` maps a grid key to its geometry, or null for a plain lattice. With a geometry, the record is accepted when the parsed cell is its own `Normalize` and `IdOf(gridKey, cell)` gives the record's container id; any other grid is checked as above. `k => NebulaChunks.GridFor(k)?.Geometry` is the resolver where the grid is active.
+
 ### RuntimeId [#runtimeid]
 
 ```csharp

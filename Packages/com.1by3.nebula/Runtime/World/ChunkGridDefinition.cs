@@ -6,6 +6,7 @@ using System.Text;
 using Nebula.ServicePrimitives;
 #else
 using UnityEngine;
+using Nebula.World;
 #endif
 
 namespace Nebula
@@ -251,6 +252,38 @@ namespace Nebula
             coord = parsed;
             return true;
         }
+
+#if !NEBULA_SERVICE
+
+        /// <summary>
+        /// <see cref="TryHostedCoordOf(PersistedEntityRecord, out string, out Vector3Int)"/> for grids whose geometry
+        /// names its own container ids. <paramref name="geometryOf"/> maps a grid key to that grid's
+        /// <see cref="IChunkGridGeometry"/>, or null for a plain lattice (or a grid it does not know). For a grid with a
+        /// geometry the record is accepted when the parsed cell is the geometry's canonical name for itself
+        /// (<see cref="IChunkGridGeometry.Normalize"/>) and <see cref="IChunkGridGeometry.IdOf"/> gives the record's
+        /// container id, so a geometry that packs its own ids (a cube-sphere's face, i, j) round-trips. Any other grid
+        /// is checked as before: the coordinate must pack and <see cref="RuntimeId"/> must give the container id.
+        /// <c>k =&gt; NebulaChunks.GridFor(k)?.Geometry</c> is the resolver where the grid is active; a role without the
+        /// grid supplies the game's own.
+        /// </summary>
+        public static bool TryHostedCoordOf(PersistedEntityRecord record, Func<string, IChunkGridGeometry> geometryOf, out string gridKey, out Vector3Int coord)
+        {
+            gridKey = null;
+            coord = default;
+            if (record == null || !string.IsNullOrEmpty(record.CarrierKey)) return false;
+            if (!TryParseContainerId(record.ContainerId, out ulong id)) return false;
+            if (!TryParseHostedPartId(record.PartId, out var key, out var parsed)) return false;
+            var geometry = geometryOf?.Invoke(key);
+            if (geometry != null)
+            {
+                if (geometry.Normalize(parsed) != parsed || geometry.IdOf(key, parsed) != id) return false;
+            }
+            else if (!IsValidCoordinate(parsed) || RuntimeId(key, parsed) != id) return false;
+            gridKey = key;
+            coord = parsed;
+            return true;
+        }
+#endif
 
         /// <summary>
         /// The 64-bit runtime container id of chunk <paramref name="coord"/> in <paramref name="scopeKey"/>. An
