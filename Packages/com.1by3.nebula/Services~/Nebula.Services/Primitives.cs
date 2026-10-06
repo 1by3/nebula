@@ -26,6 +26,42 @@ namespace Nebula.ServicePrimitives
         public static Vector3 operator *(Vector3 a, float b) => new Vector3(a.x * b, a.y * b, a.z * b);
         public static Vector3 operator /(Vector3 a, float b) => a * (1 / b);
         public static Vector3 Scale(Vector3 a, Vector3 b) => new Vector3(a.x * b.x, a.y * b.y, a.z * b.z);
+        public static Vector3 Min(Vector3 a, Vector3 b) => new Vector3(MathF.Min(a.x, b.x), MathF.Min(a.y, b.y), MathF.Min(a.z, b.z));
+        public static Vector3 Max(Vector3 a, Vector3 b) => new Vector3(MathF.Max(a.x, b.x), MathF.Max(a.y, b.y), MathF.Max(a.z, b.z));
+        public static float Distance(Vector3 a, Vector3 b) => (a - b).magnitude;
+    }
+    public struct Vector4
+    {
+        public float x, y, z, w;
+        public Vector4(float x, float y, float z, float w) { this.x = x; this.y = y; this.z = z; this.w = w; }
+        public static implicit operator Vector4(Vector3 v) => new Vector4(v.x, v.y, v.z, 0f);
+    }
+    /// <summary>
+    /// The slice of Unity's <c>Matrix4x4</c> the gateway uses (columns, determinant, inverse, affine point transform), over
+    /// <see cref="N.Matrix4x4"/>. Unity's is column-vector (M * p); System.Numerics is row-vector, so the storage is transposed.
+    /// </summary>
+    public struct Matrix4x4
+    {
+        private N.Matrix4x4 _m; // row-vector form: Unity's column c is System.Numerics' row c
+        public static Matrix4x4 identity => new Matrix4x4 { _m = N.Matrix4x4.Identity };
+        public void SetColumn(int c, Vector4 v)
+        {
+            switch (c)
+            {
+                case 0: _m.M11 = v.x; _m.M12 = v.y; _m.M13 = v.z; _m.M14 = v.w; break;
+                case 1: _m.M21 = v.x; _m.M22 = v.y; _m.M23 = v.z; _m.M24 = v.w; break;
+                case 2: _m.M31 = v.x; _m.M32 = v.y; _m.M33 = v.z; _m.M34 = v.w; break;
+                case 3: _m.M41 = v.x; _m.M42 = v.y; _m.M43 = v.z; _m.M44 = v.w; break;
+                default: throw new IndexOutOfRangeException();
+            }
+        }
+        public float determinant => _m.GetDeterminant();
+        public Matrix4x4 inverse => N.Matrix4x4.Invert(_m, out var inv) ? new Matrix4x4 { _m = inv } : new Matrix4x4();
+        public Vector3 MultiplyPoint3x4(Vector3 p)
+        {
+            var r = N.Vector3.Transform(new N.Vector3(p.x, p.y, p.z), _m);
+            return new Vector3(r.X, r.Y, r.Z);
+        }
     }
     public struct Vector3Int : IEquatable<Vector3Int>
     {
