@@ -247,7 +247,7 @@ namespace Nebula
         public void HeartbeatWorker(string workerId, string status, in WorkerStats s) =>
             Enqueue(_op.Op(ControlPlaneJson.HeartbeatWorker).Arg("workerId", workerId).Arg("status", status)
                 .Arg("tickCount", s.TickCount).Arg("tickMs", s.TickMs).Arg("entityCount", s.EntityCount).Arg("authoritativeCount", s.AuthoritativeCount)
-                .Arg("ghostCount", s.GhostCount).Arg("playerCount", s.PlayerCount).Arg("botCount", s.BotCount).Arg("serverDrivenCount", s.ServerDrivenCount).Arg("hasGlobalEntities", s.HasGlobalEntities)
+                .Arg("ghostCount", s.GhostCount).Arg("playerCount", s.PlayerCount).Arg("botCount", s.BotCount).Arg("serverDrivenCount", s.ServerDrivenCount).Arg("hasGlobalEntities", s.HasGlobalEntities).Arg("hasFarEntities", s.HasFarEntities)
                 .Arg("oldestDirtySeconds", s.OldestDirtySeconds)
                 .Arg("residentBytes", (long)s.ResidentBytes).Arg("nativeAllocatedBytes", (long)s.NativeAllocatedBytes).Arg("nativeReservedBytes", (long)s.NativeReservedBytes)
                 .Arg("managedBytes", (long)s.ManagedBytes).Arg("gcCount", (long)s.GcCount)

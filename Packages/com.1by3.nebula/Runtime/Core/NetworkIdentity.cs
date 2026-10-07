@@ -40,6 +40,13 @@ namespace Nebula
         public bool AlwaysRelevant;
         [Tooltip("A number your interest policy can filter on (team markers, quest objects). Nebula only carries it; 0 means no group.")]
         public byte InterestGroup;
+        [Tooltip("Far relevance tier, in metres (0, the default, is off). Clients whose focus is beyond this entity's normal radius but within this one see it as a marker: its pose at FarUpdateRate and its spawn facts, nothing else (no variables, no RPCs), through NebulaClient.FarEntities. Not clamped by InterestMaxRadius; each client holds at most InterestFarMaxEntities, nearest first. For what players must see from far away: ships in orbit, outposts. See docs/interest-management.md section 16.")]
+        [Min(0f)] public float FarRelevanceRadius = 0f;
+        [Tooltip("Far-tier pose updates per second (default 1). Only used when FarRelevanceRadius is set; clamped to 0.1..30.")]
+        [Min(0f)] public float FarUpdateRate = 1f;
+
+        /// <summary><see cref="FarUpdateRate"/> clamped to <see cref="FarRelevance.MinRate"/>..<see cref="FarRelevance.MaxRate"/>.</summary>
+        public float EffectiveFarUpdateRate => FarRelevance.ClampRate(FarUpdateRate);
 
         [Header("Relevance")]
         [Tooltip("Ticks between two updates of this entity on the worker that owns it: its NetworkTick, its container and seam checks, and its transform stream. 1 (the default) is every tick. 6 is 10 updates a second; 60 is one. For the many entities that do not need a player's rate: townsfolk, traffic, wildlife. See https://nebula.1by3.co/docs/guides/server-owned-entities")]

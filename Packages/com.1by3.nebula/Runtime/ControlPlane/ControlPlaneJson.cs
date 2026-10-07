@@ -68,6 +68,7 @@ namespace Nebula
                 w.Prop("botCount", x.BotCount);
                 w.Prop("serverDrivenCount", x.ServerDrivenCount);
                 w.Prop("hasGlobalEntities", x.HasGlobalEntities);
+                if (x.HasFarEntities) w.Prop("hasFarEntities", true);
                 w.Key("oldestDirtySeconds"); Num(w, x.OldestDirtySeconds);
                 w.Prop("residentBytes", (long)x.ResidentBytes);
                 w.Prop("nativeAllocatedBytes", (long)x.NativeAllocatedBytes);
@@ -188,6 +189,7 @@ namespace Nebula
                         BotCount = (uint)Num(o, "botCount"),
                         ServerDrivenCount = (uint)Num(o, "serverDrivenCount"),
                         HasGlobalEntities = Bool(o, "hasGlobalEntities"),
+                        HasFarEntities = Bool(o, "hasFarEntities"),
                         OldestDirtySeconds = (float)Num(o, "oldestDirtySeconds"),
                         ResidentBytes = (ulong)Num(o, "residentBytes"),
                         NativeAllocatedBytes = (ulong)Num(o, "nativeAllocatedBytes"),
@@ -424,6 +426,7 @@ namespace Nebula
                         BotCount = (uint)Num(o, "botCount"),
                         ServerDrivenCount = (uint)Num(o, "serverDrivenCount"),
                         HasGlobalEntities = Bool(o, "hasGlobalEntities"),
+                        HasFarEntities = Bool(o, "hasFarEntities"),
                         OldestDirtySeconds = (float)Num(o, "oldestDirtySeconds"),
                         ResidentBytes = (ulong)Num(o, "residentBytes"),
                         NativeAllocatedBytes = (ulong)Num(o, "nativeAllocatedBytes"),

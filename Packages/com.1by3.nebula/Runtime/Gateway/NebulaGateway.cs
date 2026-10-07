@@ -71,6 +71,10 @@ namespace Nebula
             public bool InterestLimitWarned;
             /// <summary>Frames (<see cref="RegionKeys.FrameKeyOf"/>) this client is looking into from outside their box, held until it is a little further than <see cref="InterestSettings.FrameApproachMargin"/>, so a pawn hovering at the margin does not flap.</summary>
             public readonly HashSet<ulong> ApproachFrames = new HashSet<ulong>();
+            /// <summary>The far tier (NEB-388): entities this client sees as markers beyond the normal radius, never also in <see cref="Visible"/>.</summary>
+            public readonly HashSet<ulong> FarHeld = new HashSet<ulong>();
+            /// <summary>Far entries waiting to be sent to this client (see <c>FlushFar</c>).</summary>
+            public readonly List<FarEntityEntry> FarOut = new List<FarEntityEntry>();
             /// <summary>Evaluate at the next tick rather than waiting for this client's turn in <see cref="InterestSchedule"/> (pawn, instance, carrier, focus mode, focus region or policy changed).</summary>
             public bool InterestDirty = true;
             /// <summary>A game-set tag a policy filters on (<see cref="NebulaGateway.SetClientTag"/>).</summary>
@@ -1201,6 +1205,7 @@ namespace Nebula
                 case MsgId.EntitySpawn: OnEntitySpawn(w, EntitySpawnMsg.Read(r)); break;
                 case MsgId.InstancePrepare: OnInstancePrepare(w, InstancePreparationMsg.Read(r)); break;
                 case MsgId.EntityDespawn: OnEntityDespawn(w, EntityDespawnMsg.Read(r)); break;
+                case MsgId.FarEntities: OnFarEntities(w, r); break;
                 case MsgId.EntityVars: OnEntityVars(w, EntityVarsMsg.Read(r)); break;
                 case MsgId.EntityMaps: OnEntityMaps(w, EntityMapsMsg.Read(r)); break;
                 case MsgId.EntityRpc: OnEntityRpc(w, EntityRpcMsg.Read(r)); break;
@@ -1362,6 +1367,8 @@ namespace Nebula
 
         private void OnEntityDespawn(WorkerConn w, EntityDespawnMsg msg)
         {
+            // A despawn is also the far tier's "gone" (NEB-388): the worker sends it to the gateways holding it far too.
+            OnFarDespawn(w.Index, msg.NetId, msg.Epoch);
             // An entity that only exists here as a held spawn is gone before it was ever applied.
             if (!_entities.TryGetValue(msg.NetId, out var rec)) { _held.Remove(msg.NetId); return; }
             // A new owner's despawn of an entity whose spawn from it is still held comes after that spawn: applied
