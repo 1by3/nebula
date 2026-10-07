@@ -761,6 +761,11 @@ namespace Nebula.Tests
             copy.Epoch = stream[0].Ship.Epoch;
             copy.InvokeSpawn();
 
+            // The planet is a remote entity on the client too: its states, the same ticks as the ship's, fill its own
+            // buffer, which is where a client finds the planet's pose at a sample's tick (NEB-392).
+            var planetBuffer = _planet.gameObject.AddComponent<RemoteInterpolator>();
+            _planet.Interpolator = planetBuffer;
+
             const double Delay = 2.0;
             const int SubSteps = 4;
             float worst = 0f, worstNearCrossing = 0f, worstJump = 0f;
@@ -770,6 +775,7 @@ namespace Nebula.Tests
             int compared = 0;
             for (int i = 0; i < stream.Count; i++)
             {
+                planetBuffer.Push(stream[i].Tick, stream[i].PlanetPosition, stream[i].PlanetRotation, Vector3.zero);
                 if (!copy.ReceiveState(stream[i].Tick, stream[i].Worker, stream[i].Ship)) continue;
                 for (int k = 0; k < SubSteps; k++)
                 {
@@ -807,10 +813,9 @@ namespace Nebula.Tests
             Assert.That(compared, Is.GreaterThan(stream.Count * 3), "every render step was compared");
             Assert.That(worst, Is.LessThan(0.25f), "drawn within 25 cm of the ship everywhere: " + worstAt);
             Assert.That(worstJump, Is.LessThan(0.05f), "and no step of the drawn pose jumps by more than 5 cm: " + worstJumpAt);
-            if (worstNearCrossing > 0.01f)
-                Assert.Inconclusive($"Nebula draft (crossing a turning frame on a client): drawn up to {worstNearCrossing * 1000f:0} mm from the ship within 4 ticks of a crossing of the planet's box "
-                    + $"(elsewhere within {worst * 1000f:0} mm at most), with a one-step jump of {worstJump * 1000f:0} mm beyond its own motion: {worstAt}");
+            Assert.That(worstNearCrossing, Is.LessThan(0.01f), "drawn within a centimetre of the ship at the crossings of the planet's box (NEB-392): " + worstAt);
             Assert.That(worst, Is.LessThan(0.01f), "drawn within a centimetre of the ship everywhere: " + worstAt);
+            Assert.That(worstJump, Is.LessThan(0.01f), "and no step of the drawn pose jumps by a centimetre: " + worstJumpAt);
         }
 
         // ------------------------------------------------------------------------------------ wire precision (NEB-387)

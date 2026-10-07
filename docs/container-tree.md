@@ -217,7 +217,10 @@ leased child simulates it in the parent's frame, where nothing moves; the parent
 (D15) and for clients (D11). A rotating planet is a carrier entity whose container has its own frame, `OwnRegions`
 interest and leased octants (runtime containers whose `ParentId` is the planet's container); a capital ship is a
 carrier whose frame holds a leased engine room. The gateway positions and buckets a runtime container fixed inside a
-carrier through that carrier (`TryCarrierOf` reads the placements on the lease rows it mirrors).
+carrier through that carrier (`TryCarrierOf` reads the placements on the lease rows it mirrors). A client interpolating
+an entity across a change of container converts the older sample through both containers' poses at that sample's own
+tick, read from each moving carrier's interpolation buffer, not through where they are now: a planet turning while a
+ship crosses its box moved on by a render delay since, which drew the ship up to 10 cm off (NEB-392).
 
 ## 5b. Chunk grids hosted by a container
 
