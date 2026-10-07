@@ -152,8 +152,12 @@ scope gets its own scene like any other. A worker steps every frame scene after 
 angular velocity, acceleration in the space around the frame; `LocalAcceleration`, `LocalAngularVelocity`,
 `PointVelocity`) is sampled once per tick on every process that holds the frame, from the carrier's transform: the
 authoritative pose on its owner, the interpolated one elsewhere, so a leased interior reads it one replication delay
-late. Rates are finite differences over one tick. Nebula applies no fictitious forces by itself; a body opts in
-with `FrameInertia` (`docs/frame-bodies.md` D4).
+late. Linear rates are finite differences over one tick. The angular velocity is taken in double from the rotation's
+vector part, over as many of the last 256 samples as it takes the frame to turn a milliradian, while that baseline
+agrees with the newest tick's own reading (NEB-390): a one-tick difference of float quaternions read zero below about
+2 degrees a second, and a planet turning once in a few hours turns by about 2e-6 rad a tick. A planet at 1e-4 rad/s
+reads within 0.1% after about four seconds of samples; a frame that stops turning reads still at once. Nebula applies
+no fictitious forces by itself; a body opts in with `FrameInertia` (`docs/frame-bodies.md` D4).
 
 **D15 Crossings go through the pose owner.** Moving between a frame and the space around it needs the frame's pose at
 that tick, which only the carrier's authority knows exactly (a fixed frame's pose is known everywhere).
@@ -213,7 +217,10 @@ leased child simulates it in the parent's frame, where nothing moves; the parent
 (D15) and for clients (D11). A rotating planet is a carrier entity whose container has its own frame, `OwnRegions`
 interest and leased octants (runtime containers whose `ParentId` is the planet's container); a capital ship is a
 carrier whose frame holds a leased engine room. The gateway positions and buckets a runtime container fixed inside a
-carrier through that carrier (`TryCarrierOf` reads the placements on the lease rows it mirrors).
+carrier through that carrier (`TryCarrierOf` reads the placements on the lease rows it mirrors). A client interpolating
+an entity across a change of container converts the older sample through both containers' poses at that sample's own
+tick, read from each moving carrier's interpolation buffer, not through where they are now: a planet turning while a
+ship crosses its box moved on by a render delay since, which drew the ship up to 10 cm off (NEB-392).
 
 ## 5b. Chunk grids hosted by a container
 

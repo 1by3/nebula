@@ -588,7 +588,7 @@ namespace Nebula.Tests
         /// The workers' half: at every chunk seam, worker seam and box crossing the ship is where the script put it and
         /// moving as the script moves it, the crew member never moves in the ship's frame, the climb out of a chunk the
         /// planet's pose owner does not hold is handed to it for the crossing, and the ship lands where it took off.
-        /// With the planet turning, the velocity converted at the box's top misses ω × r (see
+        /// With the planet turning, the velocity converted at the box's top carries ω × r (NEB-390, see
         /// <see cref="AFrameTurningSlowlyReadsItsAngularVelocity"/>).
         /// </summary>
         [TestCase(false, TestName = "TheShipFliesTheLapWithoutErrorAtAnySeam(planet still)")]
@@ -604,10 +604,8 @@ namespace Nebula.Tests
             Assert.That(lap.ChunkSeams, Is.GreaterThanOrEqualTo(2), "two chunk seams crossed at speed 300 m up");
             Assert.That(lap.ShipAltitudeLeavingBox, Is.GreaterThan(600f).And.LessThan(600f + _mesh.Config.HandoverHysteresis + TopSpeed * Dt), "left through the top of the box");
             Assert.That(lap.ShipAltitudeEnteringBox, Is.LessThan(600f).And.GreaterThan(590f), "came back in through the top");
-            if (turning && lap.MaxVelocityError >= 0.05f)
-                Assert.Inconclusive($"Nebula draft (frame angular velocity): the planet turns at {lap.OmegaTruth:0.00000} rad/s but its frame state read "
-                    + $"{lap.OmegaAfterW1Min:0.00000}..{lap.OmegaAfterW1Max:0.00000} rad/s, so a crossing of its box misses ω × r: velocity error {lap.MaxVelocityError:0.00} m/s ({lap.MaxVelocityErrorWhere}).");
-            Assert.That(lap.MaxVelocityError, Is.LessThan(0.05f), "no velocity error at any seam: " + lap.MaxVelocityErrorWhere);
+            Assert.That(lap.MaxVelocityError, Is.LessThan(0.05f), $"no velocity error at any seam (the planet turns at {lap.OmegaTruth:0.00000} rad/s, its frame read "
+                + $"{lap.OmegaAfterW1Min:0.00000}..{lap.OmegaAfterW1Max:0.00000} rad/s): " + lap.MaxVelocityErrorWhere);
         }
 
         /// <summary>
@@ -652,9 +650,11 @@ namespace Nebula.Tests
         }
 
         /// <summary>
-        /// A frame's angular velocity (<see cref="PhysicsFrameState.AngularVelocity"/>, D14) is a one-tick finite difference
-        /// of the carrier's rotation. What it reads for a carrier turning at a steady rate, from a real day-long spin to a
-        /// fast one, sampled once per 60 Hz tick as a worker samples it.
+        /// A frame's angular velocity (<see cref="PhysicsFrameState.AngularVelocity"/>, D14), for a carrier turning at a
+        /// steady rate from a day-long spin to a fast one, sampled once per 60 Hz tick as a worker samples it. A one-tick
+        /// difference of float quaternions through <c>ToAngleAxis</c> read exactly zero up to 2 degrees a second, so a
+        /// crossing of a turning frame missed ω × r (NEB-390). Read once the frame has a couple of seconds of history,
+        /// it is within 1% everywhere.
         /// </summary>
         [Test]
         public void AFrameTurningSlowlyReadsItsAngularVelocity()
@@ -663,26 +663,80 @@ namespace Nebula.Tests
             var sb = new StringBuilder();
             bool broken = false;
             uint tick = 1000;
-            foreach (float degreesPerSecond in new[] { 360f / 86400f, 0.1f, 0.5f, 1f, 2f, 5f, 30f })
+            foreach (float degreesPerSecond in new[] { 360f / 86400f, 360f / 7200f, 0.1f, 0.5f, 1f, 2f, 5f, 30f })
             {
                 float truth = degreesPerSecond * Mathf.Deg2Rad;
                 float min = float.MaxValue, max = float.MinValue;
                 frame.ResetMotion();
-                for (int i = 0; i < 120; i++, tick++)
+                for (int i = 0; i < 300; i++, tick++)
                 {
-                    _planet.transform.rotation = Quaternion.Euler(0f, degreesPerSecond * i * Dt, 0f);
+                    _planet.transform.rotation = Quaternion.Euler(0f, 40f + degreesPerSecond * i * Dt, 0f);
                     frame.Sample(tick, Dt);
-                    if (i < 2) continue;
+                    if (i < PhysicsFrame.RotationHistory + 2) continue;
                     min = Mathf.Min(min, frame.State.AngularVelocity.y);
                     max = Mathf.Max(max, frame.State.AngularVelocity.y);
                 }
-                bool ok = Mathf.Abs(min - truth) <= truth * 0.1f && Mathf.Abs(max - truth) <= truth * 0.1f;
+                bool ok = Mathf.Abs(min - truth) <= truth * 0.01f && Mathf.Abs(max - truth) <= truth * 0.01f;
                 broken |= !ok;
-                sb.AppendLine($"{degreesPerSecond,10:0.#####} deg/s: truth {truth:0.000000} rad/s, read {min:0.000000}..{max:0.000000} rad/s{(ok ? "" : "  <- wrong")}; ω × r at 10 km: {truth * 10000f:0.00} m/s");
+                sb.AppendLine($"{degreesPerSecond,10:0.#####} deg/s: truth {truth:0.0000000} rad/s, read {min:0.0000000}..{max:0.0000000} rad/s{(ok ? "" : "  <- wrong")}; ω × r at 10 km: {truth * 10000f:0.00} m/s");
             }
             TestContext.WriteLine(sb.ToString());
-            if (broken)
-                Assert.Inconclusive("Nebula draft (frame angular velocity): a one-tick difference of float quaternions loses slow rotations; the frame reads zero or a coarse step for a planet turning at a few degrees a second or less, so crossings miss ω × r.\n" + sb);
+            Assert.IsFalse(broken, "every rate read within 1%:\n" + sb);
+        }
+
+        /// <summary>
+        /// A planet the size of Holoverse's (250 km out from its centre) turning once in about 17 hours, ω = 1e-4 rad/s,
+        /// about an upright axis and a tilted one, from an arbitrary starting angle: the frame reads ω within 1%, and a
+        /// point 250 km out moves at ω × r within 0.1 m/s (25 m/s of it is the spin).
+        /// </summary>
+        [TestCase(0f, TestName = "AFrameReadsAPlanetsSpinAtHoloverseRates(upright)")]
+        [TestCase(23.5f, TestName = "AFrameReadsAPlanetsSpinAtHoloverseRates(tilted)")]
+        public void AFrameReadsAPlanetsSpinAtHoloverseRates(float tilt)
+        {
+            const float Omega = 1e-4f;
+            var frame = _planet.Carried.Frame;
+            var axis = Quaternion.Euler(tilt, 0f, 0f) * Vector3.up;
+            var truth = axis * Omega;
+            var surface = new Vector3(250000f, 0f, 0f);
+            frame.ResetMotion();
+            float worstRelative = 0f, worstPoint = 0f;
+            uint tick = 5000;
+            for (int i = 0; i < 600; i++, tick++)
+            {
+                // From an arbitrary angle, as a game turning a planet by a float angle each tick would set it.
+                _planet.transform.rotation = Quaternion.AngleAxis(137.3f + Omega * Mathf.Rad2Deg * i * Dt, axis);
+                frame.Sample(tick, Dt);
+                if (i < PhysicsFrame.RotationHistory + 2) continue;
+                var state = frame.State;
+                worstRelative = Mathf.Max(worstRelative, (state.AngularVelocity - truth).magnitude / Omega);
+                var expected = Vector3.Cross(truth, state.Rotation * surface);
+                worstPoint = Mathf.Max(worstPoint, (state.PointVelocity(surface) - expected).magnitude);
+            }
+            TestContext.WriteLine($"tilt {tilt}: worst ω error {worstRelative * 100f:0.000}%, worst ω × r error 250 km out {worstPoint * 1000f:0.0} mm/s (of {Omega * 250000f:0.0} m/s)");
+            Assert.That(worstRelative, Is.LessThan(0.01f), "ω within 1%");
+            Assert.That(worstPoint, Is.LessThan(0.1f), "ω × r 250 km out within 0.1 m/s");
+        }
+
+        /// <summary>
+        /// A frame that stops turning reads it at once: the longer baseline a slow spin is read over is not used once
+        /// the newest tick disagrees with it, so a ship that stops yawing does not read a fading spin for a second.
+        /// </summary>
+        [Test]
+        public void AFrameThatStopsTurningReadsStillAtOnce()
+        {
+            var frame = _planet.Carried.Frame;
+            frame.ResetMotion();
+            uint tick = 9000;
+            float angle = 10f;
+            for (int i = 0; i < 200; i++, tick++)
+            {
+                angle += 0.5f * Dt;
+                _planet.transform.rotation = Quaternion.Euler(0f, angle, 0f);
+                frame.Sample(tick, Dt);
+            }
+            Assert.That(frame.State.AngularVelocity.y, Is.EqualTo(0.5f * Mathf.Deg2Rad).Within(0.5f * Mathf.Deg2Rad * 0.01f), "turning at half a degree a second");
+            for (int i = 0; i < 3; i++, tick++) frame.Sample(tick, Dt);
+            Assert.That(frame.State.AngularVelocity.magnitude, Is.LessThan(1.5e-4f), "still within a tick of stopping");
         }
 
         /// <summary>
@@ -711,6 +765,11 @@ namespace Nebula.Tests
             copy.Epoch = stream[0].Ship.Epoch;
             copy.InvokeSpawn();
 
+            // The planet is a remote entity on the client too: its states, the same ticks as the ship's, fill its own
+            // buffer, which is where a client finds the planet's pose at a sample's tick (NEB-392).
+            var planetBuffer = _planet.gameObject.AddComponent<RemoteInterpolator>();
+            _planet.Interpolator = planetBuffer;
+
             const double Delay = 2.0;
             const int SubSteps = 4;
             float worst = 0f, worstNearCrossing = 0f, worstJump = 0f;
@@ -720,6 +779,7 @@ namespace Nebula.Tests
             int compared = 0;
             for (int i = 0; i < stream.Count; i++)
             {
+                planetBuffer.Push(stream[i].Tick, stream[i].PlanetPosition, stream[i].PlanetRotation, Vector3.zero);
                 if (!copy.ReceiveState(stream[i].Tick, stream[i].Worker, stream[i].Ship)) continue;
                 for (int k = 0; k < SubSteps; k++)
                 {
@@ -757,10 +817,9 @@ namespace Nebula.Tests
             Assert.That(compared, Is.GreaterThan(stream.Count * 3), "every render step was compared");
             Assert.That(worst, Is.LessThan(0.25f), "drawn within 25 cm of the ship everywhere: " + worstAt);
             Assert.That(worstJump, Is.LessThan(0.05f), "and no step of the drawn pose jumps by more than 5 cm: " + worstJumpAt);
-            if (worstNearCrossing > 0.01f)
-                Assert.Inconclusive($"Nebula draft (crossing a turning frame on a client): drawn up to {worstNearCrossing * 1000f:0} mm from the ship within 4 ticks of a crossing of the planet's box "
-                    + $"(elsewhere within {worst * 1000f:0} mm at most), with a one-step jump of {worstJump * 1000f:0} mm beyond its own motion: {worstAt}");
+            Assert.That(worstNearCrossing, Is.LessThan(0.01f), "drawn within a centimetre of the ship at the crossings of the planet's box (NEB-392): " + worstAt);
             Assert.That(worst, Is.LessThan(0.01f), "drawn within a centimetre of the ship everywhere: " + worstAt);
+            Assert.That(worstJump, Is.LessThan(0.01f), "and no step of the drawn pose jumps by a centimetre: " + worstJumpAt);
         }
 
         // ------------------------------------------------------------------------------------ wire precision (NEB-387)

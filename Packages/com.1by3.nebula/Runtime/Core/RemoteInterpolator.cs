@@ -106,6 +106,10 @@ namespace Nebula
         /// container is this frame.
         /// </summary>
         public bool Sample(double renderTick, out Container container, out Vector3 localPosition, out Quaternion localRotation)
+            => Sample(renderTick, 0, out container, out localPosition, out localRotation);
+
+        /// <param name="depth">How many carriers deep this sample is asked for while bridging another entity's crossing (0: the entity itself, counted in the telemetry).</param>
+        private bool Sample(double renderTick, int depth, out Container container, out Vector3 localPosition, out Quaternion localRotation)
         {
             container = LatestContainer;
             localPosition = LatestLocalPosition;
@@ -118,7 +122,7 @@ namespace Nebula
             // Only while the stream is current (its newest sample is within two ticks of the newest tick heard): an
             // entity that stopped moving stops being sent, and is not starving. A stalled pipeline shows up in the
             // client's own-pawn gaps and snapshot age instead.
-            if (_latestTick - _previousTick <= 2 && NetworkTime.LatestServerTick - _latestTick <= 2)
+            if (depth == 0 && _latestTick - _previousTick <= 2 && NetworkTime.LatestServerTick - _latestTick <= 2)
             {
                 Samples++;
                 DepthSum += _latestTick - renderTick;
@@ -165,10 +169,26 @@ namespace Nebula
                 if (before.Container != after.Container)
                 {
                     // The entity changed container between the two samples: express the older one in the newer frame.
+                    // The conversion uses both containers' poses at the older sample's own tick, not where they are
+                    // now: a turning planet has moved on since, and a sample converted at today's pose lands
+                    // ω × r × (render delay) off, a jump at every crossing of its box (NEB-392). The older sample is
+                    // put in the newer container as both stood at its tick; from there both samples are local to the
+                    // newer container and follow it to where it is now. Two containers riding the same carrier (two
+                    // chunks of one planet) keep converting at their relative pose, which does not change.
                     var world = before.Container != null ? before.Container.ToWorld(bp) : bp;
                     var worldRot = before.Container != null ? before.Container.Rotation * br : br;
-                    bp = container != null ? container.ToLocal(world) : world;
-                    br = container != null ? container.InverseRotation * worldRot : worldRot;
+                    if (before.Container != null) CarryBack(before.Container, before.Tick, ref world, ref worldRot, depth);
+                    if (container != null)
+                    {
+                        CarryForward(container, before.Tick, ref world, ref worldRot, depth);
+                        bp = container.ToLocal(world);
+                        br = container.InverseRotation * worldRot;
+                    }
+                    else
+                    {
+                        bp = world;
+                        br = worldRot;
+                    }
                 }
                 localPosition = SlerpPosition ? Vector3.Slerp(bp, after.Position, f) : Vector3.Lerp(bp, after.Position, f);
                 localRotation = Quaternion.Slerp(br, after.Rotation, f);
@@ -191,6 +211,72 @@ namespace Nebula
             position = container != null ? container.ToWorld(lp) : lp;
             rotation = container != null ? container.Rotation * lr : lr;
             return ok;
+        }
+
+        // ---- a container's pose at a past tick (NEB-392)
+
+        /// <summary>How many carriers deep a pose at a past tick is looked up (a crate in a ship in a turning planet is two).</summary>
+        private const int CarryDepth = 4;
+
+        /// <summary>
+        /// The carrier whose motion <paramref name="container"/> follows rigidly in render space: the nearest moving
+        /// carrier at or above it whose copy here is interpolated (its buffer knows where it was at a past tick). None for
+        /// a container that does not move, or one in a frame posed for simulation, where nothing follows its carrier.
+        /// </summary>
+        private static NetworkIdentity MovingCarrierOf(Container container)
+        {
+            int hops = 0;
+            for (var c = container; c != null && hops <= ContainerRegistry.ChainBound; c = c.Parent, hops++)
+            {
+                if (c.Frame != null && PhysicsFrames.InSimulationPose(c)) return null;
+                if (!c.IsDynamic) continue;
+                // A carrier this process predicts or simulates is not drawn from its buffer: its pose at a past tick is
+                // not known here, and it is converted at its current pose as before.
+                var carrier = c.Carrier;
+                return carrier != null && !carrier.IsLocallyPredicted && carrier.Interpolator != null && carrier.Interpolator.HasSamples ? carrier : null;
+            }
+            return null;
+        }
+
+        /// <summary>A carrier's world pose at <paramref name="tick"/>, from its own buffer, through its container as that stood then.</summary>
+        private static void CarrierPoseAt(NetworkIdentity carrier, uint tick, int depth, out Vector3 position, out Quaternion rotation)
+        {
+            carrier.Interpolator.Sample(tick, depth + 1, out var container, out position, out rotation);
+            if (container == null) return;
+            position = container.ToWorld(position);
+            rotation = container.Rotation * rotation;
+            CarryBack(container, tick, ref position, ref rotation, depth + 1);
+        }
+
+        /// <summary>
+        /// A world pose fixed in <paramref name="container"/> as it stands now, moved to where it was at
+        /// <paramref name="tick"/>: carried back along the motion of the carrier the container rides on.
+        /// </summary>
+        private static void CarryBack(Container container, uint tick, ref Vector3 position, ref Quaternion rotation, int depth)
+        {
+            if (depth >= CarryDepth) return;
+            var carrier = MovingCarrierOf(container);
+            // Only a tick the carrier's buffer has reached: past its newest sample it would be extrapolated.
+            if (carrier == null || tick > carrier.Interpolator.LatestTick) return;
+            CarrierPoseAt(carrier, tick, depth, out var thenPosition, out var thenRotation);
+            var t = carrier.transform;
+            var turn = thenRotation * Quaternion.Inverse(t.rotation);
+            position = thenPosition + turn * (position - t.position);
+            rotation = turn * rotation;
+        }
+
+        /// <summary>The inverse of <see cref="CarryBack"/>: a world pose fixed in <paramref name="container"/> as it stood at <paramref name="tick"/>, where it is now.</summary>
+        private static void CarryForward(Container container, uint tick, ref Vector3 position, ref Quaternion rotation, int depth)
+        {
+            if (depth >= CarryDepth) return;
+            var carrier = MovingCarrierOf(container);
+            // Only a tick the carrier's buffer has reached: past its newest sample it would be extrapolated.
+            if (carrier == null || tick > carrier.Interpolator.LatestTick) return;
+            CarrierPoseAt(carrier, tick, depth, out var thenPosition, out var thenRotation);
+            var t = carrier.transform;
+            var turn = t.rotation * Quaternion.Inverse(thenRotation);
+            position = t.position + turn * (position - thenPosition);
+            rotation = turn * rotation;
         }
 
         internal Vector3 SampleScale(double tick)

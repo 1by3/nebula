@@ -156,18 +156,20 @@ namespace Nebula
             var t = Owner.transform;
             var position = t.position;
             var rotation = t.rotation;
+            // The same pose sampled again in the same tick (two workers sharing one registry in a test, or a client
+            // rendering twice within a tick while the carrier stands still) adds nothing; reading it as a sample would
+            // report the frame at rest for a tick.
+            if (_samples > 0 && tick == _state.Tick && position.Equals(_state.Position) && rotation.Equals(_state.Rotation)) return;
             if (_samples > 0 && dt > 0f)
             {
                 var velocity = (position - _state.Position) / dt;
-                (rotation * Quaternion.Inverse(_state.Rotation)).ToAngleAxis(out float degrees, out Vector3 axis);
-                if (degrees > 180f) degrees -= 360f;
-                var angular = float.IsNaN(axis.x) || Mathf.Approximately(degrees, 0f) ? Vector3.zero : axis * (degrees * Mathf.Deg2Rad / dt);
                 _state.Acceleration = _samples > 1 ? (velocity - _lastVelocity) / dt : Vector3.zero;
                 _state.Velocity = velocity;
-                _state.AngularVelocity = angular;
+                _state.AngularVelocity = AngularVelocity(rotation, dt);
                 _lastVelocity = velocity;
                 _state.HasRates = true;
             }
+            PushRotation(rotation, _samples > 0 && dt > 0f ? dt : 0f);
             _state.Position = position;
             _state.Rotation = rotation;
             _state.Tick = tick;
@@ -177,8 +179,92 @@ namespace Nebula
         internal void ResetMotion()
         {
             _samples = 0;
+            _rotationCount = 0;
             _state = new PhysicsFrameState { Position = Owner.transform.position, Rotation = Owner.transform.rotation };
         }
+
+        // ---- angular velocity (D14, NEB-390)
+        //
+        // A rotation is stored in floats, a few 1e-8 apart per component. A planet turning once in a few hours turns by
+        // about 2e-6 rad in a 60 Hz tick: a one-tick difference taken through Quaternion.ToAngleAxis read exactly zero
+        // (its w rounds to 1), and even taken in double it carries a few per cent of rounding. So the rate is taken
+        // over as many recent samples as it takes to turn by RateAngle, up to RotationHistory of them, as long as that
+        // longer baseline agrees with the newest tick's own reading (a frame that just stopped or changed its spin
+        // reads its newest tick, not an average over the last second). Everything is computed in double.
+
+        /// <summary>How many past rotations a frame keeps for its angular velocity: about four seconds at 60 Hz.</summary>
+        internal const int RotationHistory = 256;
+        /// <summary>The angle (radians) a baseline must turn through before it is long enough: rounding stays below 0.1% of it.</summary>
+        internal const double RateAngle = 1e-3;
+        /// <summary>
+        /// How far (radians per sample) a longer baseline may read from the newest tick's own reading and still be used:
+        /// above the rounding of one tick's difference, and small enough that a frame that stopped turning reads less
+        /// than 1e-4 rad/s at 60 Hz.
+        /// </summary>
+        internal const double RateAgreement = 2e-6;
+
+        private readonly Quaternion[] _rotations = new Quaternion[RotationHistory];
+        private readonly double[] _rotationTimes = new double[RotationHistory];
+        private int _rotationHead, _rotationCount;
+        private double _rotationClock;
+
+        private void PushRotation(Quaternion rotation, float dt)
+        {
+            _rotationClock = _rotationCount == 0 ? 0.0 : _rotationClock + dt;
+            _rotationHead = (_rotationHead + 1) % RotationHistory;
+            _rotations[_rotationHead] = rotation;
+            _rotationTimes[_rotationHead] = _rotationClock;
+            if (_rotationCount < RotationHistory) _rotationCount++;
+        }
+
+        /// <summary>The angular velocity from the stored rotations to <paramref name="rotation"/>, taken <paramref name="dt"/> after the newest of them.</summary>
+        private Vector3 AngularVelocity(Quaternion rotation, float dt)
+        {
+            if (_rotationCount == 0) return Vector3.zero;
+            double now = _rotationClock + dt;
+            // The newest tick's own reading.
+            var newest = Rate(_rotations[_rotationHead], rotation, dt, out double angle);
+            var best = newest;
+            if (angle >= RateAngle) return ToVector(best);
+            // Longer baselines, doubling, while they agree with it, until one has turned far enough.
+            for (int back = 1; back < _rotationCount; back = back * 2 + 1)
+            {
+                int i = (_rotationHead - back + RotationHistory) % RotationHistory;
+                double span = now - _rotationTimes[i];
+                if (span <= 0.0) break;
+                var longer = Rate(_rotations[i], rotation, span, out angle);
+                if (Distance(longer, newest) * dt > RateAgreement) break;
+                best = longer;
+                if (angle >= RateAngle) break;
+            }
+            return ToVector(best);
+        }
+
+        /// <summary>The steady angular velocity (rad/s, x/y/z) that turns <paramref name="from"/> into <paramref name="to"/> in <paramref name="seconds"/>.</summary>
+        internal static (double x, double y, double z) Rate(Quaternion from, Quaternion to, double seconds, out double angle)
+        {
+            // to * inverse(from), in double. from is a unit quaternion, so its inverse is its conjugate.
+            double ax = to.x, ay = to.y, az = to.z, aw = to.w;
+            double bx = -from.x, by = -from.y, bz = -from.z, bw = from.w;
+            double w = aw * bw - ax * bx - ay * by - az * bz;
+            double x = aw * bx + ax * bw + ay * bz - az * by;
+            double y = aw * by - ax * bz + ay * bw + az * bx;
+            double z = aw * bz + ax * by - ay * bx + az * bw;
+            if (w < 0.0) { w = -w; x = -x; y = -y; z = -z; } // the short way round
+            double s = Math.Sqrt(x * x + y * y + z * z);
+            angle = 2.0 * Math.Atan2(s, w);
+            if (s <= 0.0 || seconds <= 0.0) { angle = 0.0; return (0.0, 0.0, 0.0); }
+            double k = angle / (s * seconds);
+            return (x * k, y * k, z * k);
+        }
+
+        private static double Distance((double x, double y, double z) a, (double x, double y, double z) b)
+        {
+            double dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+            return Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
+        private static Vector3 ToVector((double x, double y, double z) v) => new Vector3((float)v.x, (float)v.y, (float)v.z);
 
         public override string ToString() => $"frame({(Owner != null ? Owner.ContainerId : "-")})";
     }
