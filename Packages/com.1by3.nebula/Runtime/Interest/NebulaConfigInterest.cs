@@ -39,6 +39,7 @@ namespace Nebula
             FrameApproachMargin = InterestFrameApproachMargin,
             HintMaxHz = InterestHintMaxHz,
             MaxExplicitPerClient = InterestMaxExplicitPerClient,
+            FarMaxEntities = InterestFarMaxEntities,
             MaxFocusSpeed = InterestMaxFocusSpeed,
             NearRadius = InterestNearRadius,
             FarRadius = InterestFarRadius,

@@ -29,6 +29,8 @@ namespace Nebula
         public uint ServerDrivenCount;
         /// <summary>The worker holds at least one always-relevant entity (see <see cref="WorkerStats.HasGlobalEntities"/>).</summary>
         public bool HasGlobalEntities;
+        /// <summary>The worker holds at least one far-relevant entity (see <see cref="WorkerStats.HasFarEntities"/>).</summary>
+        public bool HasFarEntities;
         /// <summary>
         /// How long the oldest dirty persistent entity on this worker has been waiting for its next checkpoint, in
         /// seconds; 0 when persistence is off or nothing is dirty. See <see cref="WorkerStats.OldestDirtySeconds"/>
@@ -70,6 +72,13 @@ namespace Nebula
         /// and nothing else would make the gateway ask for it.
         /// </summary>
         public bool HasGlobalEntities;
+        /// <summary>
+        /// This worker holds at least one entity with a far relevance radius (<c>NetworkIdentity.FarRelevanceRadius</c>,
+        /// NEB-388). A gateway keeps a link to such a worker and sends it its foci, so the worker can tell which gateways
+        /// its far entities reach; nothing nearer than the far radius would make the gateway dial it. Additive: older
+        /// readers ignore it.
+        /// </summary>
+        public bool HasFarEntities;
         /// <summary>
         /// <see cref="NebulaPersistence.OldestDirtyAgeSeconds"/> on this worker, or 0 when persistence is off. An
         /// additive field on the existing heartbeat message: older orchestrators simply do not read it.

@@ -90,6 +90,12 @@ namespace Nebula
         /// entity; a worker that handed the entity on forwards it to the new owner.
         /// </summary>
         DriveInput = 25,
+        /// <summary>
+        /// Worker -> gateway -> client: the far relevance tier (<see cref="FarEntitiesMsg"/>, protocol 26, NEB-388):
+        /// poses of large or important entities beyond the normal interest radius, absolute in their scope, in double.
+        /// The gateway sends it only to clients that negotiated 26 or later.
+        /// </summary>
+        FarEntities = 26,
 
         // Gateway -> worker
         SpawnPlayer = 30,
@@ -199,17 +205,19 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 25;
+        public const ushort ProtocolVersion = 26;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 24, one below <see cref="ProtocolVersion"/>. Protocol 25
-        /// (driven vehicles, <c>docs/driven-vehicles.md</c>) is additive for clients: a new message a client sends
-        /// only while it drives something (<see cref="MsgId.DriveInput"/>), and a trailing driver field in the spawn
-        /// body that a protocol-24 client does not read. Protocol 24 (relevance tiers) changed nothing a client reads.
-        /// Protocol 23 closed the window to itself, so clients of 22 and older are refused with
-        /// <see cref="JoinRejectReason.ProtocolUnsupported"/> and must be rebuilt. Gateway-to-worker and
+        /// The oldest client protocol the gateway accepts: 25, one below <see cref="ProtocolVersion"/>. Protocol 26
+        /// (the far relevance tier, <c>docs/interest-management.md</c> §16) is additive for clients: a new message
+        /// (<see cref="MsgId.FarEntities"/>) a gateway sends only to clients that negotiated 26. Protocol 25 (driven
+        /// vehicles, <c>docs/driven-vehicles.md</c>) added a message a client sends only while it drives something
+        /// (<see cref="MsgId.DriveInput"/>) and a trailing driver field in the spawn body. Clients of 24 and older are
+        /// refused with <see cref="JoinRejectReason.ProtocolUnsupported"/> and must be rebuilt. Gateway-to-worker and
         /// worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
         /// </summary>
-        public const ushort MinProtocolVersion = 24;
+        public const ushort MinProtocolVersion = 25;
+        /// <summary>The first protocol whose clients are sent <see cref="MsgId.FarEntities"/>.</summary>
+        public const ushort FarEntitiesVersion = 26;
         public PeerRole Role;
         public string Id;
         public uint Index;

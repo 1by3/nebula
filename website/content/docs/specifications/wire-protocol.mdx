@@ -9,9 +9,11 @@ The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** descri
 
 ## Compatibility
 
-The current protocol version is `25`. Every `Hello` carries the version its sender speaks.
+The current protocol version is `26`. Every `Hello` carries the version its sender speaks.
 
-A gateway accepts clients of protocols 24 and 25: `HelloMsg.MinProtocolVersion` is `24` and `HelloMsg.ProtocolVersion` is `25`. Gateway-to-worker and worker-to-worker connections MUST match protocol `25` exactly. Before 1.0 a protocol change may close the client window to the new version; protocol 23 did, and protocols 24 and 25 do not.
+A gateway accepts clients of protocols 25 and 26: `HelloMsg.MinProtocolVersion` is `25` and `HelloMsg.ProtocolVersion` is `26`. Gateway-to-worker and worker-to-worker connections MUST match protocol `26` exactly. Before 1.0 a protocol change may close the client window to the new version; protocol 23 did, and protocols 24 to 26 do not.
+
+Protocol 26 added the [far relevance tier](/docs/guides/interest-management#see-ships-and-outposts-from-far-away): a new message, `FarEntities`, that a worker sends to gateways and a gateway sends only to clients that negotiated 26. Nothing a protocol-25 client sends or reads changed. The worker heartbeat gains `hasFarEntities`.
 
 Protocol 25 added [driven vehicles](/docs/guides/prediction#drive-a-vehicle). A client that drives an entity sends `DriveInput`, and `EntitySpawnBody` gains a trailing `driver_client_id`. A protocol-24 client never sends the message and never reads the field. The entity body nested in `AuthorityTransfer` always carries the field, so the layout of `AuthorityTransfer` changed between workers.
 
@@ -168,6 +170,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 23 | `ClientFocusHint` | `C-G` | Sequenced (hint), ReliableOrdered (clear) | [`ClientFocusHint`](#interest-management) |
 | 24 | `Goodbye` | `C-G` | Reliable ordered | [`Goodbye`](#hello-and-session-messages) |
 | 25 | `DriveInput` | `C-G-W`, `W-W` | Sequenced | [`DriveInputBody`](#prediction-messages) |
+| 26 | `FarEntities` | `W-G-C` | Reliable ordered | [`FarEntities`](#interest-management) |
 | 30 | `SpawnPlayer` | `G-W` | Reliable ordered | [`SpawnPlayer`](#player-lifecycle) |
 | 31 | `DespawnPlayer` | `G-W` | Reliable ordered | [`DespawnPlayer`](#player-lifecycle) |
 | 32 | `EndSession` | `W-G` | Reliable ordered | [`EndSession`](#player-lifecycle) |
@@ -683,6 +686,18 @@ advisory. A gateway MUST drop a hint containing a non-finite value, MUST rate-li
 `FocusMode` it has assigned that client allows: clamped to `InterestHintMaxDistance` of the client's pawn under the
 default `PawnClamped` mode, refused outright when the client has no pawn to clamp to, taken as sent under `Free`,
 or ignored under `Disabled`. A client cannot set or query its own `FocusMode`.
+
+```text
+FarEntities := u16 count, FarEntry[count]
+FarEntry    := u64 net_id, u32 entity_epoch, u8 kind,
+               ; kind 0 (State) only:
+               u8 flags, u16 prefab_id, u8 interest_group, f32 far_radius, f32 far_rate,
+               [u64 owner_client_id]   ; flags bit 0
+               [u64 instance_id]       ; flags bit 1
+               f64 x, f64 y, f64 z, CompressedQuaternion rotation, f16 vx, f16 vy, f16 vz
+```
+
+`FarEntities` carries the **far relevance tier**: entities with a far radius, seen beyond their normal relevance radius as a pose and nothing else. `kind` 0 (`State`) is the entity's pose: `x`, `y` and `z` are absolute in the entity's scope, in double precision, converted out of every physics frame the entity stands in, and the rotation and velocity are in the same space. `kind` 1 (`Gone`) means the entity left the receiver's far tier; a `Gone` entry stops after `kind`. A worker sends an entity's entries, at its far rate, to each gateway with a focus of the entity's scope's own space (region identifiers salted with the scope only) within its far radius, and a `Gone` to a gateway that falls out of it. A worker that despawns a far entity sends `EntityDespawn` to those gateways too, which they treat as a `Gone`. A gateway relays each client the entries of the entities in that client's far tier: within the entity's far radius of one of its foci, not held as a replica, nearest first, and at most `InterestFarMaxEntities`. It MUST NOT send `FarEntities` to a client that negotiated a protocol below 26. A client ignores an entry for an entity it holds as a replica, and drops the far entity when that entity's `EntitySpawn` arrives.
 
 A client withdraws its hint with a `clear` message, sent reliably under a `generation` one higher than its hints so far; interest returns to the pawn on the next evaluation. Hints and the clear travel on different channels and can cross, so the gateway drops any message whose generation is older than the newest it has seen (wrapping `u8` comparison), and ignores a clear whose generation it already holds from a newer hint. The gateway adopts the generation of the first hint message on a connection. A clear is never rate-limited: narrowing interest is always allowed.
 

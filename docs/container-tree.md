@@ -393,5 +393,10 @@ only the last registered owns the box and its frame. Scenario 21's two-worker ca
   and a gateway, no client process; the sample `Samples~/FramedPlanetLap`) over ground leased statically, and as
   scenario 41 over a hosted grid streamed around players (D22). Not yet on a live mesh. What it found
   besides the box limit, which D23 closed: a frame's angular velocity reads zero below a few degrees a second, so crossings of a slowly
-  turning frame miss ω × r; and a carrier is a region entity, so a gateway receives a ship only within about
-  `InterestRadius` of a player, whatever its `RelevanceRadius`.
+  turning frame miss ω × r. A carrier being a region entity, so that a gateway received a ship only within about
+  `InterestRadius` of a player whatever its `RelevanceRadius`, was fixed by NEB-391: a carrier's own radius is a reach
+  on top of its region (`docs/interest-management.md` §17).
+- Far entities (`NetworkIdentity.FarRelevanceRadius`, `docs/interest-management.md` §16) cross frames by being
+  measured in the scope's own space: the worker converts the entity out of every frame it stands in, and each client
+  is measured from its focus in the scope's space (the enclosing focus of D18 for a pawn on a planet). A ship on a
+  planet and a ship in orbit see each other as markers out to their far radius.

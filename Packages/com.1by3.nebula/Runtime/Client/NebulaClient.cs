@@ -56,6 +56,21 @@ namespace Nebula
         /// </summary>
         public IReadOnlyList<NetworkIdentity> DrivenEntities => _driven;
         /// <summary>
+        /// The far relevance tier (NEB-388): entities beyond their normal relevance radius but within their
+        /// <see cref="NetworkIdentity.FarRelevanceRadius"/> of this client's focus, keyed by net id. Not replicas: a pose
+        /// at the entity's far rate and its spawn facts, enough to draw a marker or an impostor and to target it. An entity
+        /// is never both here and a replica; coming within its normal radius moves it to the replicas
+        /// (<see cref="FarEntityRemoved"/> with <see cref="FarEntityRemoval.Replicated"/>, then <see cref="EntitySpawned"/>).
+        /// Needs a gateway of protocol 26 or later; empty otherwise.
+        /// </summary>
+        public IReadOnlyDictionary<ulong, FarEntity> FarEntities => _far;
+        /// <summary>An entity entered the far tier (<see cref="FarEntities"/>).</summary>
+        public event Action<FarEntity> FarEntityAdded;
+        /// <summary>A far entity's pose was updated (once per its far update interval).</summary>
+        public event Action<FarEntity> FarEntityUpdated;
+        /// <summary>An entity left the far tier, and why.</summary>
+        public event Action<FarEntity, FarEntityRemoval> FarEntityRemoved;
+        /// <summary>
         /// How far the join has got, as the gateway sees it. A mesh with <see cref="NebulaConfig.MinWorkers"/> at 0
         /// has nowhere to spawn the first player after an idle period, so the gateway holds the join in
         /// <see cref="JoinState.Starting"/> while a worker boots and completes it with no reconnect; show a
@@ -334,6 +349,9 @@ namespace Nebula
         private readonly List<ClientInputMsg.Frame> _recentInputs = new List<ClientInputMsg.Frame>();
         private ClientInputMsg _inputMsg = new ClientInputMsg { Frames = new List<ClientInputMsg.Frame>() };
         private readonly List<NetworkIdentity> _driven = new List<NetworkIdentity>();
+        private readonly Dictionary<ulong, FarEntity> _far = new Dictionary<ulong, FarEntity>();
+        private readonly List<FarEntityEntry> _farIn = new List<FarEntityEntry>();
+        private readonly List<FarEntity> _farGone = new List<FarEntity>();
         /// <summary>Each driven entity's recent inputs, sent three at a time like the pawn's.</summary>
         private readonly Dictionary<ulong, List<ClientInputMsg.Frame>> _drivenInputs = new Dictionary<ulong, List<ClientInputMsg.Frame>>();
         private DriveInputMsg _driveMsg = new DriveInputMsg { Frames = new List<ClientInputMsg.Frame>() };
@@ -874,6 +892,7 @@ namespace Nebula
                 case MsgId.WorldState:
                 case MsgId.EntityState:
                 case MsgId.OwnerState:
+                case MsgId.FarEntities:
                     return true;
                 default:
                     return false;
@@ -1532,6 +1551,7 @@ namespace Nebula
                 case MsgId.WorldState: _statePacketsIn++; OnWorldState(r); break;
                 case MsgId.EntityState: OnEntityState(EntitySyncMsg.Read(r)); break;
                 case MsgId.OwnerState: OnOwnerState(OwnerStateMsg.Read(r)); break;
+                case MsgId.FarEntities: OnFarEntities(r); break;
                 default: NebulaLog.Warn($"client got unexpected {id}"); break;
             }
         }
@@ -1610,6 +1630,12 @@ namespace Nebula
 
         private void OnEntitySpawn(EntitySpawnMsg msg)
         {
+            // Within its normal radius now: the replica replaces the far-tier marker (NEB-388), with no "gone" in between.
+            if (_far.Count > 0 && _far.TryGetValue(msg.NetId, out var marker))
+            {
+                _far.Remove(msg.NetId);
+                RaiseFarRemoved(marker, FarEntityRemoval.Replicated);
+            }
             if (msg.ViewSeq != 0)
             {
                 // Re-entering the set is a new view of the same net id, so the despawn of the old one must not
@@ -2042,6 +2068,52 @@ namespace Nebula
 
         private const int MaxLeadStep = 8;
 
+        /// <summary>
+        /// The far tier's entries (<see cref="MsgId.FarEntities"/>): enter or update an entity's marker, or take it away. An
+        /// entry for an entity this client already holds as a replica is ignored; the replica is the better answer.
+        /// </summary>
+        private void OnFarEntities(NetworkReader r)
+        {
+            FarEntitiesMsg.Read(r, _farIn);
+            double now = Time.unscaledTimeAsDouble;
+            for (int i = 0; i < _farIn.Count; i++)
+            {
+                var entry = _farIn[i];
+                _far.TryGetValue(entry.NetId, out var far);
+                if (entry.Kind == FarEntryKind.Gone)
+                {
+                    if (far == null) continue;
+                    _far.Remove(entry.NetId);
+                    RaiseFarRemoved(far, FarEntityRemoval.Left);
+                    continue;
+                }
+                if (_entities.ContainsKey(entry.NetId)) continue;
+                if (far != null && entry.Epoch < far.Epoch) continue;
+                bool added = far == null;
+                if (added) _far[entry.NetId] = far = new FarEntity();
+                far.Apply(entry, now);
+                try { (added ? FarEntityAdded : FarEntityUpdated)?.Invoke(far); }
+                catch (Exception e) { NebulaLog.Error($"{(added ? nameof(FarEntityAdded) : nameof(FarEntityUpdated))} handler threw: {e}"); }
+            }
+            _farIn.Clear();
+        }
+
+        private void RaiseFarRemoved(FarEntity far, FarEntityRemoval why)
+        {
+            try { FarEntityRemoved?.Invoke(far, why); }
+            catch (Exception e) { NebulaLog.Error($"FarEntityRemoved handler threw: {e}"); }
+        }
+
+        private void ClearFar()
+        {
+            if (_far.Count == 0) return;
+            _farGone.Clear();
+            _farGone.AddRange(_far.Values);
+            _far.Clear();
+            for (int i = 0; i < _farGone.Count; i++) RaiseFarRemoved(_farGone[i], FarEntityRemoval.Left);
+            _farGone.Clear();
+        }
+
         private void ClearWorld()
         {
             foreach (var e in _entities.Values)
@@ -2061,6 +2133,7 @@ namespace Nebula
             LocalPlayer = null;
             _driven.Clear();
             _drivenInputs.Clear();
+            ClearFar();
             _hasRenderOffset = false;
             _hasServerState = false;
             EndStall();

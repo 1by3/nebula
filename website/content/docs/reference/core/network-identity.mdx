@@ -54,6 +54,22 @@ public byte InterestGroup;
 
 A number your interest policy can filter on (team markers, quest objects). Nebula only carries it; 0 means no group.
 
+### FarRelevanceRadius [#farrelevanceradius]
+
+```csharp
+public float FarRelevanceRadius = 0f;
+```
+
+Far relevance tier, in metres (0, the default, is off). Clients whose focus is beyond this entity's normal radius but within this one see it as a marker: its pose at FarUpdateRate and its spawn facts, nothing else (no variables, no RPCs), through NebulaClient.FarEntities. Not clamped by InterestMaxRadius; each client holds at most InterestFarMaxEntities, nearest first. For what players must see from far away: ships in orbit, outposts.
+
+### FarUpdateRate [#farupdaterate]
+
+```csharp
+public float FarUpdateRate = 1f;
+```
+
+Far-tier pose updates per second (default 1). Only used when FarRelevanceRadius is set; clamped to 0.1..30.
+
 ### MaxUpdateInterval [#maxupdateinterval]
 
 ```csharp

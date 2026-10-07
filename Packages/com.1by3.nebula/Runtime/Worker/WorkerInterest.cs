@@ -89,6 +89,10 @@ namespace Nebula
         public int SubscribedRegions => _publisher.SubscribedRegions;
         /// <summary>Authoritative entities that are in every client's set, so gateways must link this worker to hear them.</summary>
         public bool HasGlobalEntities => _index.GlobalCount > 0;
+        /// <summary>Whether this worker is authoritative for an entity with a far relevance radius (reported in the heartbeat, NEB-388).</summary>
+        public bool HasFarEntities { get; private set; }
+        /// <summary>Far-tier entries sent to gateways (one per entity per gateway mask send), for diagnostics and tests.</summary>
+        public long FarEntriesSent { get; private set; }
         /// <summary>State entries actually sent to gateways since start-up, and what an unfiltered worker would have sent.</summary>
         public long InterestEntriesSent { get; private set; }
         public long InterestEntriesTotal { get; private set; }
@@ -299,19 +303,20 @@ namespace Nebula
             if (e == null || e.NetId == 0) return;
             CacheOrigin(); // a spawn can happen outside the tick, before this frame's origin was cached
             var placement = PlacementOf(e.AlwaysRelevant, e.RelevanceRadius, _interest, out _);
-            // A carrier must stay a region entity. InterestIndex moves a carrier's subtree only when the carrier
-            // is bucketed by region (design D3), so a dynamic container in the wide or global list would leave
-            // everything riding in it bucketed wherever it was boarded, and passengers would enter and leave
-            // clients' sets independently of the ship. Downgrade rather than obey, and say so once.
+            // A carrier stays a region entity: InterestIndex moves a carrier's subtree only when the carrier is
+            // bucketed by region (design D3), so a ship in the wide or global list would leave everything riding in it
+            // bucketed wherever it was boarded. Its own radius (or always-relevance) is honoured as a *reach* on top of
+            // its region instead (NEB-391): the gateways it reaches are sent the ship and its whole subtree, and keep
+            // getting its state, exactly as the subscribers of its region do.
             if (placement != InterestPlacement.Region && IsCarrier(e))
             {
-                if (!_carrierPlacementWarned.Contains(e.PrefabId))
-                {
-                    _carrierPlacementWarned.Add(e.PrefabId);
-                    NebulaLog.Warn($"prefab {e.PrefabId} is a dynamic container with AlwaysRelevant or RelevanceRadius {e.RelevanceRadius} m (over InterestRadius {_interest.Radius} m). A carrier cannot be a wide or global entity without stranding what it carries, so it is bucketed by region instead. Raise InterestRadius if this ship needs to be seen further away.");
-                }
-                placement = InterestPlacement.Region;
+                _index.Add(e.NetId, RegionOf(e), e);
+                _reach[e.NetId] = 0UL;
+                LinkCarrier(e, CarrierOf(e));
+                _reach[e.NetId] = ReachMatch(e, 0UL);
+                return;
             }
+            _reach.Remove(e.NetId);
             switch (placement)
             {
                 case InterestPlacement.Global: _index.AddGlobal(e.NetId, e); break;
@@ -340,7 +345,7 @@ namespace Nebula
         {
             if (e == null || e.NetId == 0) return;
             bool pending = _index.HasCarried(e.NetId);
-            if (pending) _carried.Capture(_index, e.NetId, _publisher, _wideMaskOf);
+            if (pending) _carried.Capture(_index, e.NetId, _publisher, _wideMaskOf, _reachMaskOf);
             InterestAdd(e);
             AnnounceToRelevantGateways(e, followers);
             if (pending) PublishCarried();
@@ -361,19 +366,147 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Whether this entity is itself a dynamic container other entities ride in for interest (a ship, a lift). A
-        /// carrier whose frame has regions of its own (a planet) is not one: what is on it is bucketed in its regions.
+        /// Whether this entity is itself a container other entities ride in for interest (a ship, a lift): a
+        /// <see cref="Container"/> on its root, which is what makes a container carried (<c>docs/container-tree.md</c> D21),
+        /// read from the object rather than from the registration so a copy whose box another copy registered still
+        /// counts. A carrier whose frame has regions of its own (a planet) is not one: what is on it is bucketed in its regions.
         /// </summary>
         private static bool IsCarrier(NetworkIdentity e)
         {
             var box = e.GetComponent<Container>();
-            return box != null && box.IsDynamic && !OwnsRegions(box);
+            return box != null && !OwnsRegions(box);
         }
 
         private static bool OwnsRegions(Container c) => c.OwnPhysicsFrame && c.FrameInterest == FrameInterestMode.OwnRegions;
 
-        /// <summary>Prefab ids already reported for an impossible carrier placement, so the warning is said once.</summary>
-        private readonly HashSet<ushort> _carrierPlacementWarned = new HashSet<ushort>();
+        // ------------------------------------------------------------------------------------------- carrier reach (NEB-391)
+
+        /// <summary>
+        /// Carriers whose own relevance radius is over the mesh radius (or that are always relevant), with the gateways
+        /// that radius reaches: matched at the interest rate against each gateway's foci, as a wide entity is. The carrier
+        /// stays bucketed by region, and everything riding in it is published to its region's subscribers <b>and</b> to
+        /// these, so a ship and its crew are seen together out to the ship's radius (NEB-391).
+        /// </summary>
+        private readonly Dictionary<ulong, ulong> _reach = new Dictionary<ulong, ulong>();
+        private readonly List<NetworkIdentity> _reachSubtree = new List<NetworkIdentity>();
+        private readonly List<ulong> _reachIds = new List<ulong>();
+        private Func<ulong, ulong> _reachMaskOfCached;
+        private Func<ulong, ulong> _reachMaskOf => _reachMaskOfCached ??= ReachOfRoot;
+
+        /// <summary>The reach of the root carrier an entity rides in (or of the entity itself, when it is one); 0 when it has none.</summary>
+        private ulong ReachOfRoot(ulong netId)
+        {
+            if (_reach.Count == 0) return 0;
+            ulong root = _index.RootOf(netId);
+            return _reach.TryGetValue(root, out ulong mask) ? mask : 0;
+        }
+
+        /// <summary>Whether this worker holds the reach of a carrier (for tests and diagnostics).</summary>
+        internal bool TryGetCarrierReach(ulong netId, out ulong mask) => _reach.TryGetValue(netId, out mask);
+
+        /// <summary>
+        /// The gateways a reaching carrier reaches now: every link when it is always relevant, else the ones with a focus
+        /// within its radius (and, for those that already have it, its radius plus the exit margin).
+        /// </summary>
+        private ulong ReachMatch(NetworkIdentity carrier, ulong before)
+        {
+            if (carrier.AlwaysRelevant) return _publisher.LinkedMask;
+            PlacementOf(false, carrier.RelevanceRadius, _interest, out float radius);
+            ToAbsolute(carrier, out double x, out double y, out double z);
+            ulong salt = RegionSaltOf(carrier);
+            ulong enter = _publisher.WideMaskSalted(_interestGrid, salt, x, y, z, radius);
+            ulong stay = before == 0 ? 0 : _publisher.WideMaskSalted(_interestGrid, salt, x, y, z, radius + _interest.ExitMargin);
+            return enter | (before & stay);
+        }
+
+        /// <summary>
+        /// Re-match every reaching carrier that rides in nothing, and publish what changed to the carrier and its whole
+        /// subtree: spawns carrier first to the gateways gained, forgets contents first to the ones lost. A gateway that
+        /// keeps any of them for another reason (its region, its owner, an explicit subscription) is told nothing.
+        /// </summary>
+        private void EvaluateReach()
+        {
+            _reachIds.Clear();
+            foreach (var kv in _reach) _reachIds.Add(kv.Key);
+            for (int k = 0; k < _reachIds.Count; k++)
+            {
+                ulong id = _reachIds[k];
+                if (_index.RootOf(id) != id || !_index.TryGetValue(id, out var carrier) || carrier == null) continue;
+                ulong before = _reach[id];
+                ulong after = ReachMatch(carrier, before);
+                if (after == before) continue;
+                _reach[id] = after;
+                PublishReachChange(carrier, before, after);
+            }
+            _reachIds.Clear();
+        }
+
+        private void PublishReachChange(NetworkIdentity carrier, ulong before, ulong after)
+        {
+            _reachSubtree.Clear();
+            _reachSubtree.Add(carrier);
+            if (_index.HasCarried(carrier.NetId))
+            {
+                _wideScratch.Clear();
+                _index.CollectCarried(carrier.NetId, _wideScratch);
+                for (int i = 0; i < _wideScratch.Count; i++)
+                    if (_index.TryGetValue(_wideScratch[i], out var rider) && rider != null) _reachSubtree.Add(rider);
+                _wideScratch.Clear();
+            }
+            for (int i = 0; i < _reachSubtree.Count; i++)
+            {
+                var e = _reachSubtree[i];
+                ulong spawn = after & ~before & ~KeepMask(e);
+                if (spawn != 0) SendSpawnToMask(e, spawn);
+            }
+            for (int i = _reachSubtree.Count - 1; i >= 0; i--)
+            {
+                var e = _reachSubtree[i];
+                ulong forget = before & ~after & ~KeepMask(e);
+                if (forget != 0) SendForgetToMask(e, forget);
+            }
+            _reachSubtree.Clear();
+        }
+
+        /// <summary>The gateways that hold an entity whatever its carrier's reach: its region's subscribers, its owner's, its explicit subscribers.</summary>
+        private ulong KeepMask(NetworkIdentity e)
+        {
+            ulong mask = StickyMask(e);
+            if (_index.TryGetPlacement(e.NetId, out var placement, out ulong region) && placement == InterestPlacement.Region) mask |= _publisher.MaskOf(region);
+            return mask;
+        }
+
+        /// <summary>
+        /// A gateway stopped subscribing regions. Nothing is sent for an ordinary region entity (the gateway drops its own
+        /// copies), but a gateway files a reaching carrier and its riders by the carrier's radius, not by region, and
+        /// would keep them frozen: the ones in those regions that its reach does not cover either are forgotten,
+        /// contents first.
+        /// </summary>
+        private void ForgetUnreachedCarriers(IReadOnlyList<ulong> removed, ulong bit)
+        {
+            _spawnOrder.Clear();
+            for (int r = 0; r < removed.Count; r++)
+            {
+                foreach (var entry in _index.Region(removed[r]))
+                {
+                    var e = entry.Value;
+                    if (e == null) continue;
+                    ulong root = _index.RootOf(entry.Id);
+                    if (!_reach.TryGetValue(root, out ulong reach)) continue;
+                    if (((reach | StickyMask(e) | _publisher.MaskOf(removed[r])) & bit) != 0) continue;
+                    _spawnOrder.Add(e);
+                }
+            }
+            if (_spawnOrder.Count == 0) return;
+            _spawnDepth.Clear();
+            int deepest = 0;
+            for (int i = 0; i < _spawnOrder.Count; i++) { int d = _index.DepthOf(_spawnOrder[i].NetId); _spawnDepth.Add(d); if (d > deepest) deepest = d; }
+            for (int depth = deepest; depth >= 0; depth--)
+                for (int i = 0; i < _spawnOrder.Count; i++)
+                    if (_spawnDepth[i] == depth) SendForgetToMask(_spawnOrder[i], bit);
+            _spawnDepth.Clear();
+            _spawnOrder.Clear();
+        }
 
         /// <summary>
         /// The net id of the entity carrying this one for interest: the carrier of its box, or of the box a room it is in
@@ -414,12 +547,15 @@ namespace Nebula
         private void InterestRemove(ulong netId)
         {
             bool carried = _index.HasCarried(netId);
-            if (carried) _carried.Capture(_index, netId, _publisher, _wideMaskOf);
+            if (carried) _carried.Capture(_index, netId, _publisher, _wideMaskOf, _reachMaskOf);
             _index.Remove(netId);
+            _reach.Remove(netId);
             // The removed carrier's own slot resolves to "gone" and publishes nothing, so only the passengers
             // it orphaned are announced or forgotten here.
             if (carried) PublishCarried();
             _wideMask.Remove(netId);
+            // Handed over (the new owner takes the tier over) or despawned (its despawn went to the far mask too).
+            _far.Forget(netId);
             _carrierCycleWarned.Remove(netId);
             // It is not ours any more, so there is nothing to announce to a gateway that has yet to link here.
             if (_awaitedByGateway.Count > 0) foreach (var ids in _awaitedByGateway.Values) ids.Remove(netId);
@@ -445,6 +581,7 @@ namespace Nebula
                 }
                 _index.Clear();
                 _wideMask.Clear();
+                _reach.Clear();
                 for (int i = 0; i < _authoritative.Count; i++) InterestAdd(_authoritative[i]);
                 // Carrier links need every entity present, so they are re-applied after the whole set is back.
                 for (int i = 0; i < _authoritative.Count; i++)
@@ -490,7 +627,7 @@ namespace Nebula
         /// </summary>
         private void MoveAndPublish(NetworkIdentity e, ulong to)
         {
-            _carried.Capture(_index, e.NetId, _publisher, _wideMaskOf);
+            _carried.Capture(_index, e.NetId, _publisher, _wideMaskOf, _reachMaskOf);
             _index.Move(e.NetId, to);
             PublishCarried();
         }
@@ -503,7 +640,7 @@ namespace Nebula
         /// </summary>
         private void SetCarrierAndPublish(NetworkIdentity e, ulong carrier)
         {
-            _carried.Capture(_index, e.NetId, _publisher, _wideMaskOf);
+            _carried.Capture(_index, e.NetId, _publisher, _wideMaskOf, _reachMaskOf);
             LinkCarrier(e, carrier);
             PublishCarried();
         }
@@ -655,11 +792,15 @@ namespace Nebula
             if (gateway.Subscription != null) gateway.Subscription.Changed -= OnSubscriptionChanged;
             gateway.Subscription = null;
             ulong bit = RegionPublisher.Bit(gateway.GatewayBit);
+            _far.RemoveGateway(gateway.GatewayBit);
             gateway.GatewayBit = -1;
             RebuildExplicitMask(announce: false);
             _wideScratch.Clear();
             foreach (var kv in _wideMask) if ((kv.Value & bit) != 0) _wideScratch.Add(kv.Key);
             for (int i = 0; i < _wideScratch.Count; i++) _wideMask[_wideScratch[i]] &= ~bit;
+            _wideScratch.Clear();
+            foreach (var kv in _reach) if ((kv.Value & bit) != 0) _wideScratch.Add(kv.Key);
+            for (int i = 0; i < _wideScratch.Count; i++) _reach[_wideScratch[i]] &= ~bit;
             _wideScratch.Clear();
         }
 
@@ -698,9 +839,11 @@ namespace Nebula
             _publisher.ApplyChanges(gateway.GatewayBit, receiver);
             RebuildExplicitMask(announce: true);
             _nextWideEval = 0f; // new foci: re-match the wide list on the next publish rather than at the next interval
+            _far.EvaluateSoon();
+            ulong bit = RegionPublisher.Bit(gateway.GatewayBit);
+            if (_reach.Count > 0 && receiver.Removed.Count > 0) ForgetUnreachedCarriers(receiver.Removed, bit);
             var added = receiver.Added;
             if (added.Count == 0) return;
-            ulong bit = RegionPublisher.Bit(gateway.GatewayBit);
             _spawnOrder.Clear();
             for (int i = 0; i < added.Count; i++)
             {
@@ -788,6 +931,7 @@ namespace Nebula
         {
             if (now < _nextWideEval) return;
             _nextWideEval = now + _interest.EvalInterval;
+            if (_reach.Count > 0) EvaluateReach();
             if (_index.WideCount == 0)
             {
                 if (_wideMask.Count > 0) _wideMask.Clear();
@@ -817,8 +961,8 @@ namespace Nebula
         /// <summary>
         /// Whose position and radius a wide entity is matched by: its root carrier's, so a subtree
         /// in the wide list is one set of gateways rather than one per passenger. <see cref="InterestAdd"/>
-        /// downgrades a carrier to a region entity, so in practice the root is the entity itself;
-        /// this is what keeps the guarantee true if it ever is not.
+        /// keeps a carrier a region entity (its radius is a reach, <see cref="_reach"/>), so in practice the root is the
+        /// entity itself; this is what keeps the guarantee true if it ever is not.
         /// </summary>
         private NetworkIdentity WideSubjectOf(ulong netId, NetworkIdentity self)
         {
@@ -872,7 +1016,7 @@ namespace Nebula
                     continue;
                 }
                 if (!_index.TryGetPlacement(e.NetId, out var placement, out ulong region)) { placement = InterestPlacement.Region; region = 0; }
-                ulong regionMask = placement == InterestPlacement.Region ? _publisher.MaskOf(region) : 0;
+                ulong regionMask = placement == InterestPlacement.Region ? _publisher.MaskOf(region) | ReachOfRoot(e.NetId) : 0;
                 _wideMask.TryGetValue(e.NetId, out ulong wide);
                 ulong mask = EffectiveMask(placement, regionMask, wide, linked, StickyMask(e));
                 _entityMask[e.NetId] = mask;
@@ -906,7 +1050,7 @@ namespace Nebula
         {
             if (e == null) return 0;
             if (!_index.TryGetPlacement(e.NetId, out var placement, out ulong region)) { placement = InterestPlacement.Region; region = 0; }
-            ulong regionMask = placement == InterestPlacement.Region ? _publisher.MaskOf(region) : 0;
+            ulong regionMask = placement == InterestPlacement.Region ? _publisher.MaskOf(region) | ReachOfRoot(e.NetId) : 0;
             _wideMask.TryGetValue(e.NetId, out ulong wide);
             return EffectiveMask(placement, regionMask, wide, _publisher.LinkedMask, StickyMask(e));
         }
@@ -1077,6 +1221,83 @@ namespace Nebula
             }
             if (_spawnOrder.Count == 0) return;
             SendSpawnsInCarrierOrder(bit);
+        }
+
+        // ------------------------------------------------------------------------------------------- far tier
+
+        private readonly FarPublisher _far = new FarPublisher();
+        private Action<ulong> _sendFar;
+
+        /// <summary>The gateways that hold an entity in their far tier (also told when it despawns).</summary>
+        private ulong FarMaskOf(ulong netId) => _far.MaskOf(netId);
+
+        /// <summary>
+        /// The far relevance tier (<c>docs/interest-management.md</c> §16, NEB-388): every entity this worker is
+        /// authoritative for that declares a <see cref="NetworkIdentity.FarRelevanceRadius"/> and rides in nothing is matched
+        /// against each gateway's foci of its scope's own space at the interest rate, and its pose, absolute in its scope
+        /// and in double, is sent to the gateways it reaches at its <see cref="NetworkIdentity.FarUpdateRate"/>. Passengers
+        /// are not far entities of their own: what a marker stands for is the ship.
+        /// </summary>
+        private void PublishFar(double now)
+        {
+            _sendFar ??= mask => SendToMask(mask, Delivery.ReliableOrdered);
+            _far.EvalInterval = _interest.EvalInterval;
+            _far.ExitMargin = _interest.ExitMargin;
+            _far.Begin(now);
+            bool any = false;
+            for (int i = 0; i < _authoritative.Count; i++)
+            {
+                var e = _authoritative[i];
+                if (e == null || !(e.FarRelevanceRadius > 0f) || e.NetId == 0) continue;
+                if (_index.CarrierOf(e.NetId) != 0) continue;
+                any = true;
+                if (!_far.IsDue(e.NetId)) { _far.Keep(e.NetId); continue; }
+                var entry = FarEntryOf(e);
+                _far.Offer(entry, RegionKeys.SaltOf(e.InstanceId), _publisher, _interestGrid);
+            }
+            _far.End();
+            HasFarEntities = any;
+            if (_far.Out.Count == 0) return;
+            for (int i = 0; i < _far.Out.Count; i++) if (_far.Out[i].Entry.Kind == FarEntryKind.State) FarEntriesSent++;
+            _far.Flush(_writer, _sendFar);
+        }
+
+        /// <summary>
+        /// An entity's far-tier entry: its pose converted out of every physics frame it stands in into its scope's own
+        /// space, then made absolute in double (<see cref="ContainerRegistry.ToAbsolutePrecise"/>), the space the gateway's
+        /// foci are in. The conversion out of a frame happens in this worker's simulation space, in float, so the position
+        /// is good to that float's step there (a centimetre or two a few hundred kilometres from this worker's origin); the
+        /// wire adds nothing to that.
+        /// </summary>
+        internal static FarEntityEntry FarEntryOf(NetworkIdentity e)
+        {
+            var t = e.transform;
+            Vector3 position = t.position;
+            Quaternion rotation = t.rotation;
+            Vector3 velocity = e.Motion.Velocity;
+            var space = e.Space;
+            if (space != null)
+            {
+                velocity = PhysicsFrames.ConvertVelocity(velocity, position, space, null);
+                rotation = PhysicsFrames.Convert(rotation, space, null);
+                position = PhysicsFrames.Convert(position, space, null);
+            }
+            var absolute = ContainerRegistry.ToAbsolutePrecise(position, e.InstanceId);
+            return new FarEntityEntry
+            {
+                NetId = e.NetId,
+                Epoch = e.Epoch,
+                Kind = FarEntryKind.State,
+                PrefabId = e.PrefabId,
+                InterestGroup = e.InterestGroup,
+                Radius = e.FarRelevanceRadius,
+                UpdateRate = e.EffectiveFarUpdateRate,
+                OwnerClientId = e.OwnerClientId,
+                InstanceId = e.InstanceId,
+                X = absolute.X, Y = absolute.Y, Z = absolute.Z,
+                Rotation = rotation,
+                Velocity = velocity,
+            };
         }
 
         // ------------------------------------------------------------------------------------------- warnings

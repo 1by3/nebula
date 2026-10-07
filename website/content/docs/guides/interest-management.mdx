@@ -52,6 +52,7 @@ Every field lives on `NebulaConfig` (`Resources/NebulaConfig.asset`), with a mat
 | `InterestFrameApproachMargin` | 4,000 m | How close a client's pawn must be to the box of a framed container with regions of its own (a planet, a station) to also look into it, from the point of its box nearest the pawn. `0` turns it off. |
 | `InterestHintMaxHz` | 5 | Most focus hints accepted from one client per second. |
 | `InterestMaxExplicitPerClient` | 16 | Most entities one client's policy may subscribe to by ID (party members, quest targets). |
+| `InterestFarMaxEntities` | 64 | Most entities one client holds in the [far tier](#see-ships-and-outposts-from-far-away) at once, nearest first. `0` turns the far tier off. |
 | `InterestMaxFocusSpeed` | 12 m/s | The fastest a player is expected to travel. Used only to check that `InterestSubscribeMargin` covers the distance a focus can move between two evaluations. |
 | `PartitionWarnEntities` | 2,000 | A worker warns when one container holds more entities than this. `0` disables the warning. |
 | `PartitionWarnFilterMs` | 2 ms | A worker warns when filtering entities for its gateways takes longer than this per tick. `0` disables the warning. |
@@ -103,13 +104,15 @@ To give `High`, `Low` or `Background` entities tiers of their own instead of the
 
 ## Per-prefab overrides
 
-Three fields on `NetworkIdentity` adjust how a prefab participates in interest, independent of the client-side rate fields above:
+Five fields on `NetworkIdentity` adjust how a prefab participates in interest, independent of the client-side rate fields above:
 
 | Field | Type | Default | Use it for |
 | --- | --- | --- | --- |
 | `RelevanceRadius` | `float` | `0` (mesh default, `InterestRadius`) | An entity visible from farther than the default. A lighthouse visible from 2 km sets `2000`; a coin that should only matter up close sets `20`. The gateway clamps the effective value to `InterestMaxRadius` (1,024 m by default — raise it on `NebulaConfig` before relying on a `RelevanceRadius` above that). |
 | `AlwaysRelevant` | `bool` | `false` | An entity every client must always hear about: a match timer, a world boss, a weather driver. Skips distance testing entirely. |
 | `InterestGroup` | `byte` | `0` | A number your own `IInterestPolicy.Authorize` can filter on, such as a team marker. Nebula only carries the value; it assigns no meaning to it. |
+| `FarRelevanceRadius` | `float` | `0` (off) | How far the entity is seen as a marker, beyond its normal radius: a ship in orbit, an outpost. Not clamped by `InterestMaxRadius`. See [See ships and outposts from far away](#see-ships-and-outposts-from-far-away). |
+| `FarUpdateRate` | `float` | `1` | Far-tier pose updates per second, clamped to 0.1 to 30. |
 
 A coin set to `20` and a lighthouse set to `2000` (with `InterestMaxRadius` raised to cover it) behave correctly at the same time: the coin only enters a client's set within 20 m, while the lighthouse is found through a separate wide-entity list checked directly against each client's foci, so its long radius does not cost every other client a wider region scan.
 
@@ -365,7 +368,30 @@ When a carrier moves between regions, or an entity boards or disembarks, the gat
 
 A carrier whose [physics frame](/docs/guides/physics-frames) uses `FrameInterest = OwnRegions`, such as a planet, is the exception to all of this: what is on it is bucketed in regions of the planet's own coordinates, not with the planet. A client in that frame looks at the frame's regions around its player and at the space around the frame from the same point. See [Make a planet a frame](/docs/guides/physics-frames#make-a-planet-a-frame).
 
-A carrier prefab is always bucketed by region, whatever `AlwaysRelevant` or `RelevanceRadius` it is given: putting a carrier in the wide or global list would leave its passengers bucketed wherever it was boarded, popping in and out of a client's set independently of the ship it rides in. A worker downgrades it to region placement and logs a warning once per prefab instead. A ship that must be seen from farther away needs a larger mesh-wide `InterestRadius`, not a per-prefab override.
+A carrier prefab stays bucketed by region, whatever `AlwaysRelevant` or `RelevanceRadius` it is given: putting a carrier in the wide or global list would leave its passengers bucketed wherever it was boarded, popping in and out of a client's set independently of the ship it rides in. Its radius still counts: the worker treats it as a reach on top of the region, and sends the ship and everything aboard to every gateway with a focus within that radius, as well as to the gateways subscribing its region. A ship with `RelevanceRadius` 600 is seen, crew and all, by a player 500 m away at the default settings, and both leave a client's set together. For a ship to be seen further than `InterestMaxRadius`, give it a far radius (next section).
+
+## See ships and outposts from far away
+
+The far tier lets a client see large or important entities far beyond `InterestMaxRadius`, as markers rather than replicas. Set `FarRelevanceRadius` on the prefab, for example `100000` for a ship that is visible 100 km away in orbit. Beyond the entity's normal radius and within its far radius of a client's focus, the client receives only the entity's pose, about once a second (`FarUpdateRate`), and the facts needed to draw it: its prefab, its owner and its interest group. It doesn't receive variables, RPCs or sync state, and it doesn't get a replica.
+
+Read far entities from `NebulaClient.FarEntities`, which maps net IDs to `FarEntity` values, and listen for `FarEntityAdded`, `FarEntityUpdated` and `FarEntityRemoved`:
+
+```csharp
+client.FarEntityAdded += far => markers.Show(far.NetId, far.PrefabId);
+client.FarEntityRemoved += (far, why) => markers.Hide(far.NetId);
+
+void LateUpdate()
+{
+    foreach (var far in client.FarEntities.Values)
+        markers.Place(far.NetId, far.PredictedWorldPosition(), far.Rotation);
+}
+```
+
+`FarEntity.Position` is absolute in the entity's scope, in double precision. `WorldPosition` is the same point in the client's Unity space, and `PredictedWorldPosition` carries it forward by the entity's velocity between updates. When the entity comes within its normal radius, the client gets the replica through the usual `EntitySpawned`, and the far entity is removed with `FarEntityRemoval.Replicated` first, so you can swap the marker for the model without a gap. When it moves back out, the replica despawns and the far entity returns.
+
+Far entities are measured in the scope's own space, outside every [physics frame](/docs/guides/physics-frames). A pilot in orbit sees a ship parked on a planet, and a player on the planet sees ships in orbit. Each client holds at most `InterestFarMaxEntities` far entities, the nearest ones. Your policy's `Authorize` decides about far entities exactly as it does about replicas.
+
+The far tier needs a gateway and clients of protocol 26. A client of protocol 25 is admitted but never receives far entities. Each far entity costs every gateway it reaches about 60 bytes per update, so use it for the entities players must see across the map, not for everything.
 
 ## Scoped container ownership
 

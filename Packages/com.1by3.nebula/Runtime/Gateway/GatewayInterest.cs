@@ -31,6 +31,8 @@ namespace Nebula
         Spawn = 16,
         /// <summary>It is authoritative for an entity one of our clients owns.</summary>
         Owned = 32,
+        /// <summary>Its heartbeat says it holds far-relevant entities, which it matches against our foci (NEB-388).</summary>
+        Far = 64,
     }
 
     public sealed partial class NebulaGateway
@@ -793,6 +795,7 @@ namespace Nebula
             client.PreparedRows.Clear();
             client.RowsLeaving.Clear();
             client.HostViews.Clear();
+            ReleaseFar(client, sendGone: false);
             client.HasPlaced = false;
             _hintFilter.Forget(client.ClientId);
             _subscriptionsDirty = true;
@@ -819,6 +822,7 @@ namespace Nebula
             double dt = _lastInterestTickAt >= 0 ? now - _lastInterestTickAt : 0;
             _lastInterestTickAt = now;
             if (dt < 0) dt = 0;
+            ExpireFarRecords(now);
             if (_schedule.Count > 0)
             {
                 _isClientDirty ??= IsClientInterestDirty;
@@ -890,6 +894,8 @@ namespace Nebula
             client.Interest.Evaluate(_index, now, _entered, _leftIds);
             UpdateClientRegions(client);
             ApplyInterestChanges(client, _entered, _leftIds);
+            // After the replica set, so what just left it can drop to a marker and what just entered it leaves the far tier.
+            EvaluateFar(client, snapshot);
             // What the client can *see* has been dealt with; what it must be able to *build* has not. A camera
             // over empty terrain changes no entity at all, so the container window is brought in line here and
             // not only when something entered or left the set (design D60).
@@ -1177,6 +1183,7 @@ namespace Nebula
             {
                 if (!_entities.TryGetValue(entered[i], out var rec)) continue;
                 client.Visible.Add(rec.NetId);
+                PromoteFromFar(client, rec.NetId);
                 AddObserver(rec, client);
                 SendSpawn(client, rec);
             }
@@ -1387,6 +1394,7 @@ namespace Nebula
             {
                 if (w.Status == WorkerStatus.Dead || !ControlPlane.IsWorkerAlive(w, Config.WorkerTimeoutSeconds)) continue;
                 if (w.HasGlobalEntities) Reason(w.WorkerId, InterestLinkReason.Global);
+                if (w.HasFarEntities && _interest.FarMaxEntities > 0) Reason(w.WorkerId, InterestLinkReason.Far);
                 if (unresolved) Reason(w.WorkerId, InterestLinkReason.Explicit);
             }
 

@@ -1008,6 +1008,7 @@ namespace Nebula
                 BotCount = (uint)bots,
                 ServerDrivenCount = (uint)serverDriven,
                 HasGlobalEntities = HasGlobalEntities,
+                HasFarEntities = HasFarEntities,
                 OldestDirtySeconds = Persistence?.OldestDirtyAgeSeconds ?? 0f,
                 FrameAvgMs = _lastFrame.AvgMs,
                 FrameP90Ms = _lastFrame.P90Ms,
@@ -1366,6 +1367,8 @@ namespace Nebula
 
             ProfPublish.Begin();
             PublishToGateways(tick);
+            // Timed by ticks, not the wall clock: the far rate is a rate of simulation, and a stalled worker should not burst.
+            PublishFar(tick / (double)NetworkTime.TickRate);
             for (int i = 0; i < _authoritative.Count; i++)
             {
                 var e = _authoritative[i];
@@ -1568,7 +1571,8 @@ namespace Nebula
             var despawn = new EntityDespawnMsg { NetId = identity.NetId, Epoch = identity.Epoch };
             // Everyone who could know it: its region's subscribers, its owner's gateway, explicit subscribers, and
             // every link when it is global. A gateway that never heard of it simply ignores the despawn.
-            ulong despawnMask = PublishMaskOf(identity);
+            // The gateways holding it in their far tier are told too (NEB-388): a despawn is also a far "gone".
+            ulong despawnMask = PublishMaskOf(identity) | FarMaskOf(identity.NetId);
             _writer.Reset();
             despawn.Write(_writer, MsgId.EntityDespawn);
             SendToMask(despawnMask, Delivery.ReliableOrdered);

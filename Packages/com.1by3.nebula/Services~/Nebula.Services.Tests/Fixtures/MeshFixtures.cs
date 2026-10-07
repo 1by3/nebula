@@ -43,6 +43,11 @@ public sealed class FakeWorker : IDisposable
         public byte[]? Audience;
         /// <summary>The full map section its spawn carries: the last one set, with every <see cref="SendMaps"/> since folded in.</summary>
         public byte[]? Maps;
+        /// <summary>Its far relevance radius (<c>NetworkIdentity.FarRelevanceRadius</c>, NEB-388); 0 = not far relevant.</summary>
+        public float FarRadius;
+        /// <summary>Its far updates per second.</summary>
+        public float FarRate = 1f;
+        public ushort PrefabId;
     }
 
     private sealed class GatewayLink
@@ -388,7 +393,8 @@ public sealed class FakeWorker : IDisposable
         bool carried = _index.HasCarried(netId);
         if (carried) _carried.Capture(_index, netId, _publisher, WideMaskOf);
         _index.Remove(netId);
-        ulong mask = MaskFor(e);
+        // The gateways holding it in their far tier hear the despawn too, as a worker sends it (NEB-388).
+        ulong mask = MaskFor(e) | _far.Forget(netId);
         for (int bit = 0; bit < RegionPublisher.MaxGateways; bit++)
         {
             if ((mask & (1UL << bit)) == 0) continue;
@@ -426,6 +432,57 @@ public sealed class FakeWorker : IDisposable
             inner.Container = carrier.Container;
             _index.SetValue(inner.NetId, inner);
         }
+    }
+
+    // ------------------------------------------------------------------------------------------- far tier (NEB-388)
+
+    /// <summary>The real far-tier bookkeeping a Unity worker uses (<see cref="FarPublisher"/>), so this fake publishes it the same way.</summary>
+    private readonly FarPublisher _far = new();
+    /// <summary>Whether this worker holds a far-relevant entity: what its heartbeat reports (see <see cref="Fleet.Pump"/>).</summary>
+    public bool HasFarEntities { get; private set; }
+    /// <summary>Far-tier entries sent, per gateway id and net id: what the far tests count.</summary>
+    public readonly Dictionary<(string Gateway, ulong NetId), int> FarSent = new();
+
+    /// <summary>
+    /// One tick of the far tier at <paramref name="now"/> seconds, exactly as <c>NebulaWorker.PublishFar</c> runs it: every
+    /// far-relevant entity riding in nothing, its pose absolute in its scope, matched against each gateway's foci at the
+    /// interest rate and sent at its far rate.
+    /// </summary>
+    public void PublishFar(double now)
+    {
+        _far.EvalInterval = Settings.EvalInterval;
+        _far.ExitMargin = Settings.ExitMargin;
+        _far.Begin(now);
+        bool any = false;
+        foreach (var e in _entities.Values)
+        {
+            if (!(e.FarRadius > 0f) || _index.CarrierOf(e.NetId) != 0) continue;
+            any = true;
+            if (!_far.IsDue(e.NetId)) { _far.Keep(e.NetId); continue; }
+            var box = ContainerRegistry.Resolve(e.Container);
+            var absolute = ContainerRegistry.ToAbsolutePrecise(box != null ? box.ToWorld(e.Local) : e.Local, 0UL);
+            _far.Offer(new FarEntityEntry
+            {
+                NetId = e.NetId, Epoch = e.Epoch, Kind = FarEntryKind.State, PrefabId = e.PrefabId, InterestGroup = e.InterestGroup,
+                Radius = e.FarRadius, UpdateRate = FarRelevance.ClampRate(e.FarRate), OwnerClientId = e.OwnerClientId,
+                X = absolute.X, Y = absolute.Y, Z = absolute.Z, Rotation = Quaternion.identity,
+            }, RegionKeys.SaltOf(0UL), _publisher, Grid);
+        }
+        _far.End();
+        HasFarEntities = any;
+        for (int i = 0; i < _far.Out.Count; i++)
+        {
+            var o = _far.Out[i];
+            if (o.Entry.Kind != FarEntryKind.State) continue;
+            foreach (var link in _links.Values)
+                if ((o.Mask & (1UL << link.Bit)) != 0) { FarSent.TryGetValue((link.GatewayId, o.Entry.NetId), out int n); FarSent[(link.GatewayId, o.Entry.NetId)] = n + 1; }
+        }
+        _far.Flush(_w, mask =>
+        {
+            for (int bit = 0; bit < RegionPublisher.MaxGateways; bit++)
+                if ((mask & (1UL << bit)) != 0) Transport.Send(PeerOfBit(bit), Delivery.ReliableOrdered, _w.ToSegment());
+        });
+        Transport.Flush();
     }
 
     /// <summary>One tick of world state per gateway, holding only the entities that gateway subscribes.</summary>
@@ -1098,6 +1155,14 @@ public sealed class FakeClient : IDisposable
     /// </summary>
     public int DuplicateContainerRows;
     public int VarsReceived, StatesReceived, SyncStatesReceived, RpcsReceived, DuplicateSpawns, OrphanUpdates;
+    /// <summary>The far tier as a client holds it (NEB-388): the newest entry per entity, minus the ones gone or promoted.</summary>
+    public readonly Dictionary<ulong, FarEntityEntry> Far = new();
+    /// <summary>Far entries received per entity (state entries only), every far "gone", and every promotion of a far entity to a replica.</summary>
+    public readonly Dictionary<ulong, int> FarStatesOf = new();
+    public readonly List<ulong> FarGone = new(), FarPromoted = new();
+    /// <summary>Far entries for an entity this client held as a replica at the time: the tier leaking into the normal one.</summary>
+    public int FarWhileReplicated;
+    private readonly List<FarEntityEntry> _farIn = new();
     /// <summary>
     /// Every sync chunk this client was sent, in arrival order, with how it came: <c>spawn</c>, <c>reliable</c> or
     /// <c>sequenced</c>. What the audience tests read: a restricted chunk a client may not have shows up here.
@@ -1298,9 +1363,24 @@ public sealed class FakeClient : IDisposable
                 Transport.Send(_peer, Delivery.ReliableOrdered, w.ToSegment());
                 break;
             }
+            case MsgId.FarEntities:
+            {
+                FarEntitiesMsg.Read(r, _farIn);
+                foreach (var entry in _farIn)
+                {
+                    Wire.Add((entry.Kind == FarEntryKind.Gone ? "far-gone " : "far ") + entry.NetId);
+                    if (entry.Kind == FarEntryKind.Gone) { if (Far.Remove(entry.NetId)) FarGone.Add(entry.NetId); continue; }
+                    if (Replicas.Contains(entry.NetId)) { FarWhileReplicated++; continue; }
+                    Far[entry.NetId] = entry;
+                    FarStatesOf.TryGetValue(entry.NetId, out int n);
+                    FarStatesOf[entry.NetId] = n + 1;
+                }
+                break;
+            }
             case MsgId.EntitySpawn:
             {
                 var msg = EntitySpawnMsg.Read(r);
+                if (Far.Remove(msg.NetId)) FarPromoted.Add(msg.NetId);
                 Named(msg.NetId, msg.Container);
                 Spawned.Add(msg.NetId);
                 DriverOf[msg.NetId] = msg.DriverClientId;
@@ -1490,7 +1570,7 @@ public sealed class Fleet : IDisposable
         worker.Registration.Address = "127.0.0.1";
         worker.Registration.Port = (ushort)worker.Port;
         worker.Registration.Register(Plane);
-        Plane.HeartbeatWorker(worker.WorkerId, WorkerStatus.Ready, new WorkerStats());
+        Plane.HeartbeatWorker(worker.WorkerId, WorkerStatus.Ready, new WorkerStats { HasFarEntities = worker.HasFarEntities });
         return worker;
     }
 
@@ -1599,7 +1679,7 @@ public sealed class Fleet : IDisposable
             // from memory; on a real mesh the document has to arrive first (docs/control-plane-availability.md D5).
             if (worker.Registration.RegisterAgainIfForgotten(Plane)) worker.Reregistrations++;
             worker.ReclaimedContainers += worker.Registration.ReclaimContainers(Plane);
-            Plane.HeartbeatWorker(worker.WorkerId, WorkerStatus.Ready, new WorkerStats());
+            Plane.HeartbeatWorker(worker.WorkerId, WorkerStatus.Ready, new WorkerStats { HasFarEntities = worker.HasFarEntities });
         }
         Plane.Tick();
         foreach (var g in Gateways) if (!PausedGateways.Contains(g)) g.Tick();
