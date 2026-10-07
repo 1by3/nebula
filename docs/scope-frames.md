@@ -186,10 +186,30 @@ ways: twelve worlds of one chunk plan exactly like one world of twelve chunks.
 
 ## 7. Not in scope
 
-From the issue, unchanged: continuous coordinates across scopes, seamless scope-to-scope travel, curved or
-spherical coordinate systems, and within-scope precision for one very large scope (players far apart on one
-planet held by one worker) — that remains the existing single-frame trade-off, and the answer to it is more
-workers, not more frames.
+From the issue, unchanged: continuous coordinates across scopes, seamless scope-to-scope travel, and curved or
+spherical coordinate systems. Within-scope precision is below.
+
+### Within-scope precision (NEB-387)
+
+Decision: no wire-format change. A position on the wire is container-local float32, and that is enough for a framed
+container with large local coordinates (a planet 500 km across), wherever its scope sits.
+
+- Entities standing on a planet are in its hosted chunk containers (container-tree D22), so their wire coordinates are
+  small regardless of the planet's radius.
+- An entity directly in a framed carrier (a ship above the chunks, inside the planet's box) carries a frame-local float up to about the box's
+  half-extent, 250 km for a 205 km radius with headroom. The float spacing there is 1.6 cm (2^-6 m between 131 km and
+  262 km), so a position is rounded by at most 0.8 cm (half that between 65 km and 131 km). Acceptable for hulls and loose bodies.
+- The far tier (interest-management section 16) sends absolute `Double3` positions, so seeing something at long range
+  does not depend on float precision.
+- Each framed carrier is a local physics scene with its own floating origin (container-tree D19), and a scope has its own,
+  so simulation precision does not depend on where a planet sits in its system, which may be thousands of kilometres from the origin.
+- The gateway's absolute records (`EntityRecord.AbsX/AbsY/AbsZ` with `FrameKey`) are `double`. An entity in a frame
+  with regions of its own is filed in the frame's space (its frame-local numbers); one standing in the scope itself is
+  filed from a position composed in `Vector3`, so far from the origin it carries a float's resolution (about a metre at
+  10,000 km). Region buckets are tens to hundreds of metres wide, so this decides nothing today.
+
+Scenario 45 (`ConformanceFramePrecisionTests`) pins these numbers. A scope held by one worker where players are far
+apart on one very large planet is still the existing single-frame trade-off, and the answer to it is more workers, not more frames.
 
 ## 8. Known gaps, for later
 

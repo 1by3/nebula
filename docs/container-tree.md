@@ -365,6 +365,34 @@ the frames the pawn is in or rides in, which the policy's focus and the enclosin
   authority, frame flags), written only for entries that need it. A protocol-18 reader stops before it.
 - `AuthorityTransferMsg`: trailing `Crossing` byte (D15), written only when set.
 
+**D24 Positions on the wire stay container-local float32; a large frame needs no wider format (NEB-387).** A planet's
+box can be 500 km across (a 205 km radius with headroom) and its scope can sit thousands of kilometres from the world's
+origin, and a position is a `Vector3` in the container the entity stands in (`EntitySpawnMsg.LocalPosition`). That is
+enough, and no wire change was made:
+
+- *Entities on the ground* stand in the chunks the planet hosts (D22), whose boxes are a few hundred metres across, so
+  their wire coordinates are small however large the planet is: exact to a float's own resolution at a few hundred
+  metres (a fraction of a millimetre).
+- *Entities directly in the frame* (a ship above the chunks, a loose body) carry frame-local floats up to the box's
+  half-extent. A float between 2^17 and 2^18 m (131 km and 262 km) has a spacing of 2^-6 m, 1.6 cm, so a value is
+  rounded by at most 0.8 cm there (half that between 65 km and 131 km). That is the worst case at the edge of a
+  500 km box, and is acceptable for hulls and loose bodies; an entity near the frame's centre is finer.
+- *Where the scope is* does not enter into it. The wire position is relative to the container, never to the scope's or the
+  world's origin, so a planet in a system 10,000 km from the origin sends the same numbers as one at the origin.
+  Scopes and frames hold their own offsets in double (`ScopeFrame.OriginOffsetPrecise`, `ContainerRegistry.ToAbsolutePrecise`).
+- *The simulation* has the same property: each framed carrier is its own physics scene with a floating origin (D19), and
+  a scope has its own, so physics precision does not depend on where a planet sits in its system.
+- *Far entities* (NEB-388) travel as absolute `Double3` positions in the scope, so being seen from a long way off does
+  not depend on float precision.
+- *The gateway's record* (`EntityRecord.AbsX/AbsY/AbsZ`, with `FrameKey`) is stored in double, and an entity in a frame with regions of
+  its own is filed in that frame's space, so its numbers are the frame-local wire numbers and no 10,000 km offset
+  enters. It is filled from `RegionSpaceOf`, which composes in `Vector3`: for an entity standing in the scope itself
+  (key 0) a long way from the origin the value therefore carries a float's resolution there (about a metre at 10,000 km).
+  Interest is bucketed in tens to hundreds of metres, so nothing decides on it; it is a limit to know, not changed here.
+
+A game that needs better than 1.6 cm for something large in a very big frame keeps it in a chunk, or in a framed
+carrier of its own (a ship's frame is local to the ship). Scenario 45 pins the numbers.
+
 ## 7. Conformance
 
 | # | Scenario | Test |
@@ -373,6 +401,7 @@ the frames the pawn is in or rides in, which the policy's focus and the enclosin
 | 21 | Physics frame: a still scene with synced collider copies, a rigidbody resting on the container's own floor with the container on its side, frame state, crossings in and out by the pose owner at 1 km/s, a non-pose-owner handing over unconverted, a walk between two owners inside a frame, veto and defer | `ConformancePhysicsFrameTests` |
 | 22 | A root 10,000 km from the origin placed within a centimetre | `ConformanceContainerTreeTests.PlacementFarFromTheOriginIsExact` |
 | 23 | A planet with its own frame and eight octants leased to two workers with a base leased on its own; a ship flies in and lands in the other worker's octant without error; rotation changes neither local positions nor region keys; the ship leaves through the planet's pose owner; a frame's origin follows its worker; a ship at 1 km/s with a leased engine room, crew walking between the two workers and leaving through an airlock policy | `ConformanceFramedWorldTests`, plus `FrameRegionSpaceTests` for the region keys and per-space foci |
+| 45 | Wire precision in a large frame: an entity in a hosted chunk of a 500 km planet is near-exact, an entity directly in the frame at 100 km and 250 km from its origin is within half the float spacing (1.6 cm at 250 km) of where it stands, none of it depends on the scope being 10,000 km out, and the gateway's absolute records are double fields filed in the frame's own space | `ConformanceFramePrecisionTests` |
 | 41 | A planet's ground as a grid hosted by the planet (D22), nothing leased statically: allocated around a ground pawn on one worker, a second pawn on the other and a ship flying scenario 40's lap at 300 m/s; the ship never stands in the box outside a leased chunk, each chunk it enters was leased ahead of it, the ground behind it retires, and a restart brings back a crate standing in a hosted chunk under the planet's own restored container | `ConformanceCarrierHostedGridTests`, plus `HostedChunkGridTests` |
 | 43 | An `InstanceBoundary` in a chunk hosted by a framed carrier (NEB-394): its position is read out of the carrier's frame, as an entity's is, so the instance is prepared at the door; a player on the planet enters it and leaves back into the planet's chunk, in its frame | `ConformanceFramedInstanceBoundaryTests` |
 
