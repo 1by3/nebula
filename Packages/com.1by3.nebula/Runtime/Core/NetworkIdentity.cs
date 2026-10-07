@@ -1010,29 +1010,44 @@ namespace Nebula
         /// <summary>
         /// One origin frame moved: only the entities of that frame follow it. <paramref name="frameId"/> is 0 for
         /// the public frame, which is also where every entity whose scope has no frame of its own lives
-        /// (<c>docs/scope-frames.md</c>).
+        /// (<c>docs/scope-frames.md</c>). An entity inside a physics frame is not moved: its simulation-space pose, its
+        /// history entries and what its behaviours cache belong to the frame's own floating origin
+        /// (<c>docs/container-tree.md</c> D19), which a scope's shift leaves where it is. Only the history entries it
+        /// recorded in the scope's own space, before it entered the frame, follow the shift.
         /// </summary>
         internal static void ShiftFrameAll(ulong frameId, Vector3 delta)
         {
             foreach (var e in Live)
-                if (e != null && Nebula.World.ScopeFrames.FrameIdOf(e.InstanceId) == frameId) e.ShiftFrame(delta);
+            {
+                if (e == null || Nebula.World.ScopeFrames.FrameIdOf(e.InstanceId) != frameId) continue;
+                if (e.Space != null) e._history?.Shift(delta, null);
+                else e.ShiftFrame(delta, null);
+            }
         }
 
         /// <summary>
         /// A physics frame's floating origin moved (<c>docs/container-tree.md</c> D19): the entities in that frame were
-        /// moved with its root; their cached simulation-space positions follow here.
+        /// moved with its root; their cached simulation-space positions follow here. Another entity's history entries
+        /// recorded in that frame (before it left it) follow too.
         /// </summary>
         internal static void ShiftFrameIn(Container frame, Vector3 delta)
         {
             foreach (var e in Live)
-                if (e != null && e.Space == frame) e.ShiftFrame(delta);
+            {
+                if (e == null) continue;
+                if (e.Space == frame) e.ShiftFrame(delta, frame);
+                else e._history?.Shift(delta, frame);
+            }
         }
 
-        internal void ShiftFrame(Vector3 delta)
+        /// <param name="delta">How far the space moved.</param>
+        /// <param name="space">The space that moved: a framed container, or null for the scope's own space. Only the
+        /// history entries recorded in it move.</param>
+        internal void ShiftFrame(Vector3 delta, Container space)
         {
             // A scene entity was moved with its scene's roots by the streamer, a contained one with its container.
             if (Container == null && !IsSceneEntity) transform.position += delta;
-            _history?.Shift(delta);
+            _history?.Shift(delta, space);
             Interpolator?.Shift(delta);
             for (int i = 0; i < Behaviours.Length; i++)
             {

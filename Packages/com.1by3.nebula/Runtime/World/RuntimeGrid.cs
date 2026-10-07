@@ -510,7 +510,8 @@ namespace Nebula.World
         /// <see cref="CharacterController"/>s on entities of runtime containers across the shift and syncing
         /// physics transforms after. PhysX controllers must be reinserted at the new pose, not sweep over the
         /// shift. Call from the game's own update once it has decided where the origin belongs, or use
-        /// <see cref="KeepOriginNear"/> for the usual policy.
+        /// <see cref="KeepOriginNear"/> for the usual policy. On a client the physics frames are posed again at once
+        /// (<see cref="PhysicsFrames.PoseForRender()"/>), so what stands in them moves with the origin.
         /// </summary>
         public static void ShiftOriginTo(Vector3Int target)
         {
@@ -526,7 +527,9 @@ namespace Nebula.World
         /// (the streamer moves the authored cell scenes with it), so that case is <see cref="ShiftOriginTo"/>
         /// unchanged. A scoped grid owns its frame: only that scope's containers, the entities in them, their state
         /// history and interpolation buffers move, and no other scope on this worker notices
-        /// (<c>docs/scope-frames.md</c> D3).
+        /// (<c>docs/scope-frames.md</c> D3). What stands inside a physics frame keeps its simulation pose, which is the
+        /// frame's (<c>docs/container-tree.md</c> D19); on a client the frames are posed again at once
+        /// (<see cref="PhysicsFrames.PoseForRender()"/>), so what stands in them is drawn with the origin.
         /// </summary>
         public void ShiftOrigin(Vector3Int target)
         {
@@ -543,6 +546,10 @@ namespace Nebula.World
             ContainerRegistry.ShiftRuntime(InstanceId, delta);
             ContainerRegistry.RefreshCaches();
             NetworkIdentity.ShiftFrameAll(InstanceId, delta);
+            // A client draws its physics frames posed at their carriers (docs/container-tree.md D11): the carriers just
+            // moved, so the frames, and everything standing in them, move now (controllers still suspended), not at the
+            // client's next render pose. An origin rule run later this frame reads them where the origin put them.
+            PhysicsFrames.PoseForRender();
             Resume();
             Physics.SyncTransforms();
         }
