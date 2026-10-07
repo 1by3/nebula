@@ -82,12 +82,7 @@ namespace Nebula.Tests
         {
             PhysicsFrames.SceneFactory = () => EditorSceneManager.NewPreviewScene();
             PhysicsFrames.SceneDisposer = s => EditorSceneManager.ClosePreviewScene(s);
-            _mesh = new ConformanceMesh(2);
-            // No ghost band. The container registry is process-wide here, so a ghost of the ship on the other worker
-            // re-registers the ship's box and evacuates the crew from the authoritative copy's box into the ground
-            // (ContainerRegistry.UnregisterDynamic): a harness artifact, not what two processes do. Handovers still
-            // run at every seam; holding the neighbour warm before the crossing is what this leaves out.
-            _mesh.Config.GhostBandMargin = -1f;
+            _mesh = new ConformanceMesh(2, perWorkerRegistry: true); // the ghost band is on: each worker holds its own copy of the ship's box
             _space = _mesh.AddStaticContainer("system", Vector3.zero, new Vector3(200000f, 200000f, 200000f));
             _space.Center = Vector3.zero;
             ContainerRegistry.Rebuild();

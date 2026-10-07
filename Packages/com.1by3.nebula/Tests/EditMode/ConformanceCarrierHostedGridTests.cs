@@ -23,8 +23,8 @@ namespace Nebula.Tests
     /// restored container.
     /// <para>
     /// Tier B (<see cref="ConformanceMesh"/>) with a <see cref="LocalControlPlane"/>: the allocators write real lease rows,
-    /// and every process's registry is the one process-wide registry, mirrored from the rows each tick as a worker's
-    /// control-plane pass mirrors them. The planet and the grid are shared by both workers, as the registry is.
+    /// and every worker's registry (its own carried boxes; the static and runtime containers are shared) is mirrored from the
+    /// rows each tick as a worker's control-plane pass mirrors them. The planet's grid is shared by both workers.
     /// </para>
     /// </summary>
     [Category("Conformance")]
@@ -125,10 +125,7 @@ namespace Nebula.Tests
         /// <summary>Workers on the control plane, the prefabs, and the scope's own space: one root container leased to w1.</summary>
         private void StartMesh(int workers)
         {
-            _mesh = new ConformanceMesh(workers);
-            // No ghost band, as in scenario 40: the registry is process-wide, so a ghost of the ship on the other worker
-            // would re-register the ship's box and evacuate its crew (a harness artifact).
-            _mesh.Config.GhostBandMargin = -1f;
+            _mesh = new ConformanceMesh(workers, perWorkerRegistry: true);
             _mesh.Config.PersistenceRestoreGraceSeconds = 0f;
             foreach (var w in _mesh.Workers)
             {
@@ -187,6 +184,12 @@ namespace Nebula.Tests
 
         /// <summary>Every process's registry from the control plane's rows, as a worker's control-plane pass does it.</summary>
         private void Mirror()
+        {
+            // Each worker's own registry (its carried boxes and their pending leases) is mirrored on its own turn.
+            foreach (var w in _mesh.Workers) w.Act(MirrorOne);
+        }
+
+        private void MirrorOne()
         {
             ContainerRegistry.SyncRuntime(_plane.Leases);
             foreach (var lease in _plane.Leases)

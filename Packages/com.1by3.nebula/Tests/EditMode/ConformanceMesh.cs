@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
@@ -137,6 +138,7 @@ namespace Nebula.Tests
             /// <summary>Run worker-side code as this worker: the process-wide "which worker am I" statics point here.</summary>
             public void Act(Action action)
             {
+                _mesh.EnterRegistryView(this);
                 NebulaRuntime.LocalWorkerIndex = Index;
                 NebulaRuntime.LocalWorkerId = Id;
                 action();
@@ -230,9 +232,86 @@ namespace Nebula.Tests
         /// <summary>The <see cref="NebulaConfig"/> every worker of the mesh was given; defaults, until a scenario changes a field.</summary>
         public NebulaConfig Config { get; }
 
-        /// <summary>Stand up <paramref name="workerCount"/> workers <c>w1..wN</c>, each connected to every other.</summary>
-        public ConformanceMesh(int workerCount)
+        // ---------------------------------------------------------------- per-worker dynamic registry (NEB-393)
+
+        /// <summary>
+        /// The parts of <see cref="ContainerRegistry"/> that two processes would each hold their own of: the carried
+        /// boxes of the entities resident on the process (a ghost of a carrier registers its box too), their pending
+        /// leases and their broad phase. Static and runtime containers stay shared: the scenario builds one world.
+        /// </summary>
+        private static readonly string[] DynamicRegistryFields = { "DynamicList", "DynamicByNetId", "OversizedDynamic", "PendingLeases" };
+        private static readonly FieldInfo[] DynamicRegistry = Array.ConvertAll(DynamicRegistryFields,
+            n => typeof(ContainerRegistry).GetField(n, BindingFlags.Static | BindingFlags.NonPublic));
+        private static readonly FieldInfo DynamicHashField = typeof(ContainerRegistry).GetField("DynamicHash", BindingFlags.Static | BindingFlags.NonPublic);
+        private static readonly FieldInfo DynamicHashDirtyField = typeof(ContainerRegistry).GetField("_dynamicHashDirty", BindingFlags.Static | BindingFlags.NonPublic);
+
+        private readonly bool _perWorkerRegistry;
+        private Worker _registryOwner;
+        private readonly Dictionary<Worker, object[]> _registryViews = new Dictionary<Worker, object[]>();
+
+        /// <summary>
+        /// With a per-worker registry, make the process-wide dynamic registry the view of <paramref name="worker"/>:
+        /// what it held when it last acted is put back, and the previous actor's view is kept for its next turn. Called
+        /// by <see cref="Worker.Act"/>, which every worker-side call goes through.
+        /// </summary>
+        private void EnterRegistryView(Worker worker)
         {
+            if (!_perWorkerRegistry || ReferenceEquals(_registryOwner, worker)) return;
+            if (_registryOwner != null) _registryViews[_registryOwner] = SnapshotDynamicRegistry();
+            _registryViews.TryGetValue(worker, out var view);
+            RestoreDynamicRegistry(view);
+            _registryOwner = worker;
+        }
+
+        private static object[] SnapshotDynamicRegistry()
+        {
+            var view = new object[DynamicRegistry.Length];
+            for (int i = 0; i < view.Length; i++)
+            {
+                var live = DynamicRegistry[i].GetValue(null);
+                view[i] = live is System.Collections.IDictionary d ? CopyDictionary(d) : (object)new List<object>(((System.Collections.IEnumerable)live).Cast<object>());
+            }
+            return view;
+        }
+
+        private static void RestoreDynamicRegistry(object[] view)
+        {
+            for (int i = 0; i < DynamicRegistry.Length; i++)
+            {
+                var live = DynamicRegistry[i].GetValue(null);
+                if (live is System.Collections.IDictionary d)
+                {
+                    d.Clear();
+                    if (view != null) foreach (System.Collections.DictionaryEntry e in (System.Collections.IDictionary)view[i]) d[e.Key] = e.Value;
+                }
+                else
+                {
+                    var list = (System.Collections.IList)live;
+                    list.Clear();
+                    if (view != null) foreach (var item in (List<object>)view[i]) list.Add(item);
+                }
+            }
+            ((System.Collections.IDictionary)DynamicHashField.GetValue(null)).Clear();
+            DynamicHashDirtyField.SetValue(null, true); // the broad phase is rebuilt from the restored list on the next query
+        }
+
+        private static System.Collections.IDictionary CopyDictionary(System.Collections.IDictionary source)
+        {
+            var copy = (System.Collections.IDictionary)Activator.CreateInstance(source.GetType());
+            foreach (System.Collections.DictionaryEntry e in source) copy[e.Key] = e.Value;
+            return copy;
+        }
+
+        /// <summary>
+        /// Stand up <paramref name="workerCount"/> workers <c>w1..wN</c>, each connected to every other. With
+        /// <paramref name="perWorkerRegistry"/> each worker holds its own dynamic containers, as two processes
+        /// would, so a ghost of a carrier on one worker no longer replaces the authoritative copy's box on another
+        /// (and evacuates the crew aboard it); see <c>docs/conformance-suite.md</c>, tier B. Off by default: the
+        /// older scenarios assert on the shared registry.
+        /// </summary>
+        public ConformanceMesh(int workerCount, bool perWorkerRegistry = false)
+        {
+            _perWorkerRegistry = perWorkerRegistry;
             if (workerCount < 1) throw new ArgumentOutOfRangeException(nameof(workerCount));
             NebulaRuntime.Reset();
             NebulaRuntime.IsServer = true;
@@ -408,6 +487,8 @@ namespace Nebula.Tests
         /// <summary>Destroy every object the mesh created (workers, containers, prefabs, spawned entities) and reset the process-wide statics.</summary>
         public void Dispose()
         {
+            _registryOwner = null;
+            _registryViews.Clear();
             foreach (var worker in _workers)
             {
                 var entities = new List<NetworkIdentity>(worker.Instance.Entities);
