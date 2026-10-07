@@ -456,6 +456,101 @@ namespace Nebula.Tests
             Assert.That(grid.Owns(far.Container) && grid.Owns(ground.Container), "both pawns still stand on leased ground");
         }
 
+        /// <summary>
+        /// A hosted grid (D22) under a turning host (D20, NEB-390): the planet turns about its axis, at half a degree a
+        /// second and at a real planet's rate (1e-4 rad/s, once in about 17 hours). A pawn standing in a hosted chunk keeps
+        /// its chunk and its place in the planet's frame to the millimetre while its position in the scope turns with
+        /// the planet; and a ship climbing straight up out of the planet's box leaves it moving at v + ω × r in the
+        /// scope's space, as the planet's turning ground carried it.
+        /// </summary>
+        [TestCase(0.5f, TestName = "AHostedGridTurnsWithItsHost(half a degree a second)")]
+        [TestCase(0.0057295779f, TestName = "AHostedGridTurnsWithItsHost(1e-4 rad per second)")]
+        public void AHostedGridTurnsWithItsHost(float degreesPerSecond)
+        {
+            StartMesh(1);
+            var planet = SpawnIn(W1, _planetPrefab, Space, PlanetAt);
+            var grid = HostedGrid(planet);
+            var allocator = Allocator(W1, grid);
+            var frame = planet.Carried.Frame;
+            var omega = new Vector3(0f, degreesPerSecond * Mathf.Deg2Rad, 0f);
+            uint tick = 1;
+            void Step(Action script)
+            {
+                planet.transform.rotation = Quaternion.Euler(0f, 30f + degreesPerSecond * tick * Dt, 0f);
+                script?.Invoke();
+                Advance(Dt);
+                W1.Act(() => allocator.Tick(_seconds));
+                Mirror();
+                W1.Tick(tick);
+                _mesh.Pump();
+                tick++;
+            }
+
+            var pawn = SpawnIn(W1, _pawnPrefab, Space, Vector3.zero, GroundClient);
+            pawn.transform.position = Quaternion.Euler(0f, 30f, 0f) * GroundPawnAt + PlanetAt;
+            for (int i = 0; i < 45; i++) Step(null);
+            pawn = Authoritative(pawn.NetId, out _);
+            Assert.That(grid.Owns(pawn.Container), "the pawn stands in a chunk of the planet's ground");
+            var chunk = pawn.Container;
+            var local = frame.SimulationToLocal(pawn.transform.position);
+
+            // Five seconds standing still on the turning ground.
+            float drift = 0f, scopeError = 0f;
+            var startScope = PhysicsFrames.ToScope(pawn.transform.position, pawn.Space);
+            var scope = startScope;
+            for (int i = 0; i < 300; i++)
+            {
+                Step(null);
+                pawn = Authoritative(pawn.NetId, out _);
+                Assert.AreSame(chunk, pawn.Container, $"t{tick}: the pawn stays in its chunk");
+                drift = Mathf.Max(drift, Vector3.Distance(local, frame.SimulationToLocal(pawn.transform.position)));
+                scope = PhysicsFrames.ToScope(pawn.transform.position, pawn.Space);
+                scopeError = Mathf.Max(scopeError, Vector3.Distance(scope, PlanetAt + planet.transform.rotation * local));
+            }
+            float turned = Vector3.Distance(startScope, scope);
+            float arc = omega.y * 300 * Dt * new Vector2(local.x, local.z).magnitude;
+            TestContext.WriteLine($"{degreesPerSecond} deg/s: pawn drift in the planet's frame {drift * 1000f:0.000} mm; moved {turned:0.000} m in the scope (an arc of {arc:0.000} m), {scopeError * 1000f:0.0} mm from where the planet's turn puts it");
+            Assert.That(drift, Is.LessThan(0.001f), "the pawn keeps its place in the planet's frame");
+            Assert.That(scopeError, Is.LessThan(0.01f), "and turns with the planet in the scope");
+            Assert.That(turned, Is.EqualTo(arc).Within(Mathf.Max(0.01f, arc * 0.01f)), "by the arc the planet turned through");
+
+            // A ship takes off beside the pawn and climbs straight up out of the box at 100 m/s.
+            var takeOff = new Vector3(local.x + 40f, 0f, local.z);
+            var ship = SpawnIn(W1, _shipPrefab, chunk, takeOff);
+            ulong shipId = ship.NetId;
+            var climb = new Vector3(0f, 100f, 0f);
+            float t0 = _seconds;
+            Vector3 lastTarget = takeOff;
+            bool left = false;
+            float velocityError = -1f, spin = 0f;
+            string where = "";
+            for (int i = 0; i < 20 * 60 && !left; i++)
+            {
+                var target = takeOff + climb * (_seconds - t0);
+                lastTarget = target;
+                Step(() =>
+                {
+                    var mine = Authoritative(shipId, out _);
+                    if (mine.Container != null && mine.Container.InnerSpace == planet.Carried)
+                    {
+                        mine.transform.SetPositionAndRotation(frame.LocalToSimulation(target), Quaternion.identity);
+                        mine.Motion.Velocity = climb;
+                    }
+                });
+                var now = Authoritative(shipId, out _);
+                if (now.Container != Space) continue;
+                left = true;
+                var r = planet.transform.rotation * planet.transform.InverseTransformPoint(now.transform.position);
+                var expected = planet.transform.rotation * climb + Vector3.Cross(omega, r);
+                spin = Vector3.Cross(omega, r).magnitude;
+                velocityError = Vector3.Distance(expected, now.Motion.Velocity);
+                where = $"t{tick} at {planet.transform.InverseTransformPoint(now.transform.position)} planet-local: expected {expected}, got {now.Motion.Velocity}; frame read ω {frame.State.AngularVelocity.y:0.0000000} rad/s of {omega.y:0.0000000}";
+            }
+            TestContext.WriteLine($"ship leaving the box: ω × r {spin:0.0000} m/s, velocity error {velocityError * 1000f:0.0} mm/s ({where})");
+            Assert.IsTrue(left, "the ship left the planet's box into the scope's space (last target " + lastTarget + ")");
+            Assert.That(velocityError, Is.LessThan(0.02f), "and left it moving at v + ω × r: " + where);
+        }
+
         private static int CountChunks(RuntimeGrid grid)
         {
             int n = 0;
