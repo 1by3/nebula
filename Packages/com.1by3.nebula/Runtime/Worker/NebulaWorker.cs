@@ -182,6 +182,28 @@ namespace Nebula
         // carrier that was never ghosted here, and a runtime container the control plane is still delivering.
         private readonly Dictionary<ContainerRef, List<EntitySpawnMsg>> _pendingGhostsByCarrier = new Dictionary<ContainerRef, List<EntitySpawnMsg>>();
         private readonly Dictionary<ContainerRef, List<PendingTransfer>> _pendingTransfersByCarrier = new Dictionary<ContainerRef, List<PendingTransfer>>();
+        /// <summary>The tick each container a handover waits for (<see cref="_pendingTransfersByCarrier"/>) was first waited on.</summary>
+        private readonly Dictionary<ContainerRef, uint> _waitingSince = new Dictionary<ContainerRef, uint>();
+        /// <summary>The waits <see cref="ReportUnresolvedContainers"/> has already warned about.</summary>
+        private readonly HashSet<ContainerRef> _waitReported = new HashSet<ContainerRef>();
+        /// <summary>Runtime containers this worker leases but cannot register (their parent is not here), and since which tick.</summary>
+        private readonly Dictionary<ulong, uint> _heldLeaseSince = new Dictionary<ulong, uint>();
+        private readonly HashSet<ulong> _heldLeaseReported = new HashSet<ulong>();
+        private readonly List<ContainerRef> _waitScratch = new List<ContainerRef>();
+        /// <summary>
+        /// How long a handover may wait for its container, or a leased container for its parent, before it is reported:
+        /// long enough for a carrier's copy to arrive over a slow link, short enough to be read beside the cause.
+        /// </summary>
+        internal const float ContainerWaitWarnSeconds = 5f;
+        /// <summary>
+        /// Carried boxes that host containers other workers lease (a planet's hosted ground, <c>docs/container-tree.md</c>
+        /// D22), by the box's id, with those workers; rebuilt from the lease rows whenever the leases change.
+        /// </summary>
+        private readonly Dictionary<string, List<string>> _hostedLeaseOwners = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        private readonly Dictionary<string, LeaseInfo> _leaseScratch = new Dictionary<string, LeaseInfo>(StringComparer.Ordinal);
+        private bool _hostedLeaseOwnersRead;
+        private uint _hostedLeaseOwnersTick;
+        private const uint HostedLeaseRereadTicks = NetworkTime.TickRate / 4;
         private readonly List<Container> _neighborScratch = new List<Container>();
         /// <summary>
         /// Snapshots of one container's contents for the recursive whole-subtree walks (a handoff, an
@@ -846,6 +868,37 @@ namespace Nebula
             float now = Time.unscaledTime;
             DateOwned(ContainerRegistry.All, now);
             DateOwned(ContainerRegistry.Runtime, now);
+            RebuildHostedLeaseOwners();
+        }
+
+        /// <summary>
+        /// Which other workers lease a container fixed, at any depth, in a carried box (<see cref="_hostedLeaseOwners"/>):
+        /// read from the rows' placements, so it needs no copy of the box or the container here.
+        /// </summary>
+        private void RebuildHostedLeaseOwners()
+        {
+            _hostedLeaseOwners.Clear();
+            var leases = ControlPlane?.Leases;
+            if (leases == null) return;
+            _leaseScratch.Clear();
+            foreach (var l in leases) if (l.HasBounds && !string.IsNullOrEmpty(l.ContainerId)) _leaseScratch[l.ContainerId] = l;
+            foreach (var l in leases)
+            {
+                if (!l.HasBounds || l.IsRoot || !LeaseState.IsOwning(l.State) || string.IsNullOrEmpty(l.WorkerId) || l.WorkerId == WorkerId) continue;
+                string parent = l.ParentId;
+                for (int hops = 0; hops <= _leaseScratch.Count && !string.IsNullOrEmpty(parent); hops++)
+                {
+                    if (ContainerRegistry.IsDynamicId(parent))
+                    {
+                        if (!_hostedLeaseOwners.TryGetValue(parent, out var owners)) _hostedLeaseOwners[parent] = owners = new List<string>(2);
+                        if (!owners.Contains(l.WorkerId)) owners.Add(l.WorkerId);
+                        break;
+                    }
+                    if (!_leaseScratch.TryGetValue(parent, out var up) || up.IsRoot) break;
+                    parent = up.ParentId;
+                }
+            }
+            _leaseScratch.Clear();
         }
 
         private void DateOwned(IReadOnlyList<Container> containers, float now)
@@ -1348,6 +1401,7 @@ namespace Nebula
             // 4. Ghost band: create neighboring copies before an entity can cross.
             ProfBand.Begin();
             UpdateGhostBand(tick);
+            if (tick % (uint)NetworkTime.TickRate == 0) ReportUnresolvedContainers(tick);
             ProfBand.End();
 
             // 5. Decide who hears about what (interest management), stream to the gateway(s), clear dirty state.
@@ -1734,6 +1788,11 @@ namespace Nebula
             ResumeInheritedGhosts();
             float now = Time.unscaledTime;
             float margin = Config.GhostBandMargin;
+            // Carriers whose boxes host containers other workers lease, before anything rides on their targets below.
+            // The rows are read again a few times a second as well as on every lease change, so a row the registry
+            // holds for a missing parent (which changes no owner here) is seen promptly.
+            if (!_hostedLeaseOwnersRead || tick - _hostedLeaseOwnersTick >= HostedLeaseRereadTicks) { RebuildHostedLeaseOwners(); _hostedLeaseOwnersRead = true; _hostedLeaseOwnersTick = tick; }
+            if (margin >= 0f && _hostedLeaseOwners.Count > 0) GhostHostsToHostedLeases(now);
 
             // Entities in static containers first, then the contents of carriers by nesting depth: whatever is
             // inside a ship is ghosted wherever the ship is ghosted, so the neighbour holds the whole subtree warm
@@ -1766,9 +1825,12 @@ namespace Nebula
                     // A large entity is measured by its body too: ghosted wherever its extent comes within the margin
                     // of a container another worker owns, in addition to wherever its root does (docs/entity-extents.md).
                     if (e.TryGetExtentForBand(tick, out var extent)) GhostByExtent(e, c, extent, margin, ref targets, now);
-                    // Inside a carrier (or a room fixed in one): follow the carrier's ghosts.
+                    // Inside a carrier (or a room fixed in one): follow the carrier's ghosts. Not out of a container leased in
+                    // its own right in the carrier's box (a chunk of a planet's hosted ground): what stands in it follows
+                    // that lease, its neighbours' band covers it, and following the planet would send the whole ground to
+                    // every worker that holds a copy of the planet (NEB-400).
                     var carrierBox = CarrierBoxOf(c);
-                    if (carrierBox != null && carrierBox.Carrier != null && carrierBox.CarrierNetId != e.NetId && _ghostTargets.TryGetValue(carrierBox.Carrier.NetId, out var carrierTargets))
+                    if (carrierBox != null && carrierBox.Carrier != null && carrierBox.CarrierNetId != e.NetId && !LeasedWithin(c, carrierBox) && _ghostTargets.TryGetValue(carrierBox.Carrier.NetId, out var carrierTargets))
                     {
                         foreach (var kv in carrierTargets) Ghost(e, kv.Key, ref targets, now);
                     }
@@ -1962,6 +2024,85 @@ namespace Nebula
             var b = new Bounds(points[0], Vector3.zero);
             for (int i = 1; i < points.Length; i++) b.Encapsulate(points[i]);
             return b;
+        }
+
+        /// <summary>
+        /// Say, once each, what has been waiting for a container for <see cref="ContainerWaitWarnSeconds"/>: handovers in
+        /// for a container that never registered here, and containers this worker leases but cannot register because
+        /// their parent is not in its process. Both used to wait in silence (NEB-400). Runs once a second.
+        /// </summary>
+        private void ReportUnresolvedContainers(uint tick)
+        {
+            uint threshold = (uint)Mathf.CeilToInt(ContainerWaitWarnSeconds * NetworkTime.TickRate);
+            if (_waitingSince.Count > 0)
+            {
+                _waitScratch.Clear();
+                foreach (var kv in _waitingSince)
+                {
+                    if (!_pendingTransfersByCarrier.TryGetValue(kv.Key, out var waiting) || waiting.Count == 0) { _waitScratch.Add(kv.Key); continue; }
+                    if (tick - kv.Value < threshold || !_waitReported.Add(kv.Key)) continue;
+                    NebulaLog.Warn($"{waiting.Count} handover(s) in, the first #{waiting[0].Msg.Entity.NetId} <- {waiting[0].From?.Id}, have waited {(tick - kv.Value) / (float)NetworkTime.TickRate:0} s for container {kv.Key}: {WhyUnresolved(kv.Key)}");
+                }
+                for (int i = 0; i < _waitScratch.Count; i++) { _waitingSince.Remove(_waitScratch[i]); _waitReported.Remove(_waitScratch[i]); }
+                _waitScratch.Clear();
+            }
+            if (ContainerRegistry.PendingRuntimeCount == 0 && _heldLeaseSince.Count == 0) return;
+            _scratchIds.Clear();
+            foreach (ulong id in _heldLeaseSince.Keys) _scratchIds.Add(id);
+            for (int i = 0; i < _scratchIds.Count; i++)
+                if (!ContainerRegistry.TryGetHeldParent(_scratchIds[i], out _)) { _heldLeaseSince.Remove(_scratchIds[i]); _heldLeaseReported.Remove(_scratchIds[i]); }
+            _scratchIds.Clear();
+            if (ControlPlane == null) return;
+            foreach (ulong id in ContainerRegistry.PendingRuntimeIds)
+            {
+                if (!_heldLeaseSince.TryGetValue(id, out uint since))
+                {
+                    var lease = ControlPlane.FindLease(ContainerRegistry.RuntimeContainerId(id));
+                    if (lease != null && lease.WorkerId == WorkerId && LeaseState.IsOwning(lease.State)) _heldLeaseSince[id] = tick;
+                    continue;
+                }
+                if (tick - since < threshold || !_heldLeaseReported.Add(id)) continue;
+                NebulaLog.Warn($"{WorkerId} leases {ContainerRegistry.RuntimeContainerId(id)} but has not been able to register it for {(tick - since) / (float)NetworkTime.TickRate:0} s: {WhyUnresolved(ContainerRef.Runtime(id))}");
+            }
+        }
+
+        /// <summary>Why a container is not resolvable here, for <see cref="ReportUnresolvedContainers"/>.</summary>
+        private string WhyUnresolved(ContainerRef container)
+        {
+            if (container.IsDynamic)
+                return $"the carrier #{container.NetId} whose box it is was never sent to {WorkerId}";
+            if (container.IsRuntime && ContainerRegistry.TryGetHeldParent(container.RuntimeId, out string parent))
+                return ContainerRegistry.IsDynamicId(parent)
+                    ? $"its row names parent {parent}, the box of carrier #{ContainerRegistry.CarrierNetIdOf(parent)}, which {WorkerId} holds no copy of"
+                    : $"its row names parent {parent}, which is not registered on {WorkerId}";
+            if (container.IsRuntime) return $"{WorkerId} has no lease row for it";
+            return "it is not registered here";
+        }
+
+        /// <summary>
+        /// Give every worker that leases a container in a carrier's box a copy of the carrier (<c>docs/container-tree.md</c>
+        /// D22): it simulates that container in the carrier's frame, and cannot even register the container until the
+        /// carrier's box is in its process, so a handover into it would wait for ever. The copy is kept for as long as the
+        /// lease is, however far the worker's other containers are from the carrier (NEB-400).
+        /// </summary>
+        private void GhostHostsToHostedLeases(float now)
+        {
+            foreach (var kv in _hostedLeaseOwners)
+            {
+                var carrier = Find(ContainerRegistry.CarrierNetIdOf(kv.Key));
+                if (carrier == null || !carrier.HasAuthority || carrier.Carried == null || carrier.Carried.ContainerId != kv.Key) continue;
+                Dictionary<string, float> targets = null;
+                for (int i = 0; i < kv.Value.Count; i++) Ghost(carrier, kv.Value[i], ref targets, now);
+            }
+        }
+
+        /// <summary>Whether a container from <paramref name="c"/> up to (not including) <paramref name="carrierBox"/> is leased in its own right.</summary>
+        internal static bool LeasedWithin(Container c, Container carrierBox)
+        {
+            int hops = 0;
+            for (var x = c; x != null && x != carrierBox && hops <= ContainerRegistry.ChainBound; x = x.FixedParent, hops++)
+                if (x.IsLeased) return true;
+            return false;
         }
 
         /// <summary>The nearest carried box at or above <paramref name="c"/> through fixed parents: the ship a room is fixed in.</summary>
@@ -2298,6 +2439,7 @@ namespace Nebula
             if (e == null && msg.Entity.Container.MayArriveLater && ContainerRegistry.Resolve(msg.Entity.Container) == null)
             {
                 Pend(_pendingTransfersByCarrier, msg.Entity.Container, new PendingTransfer { From = from, Msg = msg });
+                if (!_waitingSince.ContainsKey(msg.Entity.Container)) _waitingSince[msg.Entity.Container] = CurrentTick;
                 NebulaLog.Info($"handover IN  #{msg.Entity.NetId} <- {from.Id} waits for container {msg.Entity.Container}");
                 return;
             }
@@ -2438,6 +2580,9 @@ namespace Nebula
             if (_pendingTransfersByCarrier.TryGetValue(key, out var transfers))
             {
                 _pendingTransfersByCarrier.Remove(key);
+                if (_waitingSince.TryGetValue(key, out uint since) && _waitReported.Remove(key))
+                    NebulaLog.Info($"container {container.ContainerId} registered after {(CurrentTick - since) / (float)NetworkTime.TickRate:0.0} s; {transfers.Count} handover(s) waiting for it go ahead");
+                _waitingSince.Remove(key);
                 foreach (var t in transfers) OnAuthorityTransfer(t.From, t.Msg);
             }
         }
@@ -2663,6 +2808,8 @@ namespace Nebula
         {
             _pendingGhostsByCarrier.Remove(ContainerRef.Dynamic(msg.NetId));
             _pendingTransfersByCarrier.Remove(ContainerRef.Dynamic(msg.NetId));
+            _waitingSince.Remove(ContainerRef.Dynamic(msg.NetId));
+            _waitReported.Remove(ContainerRef.Dynamic(msg.NetId));
             var e = Find(msg.NetId);
             if (e == null) { DropPendingScene(msg.NetId); return; }
             if (e.HasAuthority || msg.Epoch < e.Epoch) return;

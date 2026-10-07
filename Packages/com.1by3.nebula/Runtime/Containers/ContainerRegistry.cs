@@ -97,6 +97,13 @@ namespace Nebula
         public static bool IsHeldForCarrier(ulong runtimeId) =>
             PendingChildren.TryGetValue(runtimeId, out var pending) && IsDynamicId(pending.Placement.ParentId);
 
+        /// <summary>The parent a runtime row held here is waiting for (see <see cref="PendingRuntimeCount"/>); false when the row is not held.</summary>
+        internal static bool TryGetHeldParent(ulong runtimeId, out string parentId)
+        {
+            parentId = PendingChildren.TryGetValue(runtimeId, out var pending) ? pending.Placement.ParentId : null;
+            return parentId != null;
+        }
+
         /// <summary>The ids of the runtime rows waiting for their parent (see <see cref="PendingRuntimeCount"/>).</summary>
         public static IEnumerable<ulong> PendingRuntimeIds => PendingChildren.Keys;
 

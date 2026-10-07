@@ -243,9 +243,22 @@ namespace Nebula.Tests
         private static readonly FieldInfo[] DynamicRegistry = Array.ConvertAll(DynamicRegistryFields,
             n => typeof(ContainerRegistry).GetField(n, BindingFlags.Static | BindingFlags.NonPublic));
         private static readonly FieldInfo DynamicHashField = typeof(ContainerRegistry).GetField("DynamicHash", BindingFlags.Static | BindingFlags.NonPublic);
+        /// <summary>
+        /// With <see cref="_perWorkerRuntime"/>, the runtime containers too: each worker registers the rows it is given in
+        /// its own process, so a runtime container whose parent is a carried box this worker holds no copy of is held
+        /// for that parent here, as it is on a worker of its own (NEB-400). The broad phase is rebuilt from the list.
+        /// </summary>
+        private static readonly string[] RuntimeRegistryFields = { "ById", "RuntimeList", "RuntimeById", "PendingChildren" };
+        private static readonly FieldInfo[] RuntimeRegistry = Array.ConvertAll(RuntimeRegistryFields,
+            n => typeof(ContainerRegistry).GetField(n, BindingFlags.Static | BindingFlags.NonPublic));
+        private static readonly MethodInfo RehashRuntimeMethod = typeof(ContainerRegistry).GetMethod("RehashRuntime", BindingFlags.Static | BindingFlags.NonPublic);
         private static readonly FieldInfo DynamicHashDirtyField = typeof(ContainerRegistry).GetField("_dynamicHashDirty", BindingFlags.Static | BindingFlags.NonPublic);
 
         private readonly bool _perWorkerRegistry;
+        private readonly bool _perWorkerRuntime;
+        /// <summary>With <see cref="_perWorkerRuntime"/>, the runtime registry as it was before any worker acted: every worker starts from it.</summary>
+        private object[] _runtimeBase;
+        private readonly Dictionary<Worker, object[]> _runtimeViews = new Dictionary<Worker, object[]>();
         private Worker _registryOwner;
         private readonly Dictionary<Worker, object[]> _registryViews = new Dictionary<Worker, object[]>();
 
@@ -260,15 +273,24 @@ namespace Nebula.Tests
             if (_registryOwner != null) _registryViews[_registryOwner] = SnapshotDynamicRegistry();
             _registryViews.TryGetValue(worker, out var view);
             RestoreDynamicRegistry(view);
+            if (_perWorkerRuntime)
+            {
+                if (_registryOwner != null) _runtimeViews[_registryOwner] = Snapshot(RuntimeRegistry);
+                else _runtimeBase ??= Snapshot(RuntimeRegistry);
+                Restore(RuntimeRegistry, _runtimeViews.TryGetValue(worker, out var runtime) ? runtime : _runtimeBase);
+                RehashRuntimeMethod.Invoke(null, null);
+            }
             _registryOwner = worker;
         }
 
-        private static object[] SnapshotDynamicRegistry()
+        private static object[] SnapshotDynamicRegistry() => Snapshot(DynamicRegistry);
+
+        private static object[] Snapshot(FieldInfo[] fields)
         {
-            var view = new object[DynamicRegistry.Length];
+            var view = new object[fields.Length];
             for (int i = 0; i < view.Length; i++)
             {
-                var live = DynamicRegistry[i].GetValue(null);
+                var live = fields[i].GetValue(null);
                 view[i] = live is System.Collections.IDictionary d ? CopyDictionary(d) : (object)new List<object>(((System.Collections.IEnumerable)live).Cast<object>());
             }
             return view;
@@ -276,9 +298,16 @@ namespace Nebula.Tests
 
         private static void RestoreDynamicRegistry(object[] view)
         {
-            for (int i = 0; i < DynamicRegistry.Length; i++)
+            Restore(DynamicRegistry, view);
+            ((System.Collections.IDictionary)DynamicHashField.GetValue(null)).Clear();
+            DynamicHashDirtyField.SetValue(null, true); // the broad phase is rebuilt from the restored list on the next query
+        }
+
+        private static void Restore(FieldInfo[] fields, object[] view)
+        {
+            for (int i = 0; i < fields.Length; i++)
             {
-                var live = DynamicRegistry[i].GetValue(null);
+                var live = fields[i].GetValue(null);
                 if (live is System.Collections.IDictionary d)
                 {
                     d.Clear();
@@ -291,8 +320,6 @@ namespace Nebula.Tests
                     if (view != null) foreach (var item in (List<object>)view[i]) list.Add(item);
                 }
             }
-            ((System.Collections.IDictionary)DynamicHashField.GetValue(null)).Clear();
-            DynamicHashDirtyField.SetValue(null, true); // the broad phase is rebuilt from the restored list on the next query
         }
 
         private static System.Collections.IDictionary CopyDictionary(System.Collections.IDictionary source)
@@ -307,11 +334,14 @@ namespace Nebula.Tests
         /// <paramref name="perWorkerRegistry"/> each worker holds its own dynamic containers, as two processes
         /// would, so a ghost of a carrier on one worker no longer replaces the authoritative copy's box on another
         /// (and evacuates the crew aboard it); see <c>docs/conformance-suite.md</c>, tier B. Off by default: the
-        /// older scenarios assert on the shared registry.
+        /// older scenarios assert on the shared registry. <paramref name="perWorkerRuntime"/> (which implies a per-worker
+        /// registry) gives each worker its own runtime containers as well: build the static containers before any worker
+        /// acts, and mirror the control plane's rows into each worker on its own turn.
         /// </summary>
-        public ConformanceMesh(int workerCount, bool perWorkerRegistry = false)
+        public ConformanceMesh(int workerCount, bool perWorkerRegistry = false, bool perWorkerRuntime = false)
         {
-            _perWorkerRegistry = perWorkerRegistry;
+            _perWorkerRegistry = perWorkerRegistry || perWorkerRuntime;
+            _perWorkerRuntime = perWorkerRuntime;
             if (workerCount < 1) throw new ArgumentOutOfRangeException(nameof(workerCount));
             NebulaRuntime.Reset();
             NebulaRuntime.IsServer = true;
@@ -489,6 +519,8 @@ namespace Nebula.Tests
         {
             _registryOwner = null;
             _registryViews.Clear();
+            _runtimeViews.Clear();
+            _runtimeBase = null;
             foreach (var worker in _workers)
             {
                 var entities = new List<NetworkIdentity>(worker.Instance.Entities);

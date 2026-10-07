@@ -406,15 +406,41 @@ namespace Nebula
         /// not to whatever an exhausted walk happened to be holding. The bound is the number of records the
         /// gateway holds — container references come off the wire, and a chain longer than that has revisited
         /// one, which resolves to null and fails closed in <see cref="CanObserve"/>.
+        /// <para>
+        /// A carried frame with regions of its own (a planet that is a carrier, <c>docs/container-tree.md</c> D18) carries
+        /// nothing for interest, but it is still in its carrier's scope: the walk goes on out through it to the container
+        /// the carrier stands in (<see cref="TryFrameCarrier"/>). A gateway of its own has no registry entry for a carried
+        /// box, so stopping at the frame resolved to null and refused everything standing in it outside a hosted chunk
+        /// (NEB-401). A frame whose carrier this gateway holds no record of still fails closed.
+        /// </para>
         /// </summary>
         private Container ScopeContainer(ContainerRef reference)
         {
-            for (int hops = 0; TryCarrierOf(reference, out ulong carrierNetId, out _); hops++)
+            for (int hops = 0; ; hops++)
             {
+                if (!TryCarrierOf(reference, out ulong carrierNetId, out _))
+                {
+                    if (!TryFrameCarrier(reference, out var frameCarrier)) break;
+                    if (hops > _entities.Count) return null;
+                    reference = frameCarrier.Container;
+                    continue;
+                }
                 if (hops > _entities.Count || !_entities.TryGetValue(carrierNetId, out var carrier)) return null;
                 reference = carrier.Container;
             }
             return ContainerRegistry.Resolve(reference);
+        }
+
+        /// <summary>
+        /// Whether <paramref name="reference"/> is the box of a carrier that is a frame with regions of its own (a planet,
+        /// D18) and this gateway holds that carrier's record. Such a box is not a carrier for interest
+        /// (<see cref="TryCarrierOf"/>), but its scope, its world position and its axes are the carrier's: the walks that
+        /// need those go through it here.
+        /// </summary>
+        private bool TryFrameCarrier(ContainerRef reference, out EntityRecord carrier)
+        {
+            carrier = null;
+            return reference.IsDynamic && _ownRegionCarriers.Contains(reference.NetId) && _entities.TryGetValue(reference.NetId, out carrier);
         }
 
         /// <summary>
@@ -1740,9 +1766,17 @@ namespace Nebula
         /// <inheritdoc cref="WorldPosition"/>
         private Quaternion WorldRotation(ContainerRef container, Quaternion local)
         {
-            for (int hops = 0; TryCarrierOf(container, out ulong carrierNetId, out _); hops++)
+            for (int hops = 0; hops <= _entities.Count; hops++)
             {
-                if (hops > _entities.Count || !_entities.TryGetValue(carrierNetId, out var carrier)) return local;
+                if (!TryCarrierOf(container, out ulong carrierNetId, out _))
+                {
+                    // A frame with regions of its own turns with its carrier, as WorldPosition composes it (NEB-401).
+                    if (!TryFrameCarrier(container, out var frameCarrier)) break;
+                    local = frameCarrier.LastSpawn.LocalRotation * local;
+                    container = frameCarrier.Container;
+                    continue;
+                }
+                if (!_entities.TryGetValue(carrierNetId, out var carrier)) return local;
                 local = carrier.LastSpawn.LocalRotation * local;
                 container = carrier.Container;
             }
@@ -1761,9 +1795,17 @@ namespace Nebula
             _carrierOffsets.Clear();
             var at = container;
             bool broken = false;
-            while (TryCarrierOf(at, out ulong carrierNetId, out var offset))
+            while (true)
             {
-                if (_carrierChain.Count > _entities.Count || !_entities.TryGetValue(carrierNetId, out var carrier)) { broken = true; break; }
+                EntityRecord carrier;
+                var offset = Vector3.zero;
+                if (TryCarrierOf(at, out ulong carrierNetId, out offset))
+                {
+                    if (!_entities.TryGetValue(carrierNetId, out carrier)) { broken = true; break; }
+                }
+                // The inverse of WorldPosition's walk through a frame with regions of its own (NEB-401).
+                else if (!TryFrameCarrier(at, out carrier)) break;
+                if (_carrierChain.Count > _entities.Count) { broken = true; break; }
                 _carrierChain.Add(carrier);
                 _carrierOffsets.Add(offset);
                 at = carrier.Container;
