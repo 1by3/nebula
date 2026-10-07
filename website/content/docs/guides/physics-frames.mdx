@@ -248,6 +248,26 @@ If you replace the interest policy, give a focus at the player the space the pla
 
 A frame's coordinates can be large. Each worker keeps a floating origin per frame near the entities it simulates in it: when their average position is farther than `PhysicsFrames.OriginShiftThreshold` (2,048 m) from the frame's origin, the worker moves the origin to them, in steps of `PhysicsFrames.OriginShiftStep` (1,024 m). Container-local coordinates, and so everything on the wire and every region key, do not change. Subscribe to `PhysicsFrame.Shifted` to move positions your game caches in simulation space.
 
+### Draw a turning planet without shaking
+
+A client draws everything in a frame through the frame's pose. When a planet turns, ground 200 km from its centre would be rounded differently every frame, and it would shake by centimeters against the camera. To prevent this, Nebula draws a frame about a point near the camera, called the render origin, once the camera is more than `PhysicsFrames.RenderOriginThreshold` (2,048 m) from the frame's own origin. The ground near the camera then holds still to within a fraction of a millimeter. A ship's frame, whose contents stay near its origin, is drawn as before.
+
+The render origin follows the client's content anchor: the local player's pawn, or the transform you passed to `NebulaClient.SetContentAnchor`. If your camera can be far from that anchor, set `PhysicsFrames.RenderAnchor` to the camera's transform.
+
+Under a render origin, the frame root's `position` is no longer exact. To place something at a frame-local point for drawing, use the frame's render pose instead:
+
+```csharp
+var frame = planet.Carried.Frame;
+Vector3 drawn = frame.LocalToRender(localPoint);        // a frame-local point in the drawn scene
+Vector3 local = frame.RenderToLocal(drawnPoint);        // and back
+Vector3 center = frame.RenderPosition;                  // where the planet's origin is drawn
+Quaternion tilt = frame.RenderRotation;                 // and how it is turned
+```
+
+`localPoint` and `drawnPoint` stand for positions in your game. `LocalToRenderPrecise` and `RenderToLocalPrecise` take and return `Double3` values.
+
+To turn render origins off for one frame, set `frame.UseRenderOrigin = false`. To turn them off everywhere, set `PhysicsFrames.RenderOriginThreshold = float.PositiveInfinity`. Prediction is not affected either way: a predicted pawn always simulates at the frame's exact simulation pose.
+
 ## Stream a planet's ground around players
 
 Instead of leasing a planet's areas yourself, you can host a chunk grid in the planet: its chunks are leased runtime children of the planet's container, laid out in the planet's own coordinates, and each worker leases them around the players it simulates on or near the planet.

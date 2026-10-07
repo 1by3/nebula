@@ -128,7 +128,10 @@ own physics); with none, the root lives in its owner's scene and only physics is
 **D11 Simulation space and render space.** On a worker every frame root stays at its floating origin (D19) with no
 rotation: a worker never renders, and a frame's inside never depends on where the frame is. On a client the frame
 roots are posed at the carrier's interpolated pose, outermost first (`PhysicsFrames.PoseForRender`, at the end of
-`NebulaClient.Update`), so everything after it, cameras included, sees one world. Around the prediction step and a
+`NebulaClient.Update`), so everything after it, cameras included, sees one world. A scope's origin shift on a client
+(`RuntimeGrid.ShiftOrigin`, or any shift of the public world's origin) poses the frames again before it returns: the
+carriers moved with their chunks, and an origin rule run later in the same frame must read what stands in a frame
+where the shift put it, not a whole shift away. A large frame is posed about a render origin (D25). Around the prediction step and a
 reconcile replay, the local pawn's frame root is put back at the identity pose (`BeginSimulation`/`EndSimulation`),
 so a predicted pawn simulates exactly as its worker does. The contract for game code: **`NetworkTick` runs in
 simulation space; `Update`, `LateUpdate` and rendering see render space.** `NetworkIdentity.Space`, `ToScope`,
@@ -186,6 +189,36 @@ every crossing and answers `Allow`, `Veto` (the entity stays in its container; t
 **D17 Hard edge, by design.** An entity belongs to exactly one frame and switches at the hysteresis threshold. A ship
 half inside a hangar is either in the hangar's frame or not. Raycasts do not pass between frames.
 
+**D25 A client draws a large frame about a render origin near its camera.** A frame's root hangs under a
+pivot, the frame's top level. On a worker, and on a client while the frame simulates, the pivot stays at the identity.
+On a client drawing the frame, `PoseForRender` puts the pivot at (T + R(S O), R, S), worked out in double, and the
+root at (-O, identity) under it, where (T, R, S) is the carrier's pose. O, `PhysicsFrame.RenderOrigin`, is zero
+while the render anchor is within `RenderOriginThreshold` (2,048 m) of the frame's own origin, and otherwise the
+anchor's frame-local position snapped to `RenderOriginStep` (1,024 m), moved again once the anchor is the threshold
+away from it. The anchor is `PhysicsFrames.RenderAnchor` when a game sets one (its camera), else the client's content
+anchor (`NebulaClient.ActiveContentAnchor`).
+
+Why: Unity composes a child's world position from the leaf up. Under a root posed at (T, R), ground 205 km from a
+planet's centre was R × (205 km) + T in float, where a float is 1.6 cm apart; with the planet turning, R changes every
+frame, so that rounding changed every frame and differed per object, and the ground near the camera moved 3 cm and
+more against it. Under the pivot, a child's offset meets -O first, where the two cancel exactly, and only the
+difference, a few hundred metres, is turned: the ground holds to a fraction of a millimetre (scenario 49).
+
+The rules that keep it invisible to everything else:
+
+- The root's world pose is the carrier's to float precision. `PhysicsFrame.RenderPosition`, `RenderRotation` and
+  `RenderScale` hold it exactly, and `LocalToRender`, `LocalToRenderPrecise`, `RenderToLocal` and
+  `RenderToLocalPrecise` compose frame-local points into the drawn scene in double. Game code reads these, not
+  `Root.position`, which under a render origin is composed through the turned origin in float.
+- `BeginSimulation` puts the pivot at the identity before it sets the root's simulation pose, so a prediction step
+  runs bit for bit as it did, never through a turned pivot; `EndSimulation` poses the frame again.
+- A frame whose content stays near its own origin (a ship's) never gets one while the anchor is aboard; a frame inside
+  another (a ship on a planet) is posed from its carrier as drawn through the outer frame's render origin, outermost
+  first.
+- `PhysicsFrame.UseRenderOrigin = false` turns it off for one frame, `RenderOriginThreshold = float.PositiveInfinity`
+  for all. A root a game reparented is posed directly, as before.
+- Nothing changes on the wire, in persistence or on a worker.
+
 ## 4. Per-frame-root origins and interest
 
 **D18 A frame root can be a region space.** With `Container.FrameInterest = OwnRegions` (a planet), what stands in the
@@ -213,6 +246,9 @@ the mean position of what it simulates in a frame is farther than `OriginShiftTh
 the origin moves there, snapped to `OriginShiftStep` (1,024 m). Container-local coordinates, the wire and region
 keys do not change (`SimulationToLocal`, `LocalToSimulation`, and every conversion take the root offset off). The
 public world and scoped chunk grids keep `ScopeFrames`; clients never shift frames, since they render them posed.
+A scope's own shift leaves a frame's simulation space alone: an entity inside a frame keeps its pose, its behaviours
+are not told (`OnOriginShifted`), and of its state history only the entries recorded in the scope's own space move.
+A frame's shift likewise moves only the history entries recorded in that frame.
 
 ## 5. Leased children under framed moving parents
 
@@ -417,6 +453,7 @@ carrier of its own (a ship's frame is local to the ship). Scenario 45 pins the n
 | 45 | Wire precision in a large frame: an entity in a hosted chunk of a 500 km planet is near-exact, an entity directly in the frame at 100 km and 250 km from its origin is within half the float spacing (1.6 cm at 250 km) of where it stands, none of it depends on the scope being 10,000 km out, and the gateway's absolute records are double fields filed in the frame's own space | `ConformanceFramePrecisionTests` |
 | 41 | A planet's ground as a grid hosted by the planet (D22), nothing leased statically: allocated around a ground pawn on one worker, a second pawn on the other and a ship flying scenario 40's lap at 300 m/s; the ship never stands in the box outside a leased chunk, each chunk it enters was leased ahead of it, the ground behind it retires, and a restart brings back a crate standing in a hosted chunk under the planet's own restored container | `ConformanceCarrierHostedGridTests`, plus `HostedChunkGridTests` |
 | 43 | An `InstanceBoundary` in a chunk hosted by a framed carrier (NEB-394): its position is read out of the carrier's frame, as an entity's is, so the instance is prepared at the door; a player on the planet enters it and leaves back into the planet's chunk, in its frame | `ConformanceFramedInstanceBoundaryTests` |
+| 49 | A large frame on a client (D11, D19, D25): a scope's origin shift poses the frames at once, so `KeepOriginNear` on a pawn on a framed planet run after a game's own rule never shifts back over 1,000 frames; a scope's shift leaves the history of what stands in a frame alone; ground 205 km out on a planet turning at 8.5e-4 rad/s holds within a millimetre against the camera over 1,000 frames under a render origin (about 3 cm without); the frame's world pose is unchanged; prediction runs bit for bit at the simulation pose; a ship on the planet is drawn through the planet's render origin and needs none of its own | `ConformanceFrameRenderOriginTests` |
 
 Tier limit (B, `ConformanceMesh`): the container registry is process-wide, so of two workers' copies of one carrier
 only the last registered owns the box and its frame. Scenario 21's two-worker case keeps the copies' poses in step.

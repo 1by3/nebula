@@ -351,7 +351,7 @@ Point [`ContainerRegistry.RuntimeBoundsInFrame`](/docs/reference/containers/cont
 public static void ShiftOriginTo(Vector3Int target);
 ```
 
-Opt-in floating-origin policy for a grid world: shift the origin to `target` (a no-op when it is already there, or when no runtime world is loaded), suspending enabled `CharacterController`s on entities of runtime containers across the shift and syncing physics transforms after. PhysX controllers must be reinserted at the new pose, not sweep over the shift. Call from the game's own update once it has decided where the origin belongs, or use [`KeepOriginNear`](#keeporiginnear) for the usual policy.
+Opt-in floating-origin policy for a grid world: shift the origin to `target` (a no-op when it is already there, or when no runtime world is loaded), suspending enabled `CharacterController`s on entities of runtime containers across the shift and syncing physics transforms after. PhysX controllers must be reinserted at the new pose, not sweep over the shift. Call from the game's own update once it has decided where the origin belongs, or use [`KeepOriginNear`](#keeporiginnear) for the usual policy. On a client the physics frames are posed again at once ([`PhysicsFrames.PoseForRender`](/docs/reference/containers/physics-frames#poseforrender)), so what stands in them moves with the origin.
 
 ### ShiftOrigin [#shiftorigin]
 
@@ -359,7 +359,7 @@ Opt-in floating-origin policy for a grid world: shift the origin to `target` (a 
 public void ShiftOrigin(Vector3Int target);
 ```
 
-Move **this grid's** origin to `target`. The public world's frame is the process's (the streamer moves the authored cell scenes with it), so that case is [`ShiftOriginTo`](#shiftoriginto) unchanged. A scoped grid owns its frame: only that scope's containers, the entities in them, their state history and interpolation buffers move, and no other scope on this worker notices (`docs/scope-frames.md` D3).
+Move **this grid's** origin to `target`. The public world's frame is the process's (the streamer moves the authored cell scenes with it), so that case is [`ShiftOriginTo`](#shiftoriginto) unchanged. A scoped grid owns its frame: only that scope's containers, the entities in them, their state history and interpolation buffers move, and no other scope on this worker notices (`docs/scope-frames.md` D3). What stands inside a physics frame keeps its simulation pose, which is the frame's (`docs/container-tree.md` D19); on a client the frames are posed again at once ([`PhysicsFrames.PoseForRender`](/docs/reference/containers/physics-frames#poseforrender)), so what stands in them is drawn with the origin.
 
 ### KeepOriginNear [#keeporiginnear]
 
