@@ -199,7 +199,11 @@ and measures each focus in its own space only, and the gateway adds a focus at t
 space around the player's frame (`AddEnclosingSpaceFoci`), so ships overhead stay in view (and, the other way, D23). The workers that hold a
 frame's region are the owners of every container fixed in the frame and of the frame itself (`FrameOwners`).
 Carried rows tell gateways which carriers are such frames: `EnsureContainer` carries the frame flags. A custom
-interest policy must give its player focus `client.PawnSpace`.
+interest policy must give its player focus `client.PawnSpace`. Carrying nothing for interest does not take the frame
+out of its carrier's scope: the gateway resolves the scope, world position and axes of what stands directly in the
+frame (between its hosted ground and the face of its box) through the carrier's own record (`TryFrameCarrier`), never
+through a registry entry for the box, which a gateway outside every worker's process does not hold. A frame whose
+carrier the gateway has no record of fails closed, as an unknown container does (NEB-401, scenario 47).
 
 **D19 Floating origin per frame root.** A frame's coordinates can be large. `PhysicsFrame.Origin` is the frame-local
 point that sits at Unity's origin in simulation space; `PhysicsFrames.ShiftOrigin` moves the frame root (and with it
