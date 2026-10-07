@@ -1010,6 +1010,7 @@ namespace Nebula
             // carriers were interpolated, so everything that runs after this (cameras) sees one world (D11, D14).
             PhysicsFrames.UpdateStates(NetworkTime.Tick, Time.deltaTime);
             PhysicsFrames.SyncAllContent();
+            PhysicsFrames.ContentAnchor = ActiveContentAnchor;
             PhysicsFrames.PoseForRender();
         }
 

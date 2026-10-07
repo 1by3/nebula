@@ -8,13 +8,17 @@ using Object = UnityEngine.Object;
 namespace Nebula.Tests
 {
     /// <summary>
-    /// Conformance scenario 49 (<c>docs/container-tree.md</c> D11, D19): how a scope's origin shift reaches what stands
-    /// in a physics frame.
+    /// Conformance scenario 49 (<c>docs/container-tree.md</c> D11, D19, D25): how a client draws a large physics frame
+    /// that turns, and how a scope's origin shift reaches what stands in a frame.
     /// <list type="bullet">
     /// <item>A scope's origin shift on a client poses the frames again at once, so an origin rule run later in the same
     /// frame reads what stands in a frame where the shift put it, and never shifts back.</item>
     /// <item>A scope's shift leaves the simulation history of what stands in a frame alone: it belongs to the frame's own
     /// origin.</item>
+    /// <item>A frame whose content is drawn far from its own origin (a planet's ground, 205 km from its centre) is drawn
+    /// about a render origin near the camera, so the ground holds still against the camera to well under a millimetre
+    /// while the planet turns; the frame's world pose is unchanged, prediction still runs at the exact simulation pose,
+    /// and a frame inside it (a ship on the planet) is drawn through it.</item>
     /// </list>
     /// Tier B (<see cref="ConformanceMesh"/>, one worker); the client half switches the process to a rendering client, as
     /// the other client scenarios do.
@@ -96,6 +100,8 @@ namespace Nebula.Tests
         public void TearDown()
         {
             PhysicsFrames.EndSimulation();
+            PhysicsFrames.RenderAnchor = null;
+            PhysicsFrames.ContentAnchor = null;
             NebulaRuntime.IsClient = false;
             NebulaRuntime.IsServer = true;
             foreach (var go in _objects) if (go != null) Object.DestroyImmediate(go);
@@ -154,6 +160,16 @@ namespace Nebula.Tests
             return go.transform;
         }
 
+        /// <summary><paramref name="t"/>'s position in <paramref name="root"/>'s coordinates, composed from the local poses in double.</summary>
+        private static Double3 LocalIn(Transform t, Transform root)
+        {
+            var p = Double3.Zero;
+            for (var x = t; x != null && x != root; x = x.parent) p = PhysicsFrames.Rotate(x.localRotation, p) + x.localPosition;
+            return p;
+        }
+
+        private static float Length(Double3 v) => (float)System.Math.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z);
+
         private Quaternion Turn(int frame) => Quaternion.AngleAxis(23.4f + Omega * Mathf.Rad2Deg * frame * Dt, Axis);
 
         private static void AsClient()
@@ -177,6 +193,7 @@ namespace Nebula.Tests
         {
             var pawn = SpawnInFrame(_thingPrefab, _planet.Carried, ChunkLocal + new Vector3(3.2f, -4.7f, -2.2f), Quaternion.identity);
             AsClient();
+            PhysicsFrames.RenderAnchor = pawn.transform;
             _planet.transform.rotation = Turn(0);
             PhysicsFrames.PoseForRender();
             Assume.That(pawn.transform.position.magnitude, Is.GreaterThan(4f * Cell), "the pawn starts far from the origin");
@@ -238,6 +255,213 @@ namespace Nebula.Tests
             Assert.That(Vector3.Distance(rockRecorded + delta, rock.StateAt(1).Position), Is.LessThan(0.01f), "the rock's history moved with it");
             Assert.AreEqual(pawnAt, pawn.transform.position, "the pawn's simulation pose is the frame's, which did not move");
             Assert.AreEqual(pawnRecorded, pawn.StateAt(1).Position, "and so is its history");
+        }
+
+        // ------------------------------------------------------------------------------------ render origin
+
+        /// <summary>
+        /// Run <see cref="Frames"/> frames of the planet turning with a camera riding the ground (placed through the frame's
+        /// render pose, as a game places it), and return how far two points of ground near it, in two chunks, move against
+        /// the camera beyond the planet's own turn: the worst over the run against where the first frame drew them, and the
+        /// worst from one frame to the next. (Where a child 205 km out is drawn at all is rounded once, statically, where
+        /// its offset is added to its chunk's in float; that is the float spacing of frame-local coordinates, D24, and does
+        /// not move.)
+        /// </summary>
+        private float WorstAgainstTheCamera(out float worstStep)
+        {
+            var frame = PlanetFrame;
+            var chunkA = Under(frame.Root, "chunk-a", ChunkLocal, ChunkRotation);
+            var chunkB = Under(frame.Root, "chunk-b", ChunkLocal + new Vector3(0f, 270f, -380f), ChunkRotation * Quaternion.Euler(0.4f, 0f, 0f));
+            var groundA = Under(chunkA, "ground-a", new Vector3(12.5f, 0.3f, -40.25f), Quaternion.identity);
+            var groundB = Under(chunkB, "ground-b", new Vector3(-80.75f, 1.1f, 230.5f), Quaternion.identity);
+            var camera = new GameObject("camera").transform;
+            _objects.Add(camera.gameObject);
+            PhysicsFrames.RenderAnchor = camera;
+            var cameraLocal = LocalIn(chunkA, frame.Root) + PhysicsFrames.Rotate(ChunkRotation, new Double3(3.25, 1.75, -6.5));
+            // The planet's centre where its ground near the camera starts at Unity's origin, as the scope's origin keeps it.
+            _planet.transform.SetPositionAndRotation(-(Turn(0) * cameraLocal.ToVector3()), Turn(0));
+            camera.position = frame.LocalToRender(cameraLocal.ToVector3());
+            var points = new[] { groundA, groundB };
+            var first = new Double3[2];
+            var last = new Vector3[2];
+            float worst = 0f;
+            worstStep = 0f;
+            for (int i = 0; i < Frames; i++)
+            {
+                var turn = Turn(i);
+                var unturn = Quaternion.Inverse(turn);
+                _planet.transform.rotation = turn;
+                PhysicsFrames.PoseForRender();
+                camera.position = frame.LocalToRenderPrecise(cameraLocal).ToVector3();
+                for (int p = 0; p < points.Length; p++)
+                {
+                    var shown = points[p].position - camera.position;
+                    // The offset from the camera in the frame's own axes: it should never change.
+                    var local = PhysicsFrames.Rotate(unturn, Double3.From(shown));
+                    if (i == 0) first[p] = local;
+                    worst = Mathf.Max(worst, Length(local - first[p]));
+                    if (i > 0) worstStep = Mathf.Max(worstStep, Length(local - PhysicsFrames.Rotate(Quaternion.Inverse(Turn(i - 1)), Double3.From(last[p]))));
+                    last[p] = shown;
+                }
+            }
+            return worst;
+        }
+
+        /// <summary>
+        /// Ground 205 km from a planet's centre, under a frame turning at about 8.5e-4 rad/s, against a camera standing on
+        /// it, over 1,000 frames: drawn within a millimetre of where it belongs, every frame. Without the render origin
+        /// the same ground rounds through the turn times 205 km in float, and shakes by centimetres.
+        /// </summary>
+        [Test]
+        public void GroundFarOutOnATurningFrameHoldsStillAgainstTheCamera()
+        {
+            AsClient();
+            float worst = WorstAgainstTheCamera(out float worstStep);
+            var origin = PlanetFrame.RenderOrigin;
+            PlanetFrame.UseRenderOrigin = false;
+            float without = WorstAgainstTheCamera(out float withoutStep);
+            TestContext.WriteLine($"{Frames} frames at {Omega} rad/s, 205 km out: worst drift against the camera {worst * 1000f:0.000} mm (frame to frame {worstStep * 1000f:0.000} mm) about render origin {origin}; without a render origin {without * 1000f:0.0} mm (frame to frame {withoutStep * 1000f:0.0} mm)");
+            Assert.That(origin.magnitude, Is.GreaterThan(200_000f), "the frame was drawn about a render origin near the camera");
+            Assert.That(worst, Is.LessThan(0.001f), "the ground holds within a millimetre against the camera over the run");
+            Assert.That(worstStep, Is.LessThan(0.001f), "and it never moves a millimetre from one frame to the next");
+            Assert.That(without, Is.GreaterThan(0.002f), "without the render origin the same ground shakes by millimetres or more");
+            Assert.AreEqual(Vector3.zero, PlanetFrame.RenderOrigin, "turned off for the frame, it is not used");
+        }
+
+        /// <summary>
+        /// Under a render origin the frame's world pose is the carrier's: <see cref="PhysicsFrame.RenderPosition"/> and
+        /// <see cref="PhysicsFrame.RenderRotation"/> exactly, the root's own pose to float precision, and the frame-local
+        /// helpers agree with the carrier's transform. A frame near its own origin (a ship's) is not split, and a worker
+        /// never is.
+        /// </summary>
+        [Test]
+        public void TheFramesWorldPoseIsUnchanged()
+        {
+            var frame = PlanetFrame;
+            var ground = Under(frame.Root, "ground", ChunkLocal, ChunkRotation);
+            Assert.AreEqual(Vector3.zero, frame.Root.position, "a worker's root at its simulation pose");
+
+            AsClient();
+            var camera = new GameObject("camera").transform;
+            _objects.Add(camera.gameObject);
+            PhysicsFrames.RenderAnchor = camera;
+            _planet.transform.SetPositionAndRotation(new Vector3(-1250.5f, -117000f, -167500f), Turn(77));
+            camera.position = _planet.transform.TransformPoint(ChunkLocal);
+            PhysicsFrames.PoseForRender();
+
+            var t = _planet.transform;
+            Assert.That(frame.RenderOrigin.magnitude, Is.GreaterThan(200_000f), "a render origin is in use");
+            Assert.IsTrue(frame.RenderPosition.Equals(t.position), "the render position is the carrier's, exactly");
+            Assert.IsTrue(frame.RenderRotation.Equals(t.rotation), "the render rotation is the carrier's, exactly");
+            Assert.AreEqual(t.lossyScale, frame.RenderScale);
+            Assert.That(Quaternion.Angle(t.rotation, frame.Root.rotation), Is.LessThan(1e-3f), "the root's rotation is the carrier's");
+            Assert.That(Vector3.Distance(t.position, frame.Root.position), Is.LessThan(0.05f), "the root's position is the carrier's to float precision");
+            Assert.That((frame.Root.lossyScale - Vector3.one).magnitude, Is.LessThan(1e-5f));
+            Assert.That(Vector3.Distance(t.TransformPoint(ChunkLocal), ground.position), Is.LessThan(0.05f), "a child is where the carrier's pose puts it");
+            Assert.That(Vector3.Distance(t.TransformPoint(ChunkLocal), frame.LocalToRender(ChunkLocal)), Is.LessThan(0.05f), "LocalToRender agrees with the carrier's transform");
+            var back = frame.RenderToLocalPrecise(frame.LocalToRenderPrecise(Double3.From(ChunkLocal)));
+            Assert.That(Length(back - ChunkLocal), Is.LessThan(1e-6f), "RenderToLocal undoes LocalToRender");
+            Assert.That(Vector3.Distance(frame.RenderToLocal(ground.position), ChunkLocal), Is.LessThan(0.05f));
+            Assert.That(Quaternion.Angle(frame.LocalToRender(ChunkRotation), ground.rotation), Is.LessThan(1e-3f));
+            Assert.That(Quaternion.Angle(frame.RenderToLocal(ground.rotation), ChunkRotation), Is.LessThan(1e-3f));
+
+            // The camera back near the planet's own origin: no render origin.
+            camera.position = _planet.transform.TransformPoint(new Vector3(100f, 900f, -300f));
+            PhysicsFrames.PoseForRender();
+            Assert.AreEqual(Vector3.zero, frame.RenderOrigin, "within the threshold of the frame's own origin, none");
+            Assert.IsTrue(frame.Root.position.Equals(t.position), "and the root is at the carrier's pose exactly");
+            Assert.IsTrue(frame.Root.rotation.Equals(t.rotation));
+        }
+
+        /// <summary>
+        /// Prediction under a render origin: every step puts the root at its simulation pose exactly, with the pivot at
+        /// the identity, so a predicted body's pose is bit for bit what it would be under a root that was never split, and
+        /// the frame goes back to its turned render pose after. Over many frames of a turning planet.
+        /// </summary>
+        [Test]
+        public void PredictionStaysExactUnderARenderOrigin()
+        {
+            var frame = PlanetFrame;
+            var box = _planet.Carried;
+            var chunk = Under(frame.Root, "chunk", ChunkLocal, ChunkRotation);
+            var pawn = Under(chunk, "pawn", new Vector3(3.25f, 0.9f, -6.5f), Quaternion.Euler(0f, 31f, 0f));
+            var probe = Under(chunk, "probe", new Vector3(-150.125f, 2.5f, 377.75f), Quaternion.Euler(0f, -12f, 0f));
+            // The same hierarchy under a plain root, the way a worker holds it.
+            var reference = new GameObject("reference-root").transform;
+            _objects.Add(reference.gameObject);
+            var refChunk = Under(reference, "ref-chunk", ChunkLocal, ChunkRotation);
+            var refPawn = Under(refChunk, "ref-pawn", pawn.localPosition, pawn.localRotation);
+            var refProbe = Under(refChunk, "ref-probe", probe.localPosition, probe.localRotation);
+
+            AsClient();
+            PhysicsFrames.RenderAnchor = pawn;
+            _planet.transform.position = -(Turn(0) * ChunkLocal);
+            int split = 0;
+            for (int i = 0; i < 120; i++)
+            {
+                _planet.transform.rotation = Turn(i * 50);
+                PhysicsFrames.PoseForRender();
+                if (frame.RenderOrigin != Vector3.zero) split++;
+                var drawn = pawn.position;
+
+                PhysicsFrames.BeginSimulation(box, pawn);
+                Assert.IsTrue(PhysicsFrames.InSimulationPose(box));
+                Assert.IsTrue(frame.Root.position.Equals(-frame.Origin), "the root at the identity less the origin, exactly");
+                Assert.IsTrue(frame.Root.rotation.Equals(Quaternion.identity));
+                Assert.IsTrue(frame.Root.lossyScale.Equals(Vector3.one));
+                reference.SetPositionAndRotation(-frame.Origin, Quaternion.identity);
+                Assert.IsTrue(pawn.position.Equals(refPawn.position), $"frame {i}: the pawn simulates where an unsplit root puts it, bit for bit");
+                Assert.IsTrue(pawn.rotation.Equals(refPawn.rotation));
+                Assert.IsTrue(probe.position.Equals(refProbe.position));
+                Assert.IsTrue(frame.LocalToSimulation(ChunkLocal).Equals(chunk.position), "frame-local to simulation agrees with the root");
+                PhysicsFrames.EndSimulation();
+
+                Assert.IsFalse(PhysicsFrames.InSimulationPose(box));
+                Assert.That(Vector3.Distance(drawn, pawn.position), Is.LessThan(1e-4f), "back where it was drawn");
+            }
+            Assert.That(frame.Origin.magnitude, Is.GreaterThan(200_000f), "the simulation origin followed the pawn");
+            Assert.AreEqual(120, split, "every frame was drawn about a render origin");
+        }
+
+        /// <summary>
+        /// A ship standing on the turning planet, 205 km from its centre, with a crew member aboard in the ship's own frame.
+        /// The planet is drawn about a render origin near the crew member; the ship's frame, posed from the ship as it is
+        /// drawn, is near its own origin and needs none. The crew member holds still against the ground beside the ship to
+        /// within a millimetre.
+        /// </summary>
+        [Test]
+        public void AShipOnAPlanetIsDrawnThroughThePlanetsRenderOrigin()
+        {
+            var frame = PlanetFrame;
+            var shipLocal = ChunkLocal + new Vector3(4f, -3f, 2f);
+            var shipRotation = ChunkRotation * Quaternion.Euler(0f, 40f, 0f);
+            var ship = SpawnInFrame(_shipPrefab, _planet.Carried, shipLocal, shipRotation);
+            var shipFrame = ship.Carried != null ? ship.Carried.Frame : null;
+            Assume.That(shipFrame, Is.Not.Null, "the ship has its frame");
+            var crewLocal = new Vector3(1.25f, 1f, 2.5f);
+            var crew = Under(shipFrame.Root, "crew", crewLocal, Quaternion.identity);
+            var rock = Under(frame.Root, "rock", shipLocal + ChunkRotation * new Vector3(30f, 0f, 12f), Quaternion.identity);
+
+            AsClient();
+            PhysicsFrames.RenderAnchor = crew;
+            _planet.transform.SetPositionAndRotation(-(Turn(0) * shipLocal), Turn(0));
+            var crewInPlanet = Double3.From(shipLocal) + PhysicsFrames.Rotate(shipRotation, Double3.From(crewLocal));
+            var rockInPlanet = LocalIn(rock, frame.Root);
+            float worst = 0f;
+            for (int i = 0; i < Frames; i++)
+            {
+                var turn = Turn(i);
+                _planet.transform.rotation = turn;
+                PhysicsFrames.PoseForRender();
+                var shown = rock.position - crew.position;
+                var truth = PhysicsFrames.Rotate(turn, rockInPlanet - crewInPlanet);
+                worst = Mathf.Max(worst, Length(Double3.From(shown) - truth));
+            }
+            TestContext.WriteLine($"a ship 205 km out on a planet turning at {Omega} rad/s: worst error of the ground against the crew {worst * 1000f:0.000} mm over {Frames} frames; planet render origin {frame.RenderOrigin}, ship's {shipFrame.RenderOrigin}");
+            Assert.That(frame.RenderOrigin.magnitude, Is.GreaterThan(200_000f), "the planet is drawn about a render origin near the crew");
+            Assert.AreEqual(Vector3.zero, shipFrame.RenderOrigin, "the ship's frame needs none");
+            Assert.That(Vector3.Distance(ship.transform.position, shipFrame.RenderPosition), Is.LessThan(1e-6f), "the ship's frame is drawn at the ship");
+            Assert.That(worst, Is.LessThan(0.001f), "the crew member holds still against the ground beside the ship");
         }
     }
 }
