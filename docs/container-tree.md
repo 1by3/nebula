@@ -283,6 +283,15 @@ own coordinates, the host being a container with its own physics frame (a planet
   bounding cube leave most of the cube empty, and a pawn high over them leases nothing), and requests nothing while the
   host is not in its process. Dealing is unchanged: a chunk row is created assigned to the worker that asked, and the orchestrator
   re-deals it like any leased runtime container. The anchor is not pinned.
+- **A copy of the host wherever its ground is leased.** A worker can only register a chunk once the host's box is in its
+  process, and a chunk may be dealt to a worker that owns nothing near the host. So the host's worker gives every
+  worker that leases a container in the host's box, at any depth, a ghost of the host for as long as the lease is held
+  (`NebulaWorker.GhostHostsToHostedLeases`, read from the rows' placements, with the ghost band on). The chunk registers
+  under that copy and its owner simulates it in the copy's frame. What stands in a chunk does not follow the host's
+  ghosts (it follows the chunk's own lease, and the band covers the chunk's seams), so a planet's ground is not sent
+  whole to every worker that holds a copy of the planet. A handover into a container that has not registered, and a
+  leased container held for a missing parent, are reported once after five seconds
+  (NEB-400, scenario 48).
 - **Lead.** `ChunkGridDefinition.LeadSeconds` (any grid; 0 by default, so root grids keep today's ring) adds a ring
   around every cell on the line from the pawn to where its velocity takes it in that time: a capsule along the path,
   not a wider ring. The velocity is measured from the pawn's position in the grid's absolute coordinates between two
