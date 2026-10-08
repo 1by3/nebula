@@ -18,6 +18,104 @@ namespace Nebula.Tests
             return s;
         }
 
+        // ------------------------------------------------------------------------------------- far band
+
+        private const double Mm = 1e9; // 1,000,000 km in metres
+
+        [Test]
+        public void PositionsInsideTheNearCubeKeepTheirKeys()
+        {
+            var grid = new InterestGrid(64, false);
+            double edge = 64.0 * (1 << 20); // the near cube's face
+            Assert.AreEqual(InterestGrid.PackRegion(InterestGrid.MaxCoordinate, 0, InterestGrid.MinCoordinate), grid.RegionOf(edge - 1, 0, -edge));
+            Assert.IsFalse(InterestGrid.IsFar(grid.RegionOf(edge - 1, edge - 1, -edge)));
+            Assert.IsTrue(InterestGrid.IsFar(grid.RegionOf(edge, 0, 0)));
+            Assert.IsTrue(InterestGrid.IsFar(grid.RegionOf(0, 0, -edge - 0.001)));
+        }
+
+        [Test]
+        public void RegionsAMillionKilometresOutAreDistinctOnEveryAxis()
+        {
+            foreach (bool planar in new[] { false, true })
+            {
+                var grid = new InterestGrid(64, planar);
+                double far = 64.0 * InterestGrid.FarScale;
+                for (int axis = 0; axis < 3; axis++)
+                {
+                    if (planar && axis == 1) continue;
+                    foreach (double sign in new[] { 1.0, -1.0 })
+                    {
+                        double[] p = { 0, 0, 0 };
+                        p[axis] = sign * Mm;
+                        ulong at = grid.RegionOf(p[0], p[1], p[2]);
+                        Assert.IsTrue(InterestGrid.IsFar(at));
+                        p[axis] = sign * (Mm + far);
+                        ulong next = grid.RegionOf(p[0], p[1], p[2]);
+                        p[axis] = sign * (Mm - far);
+                        ulong prev = grid.RegionOf(p[0], p[1], p[2]);
+                        p[axis] = sign * 1e12; // beyond even the far band: clamped
+                        ulong clamped = grid.RegionOf(p[0], p[1], p[2]);
+                        Assert.AreNotEqual(at, next, $"axis {axis} {sign}");
+                        Assert.AreNotEqual(at, prev, $"axis {axis} {sign}");
+                        Assert.AreNotEqual(at, clamped, $"axis {axis} {sign}");
+                        p[axis] = sign * Mm;
+                        Assert.AreEqual(0, grid.SqrDistanceToRegion(at, p[0], p[1], p[2]), $"axis {axis} {sign}");
+                    }
+                }
+                // Points far apart off-axis are distinct too (the old packing clamped all of these together).
+                Assert.AreNotEqual(grid.RegionOf(Mm, 0, Mm), grid.RegionOf(Mm, 0, -Mm));
+                Assert.AreNotEqual(grid.RegionOf(112_957_000, 0, 0), grid.RegionOf(163_270_000, 0, 0));
+            }
+        }
+
+        [Test]
+        public void FarRegionsAreFarScaleEdgesWide()
+        {
+            var grid = new InterestGrid(64, false);
+            ulong r = grid.RegionOf(Mm, 10, -Mm);
+            grid.BoundsOf(r, out double minX, out double minY, out double minZ, out double maxX, out double maxY, out double maxZ);
+            Assert.AreEqual(64.0 * InterestGrid.FarScale, maxX - minX, 1e-6);
+            Assert.AreEqual(64.0 * InterestGrid.FarScale, maxY - minY, 1e-6);
+            Assert.That(Mm, Is.InRange(minX, maxX));
+            Assert.That(-Mm, Is.InRange(minZ, maxZ));
+            grid.CenterOf(r, out double cx, out _, out _);
+            Assert.AreEqual(r, grid.RegionOf(cx, 10, -Mm));
+        }
+
+        [Test]
+        public void CollectorsSpanTheNearCubeFaceWithoutGapsOrOverlaps()
+        {
+            var grid = new InterestGrid(64, true);
+            double face = 64.0 * (1 << 20);
+            var disc = new List<ulong>();
+            grid.CollectDisc(face, 0, 0, 5000, disc);
+            Assert.AreEqual(disc.Count, new HashSet<ulong>(disc).Count);
+            CollectionAssert.Contains(disc, grid.RegionOf(face - 1, 0, 0));
+            CollectionAssert.Contains(disc, grid.RegionOf(face + 1, 0, 0));
+            CollectionAssert.Contains(disc, grid.RegionOf(face + 4900, 0, 0));
+            CollectionAssert.Contains(disc, grid.RegionOf(face - 4900, 0, 0));
+            foreach (ulong r in disc)
+                if (InterestGrid.IsFar(r))
+                {
+                    // Every far region collected lies outside the near cube.
+                    grid.BoundsOf(r, out double minX, out _, out _, out _, out _, out _);
+                    Assert.GreaterOrEqual(minX, face);
+                }
+
+            var box = new List<ulong>();
+            grid.CollectBox(Mm - 100, 0, -100, Mm + 100, 0, 100, box);
+            CollectionAssert.AreEquivalent(new[] { grid.RegionOf(Mm - 100, 0, -100), grid.RegionOf(Mm - 100, 0, 100) }, new HashSet<ulong>(box));
+        }
+
+        [Test]
+        public void FarKeysSurviveTheScopeSalt()
+        {
+            var grid = new InterestGrid(64, false);
+            ulong r = grid.RegionOf(-Mm, Mm, Mm);
+            Assert.AreEqual(r, RegionKeys.Unsalt(RegionKeys.Salt(r, 42), 42));
+            Assert.AreNotEqual(RegionKeys.Salt(r, 42), RegionKeys.Salt(r, 43));
+        }
+
         [Test]
         public void KeysFollowTheCellAPositionFallsIn()
         {

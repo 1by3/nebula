@@ -47,6 +47,21 @@ run the **same** code:
   Region id = `RuntimeGrid.PackId(x, y, z)` (the pinned 3×21-bit packing; not changed). **D1** planar by default
   (`InterestPlanar = true`: y is always 0, regions are columns) because both reference worlds are surface worlds and the
   exact per-entity radius test is 3D anyway; set false for space/volume games.
+- **D109 The far band.** 21 bits of edge-sized regions reach only ±2^20 edges (±67,108 km at 64 m) from a scope's
+  origin; beyond it every position used to clamp into one region, so a star system's outer planets shared a single
+  region. The packing uses 63 bits, so the top bit (`InterestGrid.FarBit`) now marks a *far region*: the same three
+  21-bit fields counting cells `InterestGrid.FarScale` (32) edges wide, i.e. 2,048 m at 64 m, reaching ±2,147,483 km.
+  A position inside the near cube on every axis keeps exactly the key it had, so nothing inside ±67,108 km changed and
+  no persisted or chunk id moves. The near cube's faces are far-cell edges, so the bands partition space: `RegionOf`
+  makes a far key only outside the near cube, `CollectDisc`/`CollectBox` return near regions for the part of the
+  query inside it and far regions (skipping far cells wholly inside it) for the rest, and `BoundsOf` widens a far
+  key's box. Both ends derive the band from the grid they already agree on, so there is no new setting, field,
+  message or protocol version, and the scope salt (an XOR) carries the top bit like any other. Chosen over a per-scope
+  region size, which would need the size carried to every gateway and worker for every scope and the subscribe message
+  to carry more than one grid, and over wider keys, which change the key type on the wire, in the index and in the
+  publisher's buckets. The cost: interest is 32× coarser per axis out there, which suits the empty space a far
+  position is in. Tested by `InterestGridTests` (keys at 1,000,000 km on each axis distinct from their neighbours and
+  from the clamp, the face of the near cube collected with no gap or overlap, far keys through the salt).
 - Origin independence: keys are computed from absolute position = container absolute centre (double; cell coord ×
   cell size, or the lease row's absolute box) + rotated local position. Wire positions are already container-local, so
   a floating-origin shift changes no key. The gateway never shifts its origin; workers convert through
