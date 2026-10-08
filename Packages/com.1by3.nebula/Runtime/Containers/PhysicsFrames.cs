@@ -255,6 +255,17 @@ namespace Nebula
             _samples++;
         }
 
+        /// <summary>
+        /// The carrier was moved by <paramref name="delta"/> in scene space by an origin shift, not by its own motion: the
+        /// last sampled position moves with it, so the next sample reads the carrier's true velocity rather than the
+        /// shift divided by one tick. Rotation is untouched by a shift, so the angular samples stand.
+        /// </summary>
+        internal void Rebase(Vector3 delta)
+        {
+            if (_samples == 0 || delta == Vector3.zero) return;
+            _state.Position += delta;
+        }
+
         internal void ResetMotion()
         {
             _samples = 0;
@@ -854,12 +865,68 @@ namespace Nebula
             if (frame == null || frame.Root == null || RendersFrames) return;
             var delta = frame.Origin - origin;
             if (delta == Vector3.zero) return;
+            BeginRebase();
             frame.Origin = origin;
             frame.Root.localPosition += delta;
             NetworkIdentity.ShiftFrameIn(frame.Owner, delta);
             ContainerRegistry.RefreshCaches();
             Physics.SyncTransforms();
+            EndRebase();
             frame.RaiseShifted(delta);
+        }
+
+        // ---- motion samples across an origin shift
+        //
+        // A frame's velocity is the change in its carrier's scene position between ticks (PhysicsFrame.Sample). An
+        // origin shift moves carriers in scene space without moving them at all: unless the last sample moves with the
+        // carrier, the next tick reads the shift as a velocity (a 50,000 km shift reads as 3e9 m/s at 60 Hz), and
+        // ConvertVelocity hands that to everything entering or leaving the frame on that tick.
+
+        private static readonly List<Vector3> _rebaseBefore = new List<Vector3>();
+        private static int _rebaseDepth;
+
+        /// <summary>
+        /// Record where every frame's carrier is before an origin shift; <see cref="EndRebase"/> then moves each frame's
+        /// last motion sample by however far the shift moved its carrier. Pairs nest: only the outermost pair measures.
+        /// </summary>
+        internal static void BeginRebase()
+        {
+            if (_rebaseDepth++ > 0) return;
+            _rebaseBefore.Clear();
+            for (int i = 0; i < Frames.Count; i++)
+                _rebaseBefore.Add(Frames[i].Owner != null ? Frames[i].Owner.transform.position : Vector3.zero);
+        }
+
+        /// <summary>The shift is done: each frame's motion sample follows its carrier (see <see cref="BeginRebase"/>).</summary>
+        internal static void EndRebase()
+        {
+            if (_rebaseDepth == 0 || --_rebaseDepth > 0) return;
+            int n = Mathf.Min(_rebaseBefore.Count, Frames.Count);
+            for (int i = 0; i < n; i++)
+            {
+                var f = Frames[i];
+                if (f.Owner != null) f.Rebase(f.Owner.transform.position - _rebaseBefore[i]);
+            }
+            _rebaseBefore.Clear();
+        }
+
+        /// <summary>
+        /// The origin of scope frame <paramref name="scopeFrameId"/> (0 for the public frame) moved by
+        /// <paramref name="delta"/> after the fact, so no carrier positions were recorded before it: every frame whose
+        /// carrier stands in that scope's own space (not inside another physics frame) moved with it, and its last
+        /// motion sample follows. Inside a <see cref="BeginRebase"/>/<see cref="EndRebase"/> pair this does nothing:
+        /// the pair measures the move itself.
+        /// </summary>
+        internal static void Rebase(ulong scopeFrameId, Vector3 delta)
+        {
+            if (_rebaseDepth > 0 || delta == Vector3.zero) return;
+            for (int i = 0; i < Frames.Count; i++)
+            {
+                var owner = Frames[i].Owner;
+                if (owner == null || owner.Space != null) continue;
+                if (Nebula.World.ScopeFrames.FrameIdOf(owner.InstanceId) != scopeFrameId) continue;
+                Frames[i].Rebase(delta);
+            }
         }
 
         /// <summary>

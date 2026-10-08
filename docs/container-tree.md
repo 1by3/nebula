@@ -155,7 +155,9 @@ scope gets its own scene like any other. A worker steps every frame scene after 
 angular velocity, acceleration in the space around the frame; `LocalAcceleration`, `LocalAngularVelocity`,
 `PointVelocity`) is sampled once per tick on every process that holds the frame, from the carrier's transform: the
 authoritative pose on its owner, the interpolated one elsewhere, so a leased interior reads it one replication delay
-late. Linear rates are finite differences over one tick. The angular velocity is taken in double from the rotation's
+late. Linear rates are finite differences over one tick. A floating-origin shift (the public origin, a scope's,
+or a frame's own, D19) moves carriers in scene space without moving them, so the last sample moves with each carrier
+and the tick after a shift reads the carrier's own motion, not the shift over one tick. The angular velocity is taken in double from the rotation's
 vector part, over as many of the last 256 samples as it takes the frame to turn a milliradian, while that baseline
 agrees with the newest tick's own reading (NEB-390): a one-tick difference of float quaternions read zero below about
 2 degrees a second, and a planet turning once in a few hours turns by about 2e-6 rad a tick. A planet at 1e-4 rad/s

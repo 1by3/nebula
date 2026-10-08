@@ -540,12 +540,14 @@ namespace Nebula.World
             if (target == Frame.Cell) return;
             var delta = Frame.ShiftDelta(Frame.Cell, target);
             Suspend(InstanceId);
+            PhysicsFrames.BeginRebase();
             // The frame moves first: ContainerRegistry asks the bounds hook, which recomputes every chunk of this
             // grid from its coordinate in the *new* frame rather than translating a box and letting it drift.
             Frame.Apply(target, delta);
             ContainerRegistry.ShiftRuntime(InstanceId, delta);
             ContainerRegistry.RefreshCaches();
             NetworkIdentity.ShiftFrameAll(InstanceId, delta);
+            PhysicsFrames.EndRebase();
             // A client draws its physics frames posed at their carriers (docs/container-tree.md D11): the carriers just
             // moved, so the frames, and everything standing in them, move now (controllers still suspended), not at the
             // client's next render pose. An origin rule run later this frame reads them where the origin put them.

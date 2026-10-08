@@ -170,6 +170,9 @@ namespace Nebula
             ContainerRegistry.ShiftRuntime(0UL, delta);
             ContainerRegistry.RefreshCaches();
             NetworkIdentity.ShiftFrameAll(0UL, delta);
+            // The carriers of physics frames in the public space moved with it: their motion samples follow, so the
+            // next tick does not read the shift as the frames' velocity.
+            PhysicsFrames.Rebase(0UL, delta);
             Physics.SyncTransforms();
             // A client's physics frames are posed at their carriers, which just moved: pose them now (container-tree D11).
             PhysicsFrames.PoseForRender();
