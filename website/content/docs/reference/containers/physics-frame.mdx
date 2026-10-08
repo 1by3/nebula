@@ -67,7 +67,7 @@ The frame's pose is driven by an entity (its carrier), so only that entity's aut
 public Vector3 Origin { get; }
 ```
 
-The frame's floating origin (`docs/container-tree.md` D19): the frame-local point that sits at Unity's origin in simulation space. Zero until the worker moves it with [`PhysicsFrames.ShiftOrigin`](/docs/reference/containers/physics-frames#shiftorigin); a planet's frame is large, and physics a few thousand kilometres from Unity's origin would be imprecise.
+The frame's floating origin (`docs/container-tree.md` D19): the frame-local point that sits at Unity's origin in simulation space. Zero until the worker moves it with [`PhysicsFrames.ShiftOrigin`](/docs/reference/containers/physics-frames#shiftorigin); a planet's frame is large, and physics a few thousand kilometres from Unity's origin would be imprecise. A client keeps one too, near what it predicts in the frame, by the same rule ([`PhysicsFrames.BeginSimulation`](/docs/reference/containers/physics-frames#beginsimulation)).
 
 ### KeepOriginLevel [#keeporiginlevel]
 
@@ -76,6 +76,46 @@ public bool KeepOriginLevel { get; set; }
 ```
 
 The worker's automatic origin shifts ([`PhysicsFrames.AutoShift`](/docs/reference/containers/physics-frames#autoshift)) move this frame's origin across, never up or down. Set by a planar chunk grid hosted in the frame (`docs/container-tree.md` D22), whose columns, like a planar root grid's, never shift vertically; a game may set it for a frame of its own. [`PhysicsFrames.ShiftOrigin`](/docs/reference/containers/physics-frames#shiftorigin) called directly still moves the origin wherever it is told.
+
+### UseRenderOrigin [#userenderorigin]
+
+```csharp
+public bool UseRenderOrigin { get; set; } = true;
+```
+
+Whether this frame may be drawn about a render origin near the camera (D25). On by default; a game turns it off for a frame it poses itself. A frame whose content stays near its own origin (a ship's) never uses one whatever this says, as long as the anchor stays within [`PhysicsFrames.RenderOriginThreshold`](/docs/reference/containers/physics-frames#renderoriginthreshold).
+
+### RenderOrigin [#renderorigin]
+
+```csharp
+public Vector3 RenderOrigin { get; }
+```
+
+The frame-local point the frame is drawn about on a rendering client (D25): zero while the render anchor is near the frame's own origin, else the anchor's frame-local position snapped to [`PhysicsFrames.RenderOriginStep`](/docs/reference/containers/physics-frames#renderoriginstep). Always zero on a worker.
+
+### RenderPosition [#renderposition]
+
+```csharp
+public Vector3 RenderPosition { get; }
+```
+
+Where the frame is drawn: its carrier's position as [`PhysicsFrames.PoseForRender`](/docs/reference/containers/physics-frames#poseforrender) last posed it (on a worker, and before the first pose, the carrier's current one). Read this rather than `Root.position`, which under a render origin is composed in float through the turned origin.
+
+### RenderRotation [#renderrotation]
+
+```csharp
+public Quaternion RenderRotation { get; }
+```
+
+The frame's orientation as drawn (see [`RenderPosition`](#renderposition)).
+
+### RenderScale [#renderscale]
+
+```csharp
+public Vector3 RenderScale { get; }
+```
+
+The frame's scale as drawn (see [`RenderPosition`](#renderposition)): the carrier's lossy scale, normally one.
 
 ## Events
 
@@ -104,6 +144,40 @@ public Vector3 SimulationToLocal(Vector3 position);
 ```
 
 A simulation-space position inside this frame as a frame-local (container-local) one.
+
+### LocalToRender [#localtorender]
+
+```csharp
+public Vector3 LocalToRender(Vector3 local);
+public Quaternion LocalToRender(Quaternion local);
+```
+
+A frame-local point where it is drawn: [`RenderPosition`](#renderposition) + [`RenderRotation`](#renderrotation) × ([`RenderScale`](#renderscale) ∘ `local`), composed in double, so a point 200 km from the frame's origin but near the camera comes out within a fraction of a millimetre.
+
+### LocalToRenderPrecise [#localtorenderprecise]
+
+```csharp
+public Double3 LocalToRenderPrecise(Double3 local);
+```
+
+[`LocalToRender`](#localtorender) from and to double.
+
+### RenderToLocalPrecise [#rendertolocalprecise]
+
+```csharp
+public Double3 RenderToLocalPrecise(Double3 scene);
+```
+
+A point of the drawn scene in frame-local coordinates, in double ([`LocalToRender`](#localtorender)'s inverse).
+
+### RenderToLocal [#rendertolocal]
+
+```csharp
+public Vector3 RenderToLocal(Vector3 scene);
+public Quaternion RenderToLocal(Quaternion scene);
+```
+
+[`RenderToLocalPrecise`](#rendertolocalprecise) for a float scene point.
 
 ### ToParent [#toparent]
 

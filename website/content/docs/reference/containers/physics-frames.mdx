@@ -37,6 +37,30 @@ public static float OriginShiftStep = 1024f;
 
 The grid a moved origin snaps to, in metres, so two workers that shift for the same crowd agree.
 
+### RenderOriginThreshold [#renderoriginthreshold]
+
+```csharp
+public static float RenderOriginThreshold = 256f;
+```
+
+How far (metres) the render anchor may be from a frame's own origin, and later from its render origin, before the frame is drawn about a render origin near the anchor (D25). Small, so that what the frame's turn multiplies stays a few hundred metres long: a float rotation turns 2 km with a few tenths of a millimetre of rounding. A ship's frame, with the anchor aboard, never needs one. `float.PositiveInfinity` turns render origins off.
+
+### RenderOriginStep [#renderoriginstep]
+
+```csharp
+public static float RenderOriginStep = 128f;
+```
+
+The grid a render origin snaps to (metres), so it moves only as the anchor travels.
+
+### ShiftChildrenWhileDrawing [#shiftchildrenwhiledrawing]
+
+```csharp
+public static bool ShiftChildrenWhileDrawing = true;
+```
+
+While cameras draw, a frame drawn about a render origin has its -O moved from its root down to the root's direct children (D25): the root at zero under the pivot, each child at its own offset less O. Unity composes a pose from the leaf up, so with -O on the root, a body moving in a chunk 200 km out added its offset to the chunk's in float before -O was met, and rounded by a centimetre, differently every frame. With the children shifted, every sum stays a few hundred metres long. Everything is put back exactly when drawing ends, so no game code, and nothing Nebula reads (interpolation, prediction, the wire), sees the shifted poses. On by default; turn it off if your game draws outside Unity's camera callbacks.
+
 ## Properties
 
 ### All [#all]
@@ -62,6 +86,14 @@ public static bool RendersFrames { get; }
 ```
 
 This process renders frames: a client, whose frame roots are posed at each frame's world pose outside its prediction step (D11). A worker never does, and converts poses itself when an entity changes space.
+
+### RenderAnchor [#renderanchor]
+
+```csharp
+public static Transform RenderAnchor { get; set; }
+```
+
+What frames are drawn about on a client (D25): a frame whose content is drawn far from its own origin is posed about a point near this transform, so what is near it is composed without rounding through the frame's turn times a far offset. Set it to the camera when the camera can be far from the content anchor; null (the default) uses the client's content anchor (`NebulaClient.ActiveContentAnchor`: the local pawn, or whatever `NebulaClient.SetContentAnchor` was given).
 
 ## Events
 
@@ -170,7 +202,7 @@ The collider a frame's interior copy was made from (D12): a raycast inside a fra
 public static bool InSimulationPose(Container space);
 ```
 
-Whether `space`'s frame root is at the identity pose right now, so a position read from a transform inside it is frame-local: always on a worker, and on a client during a prediction step ([`BeginSimulation`](#beginsimulation)). False for the scope's own space.
+Whether `space`'s frame root is at its simulation pose right now (the identity less the frame's floating origin, [`PhysicsFrame.LocalToSimulation`](/docs/reference/containers/physics-frame#localtosimulation)): always on a worker, and on a client during a prediction step ([`BeginSimulation`](#beginsimulation)). False for the scope's own space.
 
 ### PoseForRender [#poseforrender]
 
@@ -178,15 +210,16 @@ Whether `space`'s frame root is at the identity pose right now, so a position re
 public static void PoseForRender();
 ```
 
-Client: put every frame root at its frame's world pose, outermost frames first, so the camera sees one world. Called by [`NebulaClient`](/docs/reference/client/nebula-client) every rendered frame after remote entities were interpolated.
+Client: put every frame root at its frame's world pose, outermost frames first, so the camera sees one world. Called by [`NebulaClient`](/docs/reference/client/nebula-client) every rendered frame after remote entities were interpolated, and after every origin shift of the scope (`RuntimeGrid.ShiftOrigin`, `RuntimeGrid.ShiftOriginTo`), so what stands in a frame moves with the origin at once. A frame that is simulating (a prediction step) is left at its simulation pose. A frame drawn far from its own origin is posed about a render origin (D25).
 
 ### BeginSimulation [#beginsimulation]
 
 ```csharp
 public static void BeginSimulation(Container space);
+public static void BeginSimulation(Container space, Transform predicted);
 ```
 
-Client: put `space`'s frame root back at the identity pose for a prediction step, so the predicted pawn simulates exactly as its worker does (D11). Pair with [`EndSimulation`](#endsimulation).
+Client: put `space`'s frame root at its simulation pose for a prediction step, so the predicted pawn simulates exactly as its worker does (D11): the identity less the frame's floating origin. Pair with [`EndSimulation`](#endsimulation). [`BeginSimulation`](#beginsimulation) first moves that origin near what is predicted.
 
 ### EndSimulation [#endsimulation]
 

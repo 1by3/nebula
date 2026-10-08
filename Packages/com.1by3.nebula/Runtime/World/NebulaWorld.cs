@@ -171,6 +171,8 @@ namespace Nebula
             ContainerRegistry.RefreshCaches();
             NetworkIdentity.ShiftFrameAll(0UL, delta);
             Physics.SyncTransforms();
+            // A client's physics frames are posed at their carriers, which just moved: pose them now (container-tree D11).
+            PhysicsFrames.PoseForRender();
             NebulaLog.Debugf($"origin shifted to cell {WorldOrigin.Cell} (delta {delta})");
         }
     }

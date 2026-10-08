@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 namespace Nebula
@@ -143,6 +144,84 @@ namespace Nebula
         }
         internal GameObject Content;
         internal bool OwnsScene;
+
+        // ---- render pose and render origin (D11, D25)
+
+        /// <summary>
+        /// The transform <see cref="Root"/> hangs under: the frame's own top level. On a worker, and on a client while
+        /// the frame simulates, it stays at the identity pose, so the root's simulation pose is exact. On a client
+        /// drawing the frame it carries the frame's render pose about <see cref="RenderOrigin"/> (D25).
+        /// </summary>
+        internal Transform Pivot;
+
+        /// <summary>
+        /// Whether this frame may be drawn about a render origin near the camera (D25). On by default; a game turns it
+        /// off for a frame it poses itself. A frame whose content stays near its own origin (a ship's) never uses one
+        /// whatever this says, as long as the anchor stays within <see cref="PhysicsFrames.RenderOriginThreshold"/>.
+        /// </summary>
+        public bool UseRenderOrigin { get; set; } = true;
+
+        /// <summary>
+        /// The frame-local point the frame is drawn about on a rendering client (D25): zero while the render anchor is
+        /// near the frame's own origin, else the anchor's frame-local position snapped to
+        /// <see cref="PhysicsFrames.RenderOriginStep"/>. Always zero on a worker.
+        /// </summary>
+        public Vector3 RenderOrigin { get; internal set; }
+
+        /// <summary>
+        /// Where the frame is drawn: its carrier's position as <see cref="PhysicsFrames.PoseForRender()"/> last posed it
+        /// (on a worker, and before the first pose, the carrier's current one). Read this rather than
+        /// <c>Root.position</c>, which under a render origin is composed in float through the turned origin.
+        /// </summary>
+        public Vector3 RenderPosition => _posed ? _renderPosition : Owner != null ? Owner.transform.position : Vector3.zero;
+
+        /// <summary>The frame's orientation as drawn (see <see cref="RenderPosition"/>).</summary>
+        public Quaternion RenderRotation => _posed ? _renderRotation : Owner != null ? Owner.transform.rotation : Quaternion.identity;
+
+        /// <summary>The frame's scale as drawn (see <see cref="RenderPosition"/>): the carrier's lossy scale, normally one.</summary>
+        public Vector3 RenderScale => _posed ? _renderScale : Owner != null ? Owner.transform.lossyScale : Vector3.one;
+
+        internal Vector3 _renderPosition;
+        /// <summary>The render position in double: a frame drawn inside another is composed through it without rounding.</summary>
+        internal Double3 _renderPositionPrecise;
+        /// <summary>Where the pivot is drawn, in double (the scene render origin places it from this, D25).</summary>
+        internal Double3 _pivotScene;
+        internal Quaternion _renderRotation = Quaternion.identity;
+        internal Vector3 _renderScale = Vector3.one;
+        internal bool _posed;
+
+        /// <summary>
+        /// A frame-local point where it is drawn: <see cref="RenderPosition"/> + <see cref="RenderRotation"/> ×
+        /// (<see cref="RenderScale"/> ∘ <paramref name="local"/>), composed in double, so a point 200 km from the frame's
+        /// origin but near the camera comes out within a fraction of a millimetre.
+        /// </summary>
+        public Vector3 LocalToRender(Vector3 local) => LocalToRenderPrecise(Double3.From(local)).ToVector3();
+
+        /// <summary><see cref="LocalToRender(Vector3)"/> from and to double.</summary>
+        public Double3 LocalToRenderPrecise(Double3 local)
+        {
+            var s = RenderScale;
+            var turned = PhysicsFrames.Rotate(RenderRotation, new Double3(local.X * s.x, local.Y * s.y, local.Z * s.z));
+            return (_posed ? _renderPositionPrecise : Double3.From(RenderPosition)) + turned;
+        }
+
+        /// <summary>A point of the drawn scene in frame-local coordinates, in double (<see cref="LocalToRender(Vector3)"/>'s inverse).</summary>
+        public Double3 RenderToLocalPrecise(Double3 scene)
+        {
+            var r = RenderRotation;
+            var local = PhysicsFrames.Rotate(new Quaternion(-r.x, -r.y, -r.z, r.w), scene - (_posed ? _renderPositionPrecise : Double3.From(RenderPosition)));
+            var s = RenderScale;
+            return new Double3(s.x != 0f ? local.X / s.x : 0.0, s.y != 0f ? local.Y / s.y : 0.0, s.z != 0f ? local.Z / s.z : 0.0);
+        }
+
+        /// <summary><see cref="RenderToLocalPrecise"/> for a float scene point.</summary>
+        public Vector3 RenderToLocal(Vector3 scene) => RenderToLocalPrecise(Double3.From(scene)).ToVector3();
+
+        /// <summary>A frame-local rotation as drawn.</summary>
+        public Quaternion LocalToRender(Quaternion local) => RenderRotation * local;
+
+        /// <summary>A drawn rotation in frame-local terms.</summary>
+        public Quaternion RenderToLocal(Quaternion scene) => Quaternion.Inverse(RenderRotation) * scene;
 
         /// <summary>A frame-local point in the space around the frame, from the owner's current transform.</summary>
         public Vector3 ToParent(Vector3 local) => Owner.transform.TransformPoint(local);
@@ -323,6 +402,11 @@ namespace Nebula
             CloneSources.Clear();
             _simulating = null;
             CrossingPolicy = null;
+            RenderAnchor = null;
+            ContentAnchor = null;
+            _drawn.Clear();
+            _drawing = false;
+            SceneRenderOrigin.ResetForNewSession();
             Created = null;
             Releasing = null;
             SceneFactory = null;
@@ -339,9 +423,14 @@ namespace Nebula
             var frame = new PhysicsFrame { Owner = owner };
             frame.Scene = TakeScene(out bool ownsScene);
             frame.OwnsScene = ownsScene;
+            // The pivot is the frame's top level and the root hangs under it at the identity: on a client the pivot
+            // carries the render pose about a render origin (D25) without the root ever being reparented.
+            var pivot = new GameObject("Frame pivot: " + owner.ContainerId);
+            if (frame.Scene.IsValid()) SceneManager.MoveGameObjectToScene(pivot, frame.Scene);
+            else if (owner.gameObject.scene.IsValid() && pivot.scene != owner.gameObject.scene) SceneManager.MoveGameObjectToScene(pivot, owner.gameObject.scene);
             var root = new GameObject("Frame: " + owner.ContainerId);
-            if (frame.Scene.IsValid()) SceneManager.MoveGameObjectToScene(root, frame.Scene);
-            else if (owner.gameObject.scene.IsValid() && root.scene != owner.gameObject.scene) SceneManager.MoveGameObjectToScene(root, owner.gameObject.scene);
+            root.transform.SetParent(pivot.transform, false);
+            frame.Pivot = pivot.transform;
             frame.Root = root.transform;
             owner.Frame = frame;
             BuildContent(frame);
@@ -368,6 +457,7 @@ namespace Nebula
 
         private static void Release(PhysicsFrame frame)
         {
+            EndDrawing();
             try { Releasing?.Invoke(frame); }
             catch (Exception e) { NebulaLog.Error($"PhysicsFrames.Releasing threw: {e}"); }
             if (_simulating == frame) _simulating = null;
@@ -387,6 +477,7 @@ namespace Nebula
                 }
                 Destroy(frame.Root.gameObject);
             }
+            if (frame.Pivot != null) Destroy(frame.Pivot.gameObject);
             foreach (var pair in frame.Clones) if (!ReferenceEquals(pair.Value, null)) CloneSources.Remove(pair.Value);
             frame.Clones.Clear();
             frame.MovingClones.Clear();
@@ -740,7 +831,7 @@ namespace Nebula
             var delta = frame.Origin - origin;
             if (delta == Vector3.zero) return;
             frame.Origin = origin;
-            frame.Root.position += delta;
+            frame.Root.localPosition += delta;
             NetworkIdentity.ShiftFrameIn(frame.Owner, delta);
             ContainerRegistry.RefreshCaches();
             Physics.SyncTransforms();
@@ -849,15 +940,46 @@ namespace Nebula
             }
         }
 
-        // ------------------------------------------------------------------------------------ client composition (D11)
+        // ------------------------------------------------------------------------------------ client composition (D11, D25)
+
+        /// <summary>
+        /// How far (metres) the render anchor may be from a frame's own origin, and later from its render origin,
+        /// before the frame is drawn about a render origin near the anchor (D25). Small, so that what the frame's turn
+        /// multiplies stays a few hundred metres long: a float rotation turns 2 km with a few tenths of a millimetre of
+        /// rounding. A ship's frame, with the anchor aboard, never needs one. <see cref="float.PositiveInfinity"/> turns
+        /// render origins off.
+        /// </summary>
+        public static float RenderOriginThreshold = 256f;
+
+        /// <summary>The grid a render origin snaps to (metres), so it moves only as the anchor travels.</summary>
+        public static float RenderOriginStep = 128f;
+
+        /// <summary>
+        /// What frames are drawn about on a client (D25): a frame whose content is drawn far from its own origin is
+        /// posed about a point near this transform, so what is near it is composed without rounding through the frame's
+        /// turn times a far offset. Set it to the camera when the camera can be far from the content anchor; null (the
+        /// default) uses the client's content anchor (<c>NebulaClient.ActiveContentAnchor</c>: the local pawn, or
+        /// whatever <c>NebulaClient.SetContentAnchor</c> was given).
+        /// </summary>
+        public static Transform RenderAnchor { get; set; }
+
+        /// <summary>The client's content anchor, handed over by <see cref="NebulaClient"/> before it poses the frames.</summary>
+        internal static Transform ContentAnchor { get; set; }
+
+        private static Transform ActiveRenderAnchor => RenderAnchor != null ? RenderAnchor : ContentAnchor;
 
         /// <summary>
         /// Client: put every frame root at its frame's world pose, outermost frames first, so the camera sees one
-        /// world. Called by <see cref="NebulaClient"/> every rendered frame after remote entities were interpolated.
+        /// world. Called by <see cref="NebulaClient"/> every rendered frame after remote entities were interpolated,
+        /// and after every origin shift of the scope (<c>RuntimeGrid.ShiftOrigin</c>, <c>RuntimeGrid.ShiftOriginTo</c>),
+        /// so what stands in a frame moves with the origin at once. A frame that is simulating (a prediction step) is
+        /// left at its simulation pose. A frame drawn far from its own origin is posed about a render origin (D25).
         /// </summary>
         public static void PoseForRender()
         {
             if (!RendersFrames || Frames.Count == 0) return;
+            EndDrawing();
+            InstallDrawHooks();
             PoseOrder.Clear();
             PoseOrder.AddRange(Frames);
             PoseOrder.Sort((a, b) => SpaceDepth(a.Owner).CompareTo(SpaceDepth(b.Owner)));
@@ -868,12 +990,215 @@ namespace Nebula
             Physics.SyncTransforms();
         }
 
+        /// <summary>
+        /// Pose one frame for drawing (D11, D25). With a render origin O, the pivot goes to (T + R(S O), R, S), worked
+        /// out in double, and the root hangs under it at (-O, identity): composed from the leaf up, a child's
+        /// frame-local offset meets -O first, where the two cancel exactly, and only the small difference is turned.
+        /// The root's world pose is still (T, R) to float precision; <see cref="PhysicsFrame.RenderPosition"/> holds it
+        /// exactly. With no render origin the pivot is at (T, R, S) and the root at the identity under it.
+        /// </summary>
         private static void PoseForRender(PhysicsFrame frame)
         {
             if (frame.Root == null || frame.Owner == null) return;
             var t = frame.Owner.transform;
-            frame.Root.SetPositionAndRotation(t.position, t.rotation);
-            frame.Root.localScale = t.lossyScale;
+            var precise = DrawnPositionOf(frame.Owner);
+            var position = precise.ToVector3();
+            var rotation = t.rotation;
+            var scale = t.lossyScale;
+            frame._renderPositionPrecise = precise;
+            frame._renderPosition = position;
+            frame._renderRotation = rotation;
+            frame._renderScale = scale;
+            frame._posed = true;
+            var pivot = frame.Pivot;
+            if (pivot == null || frame.Root.parent != pivot)
+            {
+                // A root someone else reparented: posed directly, as before render origins.
+                frame.RenderOrigin = Vector3.zero;
+                frame.Root.SetPositionAndRotation(position, rotation);
+                frame.Root.localScale = scale;
+                return;
+            }
+            var origin = RenderOriginOf(frame);
+            frame.RenderOrigin = origin;
+            frame._pivotScene = origin == Vector3.zero ? precise : frame.LocalToRenderPrecise(Double3.From(origin));
+            pivot.SetPositionAndRotation(frame._pivotScene.ToVector3(), rotation);
+            pivot.localScale = scale;
+            frame.Root.SetLocalPositionAndRotation(-origin, Quaternion.identity);
+            frame.Root.localScale = Vector3.one;
+        }
+
+        /// <summary>
+        /// Where <paramref name="frame"/> is drawn about (D25), its render pose already taken: zero when render origins
+        /// are off for it or the anchor is within <see cref="RenderOriginThreshold"/> of the frame's own origin; else the
+        /// current render origin while the anchor is within the threshold of it, and the anchor's frame-local position
+        /// snapped to <see cref="RenderOriginStep"/> once it is not. No anchor, or one inside a frame that is
+        /// simulating (whose position is not a drawn one), keeps the current origin.
+        /// </summary>
+        private static Vector3 RenderOriginOf(PhysicsFrame frame)
+        {
+            float threshold = RenderOriginThreshold;
+            if (!frame.UseRenderOrigin || float.IsNaN(threshold) || float.IsInfinity(threshold)) return Vector3.zero;
+            var anchor = ActiveRenderAnchor;
+            if (anchor == null) return frame.RenderOrigin;
+            Vector3 local;
+            if (IsUnder(anchor, frame.Root))
+                local = frame.Root.InverseTransformPoint(anchor.position); // frame-local at either pose of the root
+            else if (_simulating != null && _simulating.Root != null && IsUnder(anchor, _simulating.Root))
+                return frame.RenderOrigin;
+            else
+                local = frame.RenderToLocal(anchor.position);
+            if (local.magnitude <= threshold) return Vector3.zero;
+            var current = frame.RenderOrigin;
+            if ((local - current).magnitude <= threshold) return current;
+            float step = Mathf.Max(1f, RenderOriginStep);
+            return new Vector3(Mathf.Round(local.x / step) * step, Mathf.Round(local.y / step) * step, Mathf.Round(local.z / step) * step);
+        }
+
+        private static bool IsUnder(Transform t, Transform root)
+        {
+            int hops = 0;
+            for (var p = t != null ? t.parent : null; p != null && hops < 256; p = p.parent, hops++)
+                if (p == root) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Where <paramref name="owner"/> (a frame's carrier) is drawn. A carrier standing in another frame that is posed
+        /// for drawing (a ship on a planet) is composed in double from its frame-local pose in that frame: Unity's own
+        /// <c>position</c> would add its offset in its chunk to the chunk's offset (200 km on a planet) in float first, and
+        /// round by a centimetre, differently every frame as it moves. Anything else reads its transform.
+        /// </summary>
+        private static Double3 DrawnPositionOf(Container owner)
+        {
+            var t = owner.transform;
+            var outer = owner.Space != null ? owner.Space.Frame : null;
+            if (outer == null || !outer._posed || outer == _simulating || outer.Root == null || !IsUnder(t, outer.Root)) return Double3.From(t.position);
+            return outer.LocalToRenderPrecise(LocalIn(t, outer.Root));
+        }
+
+        /// <summary><paramref name="t"/>'s position in <paramref name="root"/>'s local coordinates, composed in double from the local poses in between.</summary>
+        internal static Double3 LocalIn(Transform t, Transform root)
+        {
+            var p = Double3.Zero;
+            int hops = 0;
+            for (var x = t; x != null && x != root && hops < 256; x = x.parent, hops++)
+            {
+                var s = x.localScale;
+                p = Rotate(x.localRotation, new Double3(p.X * s.x, p.Y * s.y, p.Z * s.z)) + x.localPosition;
+            }
+            return p;
+        }
+
+        // ---- drawing: the render origin on the root's children (D25)
+
+        /// <summary>
+        /// While cameras draw, a frame drawn about a render origin has its -O moved from its root down to the root's
+        /// direct children (D25): the root at zero under the pivot, each child at its own offset less O. Unity composes
+        /// a pose from the leaf up, so with -O on the root, a body moving in a chunk 200 km out added its offset to the
+        /// chunk's in float before -O was met, and rounded by a centimetre, differently every frame. With the children
+        /// shifted, every sum stays a few hundred metres long. Everything is put back exactly when drawing ends, so no
+        /// game code, and nothing Nebula reads (interpolation, prediction, the wire), sees the shifted poses. On by
+        /// default; turn it off if your game draws outside Unity's camera callbacks.
+        /// </summary>
+        public static bool ShiftChildrenWhileDrawing = true;
+
+        private struct Drawn
+        {
+            public Transform Transform;
+            public Vector3 Local;
+        }
+
+        private static readonly List<Drawn> _drawn = new List<Drawn>();
+        private static bool _drawing, _hooked;
+
+        /// <summary>Whether the frames' children are shifted for drawing right now (<see cref="ShiftChildrenWhileDrawing"/>).</summary>
+        internal static bool Drawing => _drawing;
+
+        internal static void InstallDrawHooks()
+        {
+            if (_hooked) return;
+            _hooked = true;
+            // A scriptable render pipeline draws every camera of a frame inside one context; the built-in pipeline culls
+            // and renders each camera. Either way the shift holds only while a camera draws.
+            RenderPipelineManager.beginContextRendering += (context, cameras) => BeginDrawing(cameras);
+            RenderPipelineManager.endContextRendering += (context, cameras) => EndDrawing();
+            Camera.onPreCull += camera => { OneCamera[0] = camera; BeginDrawing(OneCamera); };
+            Camera.onPostRender += camera => EndDrawing();
+        }
+
+        /// <summary>
+        /// Move each drawn frame's -O from its root to its children (<see cref="ShiftChildrenWhileDrawing"/>). Called as
+        /// cameras start drawing; does nothing when already done, on a worker, or for a frame that is simulating.
+        /// </summary>
+        internal static void BeginDrawing() => BeginDrawing(null);
+
+        /// <summary>
+        /// <see cref="BeginDrawing()"/> for <paramref name="cameras"/>, then the scene's render origin
+        /// (<see cref="SceneRenderOrigin"/>) about the camera that leads them.
+        /// </summary>
+        internal static void BeginDrawing(IReadOnlyList<Camera> cameras)
+        {
+            if (_drawing || !RendersFrames) return;
+            _drawing = true;
+            // The scene first, so a game placing its camera in SceneRenderOrigin.Shifted still reads frame-local poses.
+            if (cameras != null && cameras.Count > 0) SceneRenderOrigin.Begin(cameras, Frames, _simulating);
+            if (ShiftChildrenWhileDrawing) ShiftChildren();
+        }
+
+        private static readonly Camera[] OneCamera = new Camera[1];
+
+        private static void ShiftChildren()
+        {
+            for (int i = 0; i < Frames.Count; i++)
+            {
+                var frame = Frames[i];
+                var origin = frame.RenderOrigin;
+                var root = frame.Root;
+                if (frame == _simulating || origin == Vector3.zero || root == null || frame.Pivot == null || root.parent != frame.Pivot) continue;
+                if (!root.localPosition.Equals(-origin)) continue; // not at the pose PoseForRender gave it: leave it alone
+                _drawn.Add(new Drawn { Transform = root, Local = root.localPosition });
+                for (int c = 0; c < root.childCount; c++)
+                {
+                    var child = root.GetChild(c);
+                    var local = child.localPosition;
+                    _drawn.Add(new Drawn { Transform = child, Local = local });
+                    // Two floats this close subtract exactly: the child's far offset and O.
+                    child.localPosition = local - origin;
+                }
+                root.localPosition = Vector3.zero;
+            }
+        }
+
+        /// <summary>Put every root and child <see cref="BeginDrawing"/> moved back exactly. Called as cameras finish drawing.</summary>
+        internal static void EndDrawing()
+        {
+            if (!_drawing) return;
+            _drawing = false;
+            for (int i = _drawn.Count - 1; i >= 0; i--)
+                if (_drawn[i].Transform != null) _drawn[i].Transform.localPosition = _drawn[i].Local;
+            _drawn.Clear();
+            SceneRenderOrigin.End();
+            OneCamera[0] = null;
+        }
+
+        /// <summary>
+        /// <paramref name="v"/> turned by the float rotation <paramref name="q"/>, in double. The quaternion is normalised
+        /// in double first: a float one is a few 1e-8 off unit length, which would scale 200 km by a centimetre.
+        /// </summary>
+        internal static Double3 Rotate(Quaternion q, Double3 v)
+        {
+            double qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+            double n = Math.Sqrt(qx * qx + qy * qy + qz * qz + qw * qw);
+            if (n > 0.0 && n != 1.0) { qx /= n; qy /= n; qz /= n; qw /= n; }
+            // t = 2 (q x v); v' = v + w t + q x t
+            double tx = 2.0 * (qy * v.Z - qz * v.Y);
+            double ty = 2.0 * (qz * v.X - qx * v.Z);
+            double tz = 2.0 * (qx * v.Y - qy * v.X);
+            return new Double3(
+                v.X + qw * tx + (qy * tz - qz * ty),
+                v.Y + qw * ty + (qz * tx - qx * tz),
+                v.Z + qw * tz + (qx * ty - qy * tx));
         }
 
         /// <summary>
@@ -892,16 +1217,25 @@ namespace Nebula
         /// centimetre or more apart, and a client predicting there drifted from its worker by centimetres every replay.
         /// The origin moves on the client's frame alone: nothing the client records is in simulation space (predicted
         /// history is container-local), so nothing is shifted and <see cref="PhysicsFrame.Shifted"/> is not raised.
+        /// The frame's pivot goes to the identity first, so the root's simulation pose is set exactly, never through a
+        /// turned render origin (D25).
         /// </summary>
         public static void BeginSimulation(Container space, Transform predicted)
         {
             if (!RendersFrames) return;
+            EndDrawing();
             var frame = space != null ? space.Frame : null;
             _simulating = frame;
             if (frame == null || frame.Root == null) return;
             // The root is at its render pose here, so this is the predicted entity's frame-local position.
             if (predicted != null && NextOrigin(frame, frame.Root.InverseTransformPoint(predicted.position), out var origin)) frame.Origin = origin;
-            frame.Root.SetPositionAndRotation(-frame.Origin, Quaternion.identity);
+            if (frame.Pivot != null && frame.Root.parent == frame.Pivot)
+            {
+                frame.Pivot.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                frame.Pivot.localScale = Vector3.one;
+                frame.Root.SetLocalPositionAndRotation(-frame.Origin, Quaternion.identity);
+            }
+            else frame.Root.SetPositionAndRotation(-frame.Origin, Quaternion.identity);
             frame.Root.localScale = Vector3.one;
             Physics.SyncTransforms();
         }

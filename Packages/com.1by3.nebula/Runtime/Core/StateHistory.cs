@@ -288,10 +288,25 @@ namespace Nebula
         /// (<c>docs/scope-frames.md</c> D8). With per-scope frames the caller addresses the shift to one frame, so
         /// an entity only ever gets its own scope's delta.
         /// </summary>
+        /// <summary>Every entry moves by <paramref name="delta"/>, whatever space it was recorded in.</summary>
         internal void Shift(Vector3 delta)
         {
             for (int i = 0; i < _ring.Length; i++) if (_ring[i].Valid) _ring[i].Position += delta;
         }
+
+        /// <summary>
+        /// A space moved by <paramref name="delta"/>: the entries recorded in it follow. <paramref name="space"/> is a
+        /// framed container (entries recorded inside its physics frame) or null (the scope's own space, entries
+        /// recorded outside every frame).
+        /// </summary>
+        internal void Shift(Vector3 delta, Container space)
+        {
+            for (int i = 0; i < _ring.Length; i++)
+                if (_ring[i].Valid && SpaceOf(_ring[i].Container) == space) _ring[i].Position += delta;
+        }
+
+        /// <summary>The space an entry recorded in <paramref name="container"/> is in (a gone container counts as the scope's).</summary>
+        private static Container SpaceOf(Container container) => container != null ? container.InnerSpace : null;
 
         /// <summary>Forget everything recorded so far (the entity changed authority, or was rebound to a new copy).</summary>
         internal void Clear()
