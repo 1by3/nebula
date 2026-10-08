@@ -189,6 +189,15 @@ namespace Nebula
         internal Quaternion _renderRotation = Quaternion.identity;
         internal Vector3 _renderScale = Vector3.one;
         internal bool _posed;
+        /// <summary>The rendered frame (<c>Time.frameCount</c>) at which a pose last found the frame turned from the one before; -1: never.</summary>
+        internal int _turnedAtFrame = -1;
+
+        /// <summary>
+        /// Whether the frame turns as it is drawn: its render rotation changed from one pose to the next within the last
+        /// <see cref="PhysicsFrames.TurningHoldFrames"/> rendered frames. The scene render origin follows a turning frame's
+        /// render origin (D25).
+        /// </summary>
+        internal bool Turning => _turnedAtFrame >= 0 && Time.frameCount - _turnedAtFrame <= PhysicsFrames.TurningHoldFrames;
 
         /// <summary>
         /// A frame-local point where it is drawn: <see cref="RenderPosition"/> + <see cref="RenderRotation"/> ×
@@ -979,6 +988,12 @@ namespace Nebula
         public static float RenderOriginStep = 128f;
 
         /// <summary>
+        /// How many rendered frames a frame counts as turning after its drawn rotation last changed, so a turn that
+        /// pauses for a frame or two (a late snapshot) does not move the scene render origin back and forth.
+        /// </summary>
+        internal const int TurningHoldFrames = 30;
+
+        /// <summary>
         /// What frames are drawn about on a client (D25): a frame whose content is drawn far from its own origin is
         /// posed about a point near this transform, so what is near it is composed without rounding through the frame's
         /// turn times a far offset. Set it to the camera when the camera can be far from the content anchor; null (the
@@ -1033,6 +1048,7 @@ namespace Nebula
             var position = precise.ToVector3();
             var rotation = t.rotation;
             var scale = t.lossyScale;
+            if (frame._posed && !rotation.Equals(frame._renderRotation)) frame._turnedAtFrame = Time.frameCount;
             frame._renderPositionPrecise = precise;
             frame._renderPosition = position;
             frame._renderRotation = rotation;

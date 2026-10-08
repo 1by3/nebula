@@ -10,6 +10,13 @@ namespace Nebula
     /// top-level objects and the cameras are moved by -<see cref="Offset"/>, the camera's position snapped to
     /// <see cref="Step"/>, so everything near the camera is drawn within a few dozen metres of Unity's origin.
     /// <para>
+    /// When the camera is in a physics frame that turns as it is drawn (a planet) and is drawn about a render origin, the
+    /// offset is that render origin's point in the scene instead (<see cref="FollowTurningFrames"/>): the ground near the
+    /// camera then holds still while drawing, apart from the frame's own slow turn about that point, rather than sweeping
+    /// through it at the planet's speed. Shadow maps snap to texels relative to Unity's origin, so static shadows hold
+    /// still too, and take a new sub-texel phase only once each time the frame's render origin steps.
+    /// </para>
+    /// <para>
     /// Unity keeps every object's world matrix in float, in scene coordinates. A scope's floating origin can leave the
     /// camera kilometres from Unity's origin (a game with large origin cells, by design up to half a cell), where a float
     /// is a millimetre or more apart: the camera and every object near it round to that grid on their own, and something
@@ -48,8 +55,19 @@ namespace Nebula
         public static float Threshold = 1024f;
 
         /// <summary>
-        /// How far the scene is moved back while cameras draw right now (zero outside drawing, and while the camera is
-        /// within <see cref="Threshold"/>): a scene position p is drawn at p - Offset.
+        /// Whether the offset follows a turning physics frame's render origin (D25) when the lead camera is near one: the
+        /// render origin's point in the scene is drawn at Unity's origin, so what stands still in the frame holds still
+        /// while drawing, and shadows don't shimmer as the frame carries everything through the scene. The offset then
+        /// changes every frame, not in <see cref="Step"/> steps, and the camera is drawn within about
+        /// <see cref="PhysicsFrames.RenderOriginThreshold"/> of Unity's origin. With no such frame, or with this off, the
+        /// offset is the camera's position snapped to <see cref="Step"/>. On by default.
+        /// </summary>
+        public static bool FollowTurningFrames = true;
+
+        /// <summary>
+        /// How far the scene is moved back while cameras draw right now: a scene position p is drawn at p - Offset. Zero
+        /// outside drawing, and while the camera is within <see cref="Threshold"/> of Unity's origin and not following a
+        /// turning frame (<see cref="FollowTurningFrames"/>).
         /// </summary>
         public static Vector3 Offset { get; private set; }
 
@@ -79,6 +97,9 @@ namespace Nebula
         private static readonly HashSet<Transform> MovedRoots = new HashSet<Transform>();
         private static readonly List<KeyValuePair<Transform, Vector3>> Moved = new List<KeyValuePair<Transform, Vector3>>();
         private static GameObject _persistentProbe;
+
+        /// <summary>The turning frame whose render origin the current offset follows (<see cref="FollowTurningFrames"/>); null when none.</summary>
+        internal static PhysicsFrame Followed { get; private set; }
         private static bool _shifted;
 
         /// <summary>Move <paramref name="root"/> with the scene too (an object in a scene Nebula does not enumerate). Idempotent.</summary>
@@ -105,6 +126,7 @@ namespace Nebula
             Moved.Clear();
             MovedRoots.Clear();
             Offset = Vector3.zero;
+            Followed = null;
             _shifted = false;
             Shifted = null;
             Restoring = null;
@@ -144,10 +166,15 @@ namespace Nebula
             if (_shifted || !Enabled) return Vector3.zero;
             var lead = Lead(cameras);
             if (lead == null) return Vector3.zero;
-            var offset = OffsetFor(lead.transform.position);
+            var cameraAt = lead.transform.position;
+            var followed = FollowTurningFrames ? TurningFrameNear(cameraAt, frames, simulating) : null;
+            // A turning frame's render origin, where its pivot is drawn, goes to Unity's origin (up to the float the
+            // offset is held in: the pivot is placed from its pose in double below, so it lands at that small rounding).
+            var offset = followed != null ? followed._pivotScene.ToVector3() : OffsetFor(cameraAt);
             if (offset == Vector3.zero) return Vector3.zero;
             _shifted = true;
             Offset = offset;
+            Followed = followed;
             MovedRoots.Clear();
             // Each frame's top level from its pose in double, so the frame is drawn exactly about the new origin rather
             // than moved from a position that was already rounded kilometres out.
@@ -194,7 +221,35 @@ namespace Nebula
             Moved.Clear();
             MovedRoots.Clear();
             Offset = Vector3.zero;
+            Followed = null;
             _shifted = false;
+        }
+
+        /// <summary>
+        /// The frame the offset follows for a camera at <paramref name="camera"/> (<see cref="FollowTurningFrames"/>): of
+        /// the frames posed for drawing at the top level that turn and are drawn about a render origin, the one whose
+        /// render origin is drawn nearest the camera, within <see cref="Threshold"/> of it. Null when there is none.
+        /// </summary>
+        private static PhysicsFrame TurningFrameNear(Vector3 camera, List<PhysicsFrame> frames, PhysicsFrame simulating)
+        {
+            float threshold = Threshold;
+            if (frames == null || float.IsNaN(threshold) || float.IsInfinity(threshold)) return null;
+            PhysicsFrame best = null;
+            double bestDistance = (double)threshold * threshold;
+            var at = Double3.From(camera);
+            for (int i = 0; i < frames.Count; i++)
+            {
+                var frame = frames[i];
+                if (frame == null || frame == simulating || !frame._posed || !frame.Turning || frame.RenderOrigin == Vector3.zero) continue;
+                var pivot = frame.Pivot;
+                if (pivot == null || pivot.parent != null || frame.Root == null || frame.Root.parent != pivot) continue;
+                var d = frame._pivotScene - at;
+                double distance = d.X * d.X + d.Y * d.Y + d.Z * d.Z;
+                if (distance > bestDistance) continue;
+                best = frame;
+                bestDistance = distance;
+            }
+            return best;
         }
 
         private static void MoveRootsOf(Scene scene, Vector3 offset)

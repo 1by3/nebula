@@ -20,6 +20,10 @@ namespace Nebula.Tests
     /// about a render origin near the camera, so the ground holds still against the camera to well under a millimetre
     /// while the planet turns; the frame's world pose is unchanged, prediction still runs at the exact simulation pose,
     /// and a frame inside it (a ship on the planet) is drawn through it.</item>
+    /// <item>While cameras draw, the scene render origin follows the turning frame's render origin: ground at rest in the
+    /// frame holds still in drawing space (so shadow maps, snapped to texels about Unity's origin, hold still too) and
+    /// moves only once each time the render origin steps. A frame that does not turn keeps the camera's snapped offset,
+    /// and prediction is untouched.</item>
     /// </list>
     /// Tier B (<see cref="ConformanceMesh"/>, one worker); the client half switches the process to a rendering client, as
     /// the other client scenarios do.
@@ -107,6 +111,7 @@ namespace Nebula.Tests
             PhysicsFrames.ShiftChildrenWhileDrawing = true;
             SceneRenderOrigin.ResetForNewSession();
             SceneRenderOrigin.Enabled = true;
+            SceneRenderOrigin.FollowTurningFrames = true;
             NebulaRuntime.IsClient = false;
             NebulaRuntime.IsServer = true;
             foreach (var go in _objects) if (go != null) Object.DestroyImmediate(go);
@@ -674,7 +679,8 @@ namespace Nebula.Tests
                     var pawnAt = pawn.localPosition;
                     PhysicsFrames.BeginDrawing(cameras);
                     if (sceneOrigin) Assert.That(SceneRenderOrigin.Offset.magnitude, Is.GreaterThan(15_000f), "the scene is moved near the camera");
-                    if (sceneOrigin) Assert.That(camera.transform.position.magnitude, Is.LessThan(SceneRenderOrigin.Step), "the camera is drawn near Unity's origin");
+                    // Following the planet's render origin, the camera is drawn within the render origin's threshold of it.
+                    if (sceneOrigin) Assert.That(camera.transform.position.magnitude, Is.LessThan(PhysicsFrames.RenderOriginThreshold + SceneRenderOrigin.Step), "the camera is drawn near Unity's origin");
                     var local = PhysicsFrames.Rotate(Quaternion.Inverse(turn), Double3.From(held.position - camera.transform.position));
                     PhysicsFrames.EndDrawing();
                     Assert.IsTrue(camera.transform.position.Equals(cameraAt), "the camera is put back exactly");
@@ -752,6 +758,259 @@ namespace Nebula.Tests
             Assert.AreEqual(Vector3.zero, shipFrame.RenderOrigin, "the ship's frame needs none");
             Assert.That(Vector3.Distance(ship.transform.position, shipFrame.RenderPosition), Is.LessThan(0.02f), "the ship's frame is drawn at the ship (composed in double through the planet's render pose)");
             Assert.That(worst, Is.LessThan(0.001f), "the crew member holds still against the ground beside the ship");
+        }
+
+        // ------------------------------------------------------------------------------------ the scene render origin on a turning frame
+
+        /// <summary>A camera that never draws (the hooks are called by hand), in the list the draw hooks are given.</summary>
+        private List<Camera> DrawingCamera(out Transform camera)
+        {
+            var go = new GameObject("player-camera");
+            _objects.Add(go);
+            var c = go.AddComponent<Camera>();
+            c.enabled = false;
+            camera = go.transform;
+            return new List<Camera> { c };
+        }
+
+        /// <summary>A frame-local point right on the render-origin grid (<see cref="PhysicsFrames.RenderOriginStep"/>), 205 km out.</summary>
+        private static Double3 OnTheGrid => new Double3(0.0, 917 * 128.0, 1310 * 128.0);
+
+        /// <summary>One frame's draw: where two points stand while the cameras draw, and what the scene render origin did.</summary>
+        private struct Draw
+        {
+            public Vector3 Near, Far, Camera, Offset, RenderOrigin;
+            public PhysicsFrame Followed;
+            public Quaternion Turn;
+        }
+
+        /// <summary>
+        /// Run <see cref="Frames"/> frames of the planet turning, with a camera on the ground placed from its frame-local
+        /// pose in double and walking at <paramref name="speed"/> m/s, and record where two points at rest in the frame
+        /// are drawn while the cameras draw: one 7 m from where the camera starts, by the render origin's point, and one
+        /// in a chunk about 130 m away.
+        /// </summary>
+        private Draw[] DrawTheTurningGround(float speed)
+        {
+            var frame = PlanetFrame;
+            var cameras = DrawingCamera(out var camera);
+            PhysicsFrames.RenderAnchor = camera;
+            var start = OnTheGrid + new Double3(3.25, 1.75, -6.5);
+            var near = Under(frame.Root, "prop-near", (start + new Double3(6.0, -1.5, 2.5)).ToVector3(), Quaternion.identity);
+            var chunk = Under(frame.Root, "chunk", ChunkLocal, ChunkRotation);
+            var far = Under(chunk, "prop-far", new Vector3(12.5f, 0.3f, -40.25f), Quaternion.identity);
+            // The planet's centre where the camera starts at Unity's origin, as the scope's origin keeps it.
+            _planet.transform.SetPositionAndRotation(-(Turn(0) * start.ToVector3()), Turn(0));
+            var draws = new Draw[Frames];
+            for (int i = 0; i < Frames; i++)
+            {
+                var turn = Turn(i);
+                _planet.transform.rotation = turn;
+                var cameraLocal = start + new Double3(speed * Dt * i, 0.0, 0.25 * speed * Dt * i);
+                camera.position = frame.LocalToRenderPrecise(cameraLocal).ToVector3();
+                PhysicsFrames.PoseForRender();
+                camera.position = frame.LocalToRenderPrecise(cameraLocal).ToVector3();
+                var cameraAt = camera.position;
+                PhysicsFrames.BeginDrawing(cameras);
+                draws[i] = new Draw
+                {
+                    Near = near.position,
+                    Far = far.position,
+                    Camera = camera.position,
+                    Offset = SceneRenderOrigin.Offset,
+                    RenderOrigin = frame.RenderOrigin,
+                    Followed = SceneRenderOrigin.Followed,
+                    Turn = turn,
+                };
+                PhysicsFrames.EndDrawing();
+                Assert.IsTrue(camera.position.Equals(cameraAt), "the camera is put back exactly");
+                Assert.AreEqual(Vector3.zero, SceneRenderOrigin.Offset, "and the offset holds only while drawing");
+            }
+            return draws;
+        }
+
+        private static float Distance(Vector3 a, Vector3 b) => Length(Double3.From(a) - Double3.From(b));
+
+        /// <summary>A drawn point turned back into the frame's own axes, about Unity's origin.</summary>
+        private static Double3 Unturned(Draw d, Vector3 drawn) => PhysicsFrames.Rotate(Quaternion.Inverse(d.Turn), Double3.From(drawn));
+
+        /// <summary>
+        /// A camera standing on the ground 205 km from the centre of a planet turning at about 8.5e-4 rad/s: while the
+        /// cameras draw, the scene render origin follows the planet's render origin, so a prop 7 m from the camera holds
+        /// its drawn position to well under a millimetre from one frame to the next (shadow maps snap to texels about
+        /// Unity's origin, so its shadow holds still too). A point 130 m away holds still in the frame's own axes; in
+        /// drawing space it moves only by the planet's real turn about the render origin's point. With the offset
+        /// snapped to the camera instead, the same ground sweeps through drawing space by about 3 m a frame.
+        /// </summary>
+        [Test]
+        public void GroundAtRestInATurningFrameHoldsStillWhileDrawing()
+        {
+            AsClient();
+            var draws = DrawTheTurningGround(0f);
+            float worstNear = 0f, worstFar = 0f, farthestCamera = 0f;
+            int followed = 0;
+            for (int i = 1; i < draws.Length; i++)
+            {
+                Assume.That(draws[i].RenderOrigin, Is.EqualTo(draws[i - 1].RenderOrigin), "standing still, the render origin never steps");
+                if (draws[i].Followed == PlanetFrame) followed++;
+                // The first frame has no earlier pose to see the turn by, so it keeps the snapped offset: the switch to
+                // following moves what is drawn once.
+                if (draws[i - 1].Followed == null) continue;
+                worstNear = Mathf.Max(worstNear, Distance(draws[i].Near, draws[i - 1].Near));
+                worstFar = Mathf.Max(worstFar, Length(Unturned(draws[i], draws[i].Far) - Unturned(draws[i - 1], draws[i - 1].Far)));
+                farthestCamera = Mathf.Max(farthestCamera, draws[i].Camera.magnitude);
+            }
+
+            SceneRenderOrigin.FollowTurningFrames = false;
+            var snapped = DrawTheTurningGround(0f);
+            float leastSnapped = float.MaxValue;
+            for (int i = 1; i < snapped.Length; i++)
+            {
+                Assert.IsNull(snapped[i].Followed);
+                if (snapped[i].Offset == snapped[i - 1].Offset) leastSnapped = Mathf.Min(leastSnapped, Distance(snapped[i].Near, snapped[i - 1].Near));
+            }
+            TestContext.WriteLine($"{Frames} frames at {Omega} rad/s, 205 km out, following render origin {draws[1].RenderOrigin}: a prop 7 m from the camera moves {worstNear * 1000f:0.000} mm a frame at worst, a point 130 m away {worstFar * 1000f:0.000} mm in the frame's axes; camera drawn within {farthestCamera:0.0} m of Unity's origin. With the snapped offset the prop moves at least {leastSnapped:0.00} m a frame between snaps.");
+            Assert.AreEqual(Frames - 1, followed, "every frame after the first (which has no earlier pose to see the turn) follows the planet");
+            Assert.That(worstNear, Is.LessThan(0.001f), "the prop holds within a millimetre a frame in drawing space");
+            Assert.That(worstFar, Is.LessThan(0.001f), "a point 130 m away holds within a millimetre a frame in the frame's axes");
+            Assert.That(farthestCamera, Is.LessThan(PhysicsFrames.RenderOriginThreshold), "the camera is drawn near Unity's origin");
+            Assert.That(leastSnapped, Is.GreaterThan(1f), "with the snapped offset the ground sweeps through drawing space");
+        }
+
+        /// <summary>
+        /// The camera walking at 30 m/s across the planet's turning ground: the render origin steps as the camera leaves
+        /// it behind, and each step moves what is drawn once, in that one frame. Between steps, a point at rest in the
+        /// frame holds within a millimetre in the frame's own axes.
+        /// </summary>
+        [Test]
+        public void TheRenderOriginsStepMovesTheGroundOnce()
+        {
+            AsClient();
+            var draws = DrawTheTurningGround(30f);
+            int steps = 0, jumps = 0;
+            float worstBetween = 0f;
+            for (int i = 1; i < draws.Length; i++)
+            {
+                Assert.That(draws[i].Camera.magnitude, Is.LessThan(PhysicsFrames.RenderOriginThreshold + PhysicsFrames.RenderOriginStep), $"frame {i}: the camera is drawn near Unity's origin");
+                if (draws[i - 1].Followed == null) continue; // the switch from the first frame's snapped offset
+                Assert.AreSame(PlanetFrame, draws[i].Followed);
+                bool stepped = draws[i].RenderOrigin != draws[i - 1].RenderOrigin;
+                if (stepped) steps++;
+                float moved = Length(Unturned(draws[i], draws[i].Far) - Unturned(draws[i - 1], draws[i - 1].Far));
+                if (moved > 0.001f) jumps++;
+                if (!stepped) worstBetween = Mathf.Max(worstBetween, moved);
+            }
+            TestContext.WriteLine($"walking 30 m/s for {Frames} frames: the render origin stepped {steps} time(s), the ground moved in {jumps} frame(s), and held within {worstBetween * 1000f:0.000} mm a frame between steps");
+            Assert.That(steps, Is.GreaterThan(0), "the walk crossed a render-origin step");
+            Assert.AreEqual(steps, jumps, "the ground moved only in the frames the render origin stepped");
+            Assert.That(worstBetween, Is.LessThan(0.001f));
+        }
+
+        /// <summary>
+        /// The offset follows a frame only when that frame turns and is drawn about a render origin. A planet that does not
+        /// turn, one turning with its render origin off, and a client with following off all keep the camera's position
+        /// snapped to <see cref="SceneRenderOrigin.Step"/>, as before.
+        /// </summary>
+        [Test]
+        public void WithNoTurningFrameTheOffsetIsTheSnappedCamera()
+        {
+            var frame = PlanetFrame;
+            var cameras = DrawingCamera(out var camera);
+            AsClient();
+            PhysicsFrames.RenderAnchor = camera;
+            var cameraLocal = OnTheGrid + new Double3(3.25, 1.75, -6.5);
+            var cameraScene = new Vector3(-17998.37f, 3756.2f, -7990.6f);
+            _planet.transform.SetPositionAndRotation(cameraScene - Turn(0) * cameraLocal.ToVector3(), Turn(0));
+            camera.position = cameraScene;
+
+            Vector3 DrawOnce(int turn)
+            {
+                _planet.transform.rotation = Turn(turn);
+                PhysicsFrames.PoseForRender();
+                camera.position = frame.LocalToRenderPrecise(cameraLocal).ToVector3();
+                PhysicsFrames.BeginDrawing(cameras);
+                var offset = SceneRenderOrigin.Offset;
+                var followed = SceneRenderOrigin.Followed;
+                PhysicsFrames.EndDrawing();
+                Assert.AreEqual(SceneRenderOrigin.OffsetFor(camera.position), offset, $"turn {turn}: the camera's snapped position");
+                Assert.IsNull(followed, $"turn {turn}: no frame followed");
+                return offset;
+            }
+
+            // Standing still: the planet does not turn, so there is nothing to follow.
+            for (int i = 0; i < 5; i++) DrawOnce(0);
+            Assume.That(frame.RenderOrigin, Is.Not.EqualTo(Vector3.zero), "the planet is drawn about a render origin");
+            Assume.That(DrawOnce(0).magnitude, Is.GreaterThan(15_000f), "and the scene is moved");
+            // Turning, with following off.
+            SceneRenderOrigin.FollowTurningFrames = false;
+            for (int i = 1; i < 5; i++) DrawOnce(i);
+            SceneRenderOrigin.FollowTurningFrames = true;
+            // Turning, with the frame's render origin off.
+            frame.UseRenderOrigin = false;
+            for (int i = 5; i < 10; i++) DrawOnce(i);
+            Assert.AreEqual(Vector3.zero, frame.RenderOrigin);
+            frame.UseRenderOrigin = true;
+            // Turning, drawn about a render origin: followed.
+            _planet.transform.rotation = Turn(10);
+            PhysicsFrames.PoseForRender();
+            camera.position = frame.LocalToRenderPrecise(cameraLocal).ToVector3();
+            PhysicsFrames.BeginDrawing(cameras);
+            var follows = SceneRenderOrigin.Followed;
+            PhysicsFrames.EndDrawing();
+            Assert.AreSame(frame, follows, "a turning frame drawn about a render origin is followed");
+        }
+
+        /// <summary>
+        /// Following a turning frame is a drawing matter only: with cameras drawing every frame between prediction steps, a
+        /// predicted pawn simulates bit for bit where it does with following off, at the root's exact simulation pose,
+        /// and drawing puts every transform back exactly.
+        /// </summary>
+        [Test]
+        public void FollowingATurningFrameLeavesPredictionExact()
+        {
+            var frame = PlanetFrame;
+            var box = _planet.Carried;
+            var chunk = Under(frame.Root, "chunk", ChunkLocal, ChunkRotation);
+            var pawn = Under(chunk, "pawn", new Vector3(3.25f, 0.9f, -6.5f), Quaternion.Euler(0f, 31f, 0f));
+            var cameras = DrawingCamera(out var camera);
+            AsClient();
+            PhysicsFrames.RenderAnchor = pawn;
+            var origin = frame.Origin;
+
+            List<Vector3> Run(bool follow)
+            {
+                SceneRenderOrigin.FollowTurningFrames = follow;
+                frame.Origin = origin;
+                _planet.transform.SetPositionAndRotation(-(Turn(0) * ChunkLocal), Turn(0));
+                var simulated = new List<Vector3>();
+                int followed = 0;
+                for (int i = 0; i < 120; i++)
+                {
+                    _planet.transform.rotation = Turn(i * 50);
+                    PhysicsFrames.PoseForRender();
+                    camera.position = pawn.position + new Vector3(0f, 1.7f, 0f);
+                    var drawn = pawn.position;
+                    var chunkLocal = chunk.localPosition;
+                    PhysicsFrames.BeginDrawing(cameras);
+                    if (SceneRenderOrigin.Followed == frame) followed++;
+                    PhysicsFrames.EndDrawing();
+                    Assert.IsTrue(pawn.position.Equals(drawn) && chunk.localPosition.Equals(chunkLocal), "drawing puts everything back exactly");
+
+                    PhysicsFrames.BeginSimulation(box, pawn);
+                    Assert.IsTrue(frame.Root.position.Equals(-frame.Origin), "the root at the identity less the origin, exactly");
+                    Assert.IsTrue(frame.Root.rotation.Equals(Quaternion.identity));
+                    simulated.Add(pawn.position);
+                    PhysicsFrames.EndSimulation();
+                }
+                if (follow) Assert.That(followed, Is.GreaterThan(100), "the scene followed the planet");
+                else Assert.AreEqual(0, followed, "the scene did not follow");
+                return simulated;
+            }
+
+            var withFollowing = Run(true);
+            var without = Run(false);
+            for (int i = 0; i < withFollowing.Count; i++)
+                Assert.IsTrue(withFollowing[i].Equals(without[i]), $"frame {i}: the pawn simulates bit for bit where it does with following off");
         }
     }
 }
