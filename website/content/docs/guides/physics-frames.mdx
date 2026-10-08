@@ -289,6 +289,12 @@ Unity stores every object's position in scene coordinates, and a float is about 
   `QueueInstancedDraws` stands for your own code: a scene position `p` is drawn at `p - offset`.
 - To move objects in a scene Nebula doesn't enumerate, call `SceneRenderOrigin.AddRoot`.
 
+On a turning planet, the ground near the camera moves through the scene as the planet turns: about 3 m a frame, 205 km from the center of a planet that turns once every two hours. Shadow maps line up their texels with the scene's origin, so ground that moves through the scene casts shadows that shimmer every frame. To prevent that, when the camera is near a frame that turns and is drawn about a render origin, Nebula moves the scene by that render origin's position instead. The ground near the camera then stays still while it's drawn, and shadows change only once each time the render origin moves (every 128 m or so the camera travels across the planet).
+
+- The offset changes every frame instead of in 64 m steps, and the camera is drawn up to about 256 m from the scene's origin. Code that subtracts the offset, as in the examples above, needs no change.
+- With no turning frame near the camera, Nebula uses the camera's position rounded to 64 m, as before.
+- To always use the camera's rounded position, set `SceneRenderOrigin.FollowTurningFrames = false`.
+
 To turn render origins off for one frame, set `frame.UseRenderOrigin = false`. To turn them off everywhere, set `PhysicsFrames.RenderOriginThreshold = float.PositiveInfinity`. Prediction is not affected either way: a predicted pawn always simulates at the frame's exact simulation pose.
 
 ## Stream a planet's ground around players

@@ -11,6 +11,8 @@ public static class SceneRenderOrigin
 
 A client's render origin for the whole scene (`docs/container-tree.md` D25): while cameras draw, the scene's top-level objects and the cameras are moved by -[`Offset`](#offset), the camera's position snapped to [`Step`](#step), so everything near the camera is drawn within a few dozen metres of Unity's origin.
 
+When the camera is in a physics frame that turns as it is drawn (a planet) and is drawn about a render origin, the offset is that render origin's point in the scene instead ([`FollowTurningFrames`](#followturningframes)): the ground near the camera then holds still while drawing, apart from the frame's own slow turn about that point, rather than sweeping through it at the planet's speed. Shadow maps snap to texels relative to Unity's origin, so static shadows hold still too, and take a new sub-texel phase only once each time the frame's render origin steps.
+
 Unity keeps every object's world matrix in float, in scene coordinates. A scope's floating origin can leave the camera kilometres from Unity's origin (a game with large origin cells, by design up to half a cell), where a float is a millimetre or more apart: the camera and every object near it round to that grid on their own, and something moving with the camera (a held tool, a ship's cockpit) shakes against it by that much every frame. Moved near the origin for drawing, the sums stay small.
 
 The shift holds only while cameras draw (the render pipeline's context, or one built-in camera's cull to render) and every transform is put back exactly afterwards, so game code, physics, prediction and Nebula's own state never see it. Inside rendering callbacks (`OnWillRenderObject`, `beginCameraRendering`, a render feature) positions, `Camera.main.transform.position` included, are shifted by -[`Offset`](#offset).
@@ -45,6 +47,14 @@ public static float Threshold = 1024f;
 
 How far (metres) the camera may be from Unity's origin before the scene is moved: a float is 0.06 mm apart at 1 km.
 
+### FollowTurningFrames [#followturningframes]
+
+```csharp
+public static bool FollowTurningFrames = true;
+```
+
+Whether the offset follows a turning physics frame's render origin (D25) when the lead camera is near one: the render origin's point in the scene is drawn at Unity's origin, so what stands still in the frame holds still while drawing, and shadows don't shimmer as the frame carries everything through the scene. The offset then changes every frame, not in [`Step`](#step) steps, and the camera is drawn within about [`PhysicsFrames.RenderOriginThreshold`](/docs/reference/containers/physics-frames#renderoriginthreshold) of Unity's origin. With no such frame, or with this off, the offset is the camera's position snapped to [`Step`](#step). On by default.
+
 ## Properties
 
 ### Offset [#offset]
@@ -53,7 +63,7 @@ How far (metres) the camera may be from Unity's origin before the scene is moved
 public static Vector3 Offset { get; }
 ```
 
-How far the scene is moved back while cameras draw right now (zero outside drawing, and while the camera is within [`Threshold`](#threshold)): a scene position p is drawn at p - Offset.
+How far the scene is moved back while cameras draw right now: a scene position p is drawn at p - Offset. Zero outside drawing, and while the camera is within [`Threshold`](#threshold) of Unity's origin and not following a turning frame ([`FollowTurningFrames`](#followturningframes)).
 
 ## Events
 
