@@ -229,13 +229,22 @@ Unity's origin:
 - `SceneRenderOrigin.Shifted(Δ)` is raised once it has moved, before the frames' children take their render origins,
   so a game that composes its camera in double places it at (its position - Δ) there, and offsets what a transform
   does not carry; `Restoring(Δ)` is raised before Nebula puts everything back;
+- `SceneRenderOrigin.Drawing(Δ)` is raised every time cameras start drawing, after both shifts (the scene's and the
+  frames' children's), with Δ zero when the scene is not moved: a game queues the draws it issues with its own world
+  matrices there, reading every transform where it is drawn;
 - everything is put back exactly as drawing ends, children first, so game code, physics, prediction and Nebula's own
   state never see it. Inside rendering callbacks positions are shifted, `Camera.main.transform.position` included;
   `SceneRenderOrigin.Offset` says by how much. Directional lights are unaffected by translation; point and spot
   lights, reflection probes and shadows move with the scene;
 - not moved, since a transform does not carry them: world-space particles, trails and lines, statically batched
   meshes, light probes, and meshes a game draws with its own world matrices. A game with those offsets them in
-  `Shifted`, or sets `SceneRenderOrigin.Enabled = false`.
+  `Drawing` or `Shifted`, or sets `SceneRenderOrigin.Enabled = false`. Particles in a custom simulation space stay
+  where they were simulated too: Unity places them from that space's pose at simulation time, so moving the space's
+  transform for drawing does not carry them. A system that should follow simulates in local space instead;
+- the draw hooks are installed whenever a client poses its frames, frames or none, so a client with no physics frames
+  still gets the scene render origin. A frame whose owner was destroyed without being released is skipped. When Play
+  ends in an Editor that keeps its domain, drawing ends and the render and content anchors and the scene render
+  origin's handlers and extra roots are forgotten, as they are when the next session starts.
 
 Scenario 49 holds a tool 0.4 m in front of a camera 20 km from Unity's origin, the pawn walking in a chunk 205 km out
 on a turning planet, to 0.013 mm a frame (4 mm without).

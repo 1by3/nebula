@@ -279,6 +279,14 @@ Unity stores every object's position in scene coordinates, and a float is about 
 
   `cameraTransform` and `eyePosition` (a `Double3`) stand for your camera and its position. Nebula puts the camera back after drawing.
 - Nebula can't move what a transform doesn't carry: world-space particles, trails and lines, statically batched meshes, light probes, and meshes you draw with your own matrices. Offset them in `Shifted` and `Restoring`, or turn the scene shift off with `SceneRenderOrigin.Enabled = false`.
+- Particles in a custom simulation space don't follow the shift either: Unity places them from that space's pose when it simulates them, not when it draws them. If a particle system should follow, simulate it in local space under the transform instead.
+- To queue draws you issue with your own world matrices (instanced meshes), use `SceneRenderOrigin.Drawing`. Nebula raises it every time cameras start drawing, after it has moved both the scene and the frames' children, so every transform reads where it's drawn. The offset is zero when the scene isn't moved:
+
+  ```csharp
+  SceneRenderOrigin.Drawing += offset => QueueInstancedDraws(offset);
+  ```
+
+  `QueueInstancedDraws` stands for your own code: a scene position `p` is drawn at `p - offset`.
 - To move objects in a scene Nebula doesn't enumerate, call `SceneRenderOrigin.AddRoot`.
 
 To turn render origins off for one frame, set `frame.UseRenderOrigin = false`. To turn them off everywhere, set `PhysicsFrames.RenderOriginThreshold = float.PositiveInfinity`. Prediction is not affected either way: a predicted pawn always simulates at the frame's exact simulation pose.

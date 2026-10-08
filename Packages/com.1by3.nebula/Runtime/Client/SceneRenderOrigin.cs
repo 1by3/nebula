@@ -27,7 +27,13 @@ namespace Nebula
     /// overlay canvases, each physics frame's top level (placed from its pose in double), the cameras that draw, and any
     /// root added with <see cref="AddRoot"/>. What cannot be moved by a transform is not: world-space particles, trails and
     /// lines, statically batched meshes, light probes, and meshes a game draws itself with world matrices. Offset those in
-    /// <see cref="Shifted"/>, or turn the scene render origin off (<see cref="Enabled"/>).
+    /// <see cref="Drawing"/> (or <see cref="Shifted"/>), or turn the scene render origin off (<see cref="Enabled"/>).
+    /// </para>
+    /// <para>
+    /// Particles in a custom simulation space (<c>ParticleSystem.MainModule.customSimulationSpace</c>) are drawn where
+    /// they were simulated too, even when that transform is moved: Unity places them from the space's pose at simulation
+    /// time, not at drawing time. A system that should follow the shift simulates in local space under the transform
+    /// instead; one that must keep a custom space is drawn off by the offset while the scene is moved.
     /// </para>
     /// </summary>
     public static class SceneRenderOrigin
@@ -57,6 +63,16 @@ namespace Nebula
 
         /// <summary>Raised as drawing ends, before Nebula puts back what it moved, with the offset that was used.</summary>
         public static event Action<Vector3> Restoring;
+
+        /// <summary>
+        /// Raised every time cameras start drawing on a client, once everything Nebula moves for drawing is in place: the
+        /// scene (by -offset, which is zero when the camera is near Unity's origin or the scene origin is off) and the
+        /// children of each physics frame drawn about a render origin. Unlike <see cref="Shifted"/>, which comes before the
+        /// frames' children are moved and only when the scene is, this is the place to queue draws a game issues itself
+        /// with world matrices (instanced meshes): a matrix built from a transform here is the one Unity draws it with,
+        /// and a scene position p is drawn at p - offset. Draws queued here need no putting back.
+        /// </summary>
+        public static event Action<Vector3> Drawing;
 
         private static readonly List<Transform> ExtraRoots = new List<Transform>();
         private static readonly List<GameObject> RootScratch = new List<GameObject>();
@@ -92,6 +108,21 @@ namespace Nebula
             _shifted = false;
             Shifted = null;
             Restoring = null;
+            Drawing = null;
+        }
+
+        /// <summary>
+        /// Play has ended (an Editor that keeps its domain): forget the session's extra roots and handlers, as
+        /// <see cref="ResetForNewSession"/> would before the next. <see cref="Enabled"/>, <see cref="Step"/> and
+        /// <see cref="Threshold"/> are kept.
+        /// </summary>
+        internal static void ResetAfterPlay() => ResetForNewSession();
+
+        /// <summary>Raise <see cref="Drawing"/> with the current offset. Called by <see cref="PhysicsFrames"/> after both shifts.</summary>
+        internal static void RaiseDrawing()
+        {
+            try { Drawing?.Invoke(Offset); }
+            catch (Exception e) { NebulaLog.Error($"SceneRenderOrigin.Drawing threw: {e}"); }
         }
 
         /// <summary>The camera the offset follows: the main camera when it draws now, else the first that does.</summary>
