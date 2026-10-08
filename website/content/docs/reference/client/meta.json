@@ -1,4 +1,4 @@
 {
   "title": "Client",
-  "pages": ["disconnect-info", "disconnect-reason", "local-player-loss-cause", "nebula-client", "nebula-title-screen"]
+  "pages": ["disconnect-info", "disconnect-reason", "local-player-loss-cause", "nebula-client", "nebula-title-screen", "scene-render-origin"]
 }

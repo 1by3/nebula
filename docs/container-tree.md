@@ -193,8 +193,8 @@ half inside a hangar is either in the hangar's frame or not. Raycasts do not pas
 pivot, the frame's top level. On a worker, and on a client while the frame simulates, the pivot stays at the identity.
 On a client drawing the frame, `PoseForRender` puts the pivot at (T + R(S O), R, S), worked out in double, and the
 root at (-O, identity) under it, where (T, R, S) is the carrier's pose. O, `PhysicsFrame.RenderOrigin`, is zero
-while the render anchor is within `RenderOriginThreshold` (2,048 m) of the frame's own origin, and otherwise the
-anchor's frame-local position snapped to `RenderOriginStep` (1,024 m), moved again once the anchor is the threshold
+while the render anchor is within `RenderOriginThreshold` (256 m) of the frame's own origin, and otherwise the
+anchor's frame-local position snapped to `RenderOriginStep` (128 m), moved again once the anchor is the threshold
 away from it. The anchor is `PhysicsFrames.RenderAnchor` when a game sets one (its camera), else the client's content
 anchor (`NebulaClient.ActiveContentAnchor`).
 
@@ -216,10 +216,29 @@ nothing Nebula reads (interpolation, prediction, `NetworkIdentity.LocalPosition`
 a planet) has its own frame posed at its pose composed in double from its frame-local pose, not at Unity's
 `position`, which would round (h + C) the same way.
 
-What stays: Unity holds every object's world matrix in float in scene coordinates, and the camera and each object
-round to that grid on their own, a millimetre apart 8 to 16 km from Unity's origin. A render origin cannot move the
-scene; the scope's own floating origin does. To hold a body moving with the camera under half a millimetre, keep the
-scope's origin within about 2 km of the camera (scenario 49 shifts it on a 1 km grid).
+**The scene render origin.** Unity holds every object's world matrix in float, in scene coordinates, and the camera
+and each object round to that grid on their own: 2 mm apart 16 to 32 km from Unity's origin, where a scope with large
+origin cells can leave the camera by design. A tool held in front of the camera shook against it by that much. So
+while cameras draw, `SceneRenderOrigin` also moves the scene by -Δ, Δ the leading camera's position (the main camera
+when it draws) snapped to `SceneRenderOrigin.Step` (64 m), once the camera is more than `Threshold` (1,024 m) from
+Unity's origin:
+
+- what moves: the root objects of every loaded scene and of the don't-destroy-on-load scene (not screen-space overlay
+  canvases), each frame's pivot, placed at its drawn pose in double less Δ rather than moved from a position already
+  rounded kilometres out, every drawing camera outside those roots, and roots a game adds (`AddRoot`);
+- `SceneRenderOrigin.Shifted(Δ)` is raised once it has moved, before the frames' children take their render origins,
+  so a game that composes its camera in double places it at (its position - Δ) there, and offsets what a transform
+  does not carry; `Restoring(Δ)` is raised before Nebula puts everything back;
+- everything is put back exactly as drawing ends, children first, so game code, physics, prediction and Nebula's own
+  state never see it. Inside rendering callbacks positions are shifted, `Camera.main.transform.position` included;
+  `SceneRenderOrigin.Offset` says by how much. Directional lights are unaffected by translation; point and spot
+  lights, reflection probes and shadows move with the scene;
+- not moved, since a transform does not carry them: world-space particles, trails and lines, statically batched
+  meshes, light probes, and meshes a game draws with its own world matrices. A game with those offsets them in
+  `Shifted`, or sets `SceneRenderOrigin.Enabled = false`.
+
+Scenario 49 holds a tool 0.4 m in front of a camera 20 km from Unity's origin, the pawn walking in a chunk 205 km out
+on a turning planet, to 0.013 mm a frame (4 mm without).
 
 The rules that keep it invisible to everything else:
 
@@ -471,7 +490,7 @@ carrier of its own (a ship's frame is local to the ship). Scenario 45 pins the n
 | 45 | Wire precision in a large frame: an entity in a hosted chunk of a 500 km planet is near-exact, an entity directly in the frame at 100 km and 250 km from its origin is within half the float spacing (1.6 cm at 250 km) of where it stands, none of it depends on the scope being 10,000 km out, and the gateway's absolute records are double fields filed in the frame's own space | `ConformanceFramePrecisionTests` |
 | 41 | A planet's ground as a grid hosted by the planet (D22), nothing leased statically: allocated around a ground pawn on one worker, a second pawn on the other and a ship flying scenario 40's lap at 300 m/s; the ship never stands in the box outside a leased chunk, each chunk it enters was leased ahead of it, the ground behind it retires, and a restart brings back a crate standing in a hosted chunk under the planet's own restored container | `ConformanceCarrierHostedGridTests`, plus `HostedChunkGridTests` |
 | 43 | An `InstanceBoundary` in a chunk hosted by a framed carrier (NEB-394): its position is read out of the carrier's frame, as an entity's is, so the instance is prepared at the door; a player on the planet enters it and leaves back into the planet's chunk, in its frame | `ConformanceFramedInstanceBoundaryTests` |
-| 49 | A large frame on a client (D11, D19, D25): a scope's origin shift poses the frames at once, so `KeepOriginNear` on a pawn on a framed planet run after a game's own rule never shifts back over 1,000 frames; a scope's shift leaves the history of what stands in a frame alone; ground 205 km out on a planet turning at 8.5e-4 rad/s holds within a millimetre against the camera over 1,000 frames under a render origin (about 3 cm without); the frame's world pose is unchanged; prediction runs bit for bit at the simulation pose; a ship on the planet is drawn through the planet's render origin and needs none of its own; a body moving at 100 m/s in a chunk 205 km out, with a camera riding it and the scene's origin kept within 1 km of the camera, holds within half a millimetre a frame while cameras draw (about 14 mm a frame with -O left on the root); drawing puts every root and child back exactly and never overlaps a prediction step | `ConformanceFrameRenderOriginTests` |
+| 49 | A large frame on a client (D11, D19, D25): a scope's origin shift poses the frames at once, so `KeepOriginNear` on a pawn on a framed planet run after a game's own rule never shifts back over 1,000 frames; a scope's shift leaves the history of what stands in a frame alone; ground 205 km out on a planet turning at 8.5e-4 rad/s holds within a millimetre against the camera over 1,000 frames under a render origin (about 3 cm without); the frame's world pose is unchanged; prediction runs bit for bit at the simulation pose; a ship on the planet is drawn through the planet's render origin and needs none of its own; a body moving at 100 m/s in a chunk 205 km out, with a camera riding it and the scene's origin kept within 1 km of the camera, holds within half a millimetre a frame while cameras draw (about 14 mm a frame with -O left on the root); drawing puts every root and child back exactly and never overlaps a prediction step; a tool 0.4 m in front of a camera 20 km from Unity's origin, through the turning frame, holds within 0.05 mm a frame under the scene render origin (about 4 mm without) | `ConformanceFrameRenderOriginTests` |
 
 Tier limit (B, `ConformanceMesh`): the container registry is process-wide, so of two workers' copies of one carrier
 only the last registered owns the box and its frame. Scenario 21's two-worker case keeps the copies' poses in step.

@@ -40,15 +40,15 @@ The grid a moved origin snaps to, in metres, so two workers that shift for the s
 ### RenderOriginThreshold [#renderoriginthreshold]
 
 ```csharp
-public static float RenderOriginThreshold = 2048f;
+public static float RenderOriginThreshold = 256f;
 ```
 
-How far (metres) the render anchor may be from a frame's own origin, and later from its render origin, before the frame is drawn about a render origin near the anchor (D25). A ship's frame, whose content is a few hundred metres across, never needs one. `float.PositiveInfinity` turns render origins off.
+How far (metres) the render anchor may be from a frame's own origin, and later from its render origin, before the frame is drawn about a render origin near the anchor (D25). Small, so that what the frame's turn multiplies stays a few hundred metres long: a float rotation turns 2 km with a few tenths of a millimetre of rounding. A ship's frame, with the anchor aboard, never needs one. `float.PositiveInfinity` turns render origins off.
 
 ### RenderOriginStep [#renderoriginstep]
 
 ```csharp
-public static float RenderOriginStep = 1024f;
+public static float RenderOriginStep = 128f;
 ```
 
 The grid a render origin snaps to (metres), so it moves only as the anchor travels.

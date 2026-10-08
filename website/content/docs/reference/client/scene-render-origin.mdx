@@ -1,0 +1,98 @@
+---
+title: "SceneRenderOrigin"
+description: "A client's render origin for the whole scene (docs/container-tree.md D25): while cameras draw, the scene's top-level objects and the cameras are moved by -Offset, the camera's position snapped to Step, so everything near the camera is dr..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Client/SceneRenderOrigin.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Client/SceneRenderOrigin.cs)</div>
+
+```csharp
+public static class SceneRenderOrigin
+```
+
+A client's render origin for the whole scene (`docs/container-tree.md` D25): while cameras draw, the scene's top-level objects and the cameras are moved by -[`Offset`](#offset), the camera's position snapped to [`Step`](#step), so everything near the camera is drawn within a few dozen metres of Unity's origin.
+
+Unity keeps every object's world matrix in float, in scene coordinates. A scope's floating origin can leave the camera kilometres from Unity's origin (a game with large origin cells, by design up to half a cell), where a float is a millimetre or more apart: the camera and every object near it round to that grid on their own, and something moving with the camera (a held tool, a ship's cockpit) shakes against it by that much every frame. Moved near the origin for drawing, the sums stay small.
+
+The shift holds only while cameras draw (the render pipeline's context, or one built-in camera's cull to render) and every transform is put back exactly afterwards, so game code, physics, prediction and Nebula's own state never see it. Inside rendering callbacks (`OnWillRenderObject`, `beginCameraRendering`, a render feature) positions, `Camera.main.transform.position` included, are shifted by -[`Offset`](#offset).
+
+What is moved: the root objects of every loaded scene (and of the don't-destroy-on-load scene) except screen-space overlay canvases, each physics frame's top level (placed from its pose in double), the cameras that draw, and any root added with [`AddRoot`](#addroot). What cannot be moved by a transform is not: world-space particles, trails and lines, statically batched meshes, light probes, and meshes a game draws itself with world matrices. Offset those in [`Shifted`](#shifted), or turn the scene render origin off ([`Enabled`](#enabled)).
+
+## Fields
+
+### Enabled [#enabled]
+
+```csharp
+public static bool Enabled = true;
+```
+
+Whether a client moves the scene near its camera while cameras draw. On by default.
+
+### Step [#step]
+
+```csharp
+public static float Step = 64f;
+```
+
+The grid (metres) the offset snaps to: the camera is drawn within half of this from Unity's origin.
+
+### Threshold [#threshold]
+
+```csharp
+public static float Threshold = 1024f;
+```
+
+How far (metres) the camera may be from Unity's origin before the scene is moved: a float is 0.06 mm apart at 1 km.
+
+## Properties
+
+### Offset [#offset]
+
+```csharp
+public static Vector3 Offset { get; }
+```
+
+How far the scene is moved back while cameras draw right now (zero outside drawing, and while the camera is within [`Threshold`](#threshold)): a scene position p is drawn at p - Offset.
+
+## Events
+
+### Shifted [#shifted]
+
+```csharp
+public static event Action<Vector3> Shifted;
+```
+
+Raised once the scene and the cameras were moved by -offset for drawing: the place for a game to move what a transform does not carry (its own instanced matrices), or to place a camera it composes in double precisely at (its position - offset). Everything Nebula moved is put back after drawing whatever the handler does to it; what the handler moves itself, it puts back in [`Restoring`](#restoring).
+
+### Restoring [#restoring]
+
+```csharp
+public static event Action<Vector3> Restoring;
+```
+
+Raised as drawing ends, before Nebula puts back what it moved, with the offset that was used.
+
+## Methods
+
+### AddRoot [#addroot]
+
+```csharp
+public static void AddRoot(Transform root);
+```
+
+Move `root` with the scene too (an object in a scene Nebula does not enumerate). Idempotent.
+
+### RemoveRoot [#removeroot]
+
+```csharp
+public static void RemoveRoot(Transform root);
+```
+
+Stop moving a root added with [`AddRoot`](#addroot).
+
+### OffsetFor [#offsetfor]
+
+```csharp
+public static Vector3 OffsetFor(Vector3 camera);
+```
+
+The offset for a camera at `camera`: zero within [`Threshold`](#threshold), else snapped to [`Step`](#step).
