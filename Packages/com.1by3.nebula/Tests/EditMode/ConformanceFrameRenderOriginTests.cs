@@ -102,6 +102,8 @@ namespace Nebula.Tests
             PhysicsFrames.EndSimulation();
             PhysicsFrames.RenderAnchor = null;
             PhysicsFrames.ContentAnchor = null;
+            PhysicsFrames.EndDrawing();
+            PhysicsFrames.ShiftChildrenWhileDrawing = true;
             NebulaRuntime.IsClient = false;
             NebulaRuntime.IsServer = true;
             foreach (var go in _objects) if (go != null) Object.DestroyImmediate(go);
@@ -424,6 +426,122 @@ namespace Nebula.Tests
         }
 
         /// <summary>
+        /// Run <see cref="Frames"/> frames of a body moving at 100 m/s inside a chunk 205 km out on the turning planet, with
+        /// a camera riding it (placed through the frame's render pose, as a game places it), measured while the cameras
+        /// draw. Returns the worst change of the body's offset from the camera, in the frame's own axes, from one frame
+        /// to the next (it never really changes), and the worst error of that offset against the truth.
+        /// </summary>
+        private float WorstMovingAgainstTheCamera(out float worstError)
+        {
+            var frame = PlanetFrame;
+            var chunk = Under(frame.Root, "moving-chunk", ChunkLocal, ChunkRotation);
+            var body = Under(chunk, "body", new Vector3(-830.37f, 0.62f, 12.25f), Quaternion.identity);
+            var camera = new GameObject("rider-camera").transform;
+            _objects.Add(camera.gameObject);
+            PhysicsFrames.RenderAnchor = camera;
+            var seat = new Vector3(1.5f, 1.2f, -3.75f); // the camera's place on the body, in the chunk's axes
+            Double3 CameraLocal() => LocalIn(body, frame.Root) + PhysicsFrames.Rotate(ChunkRotation, Double3.From(seat));
+            var truth = PhysicsFrames.Rotate(ChunkRotation, Double3.From(-seat));
+            _planet.transform.SetPositionAndRotation(-(Turn(0) * CameraLocal().ToVector3()), Turn(0));
+            var velocity = new Vector3(100f, 0f, 3f) * Dt;
+            Double3 last = default;
+            float worstStep = 0f;
+            worstError = 0f;
+            for (int i = 0; i < Frames; i++)
+            {
+                var turn = Turn(i);
+                _planet.transform.rotation = turn;
+                body.localPosition += velocity;
+                var before = body.localPosition;
+                PhysicsFrames.PoseForRender();
+                camera.position = frame.LocalToRenderPrecise(CameraLocal()).ToVector3();
+                if (camera.position.magnitude > 1024f)
+                {
+                    // The game keeps its scene's origin near the camera (its scope's floating origin): a float 4 km out is
+                    // a quarter of a millimetre apart, and the camera and the body round to that grid each on its own.
+                    var shift = new Vector3(Mathf.Round(camera.position.x / 1024f), Mathf.Round(camera.position.y / 1024f), Mathf.Round(camera.position.z / 1024f)) * 1024f;
+                    _planet.transform.position -= shift;
+                    PhysicsFrames.PoseForRender();
+                    camera.position = frame.LocalToRenderPrecise(CameraLocal()).ToVector3();
+                }
+                PhysicsFrames.BeginDrawing();
+                var local = PhysicsFrames.Rotate(Quaternion.Inverse(turn), Double3.From(body.position - camera.position));
+                PhysicsFrames.EndDrawing();
+                Assert.IsTrue(body.localPosition.Equals(before), "drawing puts the body back exactly");
+                worstError = Mathf.Max(worstError, Length(local - truth));
+                if (i > 0) worstStep = Mathf.Max(worstStep, Length(local - last));
+                last = local;
+            }
+            return worstStep;
+        }
+
+        /// <summary>
+        /// A body moving at 100 m/s inside a chunk 205 km from the centre of a planet turning at about 8.5e-4 rad/s, with a
+        /// camera riding it: while the cameras draw, the render origin sits on the frame root's children, so the body's
+        /// offset in its chunk never meets the chunk's 205 km in float. It holds within half a millimetre a frame against
+        /// the camera. With the render origin left on the root, the same body shakes by millimetres.
+        /// </summary>
+        [Test]
+        public void ABodyMovingInAFarChunkHoldsStillAgainstACameraRidingIt()
+        {
+            AsClient();
+            float step = WorstMovingAgainstTheCamera(out float error);
+            var origin = PlanetFrame.RenderOrigin;
+            PhysicsFrames.ShiftChildrenWhileDrawing = false;
+            float stepOnRoot = WorstMovingAgainstTheCamera(out float errorOnRoot);
+            PhysicsFrames.ShiftChildrenWhileDrawing = true;
+            TestContext.WriteLine($"a body at 100 m/s in a chunk 205 km out, {Frames} frames at {Omega} rad/s: worst step against the camera {step * 1000f:0.000} mm, worst error {error * 1000f:0.000} mm; with -O on the root {stepOnRoot * 1000f:0.0} mm and {errorOnRoot * 1000f:0.0} mm; render origin {origin}");
+            Assert.That(origin.magnitude, Is.GreaterThan(200_000f), "drawn about a render origin");
+            Assert.That(step, Is.LessThan(0.0005f), "the body holds within half a millimetre a frame against the camera riding it");
+            Assert.That(error, Is.LessThan(0.001f), "and within a millimetre of where it is");
+            Assert.That(stepOnRoot, Is.GreaterThan(0.002f), "with -O on the root it shakes by millimetres");
+        }
+
+        /// <summary>
+        /// Drawing never leaks: the shift holds only between <c>BeginDrawing</c> and <c>EndDrawing</c>, puts every root and
+        /// child back exactly, and a prediction step started while drawing puts them back first.
+        /// </summary>
+        [Test]
+        public void DrawingPutsEverythingBackExactly()
+        {
+            var frame = PlanetFrame;
+            var chunk = Under(frame.Root, "chunk", ChunkLocal, ChunkRotation);
+            var rock = Under(frame.Root, "rock", ChunkLocal + new Vector3(10.5f, -3.25f, 7f), Quaternion.identity);
+            var pawn = Under(chunk, "pawn", new Vector3(3.25f, 0.9f, -6.5f), Quaternion.identity);
+            AsClient();
+            PhysicsFrames.RenderAnchor = pawn;
+            _planet.transform.SetPositionAndRotation(-(Turn(5) * ChunkLocal), Turn(5));
+            PhysicsFrames.PoseForRender();
+            Assume.That(frame.RenderOrigin, Is.Not.EqualTo(Vector3.zero));
+            var rootLocal = frame.Root.localPosition;
+            var drawnPawn = pawn.position;
+
+            PhysicsFrames.BeginDrawing();
+            Assert.IsTrue(PhysicsFrames.Drawing);
+            Assert.AreEqual(Vector3.zero, frame.Root.localPosition, "the root at zero under the pivot while drawing");
+            Assert.IsTrue(chunk.localPosition.Equals(ChunkLocal - frame.RenderOrigin), "each child at its offset less O");
+            Assert.That(Vector3.Distance(drawnPawn, pawn.position), Is.LessThan(0.02f), "drawn where it was");
+            PhysicsFrames.BeginDrawing(); // a second camera: nothing more moves
+            Assert.IsTrue(chunk.localPosition.Equals(ChunkLocal - frame.RenderOrigin));
+            PhysicsFrames.EndDrawing();
+            Assert.IsFalse(PhysicsFrames.Drawing);
+            Assert.IsTrue(frame.Root.localPosition.Equals(rootLocal), "the root back exactly");
+            Assert.IsTrue(chunk.localPosition.Equals(ChunkLocal), "the chunk back exactly");
+            Assert.IsTrue(rock.localPosition.Equals(ChunkLocal + new Vector3(10.5f, -3.25f, 7f)));
+            Assert.IsTrue(pawn.position.Equals(drawnPawn), "and the pawn's drawn pose with them");
+
+            PhysicsFrames.BeginDrawing();
+            PhysicsFrames.BeginSimulation(_planet.Carried, pawn);
+            Assert.IsFalse(PhysicsFrames.Drawing, "a prediction step ends drawing first");
+            Assert.IsTrue(chunk.localPosition.Equals(ChunkLocal));
+            Assert.IsTrue(frame.Root.position.Equals(-frame.Origin), "and runs at the exact simulation pose");
+            PhysicsFrames.BeginDrawing();
+            Assert.IsFalse(PhysicsFrames.Drawing && !chunk.localPosition.Equals(ChunkLocal), "a simulating frame is not shifted");
+            PhysicsFrames.EndDrawing();
+            PhysicsFrames.EndSimulation();
+        }
+
+        /// <summary>
         /// A ship standing on the turning planet, 205 km from its centre, with a crew member aboard in the ship's own frame.
         /// The planet is drawn about a render origin near the crew member; the ship's frame, posed from the ship as it is
         /// drawn, is near its own origin and needs none. The crew member holds still against the ground beside the ship to
@@ -453,14 +571,16 @@ namespace Nebula.Tests
                 var turn = Turn(i);
                 _planet.transform.rotation = turn;
                 PhysicsFrames.PoseForRender();
+                PhysicsFrames.BeginDrawing();
                 var shown = rock.position - crew.position;
+                PhysicsFrames.EndDrawing();
                 var truth = PhysicsFrames.Rotate(turn, rockInPlanet - crewInPlanet);
                 worst = Mathf.Max(worst, Length(Double3.From(shown) - truth));
             }
             TestContext.WriteLine($"a ship 205 km out on a planet turning at {Omega} rad/s: worst error of the ground against the crew {worst * 1000f:0.000} mm over {Frames} frames; planet render origin {frame.RenderOrigin}, ship's {shipFrame.RenderOrigin}");
             Assert.That(frame.RenderOrigin.magnitude, Is.GreaterThan(200_000f), "the planet is drawn about a render origin near the crew");
             Assert.AreEqual(Vector3.zero, shipFrame.RenderOrigin, "the ship's frame needs none");
-            Assert.That(Vector3.Distance(ship.transform.position, shipFrame.RenderPosition), Is.LessThan(1e-6f), "the ship's frame is drawn at the ship");
+            Assert.That(Vector3.Distance(ship.transform.position, shipFrame.RenderPosition), Is.LessThan(0.02f), "the ship's frame is drawn at the ship (composed in double through the planet's render pose)");
             Assert.That(worst, Is.LessThan(0.001f), "the crew member holds still against the ground beside the ship");
         }
     }

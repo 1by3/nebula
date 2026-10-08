@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 namespace Nebula
@@ -399,6 +400,8 @@ namespace Nebula
             CrossingPolicy = null;
             RenderAnchor = null;
             ContentAnchor = null;
+            _drawn.Clear();
+            _drawing = false;
             Created = null;
             Releasing = null;
             SceneFactory = null;
@@ -449,6 +452,7 @@ namespace Nebula
 
         private static void Release(PhysicsFrame frame)
         {
+            EndDrawing();
             try { Releasing?.Invoke(frame); }
             catch (Exception e) { NebulaLog.Error($"PhysicsFrames.Releasing threw: {e}"); }
             if (_simulating == frame) _simulating = null;
@@ -967,6 +971,8 @@ namespace Nebula
         public static void PoseForRender()
         {
             if (!RendersFrames || Frames.Count == 0) return;
+            EndDrawing();
+            InstallDrawHooks();
             PoseOrder.Clear();
             PoseOrder.AddRange(Frames);
             PoseOrder.Sort((a, b) => SpaceDepth(a.Owner).CompareTo(SpaceDepth(b.Owner)));
@@ -988,7 +994,7 @@ namespace Nebula
         {
             if (frame.Root == null || frame.Owner == null) return;
             var t = frame.Owner.transform;
-            var position = t.position;
+            var position = DrawnPositionOf(frame.Owner);
             var rotation = t.rotation;
             var scale = t.lossyScale;
             frame._renderPosition = position;
@@ -1049,6 +1055,108 @@ namespace Nebula
         }
 
         /// <summary>
+        /// Where <paramref name="owner"/> (a frame's carrier) is drawn. A carrier standing in another frame that is posed
+        /// for drawing (a ship on a planet) is composed in double from its frame-local pose in that frame: Unity's own
+        /// <c>position</c> would add its offset in its chunk to the chunk's offset (200 km on a planet) in float first, and
+        /// round by a centimetre, differently every frame as it moves. Anything else reads its transform.
+        /// </summary>
+        private static Vector3 DrawnPositionOf(Container owner)
+        {
+            var t = owner.transform;
+            var outer = owner.Space != null ? owner.Space.Frame : null;
+            if (outer == null || !outer._posed || outer == _simulating || outer.Root == null || !IsUnder(t, outer.Root)) return t.position;
+            return outer.LocalToRenderPrecise(LocalIn(t, outer.Root)).ToVector3();
+        }
+
+        /// <summary><paramref name="t"/>'s position in <paramref name="root"/>'s local coordinates, composed in double from the local poses in between.</summary>
+        internal static Double3 LocalIn(Transform t, Transform root)
+        {
+            var p = Double3.Zero;
+            int hops = 0;
+            for (var x = t; x != null && x != root && hops < 256; x = x.parent, hops++)
+            {
+                var s = x.localScale;
+                p = Rotate(x.localRotation, new Double3(p.X * s.x, p.Y * s.y, p.Z * s.z)) + x.localPosition;
+            }
+            return p;
+        }
+
+        // ---- drawing: the render origin on the root's children (D25)
+
+        /// <summary>
+        /// While cameras draw, a frame drawn about a render origin has its -O moved from its root down to the root's
+        /// direct children (D25): the root at zero under the pivot, each child at its own offset less O. Unity composes
+        /// a pose from the leaf up, so with -O on the root, a body moving in a chunk 200 km out added its offset to the
+        /// chunk's in float before -O was met, and rounded by a centimetre, differently every frame. With the children
+        /// shifted, every sum stays a few hundred metres long. Everything is put back exactly when drawing ends, so no
+        /// game code, and nothing Nebula reads (interpolation, prediction, the wire), sees the shifted poses. On by
+        /// default; turn it off if your game draws outside Unity's camera callbacks.
+        /// </summary>
+        public static bool ShiftChildrenWhileDrawing = true;
+
+        private struct Drawn
+        {
+            public Transform Transform;
+            public Vector3 Local;
+        }
+
+        private static readonly List<Drawn> _drawn = new List<Drawn>();
+        private static bool _drawing, _hooked;
+
+        /// <summary>Whether the frames' children are shifted for drawing right now (<see cref="ShiftChildrenWhileDrawing"/>).</summary>
+        internal static bool Drawing => _drawing;
+
+        private static void InstallDrawHooks()
+        {
+            if (_hooked) return;
+            _hooked = true;
+            // A scriptable render pipeline draws every camera of a frame inside one context; the built-in pipeline culls
+            // and renders each camera. Either way the shift holds only while a camera draws.
+            RenderPipelineManager.beginContextRendering += (context, cameras) => BeginDrawing();
+            RenderPipelineManager.endContextRendering += (context, cameras) => EndDrawing();
+            Camera.onPreCull += camera => BeginDrawing();
+            Camera.onPostRender += camera => EndDrawing();
+        }
+
+        /// <summary>
+        /// Move each drawn frame's -O from its root to its children (<see cref="ShiftChildrenWhileDrawing"/>). Called as
+        /// cameras start drawing; does nothing when already done, on a worker, or for a frame that is simulating.
+        /// </summary>
+        internal static void BeginDrawing()
+        {
+            if (_drawing || !ShiftChildrenWhileDrawing || !RendersFrames) return;
+            _drawing = true;
+            for (int i = 0; i < Frames.Count; i++)
+            {
+                var frame = Frames[i];
+                var origin = frame.RenderOrigin;
+                var root = frame.Root;
+                if (frame == _simulating || origin == Vector3.zero || root == null || frame.Pivot == null || root.parent != frame.Pivot) continue;
+                if (!root.localPosition.Equals(-origin)) continue; // not at the pose PoseForRender gave it: leave it alone
+                _drawn.Add(new Drawn { Transform = root, Local = root.localPosition });
+                for (int c = 0; c < root.childCount; c++)
+                {
+                    var child = root.GetChild(c);
+                    var local = child.localPosition;
+                    _drawn.Add(new Drawn { Transform = child, Local = local });
+                    // Two floats this close subtract exactly: the child's far offset and O.
+                    child.localPosition = local - origin;
+                }
+                root.localPosition = Vector3.zero;
+            }
+        }
+
+        /// <summary>Put every root and child <see cref="BeginDrawing"/> moved back exactly. Called as cameras finish drawing.</summary>
+        internal static void EndDrawing()
+        {
+            if (!_drawing) return;
+            _drawing = false;
+            for (int i = _drawn.Count - 1; i >= 0; i--)
+                if (_drawn[i].Transform != null) _drawn[i].Transform.localPosition = _drawn[i].Local;
+            _drawn.Clear();
+        }
+
+        /// <summary>
         /// <paramref name="v"/> turned by the float rotation <paramref name="q"/>, in double. The quaternion is normalised
         /// in double first: a float one is a few 1e-8 off unit length, which would scale 200 km by a centimetre.
         /// </summary>
@@ -1089,6 +1197,7 @@ namespace Nebula
         public static void BeginSimulation(Container space, Transform predicted)
         {
             if (!RendersFrames) return;
+            EndDrawing();
             var frame = space != null ? space.Frame : null;
             _simulating = frame;
             if (frame == null || frame.Root == null) return;
