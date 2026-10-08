@@ -413,6 +413,30 @@ namespace Nebula
             SceneDisposer = null;
         }
 
+        /// <summary>
+        /// Play has ended in an Editor that keeps its domain: put back anything moved for drawing and forget the anchors,
+        /// so nothing from the session reaches edit mode (EditMode tests, editor tools). Settings are kept.
+        /// </summary>
+        internal static void ResetAfterPlay()
+        {
+            EndDrawing();
+            _simulating = null;
+            RenderAnchor = null;
+            ContentAnchor = null;
+            SceneRenderOrigin.ResetAfterPlay();
+        }
+
+#if UNITY_EDITOR
+        [UnityEditor.InitializeOnLoadMethod]
+        private static void HookPlayExit()
+        {
+            UnityEditor.EditorApplication.playModeStateChanged += change =>
+            {
+                if (change == UnityEditor.PlayModeStateChange.EnteredEditMode) ResetAfterPlay();
+            };
+        }
+#endif
+
         // ------------------------------------------------------------------------------------ lifetime
 
         /// <summary>Give <paramref name="owner"/> its frame (idempotent). Called by the registry when a framed container registers.</summary>
@@ -977,12 +1001,16 @@ namespace Nebula
         /// </summary>
         public static void PoseForRender()
         {
-            if (!RendersFrames || Frames.Count == 0) return;
-            EndDrawing();
+            if (!RendersFrames) return;
+            // The draw hooks carry the scene's render origin too (SceneRenderOrigin), which a client needs with no frames.
             InstallDrawHooks();
+            if (Frames.Count == 0) return;
+            EndDrawing();
             PoseOrder.Clear();
-            PoseOrder.AddRange(Frames);
-            PoseOrder.Sort((a, b) => SpaceDepth(a.Owner).CompareTo(SpaceDepth(b.Owner)));
+            // A frame whose owner was destroyed without being released is skipped: it has no pose, and nothing to sort by.
+            for (int i = 0; i < Frames.Count; i++)
+                if (Frames[i] != null && Frames[i].Owner != null) PoseOrder.Add(Frames[i]);
+            PoseOrder.Sort(ByDepth);
             for (int i = 0; i < PoseOrder.Count; i++)
                 if (PoseOrder[i] != _simulating) PoseForRender(PoseOrder[i]);
             PoseOrder.Clear();
@@ -1115,17 +1143,36 @@ namespace Nebula
         /// <summary>Whether the frames' children are shifted for drawing right now (<see cref="ShiftChildrenWhileDrawing"/>).</summary>
         internal static bool Drawing => _drawing;
 
+        /// <summary>Whether the camera callbacks that move frames and the scene for drawing are installed.</summary>
+        internal static bool DrawHooksInstalled => _hooked;
+
         internal static void InstallDrawHooks()
         {
             if (_hooked) return;
             _hooked = true;
             // A scriptable render pipeline draws every camera of a frame inside one context; the built-in pipeline culls
             // and renders each camera. Either way the shift holds only while a camera draws.
-            RenderPipelineManager.beginContextRendering += (context, cameras) => BeginDrawing(cameras);
-            RenderPipelineManager.endContextRendering += (context, cameras) => EndDrawing();
-            Camera.onPreCull += camera => { OneCamera[0] = camera; BeginDrawing(OneCamera); };
-            Camera.onPostRender += camera => EndDrawing();
+            RenderPipelineManager.beginContextRendering += OnBeginContext;
+            RenderPipelineManager.endContextRendering += OnEndContext;
+            Camera.onPreCull += OnPreCull;
+            Camera.onPostRender += OnPostRender;
         }
+
+        /// <summary>Take the draw hooks out again (tests).</summary>
+        internal static void RemoveDrawHooks()
+        {
+            if (!_hooked) return;
+            _hooked = false;
+            RenderPipelineManager.beginContextRendering -= OnBeginContext;
+            RenderPipelineManager.endContextRendering -= OnEndContext;
+            Camera.onPreCull -= OnPreCull;
+            Camera.onPostRender -= OnPostRender;
+        }
+
+        private static void OnBeginContext(ScriptableRenderContext context, List<Camera> cameras) => BeginDrawing(cameras);
+        private static void OnEndContext(ScriptableRenderContext context, List<Camera> cameras) => EndDrawing();
+        private static void OnPreCull(Camera camera) { OneCamera[0] = camera; BeginDrawing(OneCamera); }
+        private static void OnPostRender(Camera camera) => EndDrawing();
 
         /// <summary>
         /// Move each drawn frame's -O from its root to its children (<see cref="ShiftChildrenWhileDrawing"/>). Called as
@@ -1142,8 +1189,10 @@ namespace Nebula
             if (_drawing || !RendersFrames) return;
             _drawing = true;
             // The scene first, so a game placing its camera in SceneRenderOrigin.Shifted still reads frame-local poses.
-            if (cameras != null && cameras.Count > 0) SceneRenderOrigin.Begin(cameras, Frames, _simulating);
+            bool withCameras = cameras != null && cameras.Count > 0;
+            if (withCameras) SceneRenderOrigin.Begin(cameras, Frames, _simulating);
             if (ShiftChildrenWhileDrawing) ShiftChildren();
+            if (withCameras) SceneRenderOrigin.RaiseDrawing();
         }
 
         private static readonly Camera[] OneCamera = new Camera[1];
@@ -1249,6 +1298,8 @@ namespace Nebula
             PoseForRender(frame);
             Physics.SyncTransforms();
         }
+
+        private static readonly Comparison<PhysicsFrame> ByDepth = (a, b) => SpaceDepth(a.Owner).CompareTo(SpaceDepth(b.Owner));
 
         private static int SpaceDepth(Container c)
         {

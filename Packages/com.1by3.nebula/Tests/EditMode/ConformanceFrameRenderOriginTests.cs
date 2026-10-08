@@ -545,6 +545,88 @@ namespace Nebula.Tests
         }
 
         /// <summary>
+        /// <see cref="SceneRenderOrigin.Drawing"/> comes once both shifts are made, the scene's and the frames' children's,
+        /// so a game queuing its own instanced draws there reads every transform where it is drawn. It is raised with a
+        /// zero offset too (the camera near Unity's origin), when <see cref="SceneRenderOrigin.Shifted"/> is not.
+        /// </summary>
+        [Test]
+        public void DrawingIsRaisedAfterBothShifts()
+        {
+            var frame = PlanetFrame;
+            var chunk = Under(frame.Root, "chunk", ChunkLocal, ChunkRotation);
+            var pawn = Under(chunk, "pawn", new Vector3(3.25f, 0.9f, -6.5f), Quaternion.identity);
+            var cameraObject = new GameObject("player-camera");
+            _objects.Add(cameraObject);
+            var camera = cameraObject.AddComponent<Camera>();
+            camera.enabled = false;
+            AsClient();
+            PhysicsFrames.RenderAnchor = pawn;
+            _planet.transform.SetPositionAndRotation(-(Turn(5) * ChunkLocal), Turn(5));
+            PhysicsFrames.PoseForRender();
+            Assume.That(frame.RenderOrigin, Is.Not.EqualTo(Vector3.zero));
+            camera.transform.position = pawn.position;
+
+            int shifted = 0, drawing = 0;
+            bool childrenShifted = false;
+            Vector3 offset = Vector3.one;
+            Action<Vector3> onShifted = _ => shifted++;
+            Action<Vector3> onDrawing = o =>
+            {
+                drawing++;
+                offset = o;
+                childrenShifted = chunk.localPosition.Equals(ChunkLocal - frame.RenderOrigin) && frame.Root.localPosition == Vector3.zero;
+            };
+            SceneRenderOrigin.Shifted += onShifted;
+            SceneRenderOrigin.Drawing += onDrawing;
+            try
+            {
+                PhysicsFrames.BeginDrawing(new List<Camera> { camera });
+                PhysicsFrames.EndDrawing();
+            }
+            finally
+            {
+                SceneRenderOrigin.Shifted -= onShifted;
+                SceneRenderOrigin.Drawing -= onDrawing;
+            }
+            Assert.AreEqual(1, drawing, "raised once as the cameras start drawing");
+            Assert.IsTrue(childrenShifted, "after the frame's children took their render origin");
+            Assert.AreEqual(Vector3.zero, offset, "with the scene's offset: zero, the camera being near Unity's origin");
+            Assert.AreEqual(0, shifted, "Shifted is raised only when the scene is moved");
+            Assert.IsTrue(chunk.localPosition.Equals(ChunkLocal), "everything put back");
+        }
+
+        /// <summary>
+        /// A frame whose owner was destroyed without its frame being released (a carrier torn down by game code) is
+        /// skipped when the frames are posed, and the others are still posed.
+        /// </summary>
+        [Test]
+        public void ADestroyedOwnerIsSkippedWhenPosing()
+        {
+            var go = new GameObject("torn-down-carrier");
+            _objects.Add(go);
+            var owner = go.AddComponent<Container>();
+            owner.ContainerId = "torn-down";
+            owner.OwnPhysicsFrame = true;
+            var torn = PhysicsFrames.Create(owner);
+            Assume.That(torn, Is.Not.Null);
+            AsClient();
+            Object.DestroyImmediate(go);
+            Assume.That(PhysicsFrames.All, Has.Member(torn), "the frame outlives its owner");
+            try
+            {
+                var turn = Turn(7);
+                _planet.transform.SetPositionAndRotation(new Vector3(12.5f, -3f, 40f), turn);
+                Assert.DoesNotThrow(() => PhysicsFrames.PoseForRender());
+                Assert.That(Quaternion.Angle(PlanetFrame.Pivot.rotation, turn), Is.LessThan(0.01f), "the other frames are still posed");
+            }
+            finally
+            {
+                PhysicsFrames.Release(owner);
+            }
+            Assert.That(PhysicsFrames.All, Has.No.Member(torn));
+        }
+
+        /// <summary>
         /// Run <see cref="Frames"/> frames of a pawn walking in a chunk 205 km out on the turning planet, holding a tool
         /// 0.4 m in front of its camera, with the camera about 20 km from Unity's origin (where a scope with large origin
         /// cells can leave it). The camera is composed in double from the pawn's frame-local pose, as a game composes it;
