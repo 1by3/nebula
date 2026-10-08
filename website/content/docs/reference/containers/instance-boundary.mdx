@@ -31,7 +31,7 @@ Private layout created at this component's world position. Must be available on 
 public Bounds Interior = new Bounds(Vector3.zero, new Vector3(10, 5, 10));
 ```
 
-Crossing volume relative to the component's position. Rotation and scale do not transform the bounds.
+Crossing volume in the component's own axes: its centre and size are measured from the component's position and turned with the component's rotation. Scale does not transform the bounds.
 
 ### PreparationDistance [#preparationdistance]
 
