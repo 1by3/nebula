@@ -182,6 +182,10 @@ namespace Nebula
         public Vector3 RenderScale => _posed ? _renderScale : Owner != null ? Owner.transform.lossyScale : Vector3.one;
 
         internal Vector3 _renderPosition;
+        /// <summary>The render position in double: a frame drawn inside another is composed through it without rounding.</summary>
+        internal Double3 _renderPositionPrecise;
+        /// <summary>Where the pivot is drawn, in double (the scene render origin places it from this, D25).</summary>
+        internal Double3 _pivotScene;
         internal Quaternion _renderRotation = Quaternion.identity;
         internal Vector3 _renderScale = Vector3.one;
         internal bool _posed;
@@ -198,14 +202,14 @@ namespace Nebula
         {
             var s = RenderScale;
             var turned = PhysicsFrames.Rotate(RenderRotation, new Double3(local.X * s.x, local.Y * s.y, local.Z * s.z));
-            return Double3.From(RenderPosition) + turned;
+            return (_posed ? _renderPositionPrecise : Double3.From(RenderPosition)) + turned;
         }
 
         /// <summary>A point of the drawn scene in frame-local coordinates, in double (<see cref="LocalToRender(Vector3)"/>'s inverse).</summary>
         public Double3 RenderToLocalPrecise(Double3 scene)
         {
             var r = RenderRotation;
-            var local = PhysicsFrames.Rotate(new Quaternion(-r.x, -r.y, -r.z, r.w), scene - RenderPosition);
+            var local = PhysicsFrames.Rotate(new Quaternion(-r.x, -r.y, -r.z, r.w), scene - (_posed ? _renderPositionPrecise : Double3.From(RenderPosition)));
             var s = RenderScale;
             return new Double3(s.x != 0f ? local.X / s.x : 0.0, s.y != 0f ? local.Y / s.y : 0.0, s.z != 0f ? local.Z / s.z : 0.0);
         }
@@ -402,6 +406,7 @@ namespace Nebula
             ContentAnchor = null;
             _drawn.Clear();
             _drawing = false;
+            SceneRenderOrigin.ResetForNewSession();
             Created = null;
             Releasing = null;
             SceneFactory = null;
@@ -939,13 +944,15 @@ namespace Nebula
 
         /// <summary>
         /// How far (metres) the render anchor may be from a frame's own origin, and later from its render origin,
-        /// before the frame is drawn about a render origin near the anchor (D25). A ship's frame, whose content is a
-        /// few hundred metres across, never needs one. <see cref="float.PositiveInfinity"/> turns render origins off.
+        /// before the frame is drawn about a render origin near the anchor (D25). Small, so that what the frame's turn
+        /// multiplies stays a few hundred metres long: a float rotation turns 2 km with a few tenths of a millimetre of
+        /// rounding. A ship's frame, with the anchor aboard, never needs one. <see cref="float.PositiveInfinity"/> turns
+        /// render origins off.
         /// </summary>
-        public static float RenderOriginThreshold = 2048f;
+        public static float RenderOriginThreshold = 256f;
 
         /// <summary>The grid a render origin snaps to (metres), so it moves only as the anchor travels.</summary>
-        public static float RenderOriginStep = 1024f;
+        public static float RenderOriginStep = 128f;
 
         /// <summary>
         /// What frames are drawn about on a client (D25): a frame whose content is drawn far from its own origin is
@@ -994,9 +1001,11 @@ namespace Nebula
         {
             if (frame.Root == null || frame.Owner == null) return;
             var t = frame.Owner.transform;
-            var position = DrawnPositionOf(frame.Owner);
+            var precise = DrawnPositionOf(frame.Owner);
+            var position = precise.ToVector3();
             var rotation = t.rotation;
             var scale = t.lossyScale;
+            frame._renderPositionPrecise = precise;
             frame._renderPosition = position;
             frame._renderRotation = rotation;
             frame._renderScale = scale;
@@ -1012,8 +1021,8 @@ namespace Nebula
             }
             var origin = RenderOriginOf(frame);
             frame.RenderOrigin = origin;
-            if (origin == Vector3.zero) pivot.SetPositionAndRotation(position, rotation);
-            else pivot.SetPositionAndRotation(frame.LocalToRenderPrecise(Double3.From(origin)).ToVector3(), rotation);
+            frame._pivotScene = origin == Vector3.zero ? precise : frame.LocalToRenderPrecise(Double3.From(origin));
+            pivot.SetPositionAndRotation(frame._pivotScene.ToVector3(), rotation);
             pivot.localScale = scale;
             frame.Root.SetLocalPositionAndRotation(-origin, Quaternion.identity);
             frame.Root.localScale = Vector3.one;
@@ -1060,12 +1069,12 @@ namespace Nebula
         /// <c>position</c> would add its offset in its chunk to the chunk's offset (200 km on a planet) in float first, and
         /// round by a centimetre, differently every frame as it moves. Anything else reads its transform.
         /// </summary>
-        private static Vector3 DrawnPositionOf(Container owner)
+        private static Double3 DrawnPositionOf(Container owner)
         {
             var t = owner.transform;
             var outer = owner.Space != null ? owner.Space.Frame : null;
-            if (outer == null || !outer._posed || outer == _simulating || outer.Root == null || !IsUnder(t, outer.Root)) return t.position;
-            return outer.LocalToRenderPrecise(LocalIn(t, outer.Root)).ToVector3();
+            if (outer == null || !outer._posed || outer == _simulating || outer.Root == null || !IsUnder(t, outer.Root)) return Double3.From(t.position);
+            return outer.LocalToRenderPrecise(LocalIn(t, outer.Root));
         }
 
         /// <summary><paramref name="t"/>'s position in <paramref name="root"/>'s local coordinates, composed in double from the local poses in between.</summary>
@@ -1106,15 +1115,15 @@ namespace Nebula
         /// <summary>Whether the frames' children are shifted for drawing right now (<see cref="ShiftChildrenWhileDrawing"/>).</summary>
         internal static bool Drawing => _drawing;
 
-        private static void InstallDrawHooks()
+        internal static void InstallDrawHooks()
         {
             if (_hooked) return;
             _hooked = true;
             // A scriptable render pipeline draws every camera of a frame inside one context; the built-in pipeline culls
             // and renders each camera. Either way the shift holds only while a camera draws.
-            RenderPipelineManager.beginContextRendering += (context, cameras) => BeginDrawing();
+            RenderPipelineManager.beginContextRendering += (context, cameras) => BeginDrawing(cameras);
             RenderPipelineManager.endContextRendering += (context, cameras) => EndDrawing();
-            Camera.onPreCull += camera => BeginDrawing();
+            Camera.onPreCull += camera => { OneCamera[0] = camera; BeginDrawing(OneCamera); };
             Camera.onPostRender += camera => EndDrawing();
         }
 
@@ -1122,10 +1131,25 @@ namespace Nebula
         /// Move each drawn frame's -O from its root to its children (<see cref="ShiftChildrenWhileDrawing"/>). Called as
         /// cameras start drawing; does nothing when already done, on a worker, or for a frame that is simulating.
         /// </summary>
-        internal static void BeginDrawing()
+        internal static void BeginDrawing() => BeginDrawing(null);
+
+        /// <summary>
+        /// <see cref="BeginDrawing()"/> for <paramref name="cameras"/>, then the scene's render origin
+        /// (<see cref="SceneRenderOrigin"/>) about the camera that leads them.
+        /// </summary>
+        internal static void BeginDrawing(IReadOnlyList<Camera> cameras)
         {
-            if (_drawing || !ShiftChildrenWhileDrawing || !RendersFrames) return;
+            if (_drawing || !RendersFrames) return;
             _drawing = true;
+            // The scene first, so a game placing its camera in SceneRenderOrigin.Shifted still reads frame-local poses.
+            if (cameras != null && cameras.Count > 0) SceneRenderOrigin.Begin(cameras, Frames, _simulating);
+            if (ShiftChildrenWhileDrawing) ShiftChildren();
+        }
+
+        private static readonly Camera[] OneCamera = new Camera[1];
+
+        private static void ShiftChildren()
+        {
             for (int i = 0; i < Frames.Count; i++)
             {
                 var frame = Frames[i];
@@ -1154,6 +1178,8 @@ namespace Nebula
             for (int i = _drawn.Count - 1; i >= 0; i--)
                 if (_drawn[i].Transform != null) _drawn[i].Transform.localPosition = _drawn[i].Local;
             _drawn.Clear();
+            SceneRenderOrigin.End();
+            OneCamera[0] = null;
         }
 
         /// <summary>

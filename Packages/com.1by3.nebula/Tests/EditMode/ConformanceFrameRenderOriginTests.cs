@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Nebula.World;
 using NUnit.Framework;
@@ -104,6 +105,8 @@ namespace Nebula.Tests
             PhysicsFrames.ContentAnchor = null;
             PhysicsFrames.EndDrawing();
             PhysicsFrames.ShiftChildrenWhileDrawing = true;
+            SceneRenderOrigin.ResetForNewSession();
+            SceneRenderOrigin.Enabled = true;
             NebulaRuntime.IsClient = false;
             NebulaRuntime.IsServer = true;
             foreach (var go in _objects) if (go != null) Object.DestroyImmediate(go);
@@ -368,7 +371,7 @@ namespace Nebula.Tests
             Assert.That(Quaternion.Angle(frame.RenderToLocal(ground.rotation), ChunkRotation), Is.LessThan(1e-3f));
 
             // The camera back near the planet's own origin: no render origin.
-            camera.position = _planet.transform.TransformPoint(new Vector3(100f, 900f, -300f));
+            camera.position = _planet.transform.TransformPoint(new Vector3(40f, 120f, -60f));
             PhysicsFrames.PoseForRender();
             Assert.AreEqual(Vector3.zero, frame.RenderOrigin, "within the threshold of the frame's own origin, none");
             Assert.IsTrue(frame.Root.position.Equals(t.position), "and the root is at the carrier's pose exactly");
@@ -539,6 +542,91 @@ namespace Nebula.Tests
             Assert.IsFalse(PhysicsFrames.Drawing && !chunk.localPosition.Equals(ChunkLocal), "a simulating frame is not shifted");
             PhysicsFrames.EndDrawing();
             PhysicsFrames.EndSimulation();
+        }
+
+        /// <summary>
+        /// Run <see cref="Frames"/> frames of a pawn walking in a chunk 205 km out on the turning planet, holding a tool
+        /// 0.4 m in front of its camera, with the camera about 20 km from Unity's origin (where a scope with large origin
+        /// cells can leave it). The camera is composed in double from the pawn's frame-local pose, as a game composes it;
+        /// with the scene render origin on, the game places it again at its position less the offset as the scene is
+        /// moved (<see cref="SceneRenderOrigin.Shifted"/>). Returns the worst change, from one frame to the next, of the
+        /// tool's offset from the camera in the frame's own axes, measured while the cameras draw.
+        /// </summary>
+        private float WorstHeldAgainstTheCamera(bool sceneOrigin, out float worstError)
+        {
+            var frame = PlanetFrame;
+            var chunk = Under(frame.Root, "held-chunk", ChunkLocal, ChunkRotation);
+            var pawn = Under(chunk, "pawn", new Vector3(-40.37f, 0.62f, 12.25f), Quaternion.identity);
+            var heldLocal = new Vector3(0.12f, 1.55f, 0.4f);
+            var held = Under(pawn, "multitool", heldLocal, Quaternion.identity);
+            var eye = new Vector3(0f, 1.7f, 0f);
+            var cameraObject = new GameObject("player-camera");
+            _objects.Add(cameraObject);
+            var camera = cameraObject.AddComponent<Camera>();
+            camera.enabled = false; // nothing draws in a test: the hooks are called by hand
+            var cameras = new List<Camera> { camera };
+            PhysicsFrames.RenderAnchor = camera.transform;
+            Double3 CameraLocal() => LocalIn(pawn, frame.Root) + PhysicsFrames.Rotate(ChunkRotation, Double3.From(eye));
+            var truth = PhysicsFrames.Rotate(ChunkRotation, Double3.From(heldLocal - eye));
+            var cameraScene = new Vector3(-17998.37f, 3756.2f, -7990.6f);
+            _planet.transform.SetPositionAndRotation(cameraScene - Turn(0) * CameraLocal().ToVector3(), Turn(0));
+            camera.transform.position = cameraScene; // where the game's camera already is when the run starts
+
+            Action<Vector3> place = offset => camera.transform.position = (frame.LocalToRenderPrecise(CameraLocal()) - offset).ToVector3();
+            SceneRenderOrigin.Enabled = sceneOrigin;
+            if (sceneOrigin) SceneRenderOrigin.Shifted += place;
+            var walk = new Vector3(5f, 0f, 0.5f) * Dt;
+            Double3 last = default;
+            float worstStep = 0f;
+            worstError = 0f;
+            try
+            {
+                for (int i = 0; i < Frames; i++)
+                {
+                    var turn = Turn(i);
+                    _planet.transform.rotation = turn;
+                    pawn.localPosition += walk;
+                    PhysicsFrames.PoseForRender();
+                    camera.transform.position = frame.LocalToRenderPrecise(CameraLocal()).ToVector3();
+                    var cameraAt = camera.transform.position;
+                    var pawnAt = pawn.localPosition;
+                    PhysicsFrames.BeginDrawing(cameras);
+                    if (sceneOrigin) Assert.That(SceneRenderOrigin.Offset.magnitude, Is.GreaterThan(15_000f), "the scene is moved near the camera");
+                    if (sceneOrigin) Assert.That(camera.transform.position.magnitude, Is.LessThan(SceneRenderOrigin.Step), "the camera is drawn near Unity's origin");
+                    var local = PhysicsFrames.Rotate(Quaternion.Inverse(turn), Double3.From(held.position - camera.transform.position));
+                    PhysicsFrames.EndDrawing();
+                    Assert.IsTrue(camera.transform.position.Equals(cameraAt), "the camera is put back exactly");
+                    Assert.IsTrue(pawn.localPosition.Equals(pawnAt), "and the pawn");
+                    Assert.AreEqual(Vector3.zero, SceneRenderOrigin.Offset);
+                    worstError = Mathf.Max(worstError, Length(local - truth));
+                    if (i > 0) worstStep = Mathf.Max(worstStep, Length(local - last));
+                    last = local;
+                }
+            }
+            finally
+            {
+                SceneRenderOrigin.Shifted -= place;
+                SceneRenderOrigin.Enabled = true;
+            }
+            return worstStep;
+        }
+
+        /// <summary>
+        /// A tool held 0.4 m in front of a camera that sits 20 km from Unity's origin, the pawn walking in a chunk 205 km
+        /// out on a turning planet: with the scene render origin, the scene and the camera are drawn near Unity's origin and
+        /// the tool holds within 0.05 mm a frame against the camera. Without it, the camera and the tool each round to
+        /// the 2 mm grid of a float 20 km out.
+        /// </summary>
+        [Test]
+        public void AHeldToolTwentyKilometresOutHoldsStillAgainstTheCamera()
+        {
+            AsClient();
+            float step = WorstHeldAgainstTheCamera(true, out float error);
+            float stepWithout = WorstHeldAgainstTheCamera(false, out float errorWithout);
+            TestContext.WriteLine($"a tool 0.4 m in front of a camera 20 km from the origin, through a frame 205 km out turning at {Omega} rad/s, {Frames} frames: worst step {step * 1000f:0.0000} mm, worst error {error * 1000f:0.0000} mm; without the scene render origin {stepWithout * 1000f:0.000} mm and {errorWithout * 1000f:0.000} mm");
+            Assert.That(step, Is.LessThan(0.00005f), "within 0.05 mm a frame against the camera");
+            Assert.That(error, Is.LessThan(0.00005f), "and within 0.05 mm of where it is held");
+            Assert.That(stepWithout, Is.GreaterThan(0.0003f), "without it, the 20 km float grid shows");
         }
 
         /// <summary>

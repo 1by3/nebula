@@ -1011,6 +1011,7 @@ namespace Nebula
             PhysicsFrames.UpdateStates(NetworkTime.Tick, Time.deltaTime);
             PhysicsFrames.SyncAllContent();
             PhysicsFrames.ContentAnchor = ActiveContentAnchor;
+            PhysicsFrames.InstallDrawHooks();
             PhysicsFrames.PoseForRender();
         }
 
