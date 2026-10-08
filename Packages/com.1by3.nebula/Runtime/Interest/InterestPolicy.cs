@@ -368,7 +368,7 @@ namespace Nebula
         /// <summary>
         /// The largest absolute coordinate a hint may name, in meters. Anything beyond it is malformed rather
         /// than merely far away: the region grid can only pack <see cref="InterestGrid.MaxCoordinate"/> cells
-        /// per axis (about 6.7e7 m at the default 64 m edge), so every point out here is the same clamped
+        /// per axis (about 2.1e9 m at the default 64 m edge, counting the far band), so every point out here is the same clamped
         /// region, and a value of 1e300 is a number no camera produced. Rejecting rather than clamping is
         /// deliberate: clamping would invent a place the client never asked about and then stream it.
         /// </summary>
