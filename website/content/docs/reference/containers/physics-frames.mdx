@@ -53,6 +53,14 @@ public static float RenderOriginStep = 1024f;
 
 The grid a render origin snaps to (metres), so it moves only as the anchor travels.
 
+### ShiftChildrenWhileDrawing [#shiftchildrenwhiledrawing]
+
+```csharp
+public static bool ShiftChildrenWhileDrawing = true;
+```
+
+While cameras draw, a frame drawn about a render origin has its -O moved from its root down to the root's direct children (D25): the root at zero under the pivot, each child at its own offset less O. Unity composes a pose from the leaf up, so with -O on the root, a body moving in a chunk 200 km out added its offset to the chunk's in float before -O was met, and rounded by a centimetre, differently every frame. With the children shifted, every sum stays a few hundred metres long. Everything is put back exactly when drawing ends, so no game code, and nothing Nebula reads (interpolation, prediction, the wire), sees the shifted poses. On by default; turn it off if your game draws outside Unity's camera callbacks.
+
 ## Properties
 
 ### All [#all]

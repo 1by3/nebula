@@ -204,14 +204,32 @@ frame, so that rounding changed every frame and differed per object, and the gro
 more against it. Under the pivot, a child's offset meets -O first, where the two cancel exactly, and only the
 difference, a few hundred metres, is turned: the ground holds to a fraction of a millimetre (scenario 49).
 
+With -O on the root, something moving inside a chunk is still composed as (its offset h in the chunk + the chunk's
+offset C) in float before -O is met: (h + C) rounds at 200 km, by up to a centimetre and differently every frame as it
+moves, so a ship's hull and cockpit shook against the pilot's camera by 6 mm a frame. So while cameras draw, -O moves
+from the root down to the root's direct children: the root goes to zero under the pivot and each child to C - O (two
+floats this close subtract exactly), and every leaf's sum stays a few hundred metres long. The shift starts as cameras
+start drawing (`RenderPipelineManager.beginContextRendering`, or `Camera.onPreCull` in the built-in pipeline) and every
+root and child is put back exactly when they finish (`endContextRendering`, `Camera.onPostRender`). No game code, and
+nothing Nebula reads (interpolation, prediction, `NetworkIdentity.LocalPosition`, the wire), sees the shifted poses.
+`PhysicsFrames.ShiftChildrenWhileDrawing = false` turns it off. A carrier standing in a frame that is drawn (a ship on
+a planet) has its own frame posed at its pose composed in double from its frame-local pose, not at Unity's
+`position`, which would round (h + C) the same way.
+
+What stays: Unity holds every object's world matrix in float in scene coordinates, and the camera and each object
+round to that grid on their own, a millimetre apart 8 to 16 km from Unity's origin. A render origin cannot move the
+scene; the scope's own floating origin does. To hold a body moving with the camera under half a millimetre, keep the
+scope's origin within about 2 km of the camera (scenario 49 shifts it on a 1 km grid).
+
 The rules that keep it invisible to everything else:
 
 - The root's world pose is the carrier's to float precision. `PhysicsFrame.RenderPosition`, `RenderRotation` and
   `RenderScale` hold it exactly, and `LocalToRender`, `LocalToRenderPrecise`, `RenderToLocal` and
   `RenderToLocalPrecise` compose frame-local points into the drawn scene in double. Game code reads these, not
   `Root.position`, which under a render origin is composed through the turned origin in float.
-- `BeginSimulation` puts the pivot at the identity before it sets the root's simulation pose, so a prediction step
-  runs bit for bit as it did, never through a turned pivot; `EndSimulation` poses the frame again.
+- `BeginSimulation` ends any drawing shift and puts the pivot at the identity before it sets the root's simulation
+  pose, so a prediction step runs bit for bit as it did, never through a turned pivot; `EndSimulation` poses the frame
+  again. A frame that is simulating is never shifted for drawing.
 - A frame whose content stays near its own origin (a ship's) never gets one while the anchor is aboard; a frame inside
   another (a ship on a planet) is posed from its carrier as drawn through the outer frame's render origin, outermost
   first.
@@ -453,7 +471,7 @@ carrier of its own (a ship's frame is local to the ship). Scenario 45 pins the n
 | 45 | Wire precision in a large frame: an entity in a hosted chunk of a 500 km planet is near-exact, an entity directly in the frame at 100 km and 250 km from its origin is within half the float spacing (1.6 cm at 250 km) of where it stands, none of it depends on the scope being 10,000 km out, and the gateway's absolute records are double fields filed in the frame's own space | `ConformanceFramePrecisionTests` |
 | 41 | A planet's ground as a grid hosted by the planet (D22), nothing leased statically: allocated around a ground pawn on one worker, a second pawn on the other and a ship flying scenario 40's lap at 300 m/s; the ship never stands in the box outside a leased chunk, each chunk it enters was leased ahead of it, the ground behind it retires, and a restart brings back a crate standing in a hosted chunk under the planet's own restored container | `ConformanceCarrierHostedGridTests`, plus `HostedChunkGridTests` |
 | 43 | An `InstanceBoundary` in a chunk hosted by a framed carrier (NEB-394): its position is read out of the carrier's frame, as an entity's is, so the instance is prepared at the door; a player on the planet enters it and leaves back into the planet's chunk, in its frame | `ConformanceFramedInstanceBoundaryTests` |
-| 49 | A large frame on a client (D11, D19, D25): a scope's origin shift poses the frames at once, so `KeepOriginNear` on a pawn on a framed planet run after a game's own rule never shifts back over 1,000 frames; a scope's shift leaves the history of what stands in a frame alone; ground 205 km out on a planet turning at 8.5e-4 rad/s holds within a millimetre against the camera over 1,000 frames under a render origin (about 3 cm without); the frame's world pose is unchanged; prediction runs bit for bit at the simulation pose; a ship on the planet is drawn through the planet's render origin and needs none of its own | `ConformanceFrameRenderOriginTests` |
+| 49 | A large frame on a client (D11, D19, D25): a scope's origin shift poses the frames at once, so `KeepOriginNear` on a pawn on a framed planet run after a game's own rule never shifts back over 1,000 frames; a scope's shift leaves the history of what stands in a frame alone; ground 205 km out on a planet turning at 8.5e-4 rad/s holds within a millimetre against the camera over 1,000 frames under a render origin (about 3 cm without); the frame's world pose is unchanged; prediction runs bit for bit at the simulation pose; a ship on the planet is drawn through the planet's render origin and needs none of its own; a body moving at 100 m/s in a chunk 205 km out, with a camera riding it and the scene's origin kept within 1 km of the camera, holds within half a millimetre a frame while cameras draw (about 14 mm a frame with -O left on the root); drawing puts every root and child back exactly and never overlaps a prediction step | `ConformanceFrameRenderOriginTests` |
 
 Tier limit (B, `ConformanceMesh`): the container registry is process-wide, so of two workers' copies of one carrier
 only the last registered owns the box and its frame. Scenario 21's two-worker case keeps the copies' poses in step.

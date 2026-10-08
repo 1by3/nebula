@@ -266,6 +266,10 @@ Quaternion tilt = frame.RenderRotation;                 // and how it is turned
 
 `localPoint` and `drawnPoint` stand for positions in your game. `LocalToRenderPrecise` and `RenderToLocalPrecise` take and return `Double3` values.
 
+While cameras draw, Nebula also moves the render origin from the frame's root onto the root's direct children, so a ship or vehicle moving inside a chunk far from the planet's center holds still too. It puts every object back exactly when drawing ends, so your scripts never see the change. If your game draws outside Unity's camera callbacks, set `PhysicsFrames.ShiftChildrenWhileDrawing = false`.
+
+Unity still stores every object's position in scene coordinates, about a millimeter apart 8 to 16 km from the scene's origin. For motion steadier than half a millimeter, keep your scope's floating origin within about 2 km of the camera.
+
 To turn render origins off for one frame, set `frame.UseRenderOrigin = false`. To turn them off everywhere, set `PhysicsFrames.RenderOriginThreshold = float.PositiveInfinity`. Prediction is not affected either way: a predicted pawn always simulates at the frame's exact simulation pose.
 
 ## Stream a planet's ground around players
