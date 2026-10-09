@@ -33,7 +33,7 @@ The same player can leave through the boundary to return to the public world. Th
 4. Add an `InstanceBoundary` to the shared scene, or to chunk content you build in a scoped grid (see [Place a boundary in a scoped grid](#place-a-boundary-in-a-scoped-grid)). Assign the template and set `Interior` to the volume players enter. Place the boundary at the instance origin.
 5. Set `PreparationDistance` to start loading before players enter the volume.
 
-The boundary preserves world position when crossing. Its volumes are axis-aligned; rotating the boundary does not rotate them. The first template part is the entry container. Within the instance, ordinary container resolution chooses the appropriate part.
+The boundary preserves world position when crossing. Its volumes turn with the boundary: they are measured in its own axes, so a door on sloping ground has a crossing volume that slopes with it. Scale does not transform them. The first template part is the entry container. Within the instance, ordinary container resolution chooses the appropriate part.
 
 Static content prefabs must not contain `NetworkIdentity` components. Spawn networked furniture, enemies, and other stateful objects through the worker's spawn API, passing an instance container. Add `PersistentEntity` and use instance-specific persistence keys for objects that must survive a restart.
 

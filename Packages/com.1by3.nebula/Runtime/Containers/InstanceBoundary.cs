@@ -27,7 +27,11 @@ namespace Nebula
     {
         /// <summary>Private layout created at this component's world position. Must be available on workers.</summary>
         public InstanceTemplate Template;
-        /// <summary>Crossing volume relative to the component's position. Rotation and scale do not transform the bounds.</summary>
+        /// <summary>
+        /// Crossing volume in the component's own axes: its centre and size are measured from the component's position
+        /// and turned with the component's rotation, so a boundary standing on tilted ground has a volume that is tilted
+        /// with it. Scale does not transform the bounds.
+        /// </summary>
         public Bounds Interior = new Bounds(Vector3.zero, new Vector3(10, 5, 10));
         /// <summary>Distance added on each side of Interior to begin preparing a crossing before entry.</summary>
         public float PreparationDistance = 8;
@@ -358,6 +362,21 @@ namespace Nebula
             foreach (var boundary in Active) if (boundary != null) boundary.Cross(worker, entity);
         }
 
+        /// <summary>This boundary's rotation read in its host scope's own space, as <see cref="AbsolutePosition"/> reads its position.</summary>
+        private Quaternion ScopeRotation =>
+            _host != null && PhysicsFrames.InSimulationPose(_host.InnerSpace)
+                ? PhysicsFrames.Convert(transform.rotation, _host.InnerSpace, null)
+                : transform.rotation;
+
+        /// <summary>Whether an offset from the boundary's origin, in the host scope's axes, lies in <see cref="Interior"/> turned by <paramref name="rotation"/>, widened by <paramref name="margin"/> on every side.</summary>
+        internal bool InteriorContains(Vector3 offset, Quaternion rotation, float margin)
+        {
+            var c = Interior.center;
+            var h = Interior.extents;
+            return OrientedBox.Contains(offset.x, offset.y, offset.z, rotation.x, rotation.y, rotation.z, rotation.w,
+                c.x, c.y, c.z, h.x, h.y, h.z, margin);
+        }
+
         private void Cross(NebulaWorker worker, NetworkIdentity entity)
         {
             if (Template == null) return;
@@ -373,18 +392,12 @@ namespace Nebula
             bool privateSide = entity.InstanceId == scope;
             var absolute = AbsoluteOf(entity);
             var local = (absolute - InstanceOrigin).ToVector3();
-            bool inside = Interior.Contains(local);
-            if (privateSide && !inside && ExitMargin > 0)
-            {
-                // Leaving takes the margin as well: an occupant just outside the face is still inside.
-                var exit = Interior;
-                exit.Expand(ExitMargin * 2);
-                inside = exit.Contains(local);
-            }
+            var rotation = ScopeRotation;
+            bool inside = InteriorContains(local, rotation, 0f);
+            // Leaving takes the margin as well: an occupant just outside the face is still inside.
+            if (privateSide && !inside && ExitMargin > 0) inside = InteriorContains(local, rotation, ExitMargin);
             bool requested = IsRequested(entity.NetId);
-            var nearby = Interior;
-            nearby.Expand(Mathf.Max(0, PreparationDistance) * 2);
-            if (!privateSide && !requested && !nearby.Contains(local))
+            if (!privateSide && !requested && !InteriorContains(local, rotation, Mathf.Max(0, PreparationDistance)))
             {
                 if (_crossings.TryGetValue(entity.NetId, out var gone)) ReleaseCompanions(gone);
                 _crossings.Remove(entity.NetId);
@@ -631,13 +644,16 @@ namespace Nebula
 
         private void OnDrawGizmosSelected()
         {
+            var previous = Gizmos.matrix;
+            Gizmos.matrix = Matrix4x4.TRS(transform.position, transform.rotation, Vector3.one);
             Gizmos.color = Color.cyan;
-            Gizmos.DrawWireCube(transform.position + Interior.center, Interior.size);
+            Gizmos.DrawWireCube(Interior.center, Interior.size);
             if (ExitMargin > 0)
             {
                 Gizmos.color = new Color(0f, 1f, 1f, 0.35f);
-                Gizmos.DrawWireCube(transform.position + Interior.center, Interior.size + Vector3.one * (ExitMargin * 2));
+                Gizmos.DrawWireCube(Interior.center, Interior.size + Vector3.one * (ExitMargin * 2));
             }
+            Gizmos.matrix = previous;
         }
     }
 }
