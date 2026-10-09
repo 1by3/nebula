@@ -44,6 +44,15 @@ namespace Nebula
         private long _changeVersion;
         private long _durableVersion;
         private Task<WriteResult> _writeTask;
+        private bool _writeFailing;
+        private int _failedWrites;
+
+        /// <summary>Times a write tries to move the finished temp file over the backing file before it gives up.</summary>
+        internal int ReplaceAttempts = 5;
+        /// <summary>Milliseconds waited between those tries (5 tries, 4 waits: about a second in all).</summary>
+        internal int ReplaceWaitMilliseconds = 250;
+        /// <summary>Moves the temp file over the backing file (tests replace it to stand in for a held file).</summary>
+        internal Action<string, string> ReplaceFile = DefaultReplace;
 
         private sealed class WriteResult
         {
@@ -245,8 +254,10 @@ namespace Nebula
             var snapshot = new List<PersistedEntityRecord>(_records.Values);
             long version = _changeVersion;
             string path = _filePath;
+            int attempts = ReplaceAttempts, waitMs = ReplaceWaitMilliseconds;
+            var replace = ReplaceFile;
             _barrierWriteAt = double.PositiveInfinity;
-            _writeTask = Task.Run(() => WriteSnapshot(path, snapshot, version));
+            _writeTask = Task.Run(() => WriteSnapshot(path, snapshot, version, attempts, waitMs, replace));
         }
 
         private void FinishBackgroundWrite(bool wait)
@@ -259,7 +270,8 @@ namespace Nebula
 
         private void WriteFileSynchronously()
         {
-            var result = WriteSnapshot(_filePath, new List<PersistedEntityRecord>(_records.Values), _changeVersion);
+            var result = WriteSnapshot(_filePath, new List<PersistedEntityRecord>(_records.Values), _changeVersion,
+                ReplaceAttempts, ReplaceWaitMilliseconds, ReplaceFile);
             ApplyWriteResult(result);
         }
 
@@ -267,11 +279,23 @@ namespace Nebula
         {
             if (result.Error != null)
             {
-                NebulaLog.Warn($"persistence: writing {_filePath} failed: {result.Error.Message}");
+                // A held file can fail every write for a while: say so once per streak, not once per try.
+                _failedWrites++;
+                if (!_writeFailing)
+                {
+                    _writeFailing = true;
+                    NebulaLog.Warn($"persistence: writing {_filePath} failed: {result.Error.Message}; the previous file is kept and the write is retried (further failures are not logged until one succeeds)");
+                }
                 double retry = Math.Max(0.05, WriteBarrierIntervalSeconds);
                 _nextWrite = _clock.Elapsed.TotalSeconds + retry;
                 if (_writeBarriers.Count > 0) _barrierWriteAt = _nextWrite;
                 return;
+            }
+            if (_writeFailing)
+            {
+                _writeFailing = false;
+                NebulaLog.Info($"persistence: writing {_filePath} works again after {_failedWrites} failed write(s)");
+                _failedWrites = 0;
             }
             LastFileWriteMilliseconds = result.Milliseconds;
             TotalFileWriteMilliseconds += result.Milliseconds;
@@ -291,7 +315,8 @@ namespace Nebula
                 _barrierWriteAt = _clock.Elapsed.TotalSeconds + Math.Max(0, WriteBarrierIntervalSeconds);
         }
 
-        private static WriteResult WriteSnapshot(string path, IReadOnlyList<PersistedEntityRecord> records, long version)
+        private static WriteResult WriteSnapshot(string path, IReadOnlyList<PersistedEntityRecord> records, long version,
+            int replaceAttempts, int replaceWaitMilliseconds, Action<string, string> replace)
         {
             var result = new WriteResult { Version = version };
             var timer = Stopwatch.StartNew();
@@ -303,13 +328,28 @@ namespace Nebula
                 // Write beside the file and move into place: a half-written save is worse than yesterday's.
                 string temp = path + ".tmp";
                 File.WriteAllBytes(temp, bytes);
-                if (File.Exists(path)) File.Replace(temp, path, null);
-                else File.Move(temp, path);
+                // Another process (a backup tool, a virus scanner, an editor) can hold the file for a moment, and
+                // Windows then refuses the replace. Wait it out briefly. The target is never deleted: if every try
+                // fails, the previous save is still there and the finished temp file is overwritten by the next write.
+                for (int attempt = 1; ; attempt++)
+                {
+                    try { replace(temp, path); break; }
+                    catch (Exception ex) when ((ex is IOException || ex is UnauthorizedAccessException) && attempt < Math.Max(1, replaceAttempts))
+                    {
+                        System.Threading.Thread.Sleep(Math.Max(0, replaceWaitMilliseconds));
+                    }
+                }
             }
             catch (Exception ex) { result.Error = ex; }
             timer.Stop();
             result.Milliseconds = timer.Elapsed.TotalMilliseconds;
             return result;
+        }
+
+        private static void DefaultReplace(string temp, string path)
+        {
+            if (File.Exists(path)) File.Replace(temp, path, null);
+            else File.Move(temp, path);
         }
 
         private void LoadFile()

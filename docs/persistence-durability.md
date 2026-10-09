@@ -312,6 +312,13 @@ key as a warning with the key, both epochs and the saving worker, and later ones
 (`StaleSaveLog`). Refusals are expected after a death verdict (D9), so the warning is once per key per store rather
 than per save. `StaleSavesDropped` counts all of them.
 
+**A held backing file is waited out, and logged once.** `LocalPersistenceStore` writes `world.bin.tmp` and moves it over
+the backing file. On Windows another process holding the target for a moment (a backup tool, a scanner) makes that move
+fail. The write now retries the move up to `ReplaceAttempts` times (5) with `ReplaceWaitMilliseconds` (250 ms) between
+tries, on the background write, never the main thread. If every try fails, the previous file is untouched (the target is
+never deleted first), the next write interval tries again, and the store logs one warning for the whole streak and one
+line when a write succeeds again. The file format and names are unchanged.
+
 **Not done: seeding lease epochs in the dev loop.** The issue suggested that the dev loop's in-memory control plane
 start lease epochs above the highest epoch in the store. That would not have helped. The record's epoch is the
 entity's epoch (`NetworkIdentity.Epoch`), not a container lease's, and a new entity spawns at 1 whatever its
