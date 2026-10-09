@@ -160,6 +160,15 @@ var transfer = worker.PrepareTransfer(pawn, destination);
 worker.TryCommitTransfer(transfer, position, rotation);
 ```
 
+If the destination is inside a [physics frame](/docs/guides/physics-frames) whose carrier stands far from the world's origin, such as a planet in a star system, a world position there is rounded to a float's spacing at that distance. Commit at a pose in the frame's own coordinates instead. Nebula carries it into the destination container in double precision, so the entity lands exactly on that pose:
+
+```csharp
+// planet is a framed Container in the destination's scope: the destination's InnerSpace, or a frame around it.
+worker.TryCommitTransfer(transfer, planet, localPosition, localRotation);
+```
+
+`localPosition` is a `Double3` in the frame's own coordinates. Pass `null` as the frame to give a world pose in double precision.
+
 [`InstanceBoundary`](/docs/guides/instancing) is this path driven by a trigger volume. `PrepareInstance` now activates a scope like any other caller, so an instance a boundary created and a scope a matchmaker created are the same thing.
 
 The destination can be in another scope, including a chunk of another [scoped world](#a-scope-can-be-a-whole-world). The player's client does not need to know about the destination beforehand: the gateway sends it the destination container's description together with the preparation request, and tells no other client.
@@ -179,7 +188,14 @@ foreach (var rider in shipInterior.Contents)
 worker.TryCommitTransfers(group, translation);
 ```
 
-`shipInterior` is the container the ship carries (`ship.Carried`). Preparing each rider lets its client get the destination ready before the commit. After the commit, the ship is in the destination container and every rider is still in its seat inside the ship, now in the destination scope.
+`shipInterior` is the container the ship carries (`ship.Carried`). `translation` is the ship's displacement from its scope's space to the destination's. When either end is in a frame far from the world's origin, pass it as a `Double3` and work it out from double-precision positions, so no member is rounded through a float world position:
+
+```csharp
+var arrival = PhysicsFrames.ConvertLocal(arrivalInPlanet, planet, null);   // the arrival point, in the destination scope's space
+worker.TryCommitTransfers(group, arrival - ship.ScopePositionPrecise);
+```
+
+`arrivalInPlanet` is a `Double3` in the planet frame's own coordinates, and `planet` is the framed `Container` in the destination's scope. Preparing each rider lets its client get the destination ready before the commit. After the commit, the ship is in the destination container and every rider is still in its seat inside the ship, now in the destination scope.
 
 You can also commit only the ship. Each rider's client follows the ship into the new scope without reconnecting: it keeps the ship, its own pawn, and everything else aboard, such as cargo or other players, with no despawn. It starts receiving the destination's entities and stops receiving the scope it left. Clients that were watching the ship from the old scope lose it and everything aboard, and are not told where it went. A rider that reconnects after the crossing finds the ship in its new scope.
 

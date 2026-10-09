@@ -1,0 +1,19 @@
+---
+title: "FarEntityRemoval"
+description: "Why an entity left NebulaClient.FarEntities."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Client/FarEntity.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Client/FarEntity.cs)</div>
+
+```csharp
+public enum FarEntityRemoval : byte
+```
+
+Why an entity left [`NebulaClient.FarEntities`](/docs/reference/client/nebula-client#farentities).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="left"></span>`Left` | `0` | Out of its far radius (or the client's far budget), despawned, or the connection ended. |
+| <span id="replicated"></span>`Replicated` | `1` | It came within its normal relevance radius and the client now holds it as a replica (same net id, see [`NebulaClient.EntitySpawned`](/docs/reference/client/nebula-client#entityspawned)): swap the marker for the real thing. |

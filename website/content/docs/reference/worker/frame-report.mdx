@@ -1,0 +1,84 @@
+---
+title: "FrameReport"
+description: "One profile window of whole-frame time, in milliseconds per Unity frame (see FrameProfiler)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/FrameProfiler.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/FrameProfiler.cs)</div>
+
+```csharp
+public struct FrameReport
+```
+
+One profile window of whole-frame time, in milliseconds per Unity frame (see [`FrameProfiler`](/docs/reference/worker/frame-profiler)).
+
+## Fields
+
+### Frames [#frames]
+
+```csharp
+public int Frames;
+```
+
+### AvgMs, P90Ms, MaxMs [#avgms-p90ms-maxms]
+
+```csharp
+public float AvgMs, P90Ms, MaxMs;
+```
+
+### PhysicsMs [#physicsms]
+
+```csharp
+public float PhysicsMs;
+```
+
+The physics step (FixedUpdate's PhysicsFixedUpdate system).
+
+### FixedOtherMs [#fixedotherms]
+
+```csharp
+public float FixedOtherMs;
+```
+
+The rest of the FixedUpdate phase: script FixedUpdate other than Nebula's tick, and the engine's own fixed work.
+
+### TickMs [#tickms]
+
+```csharp
+public float TickMs;
+```
+
+Nebula's tick (the part of FixedUpdate that is Nebula's).
+
+### UpdateMs [#updatems]
+
+```csharp
+public float UpdateMs;
+```
+
+The Update phase: Nebula's transport poll and every script Update.
+
+### LateUpdateMs [#lateupdatems]
+
+```csharp
+public float LateUpdateMs;
+```
+
+The PreLateUpdate phase: every script LateUpdate and the animation systems.
+
+### IdleMs [#idlems]
+
+```csharp
+public float IdleMs;
+```
+
+What the phases above do not cover: waiting for the frame limiter, rendering, the engine's own frame work and GC.
+
+## Methods
+
+### Split [#split]
+
+```csharp
+public string Split();
+```
+
+The split as `name=ms` pairs separated by spaces, in ms per frame; the part that adds up to [`AvgMs`](#avgms).

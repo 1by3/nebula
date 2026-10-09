@@ -1,0 +1,30 @@
+---
+title: "WorkerMemorySampler"
+description: "Reads a worker's memory figures for its heartbeat and its profile log line."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/WorkerMemorySampler.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/WorkerMemorySampler.cs)</div>
+
+```csharp
+public static class WorkerMemorySampler
+```
+
+Reads a worker's memory figures for its heartbeat and its profile log line. It runs at heartbeat rate (once every [`NebulaConfig.WorkerHeartbeatSeconds`](/docs/reference/core/nebula-config#workerheartbeatseconds)), keeps one `Process` object and refreshes it, and allocates nothing per call beyond what the OS query itself needs.
+
+## Methods
+
+### Sample [#sample]
+
+```csharp
+public static void Sample(ref WorkerStats stats);
+```
+
+Fills the memory fields of `stats` with the current figures.
+
+### Mb [#mb]
+
+```csharp
+public static string Mb(ulong bytes);
+```
+
+Megabytes with one decimal, for the profile line.

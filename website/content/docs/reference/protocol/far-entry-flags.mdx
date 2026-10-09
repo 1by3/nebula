@@ -1,0 +1,21 @@
+---
+title: "FarEntryFlags"
+description: "Lists the supported far entry flags values."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/FarEntities.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/FarEntities.cs)</div>
+
+```csharp
+[Flags]
+public enum FarEntryFlags : byte
+```
+
+Lists the supported far entry flags values.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` | `0` |  |
+| <span id="hasowner"></span>`HasOwner` | `1` | An [`FarEntityEntry.OwnerClientId`](/docs/reference/protocol/far-entity-entry#ownerclientid) follows. |
+| <span id="hasinstance"></span>`HasInstance` | `2` | An [`FarEntityEntry.InstanceId`](/docs/reference/protocol/far-entity-entry#instanceid) follows (the entity is in a scope, not the public world). |

@@ -15,6 +15,8 @@ Positions are doubles because a region key must not depend on the floating origi
 
 The packing is duplicated here rather than called: `RuntimeGrid` lives in the Unity-only `Nebula.World` assembly, which the standalone gateway does not compile. `InterestPackingPinTests` asserts the two agree for sample coordinates, and neither may change: ids are persisted.
 
+**The far band.** 21 bits of edge-sized regions reach ±2^20 edges from the origin (±67,108 km at 64 m), which a star system outgrows. The packing uses 63 bits, so the top bit marks a *far region*: the same three 21-bit fields counting cells [`FarScale`](#farscale) edges wide (2,048 m at 64 m, so ±2,147,483 km). A position inside the near cube \[[`MinCoordinate`](#mincoordinate), [`MaxCoordinate`](#maxcoordinate)\] on every axis gets exactly the key it always had; a position outside it gets a far key. The near cube's faces lie on far-cell edges, so the two bands partition space with no overlap, and a far key for a cell inside the near cube is never made. Both ends derive the band from the grid alone, so no setting, message or protocol version changed.
+
 ## Constructors
 
 ### InterestGrid [#interestgrid]
@@ -39,6 +41,22 @@ Coordinates outside \[[`MinCoordinate`](#mincoordinate), [`MaxCoordinate`](#maxc
 ```csharp
 public const int MaxCoordinate = (1 << 20) - 1;
 ```
+
+### FarScale [#farscale]
+
+```csharp
+public const int FarScale = 32;
+```
+
+A far region is this many edges wide on each axis. Never change this: both ends must agree.
+
+### FarBit [#farbit]
+
+```csharp
+public const ulong FarBit = 1UL << 63;
+```
+
+The bit that marks a far region's key ([`IsFar`](#isfar)); the plain packing never sets it.
 
 ### EdgeX, EdgeY, EdgeZ [#edgex-edgey-edgez]
 
@@ -75,6 +93,14 @@ public bool IsValid { get; }
 A grid with a positive edge on every axis it uses. A default-constructed grid is not valid.
 
 ## Methods
+
+### IsFar [#isfar]
+
+```csharp
+public static bool IsFar(ulong region);
+```
+
+Whether a (plain, unsalted) region key is a far region, outside the near cube.
 
 ### Resolve [#resolve]
 
@@ -113,7 +139,7 @@ public static void UnpackRegion(ulong region, out int x, out int y, out int z);
 public ulong RegionOf(double x, double y, double z);
 ```
 
-The only place a region key is made. Absolute world position in, packed region id out.
+The only place a region key is made. Absolute world position in, packed region id out: a near region inside ±2^20 edges of the origin on every axis, a far region ([`IsFar`](#isfar)) outside it.
 
 ### CoordOf [#coordof]
 
@@ -121,7 +147,7 @@ The only place a region key is made. Absolute world position in, packed region i
 public void CoordOf(double x, double y, double z, out int cx, out int cy, out int cz);
 ```
 
-Region coordinate of an absolute world position (Y is always 0 on a planar grid).
+Near-band region coordinate of an absolute world position, clamped to the near cube (Y is always 0 on a planar grid).
 
 ### BoundsOf [#boundsof]
 

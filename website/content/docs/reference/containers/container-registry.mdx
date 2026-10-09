@@ -161,6 +161,14 @@ A runtime container is about to go. The game unloads its content; entities still
 
 ## Methods
 
+### IsHeldForCarrier [#isheldforcarrier]
+
+```csharp
+public static bool IsHeldForCarrier(ulong runtimeId);
+```
+
+Whether the runtime container `runtimeId` has a row here held for a parent that is a carried container this process does not hold (a chunk of a grid hosted by a planet whose carrier this client has not been sent, `docs/container-tree.md` D22). Its content is that carrier's scope's, which arrives with the carrier once the process is in that scope.
+
 ### Rebuild [#rebuild]
 
 ```csharp

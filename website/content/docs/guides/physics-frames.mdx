@@ -60,7 +60,9 @@ When code relates something inside a frame to something outside it, convert the 
 | `identity.FromScope(worldPosition)` | A world position, such as a door on the hull, in the entity's coordinates. |
 | `identity.ToScope(position)` | A position in the entity's coordinates as a world position. |
 | `identity.PlaceInScope(position, rotation)` | Moves the entity to a world pose. It leaves its current frame first, and enters the frame at the target when the target is inside one, such as another ship's interior. Use it for respawns and teleports. |
+| `identity.PlaceInFrame(frame, localPosition, localRotation)` | Moves the entity to a pose in a frame's own coordinates, into the deepest container of that frame that holds the point. Use it when the target belongs to a frame, such as a landing pad on a planet or a seat in a ship. |
 | `PhysicsFrames.Convert(position, fromSpace, toSpace)` | Converts between any two spaces. `null` is the world. |
+| `PhysicsFrames.ConvertLocal(localPosition, fromSpace, toSpace)` | Converts a `Double3` between two frames' own coordinates in double precision. `null` is the world. |
 | `PhysicsFrames.SourceOf(collider)` | The carrier's original collider for a copy inside a frame. |
 
 For example, a reach check on the worker compares the player's eyes with a button on the hull:
@@ -82,6 +84,22 @@ if (Identity.PhysicsScene.Raycast(EyePosition, AimDirection, out var hit, range)
 `DoorButton` stands for any component your game puts on the carrier.
 
 Do not write a world position straight onto the transform of an entity inside a frame. The frame reads it as container-local coordinates. Call `PlaceInScope` instead.
+
+### Place an entity far from the world's origin
+
+A world position is a float. Far from the world's origin, a float can't hold small distances: 300,000 km out, neighboring values are 32 m apart. If a framed container's carrier stands that far out, such as a planet in a star system, `PlaceInScope` rounds the target to that spacing and a player placed on a landing pad can end up meters under it.
+
+To place an entity exactly, give the pose in the frame's own coordinates with `PlaceInFrame`. The frame's own coordinates are what `frame.Frame.SimulationToLocal` returns on the worker. They don't change when the frame's floating origin moves. Nebula carries the pose into the container the entity lands in using double-precision arithmetic, and never through a world position:
+
+```csharp
+// On the worker that has authority over the pawn. planet is the framed Container the pad belongs to.
+var pad = new Double3(204_801.25, 1.5, -1_234.75);
+pawn.PlaceInFrame(planet, pad, Quaternion.Euler(0f, heading, 0f));
+```
+
+`heading` stands for the direction your game wants the pawn to face. The frame must be in the entity's own scope. To move an entity into a frame in another scope, commit a transfer at a frame-local pose instead. See [Move an entity into another scope](/docs/guides/scopes#from-inside-the-mesh).
+
+Clients receive the same pose. Nebula sends an entity's pose relative to its container, so the exact pose on the worker is the pose every client gets.
 
 Positions computed while an entity simulates are in the frame's coordinates, too. Convert them before you draw something with them. A predicted shot's tracer, for example, goes through `identity.ToScope` before the client draws it. A position that a worker sends to other clients, such as where a shot hit, is best sent in the frame's coordinates, with each client converting it at the carrier's pose it shows:
 

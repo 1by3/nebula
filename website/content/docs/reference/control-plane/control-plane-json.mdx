@@ -143,6 +143,14 @@ public static OpWriter Placement(OpWriter op, in ContainerPlacement p);
 
 Write a placement as the arguments of an `EnsureRuntimeContainer` op.
 
+### SectionsObject [#sectionsobject]
+
+```csharp
+public static void SectionsObject(JsonWriter w, string key, string compact);
+```
+
+Writes a worker's `name=ms name=ms` profile string (see [`WorkerStats.ProfileSections`](/docs/reference/control-plane/worker-stats#profilesections)) as a JSON object of numbers, so `/api/state` readers get a map; an empty or missing string writes `{}`.
+
 ### Str [#str]
 
 ```csharp

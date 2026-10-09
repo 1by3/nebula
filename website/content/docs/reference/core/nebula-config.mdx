@@ -62,6 +62,22 @@ public int OriginShiftThresholdCells = 4;
 
 The floating origin moves once the pawn (client) or the centroid of the leased cells (worker) is more than this many cells from the origin cell.
 
+### ServerBuildDevelopment [#serverbuilddevelopment]
+
+```csharp
+public bool ServerBuildDevelopment = true;
+```
+
+Editor only. Linux dedicated server builds are development builds (slower; profiler and script debugging). Untick for a release server. nebula build --release / --development override it for one build.
+
+### ServerBuildScriptingBackend [#serverbuildscriptingbackend]
+
+```csharp
+public NebulaServerScriptingBackend ServerBuildScriptingBackend = NebulaServerScriptingBackend.Mono;
+```
+
+The scripting backend of the Linux dedicated server build. Mono (the default, as before) or IL2CPP, which needs the Unity install's Linux IL2CPP module. `nebula build --il2cpp` / `--mono` override it for one build.
+
 ### EditorRunMode [#editorrunmode]
 
 ```csharp
@@ -770,7 +786,7 @@ How far a client's focus hint may sit from its pawn, in metres. A further hint i
 public float InterestFrameApproachMargin = 4000f;
 ```
 
-How close a client's pawn must be to the box of a framed container with regions of its own (a planet, a station) for the client to also look into it, in metres. Inside the margin the client gets a focus in that frame, at the point of its box nearest the pawn, so it sees what stands on the planet below it; beyond it the frame's regions are not subscribed. 0 turns it off.
+How close a client's pawn must be to the box of a framed container with regions of its own (a planet, a station) for the client to also look into it, in metres. Inside the margin the client gets a focus at the pawn's place in the frame, so it sees what stands on the planet below it; beyond it the frame's regions are not subscribed. A frame whose box is unknown to the gateway is measured from the box of its lease rows, else from its origin. 0 turns it off.
 
 ### InterestHintMaxHz [#interesthintmaxhz]
 
@@ -850,7 +866,7 @@ Seconds a chunk nobody needs stays leased before the worker retires it (its pers
 public int ChunkedWorldServerRingMargin = 1;
 ```
 
-Chunks the worker keeps leased beyond what interest can reach (`NearCells`) around every pawn. 1 builds each chunk's content a whole chunk before a client can need it; 0 leases only what interest can reach (9 chunks instead of 25 at near 1) and leaves only the rounding slack to build a new chunk, and the config warns when that is under a few seconds at `InterestMaxFocusSpeed`. Never negative.
+Chunks the worker keeps leased beyond [`InterestSettings.NearCells`](/docs/reference/interest/interest-settings#nearcells) around every pawn ([`InterestSettings.ChunkRing`](/docs/reference/interest/interest-settings#chunkring)). 1 is the default: a chunk's content is built a whole chunk of travel before interest can reach it. 0 leases only the chunks interest can reach, which costs a whole ring less (25 to 9 containers at near 1) and leaves only the rounding slack of [`InterestSettings.ChunkLoadLeadSeconds`](/docs/reference/interest/interest-settings#chunkloadleadseconds) to build a newly requested chunk. A scoped grid's [`ChunkGridDefinition.Ring`](/docs/reference/world/chunk-grid-definition#ring) overrides the resulting ring for that grid.
 
 ### InterestNearRadius [#interestnearradius]
 

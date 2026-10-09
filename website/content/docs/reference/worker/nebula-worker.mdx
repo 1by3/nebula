@@ -391,6 +391,22 @@ public bool HasGlobalEntities { get; }
 
 Authoritative entities that are in every client's set, so gateways must link this worker to hear them.
 
+### HasFarEntities [#hasfarentities]
+
+```csharp
+public bool HasFarEntities { get; }
+```
+
+Whether this worker is authoritative for an entity with a far relevance radius (reported in the heartbeat, NEB-388).
+
+### FarEntriesSent [#farentriessent]
+
+```csharp
+public long FarEntriesSent { get; }
+```
+
+Far-tier entries sent to gateways (one per entity per gateway mask send), for diagnostics and tests.
+
 ### InterestEntriesSent [#interestentriessent]
 
 ```csharp
@@ -674,6 +690,7 @@ Create or find stable instance container leases. Resolve the returned references
 
 ```csharp
 public bool TryCommitTransfers(IReadOnlyList<InstanceTransfer> transfers, Vector3 translation);
+public bool TryCommitTransfers(IReadOnlyList<InstanceTransfer> transfers, Double3 translation);
 ```
 
 Commit a group only when every member is ready. Each member must have its own preparation and admission check.
@@ -703,6 +720,7 @@ Prepare an authorized crossing. The game must check admission before calling. Pr
 
 ```csharp
 public bool TryCommitTransfer(InstanceTransfer transfer, Vector3 position, Quaternion rotation);
+public bool TryCommitTransfer(InstanceTransfer transfer, Container frame, Double3 localPosition, Quaternion localRotation);
 ```
 
 Commit a prepared crossing at a pose in the destination scope's own space (world space when no physics frame is involved). A destination inside a physics frame gets the frame-local pose that matches it. Preserves identity and velocity. Returns false if readiness or authority changed.

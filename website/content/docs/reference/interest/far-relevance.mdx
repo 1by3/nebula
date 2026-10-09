@@ -1,0 +1,48 @@
+---
+title: "FarRelevance"
+description: "The far relevance tier's arithmetic (docs/interest-management.md §16, NEB-388), shared by the worker, the gateway and the tests."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/FarRelevance.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/FarRelevance.cs)</div>
+
+```csharp
+public static class FarRelevance
+```
+
+The far relevance tier's arithmetic (`docs/interest-management.md` §16, NEB-388), shared by the worker, the gateway and the tests. An entity that declares a far radius ([`NetworkIdentity.FarRelevanceRadius`](/docs/reference/core/network-identity#farrelevanceradius)) is seen beyond its normal radius, out to the far radius, as a pose at its far rate and nothing else.
+
+## Fields
+
+### MinRate, MaxRate [#minrate-maxrate]
+
+```csharp
+public const float MinRate = 0.1f, MaxRate = 30f;
+```
+
+The fewest and most far updates a second an entity may ask for.
+
+## Methods
+
+### ClampRate [#clamprate]
+
+```csharp
+public static float ClampRate(float rate);
+```
+
+A far update rate clamped to [`MinRate`](#minrate)..[`MaxRate`](#maxrate) (1 for nonsense).
+
+### StayMargin [#staymargin]
+
+```csharp
+public static double StayMargin(double radius, double exitMargin);
+```
+
+The hysteresis of the far tier: an entity in a receiver's far tier stays until it is this much further than its far radius. A twentieth of the radius, and never less than the mesh's exit margin, so a ship at 50 km has a 2.5 km band and a marker at the edge does not flicker four times a second.
+
+### Within [#within]
+
+```csharp
+public static bool Within(double sqrDistance, double radius, bool held, double exitMargin);
+```
+
+Whether an entry is inside a far radius of a point, with the tier's hysteresis when the receiver already holds it (`held`). Squared distance in, so a caller measuring several foci takes the least.

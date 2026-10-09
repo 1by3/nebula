@@ -1,0 +1,19 @@
+---
+title: "NebulaServerScriptingBackend"
+description: "The scripting backend of a Linux dedicated server build (NebulaConfig.ServerBuildScriptingBackend)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NebulaServerScriptingBackend.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NebulaServerScriptingBackend.cs)</div>
+
+```csharp
+public enum NebulaServerScriptingBackend
+```
+
+The scripting backend of a Linux dedicated server build ([`NebulaConfig.ServerBuildScriptingBackend`](/docs/reference/core/nebula-config#serverbuildscriptingbackend)).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="mono"></span>`Mono` | `0` | Mono: fast builds, JIT at run time. The default. |
+| <span id="il2cpp"></span>`IL2CPP` | `1` | IL2CPP: ahead-of-time C++, usually faster at run time; managed code stripping applies. |

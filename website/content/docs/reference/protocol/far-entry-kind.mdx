@@ -1,0 +1,19 @@
+---
+title: "FarEntryKind"
+description: "What one FarEntityEntry says about its entity."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/FarEntities.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/FarEntities.cs)</div>
+
+```csharp
+public enum FarEntryKind : byte
+```
+
+What one [`FarEntityEntry`](/docs/reference/protocol/far-entity-entry) says about its entity.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="state"></span>`State` | `0` | Where the entity is now, and enough about it to draw a marker: its prefab, owner and reach. |
+| <span id="gone"></span>`Gone` | `1` | The entity left the receiver's far tier: out of reach, despawned, or no longer far relevant. |

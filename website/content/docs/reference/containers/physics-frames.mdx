@@ -188,6 +188,15 @@ public static Vector3 DirectionFromScope(Vector3 direction, Container space);
 
 [`FromScope`](#fromscope) for a direction (rotated only).
 
+### ConvertLocal [#convertlocal]
+
+```csharp
+public static Double3 ConvertLocal(Double3 point, Container from, Container to);
+public static Quaternion ConvertLocal(Quaternion rotation, Container from, Container to);
+```
+
+A point in `from`'s frame-local coordinates expressed in `to`'s, composed in double. Frame-local coordinates are a frame's own ([`PhysicsFrame.SimulationToLocal`](/docs/reference/containers/physics-frame#simulationtolocal)): what an entity standing directly in the frame sends on the wire, the same on every process whatever the frame's floating origin. Null is the scope's own space. Unlike [`Convert`](#convert), the point never passes through a float in the scope's space on the way, so a frame whose carrier stands hundreds of thousands of kilometers from the scope's origin (a planet in its star system) converts to the millimeter. Each frame's pose is its carrier's transform as this process has it: on a worker, the simulated pose.
+
 ### SourceOf [#sourceof]
 
 ```csharp

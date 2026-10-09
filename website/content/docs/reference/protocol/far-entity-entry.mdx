@@ -1,0 +1,130 @@
+---
+title: "FarEntityEntry"
+description: "One entity of the far relevance tier (docs/interest-management.md §16, NEB-388): a large or important entity seen beyond the normal interest radius as a pose and nothing else."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/FarEntities.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/FarEntities.cs)</div>
+
+```csharp
+public struct FarEntityEntry
+```
+
+One entity of the far relevance tier (`docs/interest-management.md` §16, NEB-388): a large or important entity seen beyond the normal interest radius as a pose and nothing else. No variables, no RPCs, no sync state, no container: the position is **absolute in the entity's scope, in double** (the space region keys and the gateway's own positions are in, converted out of every physics frame the entity stands in), so a receiver needs no container row and no frame to place it, and a coordinate 106 m out keeps sub-millimetre resolution on the wire. Rotation is in the same space (smallest-three, 4 bytes, about 0.1 degree), velocity in half floats (m/s).
+
+## Fields
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId;
+```
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch;
+```
+
+### Kind [#kind]
+
+```csharp
+public FarEntryKind Kind;
+```
+
+### PrefabId [#prefabid]
+
+```csharp
+public ushort PrefabId;
+```
+
+### InterestGroup [#interestgroup]
+
+```csharp
+public byte InterestGroup;
+```
+
+### Radius [#radius]
+
+```csharp
+public float Radius;
+```
+
+The far radius the entity declared ([`NetworkIdentity.FarRelevanceRadius`](/docs/reference/core/network-identity#farrelevanceradius)), metres.
+
+### UpdateRate [#updaterate]
+
+```csharp
+public float UpdateRate;
+```
+
+The far updates per second it declared ([`NetworkIdentity.FarUpdateRate`](/docs/reference/core/network-identity#farupdaterate)).
+
+### OwnerClientId [#ownerclientid]
+
+```csharp
+public ulong OwnerClientId;
+```
+
+### InstanceId [#instanceid]
+
+```csharp
+public ulong InstanceId;
+```
+
+The isolation id of the entity's scope; 0 for the public world.
+
+### X, Y, Z [#x-y-z]
+
+```csharp
+public double X, Y, Z;
+```
+
+Absolute position in the entity's scope, metres, in double.
+
+### Rotation [#rotation]
+
+```csharp
+public Quaternion Rotation;
+```
+
+### Velocity [#velocity]
+
+```csharp
+public Vector3 Velocity;
+```
+
+### StateWireSize [#statewiresize]
+
+```csharp
+public const int StateWireSize = 8 + 4 + 1 + 1 + 2 + 1 + 4 + 4 + 24 + 4 + 6;
+```
+
+Bytes a [`FarEntryKind.State`](/docs/reference/protocol/far-entry-kind#state) entry with neither owner nor scope costs on the wire.
+
+## Methods
+
+### GoneOf [#goneof]
+
+```csharp
+public static FarEntityEntry GoneOf(ulong netId, uint epoch);
+```
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static FarEntityEntry Read(NetworkReader r);
+```
+
+### SqrDistanceTo [#sqrdistanceto]
+
+```csharp
+public double SqrDistanceTo(double x, double y, double z);
+```
+
+Squared distance from an absolute point of the same scope, in double.

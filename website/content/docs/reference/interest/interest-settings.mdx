@@ -117,6 +117,14 @@ public float HintMaxDistance;
 
 Meters a client's focus hint may sit from its pawn before it is clamped.
 
+### FrameApproachMargin [#frameapproachmargin]
+
+```csharp
+public float FrameApproachMargin;
+```
+
+Meters from the box of a framed container with regions of its own ([`FrameInterestMode.OwnRegions`](/docs/reference/containers/frame-interest-mode#ownregions)) within which a client whose pawn is outside it also looks into it. 0 turns it off.
+
 ### HintMaxHz [#hintmaxhz]
 
 ```csharp
@@ -132,6 +140,14 @@ public int MaxExplicitPerClient;
 ```
 
 Most explicit per-entity subscriptions one client's policy may ask for.
+
+### FarMaxEntities [#farmaxentities]
+
+```csharp
+public int FarMaxEntities;
+```
+
+Most entities one client holds in the far relevance tier ([`FarRelevance`](/docs/reference/interest/far-relevance)), nearest first. 0 turns the tier off on the gateway.
 
 ### MaxFocusSpeed [#maxfocusspeed]
 
@@ -217,6 +233,14 @@ public float PartitionWarnFilterMs;
 
 Milliseconds of per-gateway filtering per tick above which the worker warns the same way.
 
+### MinChunkLoadLeadSeconds [#minchunkloadleadseconds]
+
+```csharp
+public const float MinChunkLoadLeadSeconds = 4f;
+```
+
+Seconds of lead a chunk load needs at the least: the allocator's 4 Hz tick, the lease round trip, registration and building the chunk's content.
+
 ## Properties
 
 ### Default [#default]
@@ -268,6 +292,22 @@ public int NearCells(float cellSize);
 ```
 
 The cells of content that must exist before interest needs them. Content streaming, the runtime allocator ring and the container window a client is told about all derive from this, so a client can never be spawned an entity standing on geometry it does not have.
+
+### ChunkRing [#chunkring]
+
+```csharp
+public int ChunkRing(float cellSize, int margin);
+```
+
+The Chebyshev ring of chunks a worker keeps leased around every pawn: [`NearCells`](#nearcells) plus `margin` extra cells (never fewer than [`NearCells`](#nearcells), which is the least that has every chunk interest can reach). `NebulaConfig.ChunkedWorldServerRingMargin` is the margin; 1 builds content one whole chunk before interest needs it.
+
+### ChunkLoadLeadSeconds [#chunkloadleadseconds]
+
+```csharp
+public float ChunkLoadLeadSeconds(float cellSize, int margin);
+```
+
+Seconds between a pawn at [`MaxFocusSpeed`](#maxfocusspeed) walking into a chunk and the first chunk its new ring adds being needed by interest: the ring reaches `ring × cell` metres from the chunk edge it just crossed, and interest reaches the exit radius plus the overshoot. Zero margin leaves only the slack [`NearCells`](#nearcells) rounds up by (up to one cell, none when the radius is a whole number of cells); each further margin cell adds a cell of travel. Infinity when nothing moves or there is no cell size.
 
 ### MaxContainerRows [#maxcontainerrows]
 

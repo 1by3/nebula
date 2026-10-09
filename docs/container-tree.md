@@ -138,6 +138,13 @@ simulation space; `Update`, `LateUpdate` and rendering see render space.** `Netw
 `FromScope`, `PlaceInScope`, `PhysicsFrames.Convert`, `ConvertVelocity` and `InSimulationPose` convert explicitly.
 `NetworkIdentity.SetContainer` converts pose and velocity itself when an entity changes space on a worker (never on
 a first placement, whose pose is taken in the container's space, and never on a client, whose frames are posed).
+A pose that belongs to a frame is placed by its frame-local numbers (`NetworkIdentity.PlaceInFrame`, a transfer
+committed with `TryCommitTransfer(transfer, frame, localPosition, localRotation)`, a group translated by a `Double3`):
+`PhysicsFrames.ConvertLocal` carries it in double from the frame down the space chain (each carrier's local pose under
+its frame's root, composed with `LocalIn`) to the container's content root, and the entity's local pose is written
+directly, so a frame whose carrier stands far from its scope's origin (32 m between floats at 300,000 km) still lands
+it to the millimeter. Going through `PlaceInScope` or a scope-space `TryCommitTransfer` rounds it at the carrier's
+distance. The wire already carries container-local floats (D24), so nothing on it changes.
 
 **D12 Interior colliders.** `Container.FrameContent` names a prefab (colliders and visuals, no `NetworkIdentity`)
 instantiated under the frame root. Without one, `PhysicsFrames` copies the owner's colliders into the frame: every

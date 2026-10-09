@@ -101,6 +101,14 @@ public IReadOnlyList<NetworkIdentity> DrivenEntities { get; }
 
 The entities this client drives ([`NetworkIdentity.IsLocallyDriven`](/docs/reference/core/network-identity#islocallydriven)): usually none, or the one vehicle the player sits at the wheel of. Each is predicted every tick with the player's input, before the pawn, and reconciled to its worker's state, the way the pawn is (docs/driven-vehicles.md).
 
+### FarEntities [#farentities]
+
+```csharp
+public IReadOnlyDictionary<ulong, FarEntity> FarEntities { get; }
+```
+
+The far relevance tier (NEB-388): entities beyond their normal relevance radius but within their [`NetworkIdentity.FarRelevanceRadius`](/docs/reference/core/network-identity#farrelevanceradius) of this client's focus, keyed by net id. Not replicas: a pose at the entity's far rate and its spawn facts, enough to draw a marker or an impostor and to target it. An entity is never both here and a replica; coming within its normal radius moves it to the replicas ([`FarEntityRemoved`](#farentityremoved) with [`FarEntityRemoval.Replicated`](/docs/reference/client/far-entity-removal#replicated), then [`EntitySpawned`](#entityspawned)). Needs a gateway of protocol 26 or later; empty otherwise.
+
 ### Join [#join]
 
 ```csharp
@@ -376,6 +384,30 @@ public bool IsLeaving { get; }
 True from [`Leave`](#leave) until the gateway has confirmed the goodbye or the timeout has passed; see [`LeaveFinished`](#leavefinished).
 
 ## Events
+
+### FarEntityAdded [#farentityadded]
+
+```csharp
+public event Action<FarEntity> FarEntityAdded;
+```
+
+An entity entered the far tier ([`FarEntities`](#farentities)).
+
+### FarEntityUpdated [#farentityupdated]
+
+```csharp
+public event Action<FarEntity> FarEntityUpdated;
+```
+
+A far entity's pose was updated (once per its far update interval).
+
+### FarEntityRemoved [#farentityremoved]
+
+```csharp
+public event Action<FarEntity, FarEntityRemoval> FarEntityRemoved;
+```
+
+An entity left the far tier, and why.
 
 ### EntitySpawned [#entityspawned]
 

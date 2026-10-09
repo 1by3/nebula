@@ -38,7 +38,7 @@ public Slot this[int i] => _slots[i];
 ### Capture [#capture]
 
 ```csharp
-public void Capture<T>(InterestIndex<T> index, ulong root, RegionPublisher publisher, Func<ulong, ulong> wideMaskOf = null);
+public void Capture<T>(InterestIndex<T> index, ulong root, RegionPublisher publisher, Func<ulong, ulong> wideMaskOf = null, Func<ulong, ulong> reachMaskOf = null);
 ```
 
 Record `root` and everything it carries, carriers before their contents, **before** the index is changed, together with the gateways each of them reaches right now.
