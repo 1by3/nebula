@@ -1001,6 +1001,119 @@ namespace Nebula
         /// <summary><see cref="FromScope(Vector3, Container)"/> for a direction (rotated only).</summary>
         public static Vector3 DirectionFromScope(Vector3 direction, Container space) => InSimulationPose(space) ? Convert(Quaternion.identity, null, space) * direction : direction;
 
+        // ------------------------------------------------------------------------------------ frame-local, in double
+
+        /// <summary>
+        /// A point in <paramref name="from"/>'s frame-local coordinates expressed in <paramref name="to"/>'s, composed in
+        /// double. Frame-local coordinates are a frame's own (<see cref="PhysicsFrame.SimulationToLocal"/>): what an entity
+        /// standing directly in the frame sends on the wire, the same on every process whatever the frame's floating
+        /// origin. Null is the scope's own space. Unlike <see cref="Convert(Vector3, Container, Container)"/>, the point
+        /// never passes through a float in the scope's space on the way, so a frame whose carrier stands hundreds of
+        /// thousands of kilometers from the scope's origin (a planet in its star system) converts to the millimeter.
+        /// Each frame's pose is its carrier's transform as this process has it: on a worker, the simulated pose.
+        /// </summary>
+        public static Double3 ConvertLocal(Double3 point, Container from, Container to)
+        {
+            if (from == to) return point;
+            var common = CommonSpace(from, to);
+            for (var s = from; s != common && s != null; s = s.Space)
+            {
+                PoseInSpace(s.transform, s.Space, out var position, out var rotation, out var scale);
+                point = position + Rotate(rotation, Scaled(point, scale));
+            }
+            if (to == common) return point;
+            var chain = SpacesDown(to, common);
+            for (int i = chain.Count - 1; i >= 0; i--)
+            {
+                PoseInSpace(chain[i].transform, chain[i].Space, out var position, out var rotation, out var scale);
+                point = Unscaled(Rotate(Quaternion.Inverse(rotation), point - position), scale);
+            }
+            chain.Clear();
+            return point;
+        }
+
+        /// <summary>A rotation in <paramref name="from"/>'s frame-local coordinates expressed in <paramref name="to"/>'s (see <see cref="ConvertLocal(Double3, Container, Container)"/>).</summary>
+        public static Quaternion ConvertLocal(Quaternion rotation, Container from, Container to)
+        {
+            if (from == to) return rotation;
+            var common = CommonSpace(from, to);
+            for (var s = from; s != common && s != null; s = s.Space)
+            {
+                PoseInSpace(s.transform, s.Space, out _, out var turn, out _);
+                rotation = turn * rotation;
+            }
+            if (to == common) return rotation;
+            var chain = SpacesDown(to, common);
+            for (int i = chain.Count - 1; i >= 0; i--)
+            {
+                PoseInSpace(chain[i].transform, chain[i].Space, out _, out var turn, out _);
+                rotation = Quaternion.Inverse(turn) * rotation;
+            }
+            chain.Clear();
+            return rotation;
+        }
+
+        private static readonly List<Container> _localChain = new List<Container>();
+
+        /// <summary>The spaces from <paramref name="to"/> up to, not including, <paramref name="common"/>, innermost first.</summary>
+        private static List<Container> SpacesDown(Container to, Container common)
+        {
+            _localChain.Clear();
+            int hops = 0;
+            for (var s = to; s != common && s != null && hops <= ContainerRegistry.ChainBound; s = s.Space, hops++) _localChain.Add(s);
+            return _localChain;
+        }
+
+        /// <summary>
+        /// Where <paramref name="t"/> stands in <paramref name="space"/>'s frame-local coordinates (the scope's own space for
+        /// null), in double: composed from the local poses between it and the frame's root when it hangs under the root, as
+        /// everything a frame holds does; through its simulated or drawn pose otherwise.
+        /// </summary>
+        internal static void PoseInSpace(Transform t, Container space, out Double3 position, out Quaternion rotation, out Vector3 scale)
+        {
+            var frame = space != null ? space.Frame : null;
+            var root = frame != null ? frame.Root : null;
+            if (frame == null)
+            {
+                position = Double3.From(t.position);
+                rotation = t.rotation;
+                scale = t.lossyScale;
+                return;
+            }
+            if (root != null && t == root)
+            {
+                position = Double3.Zero;
+                rotation = Quaternion.identity;
+                scale = Vector3.one;
+                return;
+            }
+            if (root != null && IsUnder(t, root))
+            {
+                position = LocalIn(t, root);
+                rotation = Quaternion.Inverse(root.rotation) * t.rotation;
+                scale = Divided(t.lossyScale, root.lossyScale);
+                return;
+            }
+            if (InSimulationPose(space))
+            {
+                position = Double3.From(frame.SimulationToLocal(t.position));
+                rotation = t.rotation;
+                scale = t.lossyScale;
+                return;
+            }
+            position = frame.RenderToLocalPrecise(Double3.From(t.position));
+            rotation = frame.RenderToLocal(t.rotation);
+            scale = Divided(t.lossyScale, frame.RenderScale);
+        }
+
+        private static Double3 Scaled(Double3 v, Vector3 s) => s == Vector3.one ? v : new Double3(v.X * s.x, v.Y * s.y, v.Z * s.z);
+
+        private static Double3 Unscaled(Double3 v, Vector3 s) => s == Vector3.one ? v :
+            new Double3(s.x != 0f ? v.X / s.x : 0.0, s.y != 0f ? v.Y / s.y : 0.0, s.z != 0f ? v.Z / s.z : 0.0);
+
+        private static Vector3 Divided(Vector3 a, Vector3 b) =>
+            new Vector3(b.x != 0f ? a.x / b.x : a.x, b.y != 0f ? a.y / b.y : a.y, b.z != 0f ? a.z / b.z : a.z);
+
         /// <summary>
         /// The collider a frame's interior copy was made from (D12): a raycast inside a frame hits the copies, and game
         /// code that looks for components on what it hit (a seat, a door button) wants the original on the carrier.

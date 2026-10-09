@@ -1394,7 +1394,7 @@ namespace Nebula
         /// frame holding the converted point is the real answer (the frame itself when none does). Repeats for a
         /// frame inside a frame; bounded by the chain bound like every other walk.
         /// </summary>
-        private static Container EnterFrames(Container resolved, Container space, Vector3 p, ulong instanceId, NetworkIdentity subject)
+        internal static Container EnterFrames(Container resolved, Container space, Vector3 p, ulong instanceId, NetworkIdentity subject)
         {
             for (int hops = 0; resolved != null && resolved.OwnPhysicsFrame && resolved.Space == space && hops <= ChainBound; hops++)
             {

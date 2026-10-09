@@ -134,14 +134,28 @@ namespace Nebula
         /// </summary>
         /// <param name="transfers">Distinct entity preparations owned by this worker. This is not a cross-worker transaction.</param>
         /// <param name="translation">Displacement from the source scope's own space to the destination's, applied to each member's pose in its scope, preserving its rotation. A member inside a physics frame is read out of the frame first.</param>
-        public bool TryCommitTransfers(IReadOnlyList<InstanceTransfer> transfers, Vector3 translation)
+        public bool TryCommitTransfers(IReadOnlyList<InstanceTransfer> transfers, Vector3 translation) =>
+            TryCommitTransfers(transfers, Double3.From(translation));
+
+        /// <summary>
+        /// <see cref="TryCommitTransfers(IReadOnlyList{InstanceTransfer}, Vector3)"/> with the translation in double. Each
+        /// member's pose is read out of its frame, translated and put into the destination's frame composed in double
+        /// (<see cref="PhysicsFrames.ConvertLocal(Double3, Container, Container)"/>), so a group leaving or reaching a frame
+        /// whose carrier stands far from its scope's origin (a ship on a planet in a star system) keeps its exact
+        /// frame-local poses: work the translation out from <see cref="NetworkIdentity.ScopePositionPrecise"/> and the
+        /// destination point in double, as
+        /// <c>PhysicsFrames.ConvertLocal(arrival, planetFrame, null) - ship.ScopePositionPrecise</c>.
+        /// </summary>
+        /// <param name="transfers">Distinct entity preparations owned by this worker. This is not a cross-worker transaction.</param>
+        /// <param name="translation">Displacement from the source scope's own space to the destination's, in double.</param>
+        public bool TryCommitTransfers(IReadOnlyList<InstanceTransfer> transfers, Double3 translation)
         {
             if (transfers == null || transfers.Count == 0) return false;
             var entities = new HashSet<NetworkIdentity>();
             foreach (var transfer in transfers)
                 if (transfer == null || !transfer.Ready || !ValidTransfer(transfer) || transfer.Entity.IsSceneEntity ||
                     !entities.Add(transfer.Entity) || !InstanceScenes.Prepare(transfer.Destination)) return false;
-            var positions = new Vector3[transfers.Count];
+            var positions = new Double3[transfers.Count];
             var rotations = new Quaternion[transfers.Count];
             var seated = new bool[transfers.Count];
             for (int i = 0; i < transfers.Count; i++)
@@ -150,13 +164,13 @@ namespace Nebula
                 // its transform, which mean nothing in the destination.
                 var member = transfers[i].Entity;
                 var space = member.Space;
-                positions[i] = member.ToScope(member.transform.position) + translation;
+                positions[i] = member.ScopePositionPrecise + translation;
                 rotations[i] = PhysicsFrames.InSimulationPose(space) ? PhysicsFrames.Convert(member.transform.rotation, space, null) : member.transform.rotation;
                 seated[i] = RidesInAny(transfers[i].Entity, entities);
             }
             // Carriers first, then what they carry: a rider is committed in place once the ship it sits in has
             // already moved it (docs/scope-activation.md D19).
-            for (int i = 0; i < transfers.Count; i++) if (!seated[i]) TryCommitTransfer(transfers[i], positions[i], rotations[i]);
+            for (int i = 0; i < transfers.Count; i++) if (!seated[i]) TryCommitTransfer(transfers[i], null, positions[i], rotations[i]);
             for (int i = 0; i < transfers.Count; i++) if (seated[i]) CommitSeated(transfers[i]);
             return true;
         }
@@ -265,17 +279,57 @@ namespace Nebula
         /// </summary>
         public bool TryCommitTransfer(InstanceTransfer transfer, Vector3 position, Quaternion rotation)
         {
+            if (!BeginCommit(transfer)) return false;
+            transfer.Entity.SetScopePose(position, rotation);
+            EndCommit(transfer);
+            return true;
+        }
+
+        /// <summary>
+        /// Commit a prepared crossing at a pose given in <paramref name="frame"/>'s frame-local coordinates: a framed
+        /// container of the destination's scope (the destination's <see cref="Container.InnerSpace"/>, or a frame around
+        /// it, such as the planet a destination chunk lies on), or null for the destination scope's own space. The entity
+        /// goes into <see cref="InstanceTransfer.Destination"/> as with
+        /// <see cref="TryCommitTransfer(InstanceTransfer, Vector3, Quaternion)"/>, and the pose is carried from the frame
+        /// into the destination's frame composed in double
+        /// (<see cref="PhysicsFrames.ConvertLocal(Double3, Container, Container)"/>), so it lands at the exact frame-local
+        /// pose however far that frame's carrier stands from the scope's origin. Clients receive that pose. Returns false
+        /// if readiness or authority changed.
+        /// </summary>
+        /// <param name="transfer">A ready preparation.</param>
+        /// <param name="frame">The framed container the pose is in, in the destination's scope, or null for that scope's own space.</param>
+        /// <param name="localPosition">The position in the frame's own coordinates (<see cref="PhysicsFrame.SimulationToLocal"/>).</param>
+        /// <param name="localRotation">The rotation in the frame's coordinates.</param>
+        public bool TryCommitTransfer(InstanceTransfer transfer, Container frame, Double3 localPosition, Quaternion localRotation)
+        {
+            if (frame != null && (!frame.OwnPhysicsFrame || frame.Frame == null))
+                throw new ArgumentException($"{frame.ContainerId} has no physics frame on this process", nameof(frame));
+            if (frame != null && transfer != null && transfer.Destination != null && frame.InstanceId != transfer.Destination.InstanceId)
+                throw new ArgumentException($"{frame.ContainerId} is not in the destination's scope", nameof(frame));
+            if (!BeginCommit(transfer)) return false;
+            transfer.Entity.SetFramePose(frame, localPosition, localRotation);
+            EndCommit(transfer);
+            return true;
+        }
+
+        /// <summary>Checks a commit and moves the entity into the destination; the pose is the caller's to write, then <see cref="EndCommit"/>.</summary>
+        private bool BeginCommit(InstanceTransfer transfer)
+        {
             if (transfer == null || !transfer.Ready || !ValidTransfer(transfer)) return false;
             var entity = transfer.Entity;
             if (entity.IsSceneEntity) throw new InvalidOperationException("Scene entities cannot leave their authored scene");
             if (!InstanceScenes.Prepare(transfer.Destination)) return false;
             entity.SetContainer(transfer.Destination);
-            entity.SetScopePose(position, rotation);
+            return true;
+        }
+
+        private void EndCommit(InstanceTransfer transfer)
+        {
+            var entity = transfer.Entity;
             entity.Epoch++;
             entity.HasStateTick = false;
             transfer.Finished = true;
             _instanceTransfers.Remove(transfer.Message.RequestId);
-            return true;
         }
 
         private bool ValidTransfer(InstanceTransfer transfer) => transfer.Entity != null && transfer.Entity.IsSpawned &&
