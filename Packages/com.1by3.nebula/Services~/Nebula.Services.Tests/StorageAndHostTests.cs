@@ -676,6 +676,119 @@ public class StorageAndHostTests
         reopened.Dispose();
     }
 
+    private static PersistedEntityRecord HeldRecord(string key) => Record(key, "c1");
+
+    private static string CaptureLog(Action action)
+    {
+        var original = Console.Out;
+        var writer = new StringWriter();
+        Console.SetOut(writer);
+        try { action(); }
+        finally { Console.SetOut(original); }
+        return writer.ToString();
+    }
+
+    private static int Lines(string log, string text) => log.Split((char)10).Count(l => l.Contains(text));
+
+    [Test]
+    public void LocalStoreRetriesAHeldFileAndLandsTheSnapshotWithoutLogging()
+    {
+        string file = Path.Combine(directory, "world.bin");
+        var store = new LocalPersistenceStore(file) { ReplaceAttempts = 5, ReplaceWaitMilliseconds = 5 };
+        store.Connect();
+        int calls = 0;
+        store.ReplaceFile = (temp, path) =>
+        {
+            if (++calls <= 3) throw new IOException("Unable to remove the file to be replaced.");
+            File.Move(temp, path);
+        };
+        store.Save(HeldRecord("a"));
+        string log = CaptureLog(store.Flush);
+        Assert.That(calls, Is.EqualTo(4));
+        Assert.That(store.FileWriteCount, Is.EqualTo(1));
+        Assert.That(Lines(log, "failed:"), Is.EqualTo(0));
+        store.Dispose();
+        var reopened = new LocalPersistenceStore(file);
+        reopened.Connect();
+        Assert.That(reopened.KnownCount, Is.EqualTo(1));
+        reopened.Dispose();
+    }
+
+    [Test]
+    public void LocalStoreLogsOneFailureAndOneRecoveryForAHeldFileStreak()
+    {
+        string file = Path.Combine(directory, "world.bin");
+        var store = new LocalPersistenceStore(file) { ReplaceAttempts = 3, ReplaceWaitMilliseconds = 1 };
+        store.Connect();
+        File.WriteAllBytes(file, LocalPersistenceStore.EncodeFile(new[] { HeldRecord("old") }, LocalPersistenceStore.FileVersion));
+        bool held = true;
+        int calls = 0;
+        store.ReplaceFile = (temp, path) =>
+        {
+            calls++;
+            if (held) throw new IOException("Unable to remove the file to be replaced.");
+            File.Replace(temp, path, null);
+        };
+        string log = CaptureLog(() =>
+        {
+            store.Save(HeldRecord("new"));
+            store.Flush();             // every try fails: one failure line
+            store.Flush();             // still failing: no second line
+            store.Save(HeldRecord("new2"));
+            store.Flush();
+        });
+        Assert.That(calls, Is.EqualTo(9), "three bounded tries per write, three writes");
+        Assert.That(Lines(log, "failed:"), Is.EqualTo(1), log);
+        Assert.That(Lines(log, "works again"), Is.EqualTo(0), log);
+        Assert.That(store.FileWriteCount, Is.EqualTo(0));
+
+        // The previous save is untouched.
+        var intact = new LocalPersistenceStore(file);
+        intact.Connect();
+        Assert.That(intact.KnownCount, Is.EqualTo(1));
+        intact.Dispose();
+
+        held = false;
+        string recovery = CaptureLog(() => { store.Save(HeldRecord("new3")); store.Flush(); });
+        Assert.That(Lines(recovery, "works again"), Is.EqualTo(1), recovery);
+        Assert.That(Lines(recovery, "failed:"), Is.EqualTo(0), recovery);
+        Assert.That(store.FileWriteCount, Is.EqualTo(1));
+        store.Dispose();
+        var reopened = new LocalPersistenceStore(file);
+        reopened.Connect();
+        Assert.That(reopened.KnownCount, Is.EqualTo(3));
+        reopened.Dispose();
+    }
+
+    [Test]
+    public void LocalStoreKeepsThePreviousFileWhileAnotherHandleHoldsItForTheWholeWindow()
+    {
+        if (!OperatingSystem.IsWindows()) Assert.Ignore("A held file only blocks a replace on Windows.");
+        string file = Path.Combine(directory, "world.bin");
+        var seed = new LocalPersistenceStore(file);
+        seed.Connect();
+        seed.Save(HeldRecord("old"));
+        seed.Dispose();
+        byte[] before = File.ReadAllBytes(file);
+
+        var store = new LocalPersistenceStore(file) { ReplaceAttempts = 3, ReplaceWaitMilliseconds = 10 };
+        store.Connect();
+        store.Save(HeldRecord("new"));
+        string log;
+        using (new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read))
+            log = CaptureLog(() => { store.Flush(); store.Flush(); });
+        Assert.That(Lines(log, "failed:"), Is.EqualTo(1), log);
+        Assert.That(File.ReadAllBytes(file), Is.EqualTo(before));
+
+        string recovery = CaptureLog(store.Flush);
+        Assert.That(Lines(recovery, "works again"), Is.EqualTo(1), recovery);
+        store.Dispose();
+        var reopened = new LocalPersistenceStore(file);
+        reopened.Connect();
+        Assert.That(reopened.KnownCount, Is.EqualTo(2));
+        reopened.Dispose();
+    }
+
     [Test]
     public void StoreEndpointsRejectAWrongTokenAndAnUnknownPath()
     {
