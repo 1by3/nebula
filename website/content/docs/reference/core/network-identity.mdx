@@ -57,14 +57,16 @@ A number your interest policy can filter on (team markers, quest objects). Nebul
 ### FarRelevanceRadius [#farrelevanceradius]
 
 ```csharp
+[Min(0f)]
 public float FarRelevanceRadius = 0f;
 ```
 
-Far relevance tier, in metres (0, the default, is off). Clients whose focus is beyond this entity's normal radius but within this one see it as a marker: its pose at FarUpdateRate and its spawn facts, nothing else (no variables, no RPCs), through NebulaClient.FarEntities. Not clamped by InterestMaxRadius; each client holds at most InterestFarMaxEntities, nearest first. For what players must see from far away: ships in orbit, outposts.
+Far relevance tier, in metres (0, the default, is off). Clients whose focus is beyond this entity's normal radius but within this one see it as a marker: its pose at FarUpdateRate and its spawn facts, nothing else (no variables, no RPCs), through NebulaClient.FarEntities. Not clamped by InterestMaxRadius; each client holds at most InterestFarMaxEntities, nearest first. For what players must see from far away: ships in orbit, outposts. See docs/interest-management.md section 16.
 
 ### FarUpdateRate [#farupdaterate]
 
 ```csharp
+[Min(0f)]
 public float FarUpdateRate = 1f;
 ```
 
@@ -111,6 +113,14 @@ public const uint SyncSettleTicks = SyncKeyframeInterval;
 Ticks a distance-rated sync behavior ([`NetworkBehaviour.SyncDistanceRating`](/docs/reference/core/network-behaviour#syncdistancerating)) must go without a change before it sends the reliable keyframe every client that holds the entity is given, near or far.
 
 ## Properties
+
+### EffectiveFarUpdateRate [#effectivefarupdaterate]
+
+```csharp
+public float EffectiveFarUpdateRate { get; }
+```
+
+[`FarUpdateRate`](#farupdaterate) clamped to [`FarRelevance.MinRate`](/docs/reference/interest/far-relevance#minrate)..[`FarRelevance.MaxRate`](/docs/reference/interest/far-relevance#maxrate).
 
 ### UpdateInterval [#updateinterval]
 
@@ -309,6 +319,14 @@ public Container Space { get; }
 ```
 
 The physics frame this entity lives in (`Nebula.Container.InnerSpace` of its container), or null in its scope's own space. Inside a frame its transform reads frame-local coordinates in simulation space (`docs/container-tree.md` D11).
+
+### ScopePositionPrecise [#scopepositionprecise]
+
+```csharp
+public Double3 ScopePositionPrecise { get; }
+```
+
+Where the entity stands in its scope's own space, composed in double from its pose in its frame and the frames' poses ([`PhysicsFrames.ConvertLocal`](/docs/reference/containers/physics-frames#convertlocal)): [`ToScope`](#toscope) of its position without the float rounding of a frame far from the scope's origin. What a translation between two scopes is worked out from ([`NebulaWorker.TryCommitTransfers`](/docs/reference/worker/nebula-worker#trycommittransfers)).
 
 ### ContainerIndex [#containerindex]
 
@@ -668,6 +686,23 @@ public void PlaceInScope(Vector3 position, Quaternion rotation);
 ```
 
 Authority: put the entity at a pose given in its scope's own space (a respawn point, a warp target), leaving any physics frame it is in first. Writing such a pose straight onto the transform of an entity inside a frame would put it at those numbers in the frame's coordinates. When the target is inside a frame (a ship's interior), the entity lands in that frame at the matching frame-local pose. Outside frames this is a plain assignment; the next tick resolves the container as usual.
+
+### PlaceInFrame [#placeinframe]
+
+```csharp
+public void PlaceInFrame(Container frame, Double3 localPosition, Quaternion localRotation);
+public void PlaceInFrame(Container frame, Vector3 localPosition, Quaternion localRotation);
+```
+
+Authority: put the entity at a pose given in `frame`'s frame-local coordinates (a pad on a planet whose carrier is a framed container, a seat in a ship's interior), in the deepest container of that frame holding the point: one of the frame's own fixed or carried boxes (a ship's interior in it is entered as [`ContainerRegistry.Resolve`](/docs/reference/containers/container-registry#resolve) enters it), or the framed container itself. The pose goes from the frame to the container the entity lands in composed in double ([`PhysicsFrames.ConvertLocal`](/docs/reference/containers/physics-frames#convertlocal)), never through the scope's own space, so it is exact however far the frame's carrier stands from the scope's origin; [`PlaceInScope`](#placeinscope) rounds a pose there to a float's spacing at that distance (32 m at 300,000 km). What clients receive is the container-local pose this leaves on the entity.
+
+`frame` must have a physics frame of its own on this process and be in the entity's scope; to move it into another scope, prepare a transfer and commit it with [`NebulaWorker.TryCommitTransfer`](/docs/reference/worker/nebula-worker#trycommittransfer). Null is the scope's own space: the same as [`PlaceInScope`](#placeinscope). On a client, where frames are drawn rather than simulated, the container is left as it is and only the pose is written.
+
+| Parameter | Description |
+| --- | --- |
+| `frame` | The framed container ([`Container.OwnPhysicsFrame`](/docs/reference/containers/container#ownphysicsframe)) whose coordinates the pose is in, or null for the scope's own space. |
+| `localPosition` | The position in the frame's own coordinates ([`PhysicsFrame.SimulationToLocal`](/docs/reference/containers/physics-frame#simulationtolocal), independent of its floating origin). |
+| `localRotation` | The rotation in the frame's coordinates. |
 
 ### SetDriver [#setdriver]
 

@@ -225,6 +225,22 @@ public string CertificateFingerprint { get; }
 
 The SHA-256 fingerprint of the certificate's SubjectPublicKeyInfo public-key encoding for encrypted UDP connections, or null when UDP encryption is unavailable. Set [`NebulaConfig.GatewayFingerprint`](/docs/reference/core/nebula-config#gatewayfingerprint) on clients to require this certificate key.
 
+### FarEntityCount [#farentitycount]
+
+```csharp
+public int FarEntityCount { get; }
+```
+
+Far entities this gateway holds a pose for (NEB-388).
+
+### FarEntriesRelayed [#farentriesrelayed]
+
+```csharp
+public long FarEntriesRelayed { get; }
+```
+
+Far-tier entries sent to clients since start (enters, updates and leaves).
+
 ### InterestPolicy [#interestpolicy]
 
 ```csharp
@@ -387,6 +403,22 @@ public bool Kick(ulong clientId, ushort code, string reason);
 ```
 
 Remove a player: the client is sent the `code` and `reason` ([`KickedMsg`](/docs/reference/protocol/kicked-msg)), the link is closed a moment later, and the session ends at once: the worker that owns the pawn despawns it without waiting out the reclaim grace, calling `NebulaGameMode.OnPlayerDespawn` first. The code is the game's own; Nebula passes it through. Returns false when no welcomed client of this gateway has `clientId`. A kick is not a ban: the player may connect again as a new session.
+
+### ClientHoldsFar [#clientholdsfar]
+
+```csharp
+public bool ClientHoldsFar(ulong clientId, ulong netId);
+```
+
+Whether a client holds an entity in its far tier (tests and diagnostics); false for an unknown client.
+
+### FarTierSize [#fartiersize]
+
+```csharp
+public int FarTierSize(ulong clientId);
+```
+
+How many entities a client holds in its far tier; -1 for an unknown client.
 
 ### IsEntityCached [#isentitycached]
 

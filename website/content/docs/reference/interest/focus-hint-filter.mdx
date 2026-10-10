@@ -19,7 +19,7 @@ Validation of [`ClientFocusHintMsg`](/docs/reference/protocol/client-focus-hint-
 public const double MaxMagnitude = 1e9;
 ```
 
-The largest absolute coordinate a hint may name, in meters. Anything beyond it is malformed rather than merely far away: the region grid can only pack [`InterestGrid.MaxCoordinate`](/docs/reference/interest/interest-grid#maxcoordinate) cells per axis (about 6.7e7 m at the default 64 m edge), so every point out here is the same clamped region, and a value of 1e300 is a number no camera produced. Rejecting rather than clamping is deliberate: clamping would invent a place the client never asked about and then stream it.
+The largest absolute coordinate a hint may name, in meters. Anything beyond it is malformed rather than merely far away: the region grid can only pack [`InterestGrid.MaxCoordinate`](/docs/reference/interest/interest-grid#maxcoordinate) cells per axis (about 2.1e9 m at the default 64 m edge, counting the far band), so every point out here is the same clamped region, and a value of 1e300 is a number no camera produced. Rejecting rather than clamping is deliberate: clamping would invent a place the client never asked about and then stream it.
 
 ### Settings [#settings]
 

@@ -1,0 +1,164 @@
+---
+title: "FarPublisher"
+description: "The worker's half of the far tier: which gateways hear about each far entity, and when."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/FarRelevance.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/FarRelevance.cs)</div>
+
+```csharp
+public sealed class FarPublisher
+```
+
+The worker's half of the far tier: which gateways hear about each far entity, and when. Pure bookkeeping over a [`RegionPublisher`](/docs/reference/interest/region-publisher)'s foci, so the Unity worker and the service tests' fake worker publish it the same way.
+
+Each tick the host calls [`Begin`](#begin), then [`Offer`](#offer) for every far entity it is authoritative for whose [`IsDue`](#isdue) says so (with the entry filled in: its pose absolute in its scope), then [`End`](#end). What to send is in [`Out`](#out): one mask and one entry each, to be grouped by mask by the host.
+
+The match runs at [`EvalInterval`](#evalinterval): a far entity reaches a gateway with a focus of the entity's scope's own space (frame key 0) within its far radius. Every client with a pawn has one: its pawn's focus in the scope, or the enclosing focus the gateway adds around a pawn on a planet (`docs/container-tree.md` D18), so the tier crosses frames without converting foci on the worker. A gateway that gains the entity is sent an entry at once; one that loses it is sent [`FarEntryKind.Gone`](/docs/reference/protocol/far-entry-kind#gone). In between, each entity is sent at its own rate.
+
+## Fields
+
+### Out [#out]
+
+```csharp
+public readonly List<Outgoing> Out = new List<Outgoing>();
+```
+
+Sends decided this tick, in order (a [`FarEntryKind.Gone`](/docs/reference/protocol/far-entry-kind#gone) before the next state of anything).
+
+### EvalInterval [#evalinterval]
+
+```csharp
+public double EvalInterval = 0.25;
+```
+
+Seconds between two matches of the far list against the gateways' foci (the interest evaluation rate).
+
+### ExitMargin [#exitmargin]
+
+```csharp
+public double ExitMargin = 16;
+```
+
+The mesh's exit margin, the floor of the tier's hysteresis ([`FarRelevance.StayMargin`](/docs/reference/interest/far-relevance#staymargin)).
+
+## Properties
+
+### Count [#count]
+
+```csharp
+public int Count { get; }
+```
+
+Far entities tracked (offered at least once and not forgotten since).
+
+## Methods
+
+### MaskOf [#maskof]
+
+```csharp
+public ulong MaskOf(ulong netId);
+```
+
+The gateways that currently hold an entity in their far tier.
+
+### Begin [#begin]
+
+```csharp
+public void Begin(double now);
+```
+
+Start a tick. Every [`EvalInterval`](#evalinterval) the next offers are re-matched against the foci.
+
+### IsDue [#isdue]
+
+```csharp
+public bool IsDue(ulong netId);
+```
+
+Whether this tick has anything to do for the entity, so the host can skip working out its pose.
+
+### Keep [#keep]
+
+```csharp
+public void Keep(ulong netId);
+```
+
+Hold that an entity is still far relevant this tick, without a pose: it is not due. Every tracked entity must be offered or kept each tick, or [`End`](#end) takes it out of the tier.
+
+### Offer [#offer]
+
+```csharp
+public void Offer(in FarEntityEntry entry, ulong scopeSalt, RegionPublisher publisher, in InterestGrid grid);
+```
+
+One far entity this tick, with its entry filled in ([`FarEntryKind.State`](/docs/reference/protocol/far-entry-kind#state), position absolute in its scope). `scopeSalt` is [`RegionKeys.SaltOf`](/docs/reference/interest/region-keys#saltof) of its scope: the foci it is matched with are the ones collected in that scope's own space.
+
+### End [#end]
+
+```csharp
+public void End();
+```
+
+End a tick: an entity tracked but neither offered nor kept has left the tier (its far radius was set to 0, it boarded something). The gateways that held it are sent [`FarEntryKind.Gone`](/docs/reference/protocol/far-entry-kind#gone).
+
+### Forget [#forget]
+
+```csharp
+public ulong Forget(ulong netId);
+```
+
+Stop tracking an entity without telling anyone: it was handed to another worker, which takes the tier over, or it despawned and its despawn already went to [`MaskOf`](#maskof). Returns the mask it had.
+
+### RemoveGateway [#removegateway]
+
+```csharp
+public void RemoveGateway(int gatewayBit);
+```
+
+A gateway link went away: its bit leaves every mask.
+
+### EvaluateSoon [#evaluatesoon]
+
+```csharp
+public void EvaluateSoon();
+```
+
+Match on the next tick rather than at the next interval (a gateway's foci changed).
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```
+
+### Flush [#flush]
+
+```csharp
+public void Flush(NetworkWriter writer, Action<ulong> send);
+```
+
+Group [`Out`](#out) by mask into [`FarEntitiesMsg`](/docs/reference/protocol/far-entities-msg)es, preserving order within a mask, and hand each written message to `send` with its mask. Allocation free after warm-up.
+
+## Nested types
+
+### Outgoing [#outgoing]
+
+```csharp
+public struct Outgoing
+```
+
+One send: the gateways ([`RegionPublisher`](/docs/reference/interest/region-publisher) bits) and what they are told.
+
+#### Fields
+
+##### Mask [#mask]
+
+```csharp
+public ulong Mask;
+```
+
+##### Entry [#entry]
+
+```csharp
+public FarEntityEntry Entry;
+```

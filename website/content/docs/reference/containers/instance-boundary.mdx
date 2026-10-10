@@ -31,7 +31,7 @@ Private layout created at this component's world position. Must be available on 
 public Bounds Interior = new Bounds(Vector3.zero, new Vector3(10, 5, 10));
 ```
 
-Crossing volume in the component's own axes: its centre and size are measured from the component's position and turned with the component's rotation. Scale does not transform the bounds.
+Crossing volume in the component's own axes: its centre and size are measured from the component's position and turned with the component's rotation, so a boundary standing on tilted ground has a volume that is tilted with it. Scale does not transform the bounds.
 
 ### PreparationDistance [#preparationdistance]
 
@@ -133,7 +133,7 @@ The scope this boundary stands in: the [`Container.InstanceId`](/docs/reference/
 public Double3 AbsolutePosition { get; }
 ```
 
-This boundary's position in absolute coordinates: its host scope's origin frame taken away.
+This boundary's position in absolute coordinates: read in its host scope's own space (out of any physics frame it stands in, such as a planet's that carries the chunk it is built in), then its host scope's origin frame taken away. The same space [`AbsoluteOf`](#absoluteof) reads an entity in, so the two compare.
 
 ### InstanceOrigin [#instanceorigin]
 

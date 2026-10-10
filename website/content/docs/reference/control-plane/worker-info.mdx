@@ -109,6 +109,14 @@ public bool HasGlobalEntities;
 
 The worker holds at least one always-relevant entity (see [`WorkerStats.HasGlobalEntities`](/docs/reference/control-plane/worker-stats#hasglobalentities)).
 
+### HasFarEntities [#hasfarentities]
+
+```csharp
+public bool HasFarEntities;
+```
+
+The worker holds at least one far-relevant entity (see [`WorkerStats.HasFarEntities`](/docs/reference/control-plane/worker-stats#hasfarentities)).
+
 ### OldestDirtySeconds [#oldestdirtyseconds]
 
 ```csharp
@@ -116,3 +124,67 @@ public float OldestDirtySeconds;
 ```
 
 How long the oldest dirty persistent entity on this worker has been waiting for its next checkpoint, in seconds; 0 when persistence is off or nothing is dirty. See [`WorkerStats.OldestDirtySeconds`](/docs/reference/control-plane/worker-stats#oldestdirtyseconds) and docs/persistence-durability.md.
+
+### ResidentBytes [#residentbytes]
+
+```csharp
+public ulong ResidentBytes;
+```
+
+Resident memory of the worker process (working set / RSS) in bytes; 0 when it could not be read.
+
+### NativeAllocatedBytes [#nativeallocatedbytes]
+
+```csharp
+public ulong NativeAllocatedBytes;
+```
+
+Unity's native memory allocated (`Profiler.GetTotalAllocatedMemoryLong`) in bytes.
+
+### NativeReservedBytes [#nativereservedbytes]
+
+```csharp
+public ulong NativeReservedBytes;
+```
+
+Unity's native memory reserved (`Profiler.GetTotalReservedMemoryLong`) in bytes.
+
+### ManagedBytes [#managedbytes]
+
+```csharp
+public ulong ManagedBytes;
+```
+
+The managed heap in use (`GC.GetTotalMemory(false)`) in bytes.
+
+### GcCount [#gccount]
+
+```csharp
+public uint GcCount;
+```
+
+Gen-0 garbage collections since the process started (a total; the reader takes differences).
+
+### FrameAvgMs, FrameP90Ms, FrameMaxMs [#frameavgms-framep90ms-framemaxms]
+
+```csharp
+public float FrameAvgMs, FrameP90Ms, FrameMaxMs;
+```
+
+Wall time per Unity frame over the worker's last profile window, in milliseconds: average, 90th percentile and worst. 0 until a window has completed, or from an older worker.
+
+### FrameSections [#framesections]
+
+```csharp
+public string FrameSections;
+```
+
+That window's frame split as `name=ms` pairs separated by spaces, in ms per frame (physics, fixed, tick, update, late, idle). Empty from an older worker.
+
+### ProfileSections [#profilesections]
+
+```csharp
+public string ProfileSections;
+```
+
+That window's profiler sections (Nebula's and the game's) as `name=ms` pairs separated by spaces, in ms per tick. Empty from an older worker.

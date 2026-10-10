@@ -23,3 +23,4 @@ Why a gateway holds a link to a worker. A link with no reason left is dropped af
 | <span id="explicit"></span>`Explicit` | `8` | A policy asked for an entity by id and we do not know yet who owns it. |
 | <span id="spawn"></span>`Spawn` | `16` | A client of ours is waiting for a pawn and this worker owns somewhere to put it. |
 | <span id="owned"></span>`Owned` | `32` | It is authoritative for an entity one of our clients owns. |
+| <span id="far"></span>`Far` | `64` | Its heartbeat says it holds far-relevant entities, which it matches against our foci (NEB-388). |

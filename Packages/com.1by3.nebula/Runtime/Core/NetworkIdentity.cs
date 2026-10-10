@@ -650,6 +650,96 @@ namespace Nebula
         }
 
         /// <summary>
+        /// Authority: put the entity at a pose given in <paramref name="frame"/>'s frame-local coordinates (a pad on a
+        /// planet whose carrier is a framed container, a seat in a ship's interior), in the deepest container of that
+        /// frame holding the point: one of the frame's own fixed or carried boxes (a ship's interior in it is entered as
+        /// <see cref="ContainerRegistry.Resolve"/> enters it), or the framed container itself. The pose goes from the frame
+        /// to the container the entity lands in composed in double (<see cref="PhysicsFrames.ConvertLocal(Double3, Container, Container)"/>),
+        /// never through the scope's own space, so it is exact however far the frame's carrier stands from the scope's
+        /// origin; <see cref="PlaceInScope"/> rounds a pose there to a float's spacing at that distance (32 m at 300,000 km).
+        /// What clients receive is the container-local pose this leaves on the entity.
+        /// <para>
+        /// <paramref name="frame"/> must have a physics frame of its own on this process and be in the entity's scope;
+        /// to move it into another scope, prepare a transfer and commit it with
+        /// <see cref="NebulaWorker.TryCommitTransfer(InstanceTransfer, Container, Double3, Quaternion)"/>. Null is the
+        /// scope's own space: the same as <see cref="PlaceInScope"/>. On a client, where frames are drawn rather than
+        /// simulated, the container is left as it is and only the pose is written.
+        /// </para>
+        /// </summary>
+        /// <param name="frame">The framed container (<see cref="Container.OwnPhysicsFrame"/>) whose coordinates the pose is in, or null for the scope's own space.</param>
+        /// <param name="localPosition">The position in the frame's own coordinates (<see cref="PhysicsFrame.SimulationToLocal"/>, independent of its floating origin).</param>
+        /// <param name="localRotation">The rotation in the frame's coordinates.</param>
+        public void PlaceInFrame(Container frame, Double3 localPosition, Quaternion localRotation)
+        {
+            if (frame == null) { PlaceInScope(localPosition.ToVector3(), localRotation); return; }
+            if (!frame.OwnPhysicsFrame || frame.Frame == null)
+                throw new ArgumentException($"{frame.ContainerId} has no physics frame on this process", nameof(frame));
+            if (frame.InstanceId != InstanceId)
+                throw new InvalidOperationException($"{frame.ContainerId} is in another scope than {this}: commit a transfer into it instead");
+            if (!PhysicsFrames.RendersFrames)
+            {
+                var point = frame.Frame.LocalToSimulation(localPosition.ToVector3()); // only to find the box: the pose itself stays in double
+                var found = ContainerRegistry.FindInSpace(point, null, InstanceId, this, frame) ?? frame;
+                SetContainer(ContainerRegistry.EnterFrames(found, frame, point, InstanceId, this));
+            }
+            SetFramePose(frame, localPosition, localRotation);
+        }
+
+        /// <summary><see cref="PlaceInFrame(Container, Double3, Quaternion)"/> with a float position.</summary>
+        public void PlaceInFrame(Container frame, Vector3 localPosition, Quaternion localRotation) =>
+            PlaceInFrame(frame, Double3.From(localPosition), localRotation);
+
+        /// <summary>
+        /// Where the entity stands in its scope's own space, composed in double from its pose in its frame and the frames'
+        /// poses (<see cref="PhysicsFrames.ConvertLocal(Double3, Container, Container)"/>): <see cref="ToScope"/> of its
+        /// position without the float rounding of a frame far from the scope's origin. What a translation between two
+        /// scopes is worked out from (<see cref="NebulaWorker.TryCommitTransfers(IReadOnlyList{InstanceTransfer}, Double3)"/>).
+        /// </summary>
+        public Double3 ScopePositionPrecise => PhysicsFrames.ConvertLocal(FramePositionPrecise, Space, null);
+
+        /// <summary>The entity's position in its <see cref="Space"/>'s frame-local coordinates (the scope's own space outside frames), in double.</summary>
+        internal Double3 FramePositionPrecise
+        {
+            get
+            {
+                PhysicsFrames.PoseInSpace(transform, Space, out var position, out _, out _);
+                return position;
+            }
+        }
+
+        /// <summary>
+        /// Write a pose given in <paramref name="frame"/>'s frame-local coordinates (the scope's own space for null) onto
+        /// the transform, converted in double into the space the entity is in now and then into its container's content
+        /// root: an entity hanging under that root gets its local pose written directly, so neither the frame's distance
+        /// from the scope's origin nor a chunk's distance from the frame's origin rounds it.
+        /// </summary>
+        internal void SetFramePose(Container frame, Double3 localPosition, Quaternion localRotation)
+        {
+            var space = Space;
+            var position = PhysicsFrames.ConvertLocal(localPosition, frame, space);
+            var rotation = PhysicsFrames.ConvertLocal(localRotation, frame, space);
+            var root = Container != null ? Container.ContentRoot : null;
+            var t = transform;
+            if (root != null && t.parent == root)
+            {
+                PhysicsFrames.PoseInSpace(root, space, out var rootPosition, out var rootRotation, out var rootScale);
+                var inverse = Quaternion.Inverse(rootRotation);
+                var local = PhysicsFrames.Rotate(inverse, position - rootPosition);
+                t.localPosition = new Vector3(
+                    (float)(rootScale.x != 0f ? local.X / rootScale.x : local.X),
+                    (float)(rootScale.y != 0f ? local.Y / rootScale.y : local.Y),
+                    (float)(rootScale.z != 0f ? local.Z / rootScale.z : local.Z));
+                t.localRotation = inverse * rotation;
+                return;
+            }
+            // Not under its container (a scene entity, or in no container): through the space's simulated or drawn pose.
+            var frameOfSpace = space != null ? space.Frame : null;
+            if (frameOfSpace == null) t.SetPositionAndRotation(position.ToVector3(), rotation);
+            else if (PhysicsFrames.InSimulationPose(space)) t.SetPositionAndRotation(frameOfSpace.LocalToSimulation(position.ToVector3()), rotation);
+            else t.SetPositionAndRotation(frameOfSpace.LocalToRenderPrecise(position).ToVector3(), frameOfSpace.LocalToRender(rotation));
+        }
+
+        /// <summary>
         /// Write a pose given in the scope's own space onto the transform, converted into the space the entity is in
         /// now (<see cref="Space"/>). Called after a container change, so a target inside a physics frame lands at
         /// the frame-local pose that matches it, not at the scope pose's numbers in the frame's coordinates.

@@ -1,0 +1,30 @@
+---
+title: "FrameProfiler"
+description: "Wall time per Unity frame on a worker, and where in the frame it goes."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/FrameProfiler.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/FrameProfiler.cs)</div>
+
+```csharp
+public static class FrameProfiler
+```
+
+Wall time per Unity frame on a worker, and where in the frame it goes. The profile line's tick sections say where Nebula's tick goes; everything else (the physics step, script Update and LateUpdate, the frame limiter) was lumped into one 'gap'. This inserts timing systems into the player loop at the start of the frame, at the edges of the FixedUpdate, Update and PreLateUpdate phases and around the physics step, so a window reports the frame's average, p90 and max, and the frame split into phases. Each marker is one `Stopwatch.GetTimestamp` read and nothing is allocated per frame; [`Take`](#take) allocates once per window.
+
+## Methods
+
+### Install [#install]
+
+```csharp
+public static void Install();
+```
+
+Puts the timing systems into the player loop. Safe to call again: it does nothing once they are in.
+
+### Take [#take]
+
+```csharp
+public static FrameReport Take(double tickTotalMs);
+```
+
+The window since the last call, then reset. `tickTotalMs` is the time Nebula's ticks took in the window; it sits inside the FixedUpdate phase, so it is taken out of the 'fixed' share. Frames is 0 when no timing systems are installed or no frame completed.

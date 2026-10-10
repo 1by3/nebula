@@ -1,0 +1,38 @@
+---
+title: "FarEntitiesMsg"
+description: "Worker -> gateway, and gateway -> client: a batch of far-tier entries (MsgId.FarEntities, protocol 26)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/FarEntities.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/FarEntities.cs)</div>
+
+```csharp
+public static class FarEntitiesMsg
+```
+
+Worker -\> gateway, and gateway -\> client: a batch of far-tier entries ([`MsgId.FarEntities`](/docs/reference/protocol/msg-id#farentities), protocol 26). `[id][count:ushort]{entry}`. A worker sends it at each entity's far rate to the gateways whose foci are within the entity's far radius; a gateway relays to each client the entries of the entities in that client's far tier, and only to clients that negotiated protocol 26 or later.
+
+## Fields
+
+### MaxEntries [#maxentries]
+
+```csharp
+public const int MaxEntries = 64;
+```
+
+Most entries in one message; a longer list is split.
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public static void Write(NetworkWriter w, IReadOnlyList<FarEntityEntry> entries, int from, int count);
+```
+
+### Read [#read]
+
+```csharp
+public static void Read(NetworkReader r, List<FarEntityEntry> into);
+```
+
+Read the entries after the message id into `into` (cleared first).

@@ -1,0 +1,128 @@
+---
+title: "FarEntity"
+description: "An entity of the far relevance tier as a client sees it (NEB-388, docs/interest-management.md §16): a large or important entity beyond its normal relevance radius, with no replica, no variables and no RPCs, only enough to draw a marker o..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Client/FarEntity.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Client/FarEntity.cs)</div>
+
+```csharp
+public sealed class FarEntity
+```
+
+An entity of the far relevance tier as a client sees it (NEB-388, `docs/interest-management.md` §16): a large or important entity beyond its normal relevance radius, with no replica, no variables and no RPCs, only enough to draw a marker or an impostor and to target it. Updated at the entity's far rate ([`UpdateRate`](#updaterate), 1 Hz by default); [`PredictedWorldPosition`](#predictedworldposition) extrapolates between updates.
+
+[`Position`](#position) is absolute in the entity's scope and in double: the gateway sends it that way, so it is good to well under a millimetre at any distance a scope spans. [`WorldPosition`](#worldposition) is the same point in this client's Unity space (its floating origin taken off), which is what a marker is drawn at; it is in the scope's own space, outside every physics frame, so a ship standing on a turning planet is where the planet carries it.
+
+## Properties
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId { get; }
+```
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch { get; }
+```
+
+### PrefabId [#prefabid]
+
+```csharp
+public ushort PrefabId { get; }
+```
+
+The entity's prefab, so a game can pick the marker or impostor to draw.
+
+### OwnerClientId [#ownerclientid]
+
+```csharp
+public ulong OwnerClientId { get; }
+```
+
+### InterestGroup [#interestgroup]
+
+```csharp
+public byte InterestGroup { get; }
+```
+
+### InstanceId [#instanceid]
+
+```csharp
+public ulong InstanceId { get; }
+```
+
+The isolation id of its scope (0: the public world).
+
+### Radius [#radius]
+
+```csharp
+public float Radius { get; }
+```
+
+Its far radius, metres.
+
+### UpdateRate [#updaterate]
+
+```csharp
+public float UpdateRate { get; }
+```
+
+Its far updates per second.
+
+### Position [#position]
+
+```csharp
+public Double3 Position { get; }
+```
+
+Absolute position in its scope, metres, double precision.
+
+### Rotation [#rotation]
+
+```csharp
+public Quaternion Rotation { get; }
+```
+
+Rotation in its scope's own space.
+
+### Velocity [#velocity]
+
+```csharp
+public Vector3 Velocity { get; }
+```
+
+Velocity in its scope's own space, m/s (half precision).
+
+### ReceivedAt [#receivedat]
+
+```csharp
+public double ReceivedAt { get; }
+```
+
+`Time.unscaledTimeAsDouble` when the newest update arrived.
+
+### WorldPosition [#worldposition]
+
+```csharp
+public Vector3 WorldPosition { get; }
+```
+
+[`Position`](#position) in this client's Unity space (its floating origin taken off, in double).
+
+## Methods
+
+### PredictedWorldPosition [#predictedworldposition]
+
+```csharp
+public Vector3 PredictedWorldPosition(double now = double.NaN);
+```
+
+[`WorldPosition`](#worldposition) carried on by [`Velocity`](#velocity) to `now` (default: now), at most two update intervals ahead, so a marker moves smoothly between one-a-second updates.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

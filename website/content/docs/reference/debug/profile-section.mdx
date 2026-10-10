@@ -27,6 +27,14 @@ public readonly string Name;
 public void Begin();
 ```
 
+### Add [#add]
+
+```csharp
+public void Add(long elapsed);
+```
+
+Count `elapsed` stopwatch ticks gathered in a local over one pass: a section hit per entity adds once per pass, not per entity.
+
 ### End [#end]
 
 ```csharp

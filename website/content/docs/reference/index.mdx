@@ -31,6 +31,7 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [NebulaGameMode](/docs/reference/core/nebula-game-mode) | Abstract class. Server-side game hooks, the equivalent of subclassing Mirror's NetworkManager. |
 | [NebulaLog](/docs/reference/core/nebula-log) | Static class. Thin logging wrapper so every Nebula line is greppable by prefix in headless logs. |
 | [NebulaRuntime](/docs/reference/core/nebula-runtime) | Static class. Process-wide role context. |
+| [NebulaServerScriptingBackend](/docs/reference/core/nebula-server-scripting-backend) | Enum. The scripting backend of a Linux dedicated server build (NebulaConfig.ServerBuildScriptingBackend). |
 | [NetworkAnimator](/docs/reference/core/network-animator) | Class. Replicates selected Animator parameters from the authoritative worker to clients and ghost workers. |
 | [NetworkBehaviour](/docs/reference/core/network-behaviour) | Abstract class. Base class for replicated gameplay components. |
 | [NetworkIdentity](/docs/reference/core/network-identity) | Class. Marks a GameObject as a networked entity. |
@@ -151,10 +152,13 @@ Spawn and simulate authoritative entities, manage ghosts, and transfer entities 
 | [EntityRequestResult](/docs/reference/worker/entity-request-result) | Struct. Outcome of one EntityRequests.Request call. |
 | [EntityRequestStatus](/docs/reference/worker/entity-request-status) | Enum. Where a EntityRequests call ended up. |
 | [EntityRequests](/docs/reference/worker/entity-requests) | Class. Asks whichever worker currently has authority over a PersistentEntity key, without needing a local ghost of it: a container query has neighbours to fall back to, but a persistent key has none, since the entity may be nowhere near this wo... |
+| [FrameProfiler](/docs/reference/worker/frame-profiler) | Static class. Wall time per Unity frame on a worker, and where in the frame it goes. |
+| [FrameReport](/docs/reference/worker/frame-report) | Struct. One profile window of whole-frame time, in milliseconds per Unity frame (see FrameProfiler). |
 | [IWorkerMessaging](/docs/reference/worker/i-worker-messaging) | Interface. Defines the worker messaging operations used by WorkerQuery. |
 | [InstanceTransfer](/docs/reference/worker/instance-transfer) | Class. A prepared crossing. |
 | [NebulaLifecycle](/docs/reference/worker/nebula-lifecycle) | Static class. The moments at which the mesh brings a container or a scope to life, or puts it to sleep, as game hooks. |
 | [NebulaWorker](/docs/reference/worker/nebula-worker) | Class. Runs authoritative game simulation for the containers assigned to this worker. |
+| [WorkerMemorySampler](/docs/reference/worker/worker-memory-sampler) | Static class. Reads a worker's memory figures for its heartbeat and its profile log line. |
 | [WorkerQuery](/docs/reference/worker/worker-query) | Class. Sends one game-defined request to several workers and collects their replies. |
 | [WorkerRegistration](/docs/reference/worker/worker-registration) | Class. Registers a worker with the control plane and restores missing container assignments after the control-plane document is replaced. |
 | [WorkerScopeLifecycle](/docs/reference/worker/worker-scope-lifecycle) | Class. The worker's half of the scope lifecycle (docs/scope-lifecycle.md): it keeps the idle clock of the scope parts it owns honest, performs the retire sequence for a scope the orchestrator moved to ScopeState.Retiring, and reports a restore ... |
@@ -168,9 +172,12 @@ Connect a player to the gateway, predict the local entity, and display replicate
 | --- | --- |
 | [DisconnectInfo](/docs/reference/client/disconnect-info) | Struct. How a client's connection ended: the typed Reason, a Message for logs and the player, and whether the client will try again by itself (WillRetry). |
 | [DisconnectReason](/docs/reference/client/disconnect-reason) | Enum. Why a client's connection to the gateway ended, or why an attempt to connect failed. |
+| [FarEntity](/docs/reference/client/far-entity) | Class. An entity of the far relevance tier as a client sees it (NEB-388, docs/interest-management.md §16): a large or important entity beyond its normal relevance radius, with no replica, no variables and no RPCs, only enough to draw a marker o... |
+| [FarEntityRemoval](/docs/reference/client/far-entity-removal) | Enum. Why an entity left NebulaClient.FarEntities. |
 | [LocalPlayerLossCause](/docs/reference/client/local-player-loss-cause) | Enum. Why the local player's pawn went away while the client stayed connected (NebulaClient.LocalPlayerLost). |
 | [NebulaClient](/docs/reference/client/nebula-client) | Class. The game client. |
 | [NebulaTitleScreen](/docs/reference/client/nebula-title-screen) | Class. Optional IMGUI panel where a player enters the gateway address and a display name before connecting. |
+| [SceneRenderOrigin](/docs/reference/client/scene-render-origin) | Static class. A client's render origin for the whole scene (docs/container-tree.md D25): while cameras draw, the scene's top-level objects and the cameras are moved by -Offset, the camera's position snapped to Step, so everything near the camera is dr... |
 
 ## Gateway
 
@@ -364,6 +371,10 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [EntityStateEntry](/docs/reference/protocol/entity-state-entry) | Struct. One entity's selected transform fields inside a WorldState/GhostState batch. |
 | [EntitySyncMsg](/docs/reference/protocol/entity-sync-msg) | Struct. One entity's sync chunks for one tick (see SyncStateCodec). |
 | [EntityVarsMsg](/docs/reference/protocol/entity-vars-msg) | Struct. Carries the entity vars protocol message. |
+| [FarEntitiesMsg](/docs/reference/protocol/far-entities-msg) | Static class. Worker -\> gateway, and gateway -\> client: a batch of far-tier entries (MsgId.FarEntities, protocol 26). |
+| [FarEntityEntry](/docs/reference/protocol/far-entity-entry) | Struct. One entity of the far relevance tier (docs/interest-management.md §16, NEB-388): a large or important entity seen beyond the normal interest radius as a pose and nothing else. |
+| [FarEntryFlags](/docs/reference/protocol/far-entry-flags) | Enum. Lists the supported far entry flags values. |
+| [FarEntryKind](/docs/reference/protocol/far-entry-kind) | Enum. What one FarEntityEntry says about its entity. |
 | [GatewayDrainingMsg](/docs/reference/protocol/gateway-draining-msg) | Struct. Gateway -\> client: the gateway is draining and will close this link. |
 | [GoodbyeMsg](/docs/reference/protocol/goodbye-msg) | Struct. Client -\> gateway: the player is leaving for good (MsgId.Goodbye, protocol 23). |
 | [HelloFlags](/docs/reference/protocol/hello-flags) | Enum. Lists the supported hello flags values. |
@@ -449,6 +460,8 @@ Keep the control plane and saved entities in SQLite or PostgreSQL from the stand
 | [ConfigIssue](/docs/reference/interest/config-issue) | Struct. One problem found in a configuration, named by field so an inspector or nebula doctor can point at it. |
 | [ConfigSeverity](/docs/reference/interest/config-severity) | Enum. How much a ConfigIssue matters. |
 | [DefaultInterestPolicy](/docs/reference/interest/default-interest-policy) | Class. What a mesh does without a game policy: one focus at the pawn, plus the client's validated hint as a second focus when it has sent one. |
+| [FarPublisher](/docs/reference/interest/far-publisher) | Class. The worker's half of the far tier: which gateways hear about each far entity, and when. |
+| [FarRelevance](/docs/reference/interest/far-relevance) | Static class. The far relevance tier's arithmetic (docs/interest-management.md §16, NEB-388), shared by the worker, the gateway and the tests. |
 | [FocusHintDecision](/docs/reference/interest/focus-hint-decision) | Struct. What the server decided about one incoming focus hint: which mode to treat it in, and the point itself (a policy may move it — snap an RTS camera to the territory it is allowed to watch, say). |
 | [FocusHintFilter](/docs/reference/interest/focus-hint-filter) | Class. Validation of ClientFocusHintMsg, on the gateway, before a policy ever sees a hint. |
 | [FocusMode](/docs/reference/interest/focus-mode) | Enum. How much of the world a client's own ClientFocusHintMsg may move its interest to. |
