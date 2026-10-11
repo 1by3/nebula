@@ -200,8 +200,18 @@ namespace Nebula
             {
                 ulong host = HostInstanceId; // resolves the host container
                 var space = _host != null ? _host.InnerSpace : null;
-                return ContainerRegistry.ToAbsolutePrecise(PhysicsFrames.ToScope(transform.position, space), host);
+                return ContainerRegistry.ToAbsolutePrecise(PhysicsFrames.ConvertLocal(FramePositionPrecise(transform, space), space, null), host);
             }
+        }
+
+        /// <summary>
+        /// A transform's position in <paramref name="space"/>'s frame-local coordinates, in double (the transform's local
+        /// position under the frame's root, small and float-safe), so a frame far from the scope's origin never rounds it.
+        /// </summary>
+        private static Double3 FramePositionPrecise(Transform t, Container space)
+        {
+            PhysicsFrames.PoseInSpace(t, space, out var position, out _, out _);
+            return position;
         }
 
         /// <summary>Where the instance is prepared: <see cref="AbsolutePosition"/> rounded to <see cref="OriginResolution"/>.</summary>
@@ -353,7 +363,7 @@ namespace Nebula
 
         /// <summary>An entity's position in absolute coordinates, read in its scope's own space (out of any physics frame).</summary>
         private static Double3 AbsoluteOf(NetworkIdentity entity) =>
-            ContainerRegistry.ToAbsolutePrecise(entity.ToScope(entity.transform.position), entity.InstanceId);
+            ContainerRegistry.ToAbsolutePrecise(entity.ScopePositionPrecise, entity.InstanceId);
 
         internal static void Tick(NebulaWorker worker, NetworkIdentity entity)
         {
@@ -595,7 +605,7 @@ namespace Nebula
             bool committed = Group.Count == 1
                 ? worker.TryCommitTransfer(crossing.Transfer, there, entity.transform.rotation)
                 // One displacement for the whole group, from the source scope's space to the destination's: the leader's.
-                : worker.TryCommitTransfers(Group, there - entity.ToScope(entity.transform.position));
+                : worker.TryCommitTransfers(Group, Double3.From(there) - entity.ScopePositionPrecise);
             Group.Clear();
             if (!committed) { LeftBehind.Clear(); return false; }
             var handler = CompanionLeftBehind;

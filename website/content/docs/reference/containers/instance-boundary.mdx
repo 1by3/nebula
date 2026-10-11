@@ -133,7 +133,7 @@ The scope this boundary stands in: the [`Container.InstanceId`](/docs/reference/
 public Double3 AbsolutePosition { get; }
 ```
 
-This boundary's position in absolute coordinates: read in its host scope's own space (out of any physics frame it stands in, such as a planet's that carries the chunk it is built in), then its host scope's origin frame taken away. The same space [`AbsoluteOf`](#absoluteof) reads an entity in, so the two compare.
+This boundary's position in absolute coordinates: read in its host scope's own space (out of any physics frame it stands in, such as a planet's that carries the chunk it is built in), then its host scope's origin frame taken away. It is composed in double from the boundary's position in its frame's own coordinates, so a frame whose carrier stands far from the scope's origin (a planet in its star system) does not round it. The same space [`AbsoluteOf`](#absoluteof) reads an entity in, so the two compare.
 
 ### InstanceOrigin [#instanceorigin]
 
