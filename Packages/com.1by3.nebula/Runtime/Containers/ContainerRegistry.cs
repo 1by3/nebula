@@ -873,6 +873,16 @@ namespace Nebula
             return new Double3(frame.x - origin.X, frame.y - origin.Y, frame.z - origin.Z);
         }
 
+        /// <summary>
+        /// <see cref="ToAbsolutePrecise(Vector3, ulong)"/> for a frame position already held in double, so a position far
+        /// from the frame's origin (a planet carrier's ground) is never narrowed to float on the way.
+        /// </summary>
+        public static Double3 ToAbsolutePrecise(Double3 frame, ulong instanceId)
+        {
+            var origin = OriginOf(instanceId);
+            return new Double3(frame.X - origin.X, frame.Y - origin.Y, frame.Z - origin.Z);
+        }
+
         /// <summary>Where absolute (0,0,0) sits in a scope's frame, in double.</summary>
         private static Double3 OriginOf(ulong instanceId)
         {
