@@ -6,7 +6,7 @@ User-facing pages: `website/content/docs/guides/infinite-runtime-world.mdx` (§"
 `website/content/docs/guides/scopes.mdx`. Conformance: scenario 14 of `docs/conformance-suite.md`
 (`Tests/EditMode/ConformanceScopeFrameTests.cs`, tier A, also compiled into the service tests; and
 `Tests/EditMode/ConformanceScopeFrameWorkerTests.cs`, tier B). §7's travel non-goal and D12's client drawing are
-superseded in part by `docs/gateways.md` (NEB-427).
+superseded in part by `docs/portals.md` (NEB-427).
 
 ## 0. Problem
 
@@ -261,12 +261,12 @@ ways: twelve worlds of one chunk plan exactly like one world of twelve chunks.
 From the issue, unchanged: continuous coordinates across scopes, seamless scope-to-scope travel, and curved or
 spherical coordinate systems. Within-scope precision is below.
 
-**Superseded in part by `docs/gateways.md` (NEB-427).** Seamless travel, sight, physics and queries between two scopes
-are now in scope, at a scope gateway: a link between a face in each scope whose link pose, a `Double3` and a rotation
-applied about the faces (gateways D4, D37), maps one scope's coordinates onto the other's. Coordinates are still
-continuous only across a gateway's link, never between scopes in general, and curved coordinate systems are still not
+**Superseded in part by `docs/portals.md` (NEB-427).** Seamless travel, sight, physics and queries between two scopes
+are now in scope, at a portal: a link between a face in each scope whose link pose, a `Double3` and a rotation
+applied about the faces (portals D4, D37), maps one scope's coordinates onto the other's. Coordinates are still
+continuous only across a portal's link, never between scopes in general, and curved coordinate systems are still not
 in scope. The client's drawing of turned instances (D12, "A client draws each side turned") is replaced by a pose per
-drawn scope (gateways D40, D41), and `HostCarriers` by the carriers of a window's rows (gateways D20).
+drawn scope (portals D40, D41), and `HostCarriers` by the carriers of a window's rows (portals D20).
 
 ### Within-scope precision (NEB-387)
 

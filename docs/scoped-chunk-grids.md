@@ -192,9 +192,9 @@ still there for a game with one grid and no scopes.
 ## 7. What is not in scope
 
 From the issue, unchanged: non-Cartesian grids, terrain generation, seams between grids, and cross-scope adjacency.
-Entities do not ghost, interact or see across scopes, by construction (D11) rather than by policy, except at a scope
-gateway (`docs/gateways.md`, NEB-427), whose open links add adjacency within a band (gateways D30) and observation
-through windows (gateways D20); D11 itself is unchanged. Deciding which
+Entities do not ghost, interact or see across scopes, by construction (D11) rather than by policy, except at a
+portal (`docs/portals.md`, NEB-427), whose open links add adjacency within a band (portals D30) and observation
+through windows (portals D20); D11 itself is unchanged. Deciding which
 scope a player belongs in, and when a scope should go away, remain the game's and NEB-240's.
 
 **Interaction with the scope lifecycle (NEB-240, NEB-252).** A grid scope's `ScopeInfo.ContainerIds` is its anchor

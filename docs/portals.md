@@ -1,4 +1,4 @@
-# Scope gateways — design
+# Portals — design
 
 Status: design of record for **NEB-427**, protocol **v28** (new messages; the client window closes to 28..28, see §12).
 Nothing here is implemented yet: §15 maps it onto NEB-428 to NEB-437. Decisions made without asking are marked **D#**.
@@ -39,47 +39,50 @@ persistence). What changes is the link between them.
 
 ## 1. Names
 
-**D1 The public type family is `ScopeGateway`; prose says "scope gateway", or "gateway" where nothing else is meant,
-and "the network gateway" for `NebulaGateway`.** Nebula already has a gateway: the network edge process
-(`Runtime/Gateway/`, `NebulaGateway`, `docs/gateway-fleet-audit.md`, the CLI and the dashboard), and its partial
-classes are already named `GatewayInterest`, `GatewayTransfers`, `GatewayFarInterest`. A public `Gateway` component
-or `GatewayQueries` class would sit in the same namespace as those and be read as part of the network edge in every
-log line, stack trace and search. So:
+**D1 The public type family is `Portal`, decided by the project owner.** Prose says "portal", "coincident portal" or
+"offset portal" (D4), and "the network gateway" for `NebulaGateway`. The link between two scopes is not called a gateway
+because Nebula already has one: the network edge process (`Runtime/Gateway/`, `NebulaGateway`,
+`docs/gateway-fleet-audit.md`, the CLI and the dashboard), and its partial classes are already named `GatewayInterest`,
+`GatewayTransfers`, `GatewayFarInterest`. A public `Gateway` component or `GatewayQueries` class would sit in the same
+namespace as those and be read as part of the network edge in every log line, stack trace and search. The
+earlier proposal prefixed the family with `Scope` and kept "gateway"; `Portal` avoids the clash and is shorter. So:
 
 | Type | What |
 |---|---|
-| `ScopeGateway` | the component on the near side's content: faces, aperture, far side, hooks |
-| `ScopeGatewayFace`, `ScopeGatewayAperture` | value types: a face's pose and opening |
-| `ScopeGatewayLink` | one party's link through a gateway: far scope, state, wait reason |
-| `ScopeGatewayState`, `ScopeGatewayWait` | the link's state and why it is not open |
-| `ScopeGateways` | static: lookup, link poses (`Map`, `Turn`, `PoseOf`), rendering-layer slots |
-| `ScopeGatewayQueries` | `Raycast`, `Sweep`, `Overlap` across an open link |
+| `Portal` | the component on the near side's content: faces, aperture, far side, hooks |
+| `PortalFace`, `PortalAperture` | value types: a face's pose and opening |
+| `PortalLink` | one party's link through a portal: far scope, state, wait reason |
+| `PortalState`, `PortalWait` | the link's state and why it is not open |
+| `Portals` | static: lookup, link poses (`Map`, `Turn`, `PoseOf`), rendering-layer slots |
+| `PortalQueries` | `Raycast`, `Sweep`, `Overlap` across an open link |
+
+One private test class named `Portal` already exists, in `Tests/EditMode/ConformancePhysicsFrameTests.cs` (an
+`IFrameCrossingPolicy`); NEB-428 renames it to avoid confusion.
 
 Rejected: renaming the network gateway (public API, CLI verbs, cloud and docs; a break for every user to name a feature
-most of them will not use); `Portal` (this document uses "portal" for the non-coincident kind, D4, and a coincident door
-is not a portal to anyone reading the code); `Doorway`, `Passage` (a hangar roof or a window is neither). The cost is
-length, and a mismatch with the planning documents and issue titles, which say `Gateway` and `GatewayQueries`. A game's
-own types (a door component built on this) can be named as the game likes. Open question 1.
+most of them will not use); `Doorway`, `Passage` (a hangar roof or a window is neither). The planning documents and
+issue titles that say `Gateway` and `GatewayQueries` predate the name. A game's own types (a door component built on
+this) can be named as the game likes.
 
-## 2. The gateway: faces, aperture, link pose
+## 2. The portal: faces, aperture, link pose
 
 ```csharp
-var gateway = door.GetComponent<ScopeGateway>();
-gateway.Id = "north-door";                       // unique within its container
-gateway.Aperture = ScopeGatewayAperture.Box(halfWidth: 1.5f, halfHeight: 2.2f);
-gateway.FarTemplate = interiorTemplate;          // far scope created on demand per party (D5)
-gateway.Open(party: "crew-91", members);         // worker: prepare, then open when ready (§3)
+var portal = door.GetComponent<Portal>();
+portal.Id = "north-door";                       // unique within its container
+portal.Aperture = PortalAperture.Box(halfWidth: 1.5f, halfHeight: 2.2f);
+portal.FarTemplate = interiorTemplate;          // far scope created on demand per party (D5)
+portal.Open(party: "crew-91", members);         // worker: prepare, then open when ready (§3)
 ```
 
-**D2 A gateway links two faces, and each face is fixed in a container.** A face is: the scope, the container it is
+**D2 A portal links two faces, and each face is fixed in a container.** A face is: the scope, the container it is
 fixed in (a chunk, a carrier, an instance part), and its pose in that container's own space, a `Double3` position and a
-rotation. The near face is where the `ScopeGateway` component stands, read as `InstanceBoundary.AbsolutePosition` reads
+rotation. The near face is where the `Portal` component stands, read as `InstanceBoundary.AbsolutePosition` reads
 itself today (out of any physics frame, through the container's scope frame, in double). Both faces use one convention:
 the face's +z axis is the way from the near scope into the far one. In either face's axes, z < 0 is the near side's
 region and z ≥ 0 is the far side's.
 
 **D3 The aperture is an oriented box in the face's axes, centred on the face's origin, the opening on its z = 0 plane.**
-`ScopeGatewayAperture` holds the half extents across the opening (x, y) and a `Kind`, `Box` today; any convex shape is
+`PortalAperture` holds the half extents across the opening (x, y) and a `Kind`, `Box` today; any convex shape is
 a later kind with the same contract (a cross-section test and a bounding box). Three regions derive from it, each in
 face axes:
 
@@ -93,26 +96,26 @@ face axes:
 scope's space and F the far face's in the far scope's, a point of the far scope maps into the near scope as
 `p_near = N.Origin + (N.Rotation × F.Rotation⁻¹) × (p_far − F.Origin)`. Two kinds follow, and neither is a flag:
 
-- **Coincident**: both faces' origins are the same absolute point (to `InstanceBoundary.OriginResolution`, 1 mm). The
-  far scope is built in the same place as the door, inside the near side's solid mass, which is how every instance is
-  placed today. A rotation difference is D12 of `docs/scope-frames.md` (a door turned on a sphere, an interior built
+- **Coincident portal**: both faces' origins are the same absolute point (to `InstanceBoundary.OriginResolution`, 1 mm).
+  The far scope is built in the same place as the door, inside the near side's solid mass, which is how every instance
+  is placed today. A rotation difference is D12 of `docs/scope-frames.md` (a door turned on a sphere, an interior built
   upright): the link is a pure turn about the door.
-- **Portal**: the origins differ, so the link carries a translation too. The data model above carries it from the first
-  version; NEB-437 (milestone 7) makes everything that reads a link pose honour a translation.
+- **Offset portal**: the origins differ, so the link carries a translation too. The data model above carries it from the
+  first version; NEB-437 (milestone 7) makes everything that reads a link pose honour a translation.
 
 **D5 The far side is a fixed scope or a template.** A fixed far side names a scope key and the far face's pose in that
-scope's space (a portal into a place that exists anyway, or the next floor of a fixed building). A template far side is
-`InstanceBoundary`'s rule unchanged: the far scope's key is `TemplateId + "/" + party`, prepared with
+scope's space (an offset portal into a place that exists anyway, or the next floor of a fixed building). A template far
+side is `InstanceBoundary`'s rule unchanged: the far scope's key is `TemplateId + "/" + party`, prepared with
 `PrepareInstance(template, key, nearFace.AbsoluteOrigin, nearFace.PoseRotation)`, so it is coincident by construction and
 its far face is the near face's absolute pose read in the instance's upright space. Keeping the derivation byte for byte
 is what lets the `InstanceBoundary` shim (D7) find every instance a game has already persisted.
 
-**D6 A gateway's id is derived, not allocated.** `ScopeGatewayId = ScopeKeys.Hash(containerId + "#" + Id)`, where `Id` is
+**D6 A portal's id is derived, not allocated.** `PortalId = ScopeKeys.Hash(containerId + "#" + Id)`, where `Id` is
 authored and unique within the near container (a second component with the same id is ignored and logged). Every
 worker, network gateway and client computes the same id from what it already has, as `docs/scope-activation.md` D3 does
 for container ids.
 
-**D7 `InstanceBoundary` becomes a shim over a scope gateway, with its old semantics.** It builds a `ScopeGateway` with a
+**D7 `InstanceBoundary` becomes a shim over a portal, with its old semantics.** It builds a `Portal` with a
 template far side, party = `ResolveKey(entity)` (or the owner's identity, or `SharedKey`), and one extra aperture
 containment kind, `Volume`, used by nothing else: the far side is the inside of the `Interior` box (turned with the
 boundary, widened by `ExitMargin` on the way out), not a half-space beyond a plane. Its public members keep their
@@ -120,11 +123,11 @@ meaning: `Request` and `RequireRequest` drive the link open and closed, `Crossin
 `InstanceCrossingState` report the link's readiness in the old statuses, `ResolveCompanions` and `CompanionLeftBehind`
 map onto D13, `CanEnter` onto D11. An entity that reaches the face of a link that is not open is held where it last
 stood, as today, only under `Volume`. It exists so that a game compiles and behaves the same on the release that
-introduces gateways; new content uses plane apertures, and the shim's fate is open question 6.
+introduces portals; new content uses plane apertures, and the shim's fate is open question 5.
 
 ## 3. Parties, state and readiness
 
-**D8 A gateway has one link per party, and a party is an opaque string the game chooses.** The far scope, the open state
+**D8 A portal has one link per party, and a party is an opaque string the game chooses.** The far scope, the open state
 and the observers are per link. A fixed far side usually has one party, `""`. A template far side has one far scope per
 party behind the same near face, which is what one door leading to a different room for each owner needs: nothing more
 is required of the model for it. Nebula never parses a party, as it never parses a scope key.
@@ -142,9 +145,9 @@ is required of the model for it. Nebula never parses a party, as it never parses
 Closing waits for the band to be empty of bodies, at most `CloseTimeoutSeconds` (5 s): turning the aperture solid under a
 straddling body would make PhysX push it out. Past the timeout the link closes anyway, each straddler resolves to its
 root's side and is pushed out of the aperture box, and the overrun is logged. Every state but Open carries a
-`ScopeGatewayWait` reason (`FarScopeActivating`, `FarWorkerContent`, `FarEntitiesRestoring`, `ClientWarming` with the
+`PortalWait` reason (`FarScopeActivating`, `FarWorkerContent`, `FarEntitiesRestoring`, `ClientWarming` with the
 client, `FarWorkerHandshake`, `BandOccupied`, `FarScopeRetired`, `NearContainerMoving`), so a door that will not open
-always says why, and `ScopeGatewayLink.Progress` (0..1) gives a door's UI something to show.
+always says why, and `PortalLink.Progress` (0..1) gives a door's UI something to show.
 
 **D10 Opening is readiness, and readiness is standing, not per entity.** A link turns Open when all of these hold:
 
@@ -155,7 +158,7 @@ always says why, and `ScopeGatewayLink.Progress` (0..1) gives a door's UI someth
 3. the far scope's persisted entities are restored (`docs/scope-lifecycle.md`);
 4. both workers have built the band's throat proxies and aperture colliders (§6);
 5. every member's client is warm: it holds the far window's rows, its own content loaders for them report `Ready`, and it
-   has been sent the far window's entities. The client says so with `ScopeGatewayWarm` (D45) after it has applied the
+   has been sent the far window's entities. The client says so with `PortalWarm` (D45) after it has applied the
    network gateway's first full delivery for the window, which the network gateway marks.
 
 This generalises the per-entity handshake (`InstanceTransfer.WorkerReady`, `ClientReady`, `WorkerContentPending`) into a
@@ -187,13 +190,13 @@ aperture until it is warm, so it never loads at the face either.
 authored scene entity, not pinned (`docs/frame-bodies.md` D8) and not carried crosses on its own: player-owned and
 server-owned alike (crates, projectiles, NPCs, vehicles). A carried entity crosses with its carrier and keeps its seat
 (`docs/scope-activation.md` D19), and everything aboard is followed with it (D21 there). Companions (NEB-372) keep their
-meaning, "crosses with its leader, not on its own", through `ScopeGateway.ResolveCompanions`: a held item is usually in
+meaning, "crosses with its leader, not on its own", through `Portal.ResolveCompanions`: a held item is usually in
 front of its holder and must not cross first. With the far side warm, a companion never waits for a preparation of its
-own, so `CompanionWaitSeconds` has nothing to bound for a scope gateway. Whether an NPC may follow a player through is
-`CanEnter`'s answer, which is the game's; nothing in the gateway stops it.
+own, so `CompanionWaitSeconds` has nothing to bound for a portal. Whether an NPC may follow a player through is
+`CanEnter`'s answer, which is the game's; nothing in the portal stops it.
 
 **D15 The test is a swept segment against the aperture, on the worker that simulates the entity.** After each tick's
-simulation, for each gateway registered on the entity's container chain (not every gateway in the process: today's
+simulation, for each portal registered on the entity's container chain (not every portal in the process: today's
 `InstanceBoundary.Tick` asks every active boundary about every entity), Nebula takes the root's segment from last tick's
 position to this tick's, in the face's axes, in double. The root crosses when the segment meets the cross-section and
 ends at least `CrossDepth` (5 cm) beyond the plane; it crosses back when it ends `CrossDepth` short of it on the other
@@ -224,7 +227,7 @@ origin shift, so a lag-compensated read across the crossing tick finds poses in 
 branch. A ghost holder rewrites its copy's ring when the crossing reaches it. On a client the replica's
 `RemoteInterpolator` buffer and, for the local pawn, the prediction history replayed on reconciliation are rewritten the
 same way when the container change arrives, so a replica glides on and the pawn is not corrected. A game's own heading
-bookkeeping turns with `ScopeGateways.Turn(from, to)` (today's `InstancePoses.Turn`) in a `Crossed(entity, gateway,
+bookkeeping turns with `Portals.Turn(from, to)` (today's `InstancePoses.Turn`) in a `Crossed(entity, portal,
 from, to)` handler raised on the worker and on clients.
 
 **D19 Interest at a commit keeps what a window still authorises.** `docs/scope-activation.md` D13 stays: an entity that
@@ -232,7 +235,7 @@ changes scope is re-authorised for every client that holds it (`RevalidateIntere
 destination is relayed. What changes is `CanObserve` (§5): a client that may look through the link the entity went
 through, from inside the near window, still passes, so the thrower keeps the crate in sight. An onlooker who is not an
 observer loses it at once and is never told where it went, as now. The order is safe by construction: a link is Open
-only after its members' `ScopeGatewayWarm` acknowledgements went through the network gateway, so that gateway holds the
+only after its members' `PortalWarm` acknowledgements went through the network gateway, so that gateway holds the
 link and its observers before any commit through it can be relayed.
 
 ## 5. Observation
@@ -247,12 +250,12 @@ every link: from the planet into a room, and from the room out to the planet.
 ones: an entity in scope T is observable by a client in scope S when an Open or Closing link joins S and T, the client is
 on its observer list (or the list is `Anyone`), the client's pawn is inside S's window, and the entity's record is
 inside T's window. Both window tests are on the absolute records the network gateway already keeps
-(`EntityRecord.AbsX/AbsY/AbsZ`), transformed through the link pose for a portal. The worker decides policy; the network
-gateway only enforces the list (D11).
+(`EntityRecord.AbsX/AbsY/AbsZ`), transformed through the link pose for an offset portal. The worker decides policy; the
+network gateway only enforces the list (D11).
 
-**D22 One gateway deep.** Windows do not chain. An entity received through a link is never the source of another link's
+**D22 One portal deep.** Windows do not chain. An entity received through a link is never the source of another link's
 window, and a client is never sent a scope two links away: on floor 1 you see floor 2's landing, not floor 3. This bounds
-the cost per client at the windows of the links it stands in, at most `MaxGatewayWindows` (4) at once, nearest first.
+the cost per client at the windows of the links it stands in, at most `MaxPortalWindows` (4) at once, nearest first.
 
 **D23 A client's subscriptions span scopes.** Region ids are salted with their scope (`docs/scope-frames.md` D7), and a
 client's set is today salted with one scope (`ClientInterest.ScopeSalt`, `UpdateClientRegions`). The far window's
@@ -281,9 +284,9 @@ is tested on the entity's extent when it has one (`docs/entity-extents.md`), on 
 ship whose root is far from the face but whose hull is in the doorway is mirrored. On the worker that simulates both
 scopes, the proxy is built from the authority's colliders (box, sphere, capsule, mesh; a `CharacterController` as a
 capsule; terrain never), only the ones that overlap the band, put in the other scope's scene (`InstanceScenes`, or the
-default scene for the public world) on `ScopeGatewayProxyLayer`, and posed through the link before that scene steps with
+default scene for the public world) on `PortalProxyLayer`, and posed through the link before that scene steps with
 `MovePosition`/`MoveRotation`, so contacts get its velocity. Proxies are pooled by shape signature and built while a
-link is Preparing, so entering the band allocates nothing. A `ScopeGatewayProxy` component names the authority, for hit
+link is Preparing, so entering the band allocates nothing. A `PortalProxy` component names the authority, for hit
 attribution, and lets queries and the game's triggers skip proxies.
 
 **D27 The throat: each side's static geometry in the band is mirrored too, and each side must be open there.** A
@@ -295,14 +298,14 @@ inside the near side's hill, and PhysX would push it out. Two rules make the doo
   planet's doorstep in the room). They are enabled at Open and dropped at Closed. A client builds the same static throat
   for its pawn's scope, so prediction at the face sees the same walls the worker does.
 - The game builds each side so that, within the band beyond the face, its own static colliders leave the cross-section
-  clear: a tunnel mouth at least `BandDepth` deep. `ScopeGateway.Validate` overlap-tests this in the Editor and when a
+  clear: a tunnel mouth at least `BandDepth` deep. `Portal.Validate` overlap-tests this in the Editor and when a
   link starts preparing, and logs what is in the way.
 
-**D28 A closed gateway is a solid plane.** Each scene has a thin box collider over the cross-section. It is solid while
+**D28 A closed portal is a solid plane.** Each scene has a thin box collider over the cross-section. It is solid while
 the link is not Open. While it is Open, the collider is ignored, pair by pair (`Physics.IgnoreCollision`), for the
 colliders of each admitted entity entering the band, and solid for everything else, which is how a refused entity meets
 it (D17). With several parties' links open on one face, an entity passes only if its own party's link is open (D12).
-An observation-only gateway (§17) keeps it solid for everyone.
+An observation-only portal (§17) keeps it solid for everyone.
 
 **D29 Across workers, the proxy's source is the ordinary ghost.** When the other side is simulated by another worker,
 the entity reaches it through the ghost band (D30), as a kinematic copy driven by the received stream
@@ -311,11 +314,11 @@ scene, with no body in the entity's scope's scene there (that worker may not hav
 one-sided, as for every ghost (`docs/architecture.md`, "Pre-warm, never transfer-at-crossing"), and the proxy is one
 tick behind its authority.
 
-**D30 NEB-232 is decided: scopes are adjacent at gateways only, and only within a band.** `ContainerRegistry.Link` stays
+**D30 NEB-232 is decided: scopes are adjacent at portals only, and only within a band.** `ContainerRegistry.Link` stays
 scope-qualified (`docs/scoped-chunk-grids.md` D11): two containers of different scopes are never neighbours, however their
-boxes overlap. A link that is not Closed adds a separate relation, gateway adjacency, between the near face's container
+boxes overlap. A link that is not Closed adds a separate relation, portal adjacency, between the near face's container
 and the far containers its band touches, and the ghost band consults it with the band box, not the containers' boxes. An
-entity is ghosted across a gateway when its extent or root is inside the band, never because two scopes' boxes overlap.
+entity is ghosted across a portal when its extent or root is inside the band, never because two scopes' boxes overlap.
 There is no free ghosting, interaction or sight between scopes anywhere else.
 
 **D31 The contact model has a stated limit.** Each side resolves its contacts against the other side's proxies, which
@@ -326,9 +329,9 @@ shared physics scenes were rejected (Seamless Instances, "Proxies, not shared ph
 
 ## 7. Queries
 
-**D32 `ScopeGatewayQueries` continue through an open aperture, one gateway deep.** `Raycast`, `Sweep` (sphere, capsule,
+**D32 `PortalQueries` continue through an open aperture, one portal deep.** `Raycast`, `Sweep` (sphere, capsule,
 box) and `Overlap` take the scope to start in and the entity (or party) asking. They run in that scope's physics scene
-ignoring `ScopeGatewayProxyLayer`. When the cast meets the cross-section of a link that is Open for the asker's party
+ignoring `PortalProxyLayer`. When the cast meets the cross-section of a link that is Open for the asker's party
 before it hits anything, it continues in the far scope's scene from the plane point, mapped through the link, with the
 remaining distance, and stops at the next aperture. An overlap tests its own scope and the part of its shape beyond the
 face, mapped into the far scope. A closed aperture is a hit on the plane, flagged `Aperture`, so a shot against a closed
@@ -341,7 +344,7 @@ for the far leg, through a small `HistoryRewind` helper NEB-433 adds; a caller t
 nothing new for the near leg, and one that wants Nebula to do both passes `RewindNear`. Because the ring was rewritten at
 the crossing (D18), an entity that crossed during the rewound interval is found in its scope of that tick. When the far
 scope is on another worker, the near worker has only the band (ghost proxies and throat): the far leg is tested there
-and a cast that leaves the band is returned `Truncated`. Open question 7.
+and a cast that leaves the band is returned `Truncated`. Open question 6.
 
 ## 8. Workers
 
@@ -353,19 +356,19 @@ go when links close, so a town with forty hangar doors binds only the doors in u
 
 **D35 When they are split anyway, a commit goes through handover (NEB-371).** Capacity (`docs/cohesion-hints.md` D9),
 failover or an operator can put the far scope on another worker. Readiness (D10) then includes the far worker's answer
-over the worker link, the existing `InstancePrepare`/`InstanceReady` exchange carrying the link id, and gateway adjacency
+over the worker link, the existing `InstancePrepare`/`InstanceReady` exchange carrying the link id, and portal adjacency
 (D30) gives the far worker a warm ghost of anything in the band. The near worker commits as in D16 into the far
 container, which it does not own, and the ordinary handover sends authority to the far worker on the same tick
 (`AuthorityTransfer`, with the cohesion group and the carried subtree). The far worker snaps to the handed state, as at
 any seam. Nothing holds at the face; the handover's latency is the only cost.
 
-**D36 Every wait has a reason.** Link waits are D9's `ScopeGatewayWait`; an entity's refusal names its reason (D17);
-`NebulaDiagnostics` counts open links, links split across workers (`SplitGatewayLinks`), refusals and close overruns,
+**D36 Every wait has a reason.** Link waits are D9's `PortalWait`; an entity's refusal names its reason (D17);
+`NebulaDiagnostics` counts open links, links split across workers (`SplitPortalLinks`), refusals and close overruns,
 and the dashboard lists each open link with its state and wait.
 
 ## 9. Frames and precision
 
-**D37 Every gateway quantity is a `Double3` and a rotation, applied about the faces, never as a bare translation.** A
+**D37 Every portal quantity is a `Double3` and a rotation, applied about the faces, never as a bare translation.** A
 link stored as `T + R × p` with `T = o − R × o` loses metres at 10⁸ m: a float rotation is good to about 10⁻⁷, and that
 error multiplies `o`. Applied as `N.Origin + R × (p − F.Origin)` (D4), the error multiplies the distance from the face,
 which is metres. Face rotations are normalised and rounded to 10⁻⁶ as `InstanceBoundary.PoseRotation` is, so one door
@@ -380,16 +383,16 @@ frame of the scope its pawn entered from.
 
 **D39 A link pose subsumes an instance pose.** For a template far side, the link's rotation is the instance's pose
 against its host (`InstancePoses`, learned from lease rows, `docs/scope-frames.md` D12). `InstancePoses` stays as the
-source for it; `ScopeGateways.Map(from, to, pose)` and `ScopeGateways.Turn(from, to)` replace direct uses for anything
-that crosses a gateway, and answer for portals too.
+source for it; `Portals.Map(from, to, pose)` and `Portals.Turn(from, to)` replace direct uses for anything
+that crosses a portal, and answer for offset portals too.
 
 ## 10. Rendering on the client
 
 **D40 A client draws several scopes, each with its own pose.** The drawn set is the pawn's scope (the view), every scope
 one Open link away of which the client is an observer, the public world, and `KeepDrawn` requests
-(`docs/scope-activation.md` D29 to D30). `ScopeGateways.PoseOf(scope)` is each drawn scope's pose relative to the
+(`docs/scope-activation.md` D29 to D30). `Portals.PoseOf(scope)` is each drawn scope's pose relative to the
 *anchor*: the scope whose frame the view's frame resolves to (`ScopeFrames.Resolve`), which is the world the player
-first walked in from. It is the composition, in double, of the link poses along the gateways from the anchor to the
+first walked in from. It is the composition, in double, of the link poses along the portals from the anchor to the
 scope. This replaces the one-view limit of `InstanceViews` and its two cases (outside a turned instance; inside one).
 
 **D41 Drawing poses the drawn scopes that are not the anchor, and the cameras, never the anchor.** While cameras draw
@@ -408,20 +411,20 @@ a mask of rendering-layer bits (0, the default, turns this off; eight bits allow
 drawn scope a slot (the view's is stable; others take one when first drawn and free it when no longer drawn) and stamps
 that bit, and only that bit, on the renderers it already manages: an instance's static content, a scoped grid chunk's
 content under `ChunkContext.Root`, and entities' renderers when they spawn or change scope (cached per identity).
-`ScopeGateways.RenderingLayerOf(scope)` and `SlotChanged` tell the game. The game owns lights and their masks, how the
-look blends between scopes (it has `PoseOf` and the faces to measure the camera against), and any portal mask: a portal
-(D4) needs the far scope clipped to the aperture, which is a renderer feature of the game's, not Nebula's.
+`Portals.RenderingLayerOf(scope)` and `SlotChanged` tell the game. The game owns lights and their masks, how the
+look blends between scopes (it has `PoseOf` and the faces to measure the camera against), and any offset-portal mask:
+an offset portal (D4) needs the far scope clipped to the aperture, which is a renderer feature of the game's, not Nebula's.
 
 ## 11. Lifetime and persistence
 
 **D43 Scope lifecycle is unchanged, and an open link counts as interest.** A link that is Preparing, Open or Closing keeps
 its far scope from being judged idle, as an occupant does (`docs/scope-lifecycle.md`). A far scope that is retiring or
-retired makes its links read Closed with `FarScopeRetired`, which makes the aperture solid. A gateway goes with its near
+retired makes its links read Closed with `FarScopeRetired`, which makes the aperture solid. A portal goes with its near
 container's content; its links close and their far scopes follow the ordinary lifecycle.
 
-**D44 Nothing new is persisted.** Gateways are content: the game's content recreates them. Links are runtime state and read
+**D44 Nothing new is persisted.** Portals are content: the game's content recreates them. Links are runtime state and read
 Closed after a restore or a restart. On a planned reassignment of the near container, the releasing worker hands its
-links to the new owner (`ScopeGatewayHandoff`, worker to worker, with the release), whose wait is `NearContainerMoving`
+links to the new owner (`PortalHandoff`, worker to worker, with the release), whose wait is `NearContainerMoving`
 meanwhile; on a crash they are lost and read Closed, which is the safe state.
 
 ## 12. Wire and compatibility
@@ -430,14 +433,14 @@ meanwhile; on a crash they are lost and read Closed, which is the safe state.
 
 | Id | Message | Direction | Carries |
 |---|---|---|---|
-| 27 | `ScopeGateways` | worker → network gateway → client | upserts and removals: gateway id, near face (container ref, pose: `Double3` + rotation), far side (fixed scope id and far face, or template), aperture, band and window sizes, flags |
-| 28 | `ScopeGatewayLinks` | worker → network gateway → client | per link: gateway id, party hash, far scope id and entry container ref, state, wait; to the network gateway the observer list, to a client only whether it is an observer |
-| 29 | `ScopeGatewayWarm` | client → network gateway → worker | link id: this client holds the far window and its content is ready |
-| new | `ScopeGatewayAdjacency` | worker ↔ worker | the band a link adds between two workers' containers (D30) |
-| new | `ScopeGatewayHandoff` | worker → worker | a near container's links on a planned reassignment (D44) |
+| 27 | `Portals` | worker → network gateway → client | upserts and removals: portal id, near face (container ref, pose: `Double3` + rotation), far side (fixed scope id and far face, or template), aperture, band and window sizes, flags |
+| 28 | `PortalLinks` | worker → network gateway → client | per link: portal id, party hash, far scope id and entry container ref, state, wait; to the network gateway the observer list, to a client only whether it is an observer |
+| 29 | `PortalWarm` | client → network gateway → worker | link id: this client holds the far window and its content is ready |
+| new | `PortalAdjacency` | worker ↔ worker | the band a link adds between two workers' containers (D30) |
+| new | `PortalHandoff` | worker → worker | a near container's links on a planned reassignment (D44) |
 | — | `InstancePrepare`, `InstanceReady` | worker ↔ worker | a trailing link id (D35) |
 
-The network gateway sends a client a gateway's record and its links on the reliable stream behind the row of either face
+The network gateway sends a client a portal's record and its links on the reliable stream behind the row of either face
 (as `docs/scope-activation.md` D14 and D15 order rows before what names them), and withdraws them with the row. Spawns,
 state entries and container rows are unchanged.
 
@@ -472,12 +475,12 @@ How the design keeps them, and what a test pins:
 | a snap at the commit | pose, velocity, history, interpolation and prediction history go through the link (D18) | correction at a crossing ≤ 0.1 m, replica speed continuous |
 | drawing | posing a few roots, not the world (D41) | client frame ≤ 33 ms with two drawn scopes |
 | cross-worker | co-location (D34); a split commit is one handover (D35) | correction ≤ 0.1 m on a split link |
-| the crossing test | gateways indexed by container (D15), not every gateway for every entity | worker tick with 1,000 entities and 50 gateways |
+| the crossing test | portals indexed by container (D15), not every portal for every entity | worker tick with 1,000 entities and 50 portals |
 
 ## 14. Where the current code fights the design
 
 1. **Only pawns, every boundary, every entity.** `InstanceBoundary.Tick` returns for `OwnerClientId == 0` and asks every
-   `Active` boundary about every entity. NEB-429 drops the owner test and registers gateways on their container chain
+   `Active` boundary about every entity. NEB-429 drops the owner test and registers portals on their container chain
    (D14, D15).
 2. **Per-entity preparations hold at the face.** `NebulaWorker.ValidTransfer` requires `entity.Container ==
    transfer.Source` and the same epoch, and a preparation expires after 15 s; `InstanceBoundary.Cross` writes
@@ -492,7 +495,7 @@ How the design keeps them, and what a test pins:
    despawned for its thrower at the commit. Until NEB-431 lands, NEB-429's crossings show exactly that; D19 and D21 fix it.
 5. **One salt per client.** `ClientInterest.ScopeSalt`, `UpdateClientRegions` and the foci keys salt with the client's
    one scope; D23 makes the salt per window.
-6. **No adjacency across scopes.** `ContainerRegistry.Link` refuses it, by design, and stays so; gateway adjacency is a
+6. **No adjacency across scopes.** `ContainerRegistry.Link` refuses it, by design, and stays so; portal adjacency is a
    second relation with its own band test (D30), so the ghost band changes only where it consults it.
 7. **The world is turned to draw.** `InstanceViews.Begin` turns every scene root from inside a turned instance; D41 poses
    the view and its cameras instead.
@@ -502,12 +505,12 @@ How the design keeps them, and what a test pins:
    and are not touched at a crossing; D18 rewrites them.
 10. **The crossing test is a volume.** `InstanceBoundary.InteriorContains` makes the whole `Interior` box the inside, so
     an entity is "in" whatever face it came through. That is the `Volume` containment of the shim (D7); a plane aperture
-    is a different, stricter rule, and content moved onto gateways must have its door on the face.
+    is a different, stricter rule, and content moved onto portals must have its door on the face.
 11. **Companions move by translation only.** `InstanceBoundary.Commit` commits the group with one displacement
     (`TryCommitTransfers(Group, therePrecise − entity.ScopePositionPrecise)`), which preserves each member's rotation,
     so through a turned door a held item arrives unturned. D18 maps every member's full pose.
 12. **Ghosts are bodies in their own scope.** `SetGhostPhysics` makes a ghost kinematic where it is; a ghost across a
-    gateway must be a proxy in the other scope's scene instead (D29).
+    portal must be a proxy in the other scope's scene instead (D29).
 13. **Physics scenes do not exist in EditMode.** `InstanceScenes.Prepare` keeps containers in the active scene when not
     playing, so tier-B EditMode tests cannot test proxies or cross-scene contacts. NEB-432's tests need a play-mode
     fixture or a seam that creates local physics scenes, as `AdoptContent` is a seam for content.
@@ -519,14 +522,14 @@ How the design keeps them, and what a test pins:
 Each issue is one Nebula PR to the public repo. Conformance scenarios get the next free numbers of
 `docs/conformance-suite.md` (50 onwards) in the PR that implements them.
 
-**Milestone 1, gateways and anything crosses.**
+**Milestone 1, portals and anything crosses.**
 
-- **NEB-428 `ScopeGateway` replaces `InstanceBoundary`.** The component, faces, apertures (`Box`, and `Volume` for the
+- **NEB-428 `Portal` replaces `InstanceBoundary`.** The component, faces, apertures (`Box`, and `Volume` for the
   shim), party links and their state machine with wait reasons (§3), the standing preparation (D10), asynchronous content
   preparation (§14, item 3), messages 27 to 29 and protocol 28 with the window closed (§12). `InstanceBoundary` becomes
   the shim (D7) with the same keys, events and statuses; `ObservePublic`, `ObserveHost` and `HostCarriers` are left as
   they are. Tests: every existing `InstanceBoundary*` test and `ConformanceFramedInstanceBoundaryTests` pass unchanged on
-  the shim; a state-machine test of every transition and wait; tier A (fake mesh, real network gateway): a gateway's
+  the shim; a state-machine test of every transition and wait; tier A (fake mesh, real network gateway): a portal's
   record and link state reach clients holding either face's row and only those, a non-member gets no observer bit, a
   27 client is refused; `ConformanceProtocolCompatibilityTests` on 28..28.
 - **NEB-429 Any entity crosses on its own.** D14 to D19 except the observation half of D19: the swept and predictive test,
@@ -537,7 +540,7 @@ Each issue is one Nebula PR to the public repo. Conformance scenarios get the ne
   ship with two riders crosses with them seated; a refused crate is stopped and `Refused` raised; a history read at the
   crossing tick answers in the destination's space; the pawn's correction at a crossing ≤ 0.1 m.
 - **NEB-430 Geometry in double and oriented.** D4, D37 to D39: faces in double, the pivot form, face-relative
-  `OrientedBox` tests, `ScopeGateways.Map` and `Turn`. Tests: a gateway 5×10⁷ m out on a door turned 55° about x and 180°
+  `OrientedBox` tests, `Portals.Map` and `Turn`. Tests: a portal 5×10⁷ m out on a door turned 55° about x and 180°
   about y, crossings both ways land to the millimetre with rotation and velocity turned (extending
   `ConformanceFarInstanceFrameTests`); a pin that the translation form would have been off by metres there.
 
@@ -545,12 +548,12 @@ Each issue is one Nebula PR to the public repo. Conformance scenarios get the ne
 
 - **NEB-431 Observe both ways.** §5: windows, the `CanObserve` rule, per-window salts, the shim's mapping of
   `ObservePublic`/`ObserveHost`. Tests (tier A): a member in the near window receives the far window's rows, carriers and
-  entities and not what is outside it, and the reverse from inside; a non-member receives nothing through; one gateway
+  entities and not what is outside it, and the reverse from inside; a non-member receives nothing through; one portal
   deep; closing revokes; a crate thrown in stays for its thrower while a non-member onlooker loses it and never hears of
   its destination (`docs/scope-activation.md` D13 kept); a client reconnecting inside sees out again.
 - **NEB-432 Proxies in the band.** §6 and the NEB-232 decision: proxies, the throat and its validation, the aperture
-  collider, gateway adjacency and proxy ghosts. Tests (play mode): a crate rests straddling an open face; a body pushed
-  through crosses without a jolt; a closed gateway stops a body; a refused body bounces; on two workers a body in the band
+  collider, portal adjacency and proxy ghosts. Tests (play mode): a crate rests straddling an open face; a body pushed
+  through crosses without a jolt; a closed portal stops a body; a refused body bounces; on two workers a body in the band
   is a proxy on the far worker and nothing outside the band is ghosted across.
 - **NEB-433 Queries across.** §7. Tests: a ray through an open aperture hits a far entity, at its rewound pose with a
   tick; a closed aperture is hit at the plane; proxies are never hit; a face with two parties' links casts into the
@@ -565,27 +568,27 @@ Each issue is one Nebula PR to the public repo. Conformance scenarios get the ne
   extend `ConformanceFarInstanceClientFrameTests` with two turned scopes drawn at once and from inside a turned scope;
   the anchor's roots are never moved; slot bits are stamped and nothing else of the mask changes.
 - **NEB-436 Cleanup.** Remove `ObservePublic`, `ObserveHost`, `HostViews`, `HostCarriers` and `InstanceViews`'
-  scene-root turn; decide the shim's future (open question 6); fold in NEB-405, NEB-308 and NEB-408; update the
+  scene-root turn; decide the shim's future (open question 5); fold in NEB-405, NEB-308 and NEB-408; update the
   instancing, scopes and physics guides and `docs/conformance-suite.md`.
 
-**Milestone 7, portal gateways.**
+**Milestone 7, offset portals.**
 
 - **NEB-437 Non-coincident link pose.** Every reader of a link pose honours its translation: crossing, windows (D21 for
-  a portal), proxies, queries, `PoseOf`. Tests: a portal between two places in one scope and between two scopes; a crate
-  goes through both ways; a ray and an observer see through; a proxy straddles; precision at 10⁸ m on both faces.
+  an offset portal), proxies, queries, `PoseOf`. Tests: an offset portal between two places in one scope and between two
+  scopes; a crate goes through both ways; a ray and an observer see through; a proxy straddles; precision at 10⁸ m on both faces.
 
 ## 16. What this supersedes
 
 | Was | Now |
 |---|---|
-| `docs/scope-frames.md` §7: seamless scope-to-scope travel is not in scope | it is, through a scope gateway; curved coordinate systems still are not |
+| `docs/scope-frames.md` §7: seamless scope-to-scope travel is not in scope | it is, through a portal; curved coordinate systems still are not |
 | `docs/scope-activation.md` D24: rows only, no host entities | windows, rows and entities both ways (D20 to D24) |
 | `docs/scope-activation.md` §12, `ObserveHost`, `HostViews` | the near side's window of the link (D24) |
 | `docs/scope-frames.md` D12, `HostCarriers` | carriers of a window's rows (D20) |
 | `ObservePublic` and `PublicView`, scope 0 only | the host side's window, any scope (D24) |
 | `docs/scope-frames.md` D12, drawing by turning the world | `PoseOf` and posed roots and cameras (D40, D41) |
-| `docs/scoped-chunk-grids.md` §7: no ghosting or interaction across scopes | adjacency at gateways only, within a band (D30) |
-| `InstanceBoundary` | a shim over `ScopeGateway` (D7) |
+| `docs/scoped-chunk-grids.md` §7: no ghosting or interaction across scopes | adjacency at portals only, within a band (D30) |
+| `InstanceBoundary` | a shim over `Portal` (D7) |
 | NEB-370 sibling observation, NEB-371 cross-worker crossings, NEB-232 adjacency research | D20, D35, D30 |
 
 ## 17. Seams kept open
@@ -597,35 +600,33 @@ None of these is built here; each must stay possible without redoing what is.
   crosses by its root.
 - **One door, one far scope per party.** D8: one near face, one link and far scope per party; observation and admission
   per link (D11, D12).
-- **Observation-only gateways.** A flag that keeps the aperture solid for everyone (D28) and admits nothing, with windows
+- **Observation-only portals.** A flag that keeps the aperture solid for everyone (D28) and admits nothing, with windows
   as usual: a window in a wall.
 - **Something following a player through.** Admission is `CanEnter`'s (D11), which the game writes; a server-owned
   entity crosses like any other (D14).
 - **A door on a moving carrier.** A face is fixed in a container (D2), so a door in a vehicle's hull moves with it; a
-  face on a frame that turns is open question 11.
+  face on a frame that turns is open question 10.
 
 ## 18. Open questions
 
-1. **Names.** `ScopeGateway` and its family (D1), or keep `Gateway` as the issues say and accept the clash with the
-   network gateway? Either way, should Linear titles and the planning notes follow?
-2. **Sizes.** `BandDepth` 2 m, `CrossDepth` 5 cm, `WindowMargin` and `WindowDepth` (proposed 8 m and 48 m),
-   `MaxGatewayWindows` 4, `CloseTimeoutSeconds` 5. The HVR-683 spike should measure them.
-3. **Default observers.** Members only (D11). Should a door shared by several parties let bystanders look into an open
+1. **Sizes.** `BandDepth` 2 m, `CrossDepth` 5 cm, `WindowMargin` and `WindowDepth` (proposed 8 m and 48 m),
+   `MaxPortalWindows` 4, `CloseTimeoutSeconds` 5. The HVR-683 spike should measure them.
+2. **Default observers.** Members only (D11). Should a door shared by several parties let bystanders look into an open
    party's room by default, or only when the game says `Anyone`?
-4. **Party of an unowned entity.** D12 refuses an unowned entity at a face with more than one open link unless `PartyOf`
+3. **Party of an unowned entity.** D12 refuses an unowned entity at a face with more than one open link unless `PartyOf`
    names a party. Is refusal the right default, rather than the most recently opened link?
-5. **Crash.** A crashed near worker's links read Closed (D44), and anything straddling is pushed out when the far side
+4. **Crash.** A crashed near worker's links read Closed (D44), and anything straddling is pushed out when the far side
    comes back. Acceptable?
-6. **The shim's future.** Keep `Volume` containment and `InstanceBoundary` as a supported compatibility type, or remove
+5. **The shim's future.** Keep `Volume` containment and `InstanceBoundary` as a supported compatibility type, or remove
    both in NEB-436 once content moves to plane apertures?
-7. **Far-leg queries on a split link.** D33 truncates a cast that leaves the band on another worker. Acceptable, given D34
+6. **Far-leg queries on a split link.** D33 truncates a cast that leaves the band on another worker. Acceptable, given D34
    keeps links co-located, or does it need an asynchronous `WorkerQuery` leg?
-8. **Rendering layers.** Should Nebula stamp renderers (D42), or only assign slots and let the game stamp? Is eight slots
+7. **Rendering layers.** Should Nebula stamp renderers (D42), or only assign slots and let the game stamp? Is eight slots
    enough?
-9. **Lag compensation.** Nebula rewinds the far leg by default and the near leg only on request (D33). Should it own both?
-10. **Client throat.** D27 has the client build the static throat for prediction. That is content work on the client at
-    preparation; is it worth it, or should prediction at the face accept the worker's correction?
-11. **Turning frames.** `docs/container-tree.md` already asks for doors on frames that do not turn. Does a face on a
+8. **Lag compensation.** Nebula rewinds the far leg by default and the near leg only on request (D33). Should it own both?
+9. **Client throat.** D27 has the client build the static throat for prediction. That is content work on the client at
+   preparation; is it worth it, or should prediction at the face accept the worker's correction?
+10. **Turning frames.** `docs/container-tree.md` already asks for doors on frames that do not turn. Does a face on a
     turning carrier need to work, or is that a documented limit?
-12. **NEB-431 before NEB-429?** NEB-429 alone makes a thrower lose sight of a crate at the commit (§14, item 4). Ship
+11. **NEB-431 before NEB-429?** NEB-429 alone makes a thrower lose sight of a crate at the commit (§14, item 4). Ship
     them in one release, or accept the gap between milestones?

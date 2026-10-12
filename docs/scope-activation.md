@@ -4,7 +4,7 @@ Status: design of record for **NEB-233**, protocol **v18** (one appended `Hello`
 transfers across scopes (§11, no wire change). Decisions made without asking are marked **D#**. User-facing page:
 `website/content/docs/guides/scopes.mdx`. Conformance tests: `Tests/EditMode/ConformanceScopeActivationTests.cs` and
 `Services~/Nebula.Services.Tests/ConformanceScopeRoutingTests.cs` (both `[Category("Conformance")]`, scenario 2 of
-`docs/conformance-suite.md`). D24 and §12 are superseded by `docs/gateways.md` (NEB-427); both are kept as the record.
+`docs/conformance-suite.md`). D24 and §12 are superseded by `docs/portals.md` (NEB-427); both are kept as the record.
 
 ## 0. Problem
 
@@ -410,10 +410,10 @@ clients follow it. Both are tested.
 
 ## 12. An instance can keep observing its host (NEB-369)
 
-**Superseded by `docs/gateways.md` (NEB-427).** `ObserveHost` and the per-connection host history (`HostViews`) are
-replaced by a scope gateway's windows: the near side's window of an open link keeps the host's rows and entities around
+**Superseded by `docs/portals.md` (NEB-427).** `ObserveHost` and the per-connection host history (`HostViews`) are
+replaced by a portal's windows: the near side's window of an open link keeps the host's rows and entities around
 the door, from link records rather than connection history, so the limits in §12.3 (a reconnect inside, entities not
-sent) go (gateways D20, D24). NEB-431 maps `ObserveHost` onto that window; NEB-436 removes this path. The section is
+sent) go (portals D20, D24). NEB-431 maps `ObserveHost` onto that window; NEB-436 removes this path. The section is
 kept as the record of what shipped.
 
 ### 12.1 What went wrong
@@ -444,7 +444,7 @@ held when it crossed, at most one window's rows. It is collected after the clien
 against the same `MaxContainerRows` budget, so exhausting the budget can only withhold host ground, never the rows the
 client stands in.
 
-**D24 Rows only; no host entities.** *Superseded by `docs/gateways.md` D20 to D24 (NEB-427): an open scope gateway
+**D24 Rows only; no host entities.** *Superseded by `docs/portals.md` D20 to D24 (NEB-427): an open portal
 gives an observer the other side's window, rows and entities, both ways and for any scope; the text below is the
 decision as it was.* The host's entities are not observed. Entity interest across scopes is
 `ObservePublic`'s job, for the public world, and widening it to any scope would change authorization (`CanObserve`), the
@@ -537,6 +537,6 @@ before (D31 aside), and the protocol stays 25.
   D24 decide that), and content the game parents elsewhere is the game's to show.
 - Nothing clips the kept scope to the doorway. Both sides are drawn whole; a game that wants a portal masks it itself.
 
-Through a scope gateway (`docs/gateways.md`, NEB-427), a scope one open link away is drawn without a request, its
-entities are sent to observers (gateways D20), and it is drawn at its own pose with a rendering-layer slot of its own
-(gateways D40 to D42). Masking a portal stays the game's.
+Through a portal (`docs/portals.md`, NEB-427), a scope one open link away is drawn without a request, its
+entities are sent to observers (portals D20), and it is drawn at its own pose with a rendering-layer slot of its own
+(portals D40 to D42). Masking an offset portal stays the game's.
