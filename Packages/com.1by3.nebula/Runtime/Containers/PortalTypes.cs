@@ -222,16 +222,16 @@ namespace Nebula
         /// What turns a rotation or direction of the far scope's space into the near scope's: the near face's rotation times
         /// the far face's inverse (<c>docs/portals.md</c> D4). For a coincident portal it is the pure turn about the door.
         /// </summary>
-        public Quaternion Turn => NearFace.Rotation * Quaternion.Inverse(FarFace.Rotation);
+        public Quaternion Turn => ToNearMap.Turn;
 
         /// <summary>
         /// A point of the far scope (absolute) in the near scope: <c>N.Origin + (N.Rotation × F.Rotation⁻¹) × (p − F.Origin)</c>,
         /// applied about the faces and in double (<c>docs/portals.md</c> D4, D37).
         /// </summary>
-        public Double3 ToNear(Double3 farPoint) => NearFace.Origin + PhysicsFrames.Rotate(Turn, farPoint - FarFace.Origin);
+        public Double3 ToNear(Double3 farPoint) => ToNearMap.Point(farPoint);
 
         /// <summary>The inverse of <see cref="ToNear"/>: a point of the near scope in the far scope.</summary>
-        public Double3 ToFar(Double3 nearPoint) => FarFace.Origin + PhysicsFrames.Rotate(Quaternion.Inverse(Turn), nearPoint - NearFace.Origin);
+        public Double3 ToFar(Double3 nearPoint) => ToFarMap.Point(nearPoint);
 
         /// <summary>The link's maths from the far scope into the near one (<see cref="ToNear"/>), for the pose and velocity of whatever crosses.</summary>
         internal PortalMap ToNearMap

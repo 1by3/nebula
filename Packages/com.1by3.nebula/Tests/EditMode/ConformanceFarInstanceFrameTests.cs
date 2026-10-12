@@ -331,5 +331,108 @@ namespace Nebula.Tests
             Assert.Less((outside - AtDoor(new Vector3(0f, 1f, -0.5f))).magnitude, 2e-3f, "where it walked out, turned back");
             Assert.Less(Quaternion.Angle(facing, player.transform.rotation), 0.05f, "facing as it went in");
         }
+
+        /// <summary>The door-local offset a player walked in at.</summary>
+        private static readonly Vector3 WalkedIn = new Vector3(0.3f, 1f, 1f);
+
+        [Test]
+        public void ACrossingFiveTimesTenToTheSeventhMetresOutLandsToTheMillimetreBothWaysWithRotationAndVelocityTurned()
+        {
+            // NEB-430 (docs/portals.md D4, D37 to D39): a door on a planet 5x10^7 m out, turned 55 degrees about x and 180 about y. The link is applied
+            // about the faces in double, so the error multiplies the distance from the face (metres), never the distance from the scope's origin.
+            var chunk = Build(out var planet, out _, Turned);
+            var player = Player(chunk, planet, AtDoor(new Vector3(0.3f, 1f, -6f)));
+            var link = OpenDoor();
+            Tick();
+            var hall = ContainerRegistry.GetRuntime(NebulaWorker.InstanceKey("vault/" + Owner + "/hall"));
+            Assert.That(Distance(_portal.NearFace.Origin, Absolute(planet, Door)), Is.LessThan(Millimetre), "the face is the door, to the millimetre, 5x10^7 m out");
+
+            var inside = AtDoor(WalkedIn);
+            var facing = Turned * Quaternion.Euler(0f, 10f, 0f);
+            var velocity = new Vector3(0.5f, -0.1f, 3f);
+            player.transform.position = planet.Carried.Frame.LocalToSimulation(inside);
+            player.transform.rotation = facing;
+            player.Motion.Velocity = Turned * velocity;
+            var through = Absolute(planet, inside);
+            Tick();
+
+            Assert.AreSame(hall, player.Container, "in");
+            var in1 = ContainerRegistry.ToAbsolutePrecise(player.ScopePositionPrecise, player.InstanceId);
+            var expectedIn = _portal.NearFace.Origin + Double3.From(WalkedIn);
+            TestContext.WriteLine($"in: {Distance(expectedIn, in1):E3} m from the door's own offsets");
+            // The instance stands at the face's origin rounded to a millimetre; the door itself is up to 0.87 mm from it.
+            Assert.Less(Distance(expectedIn, in1), Millimetre, "upright in the instance, to the millimetre");
+            Assert.Less(Quaternion.Angle(Quaternion.Euler(0f, 10f, 0f), player.transform.rotation), 0.01f, "facing as it did, in the instance's axes");
+            Assert.Less((player.Motion.Velocity - velocity).magnitude, 1e-4f, "moving the same way");
+
+            // Back out through the same face: where it walked out, at the planet's numbers, to the millimetre, facing and moving as it was.
+            var back = new Vector3(0f, 0f, -1.6f);
+            player.transform.position += back;
+            Tick();
+            Assert.AreSame(chunk, player.Container, "out");
+            var out1 = Absolute(planet, planet.Carried.Frame.SimulationToLocal(player.transform.position));
+            var expectedOut = through + PhysicsFrames.Rotate(Turned, Double3.From(back));
+            TestContext.WriteLine($"out: {Distance(expectedOut, out1):E3} m from where it should be");
+            Assert.Less(Distance(expectedOut, out1), Millimetre, "and out");
+            Assert.Less(Quaternion.Angle(facing, player.transform.rotation), 0.01f, "facing as it went in");
+            Assert.Less((player.Motion.Velocity - Turned * velocity).magnitude, 1e-3f, "and moving as it was, in the planet's axes");
+            Assert.That(link.State, Is.EqualTo(PortalState.Open));
+        }
+
+        [Test]
+        public void TheTranslationFormOfALinkWouldBeOffByMetresFiveTimesTenToTheSeventhOut()
+        {
+            // The pin behind D37: T + R p with T = o - R o, baked from the door's exact rotation and applied with the float rotation a
+            // Transform or a quaternion holds, carries the float rotation's 1e-8 error multiplied by o. About the faces the same error multiplies
+            // only the distance from the face.
+            Build(out _, out _, Turned);
+            var link = OpenDoor();
+            var o = _portal.NearFace.Origin;
+            var R = link.Turn; // far -> near, as the link holds it: a float quaternion
+            var local = new Double3(0.3, 1.0, 1.0);
+
+            // The same rotation in double, from the angles the door was built with: the exact answer to what the door means.
+            var exact = Matrix3.FromTurned();
+            var near = o + exact.Rotate(local);
+            var viaPivot = link.ToFar(near);
+            var pivotError = Distance(viaPivot, o + local);
+
+            // The translation form: T from the exact rotation, applied with the float one (store T once and R as a Unity quaternion).
+            var T = o - exact.Transpose().Rotate(o);
+            var viaTranslation = T + PhysicsFrames.Rotate(Quaternion.Inverse(R), near);
+            var translationError = Distance(viaTranslation, o + local);
+            TestContext.WriteLine($"about the faces: {pivotError:E3} m; as T + R p: {translationError:0.000} m");
+            Assert.Less(pivotError, Millimetre, "about the faces the error multiplies the distance from the face");
+            Assert.Greater(translationError, 1.0, "as T + R p it multiplies o: metres where the faces are 5x10^7 m out");
+        }
+
+        /// <summary>A 3x3 rotation in double: the exact answer to a rotation Unity holds as a float quaternion.</summary>
+        private readonly struct Matrix3
+        {
+            private readonly double _a, _b, _c, _d, _e, _f, _g, _h, _i;
+
+            private Matrix3(double a, double b, double c, double d, double e, double f, double g, double h, double i)
+            {
+                _a = a; _b = b; _c = c; _d = d; _e = e; _f = f; _g = g; _h = h; _i = i;
+            }
+
+            /// <summary>the door's Turned: 55 degrees about x, then 180 about y, in double.</summary>
+            public static Matrix3 FromTurned()
+            {
+                double ax = 55.0 * Math.PI / 180.0, ay = Math.PI;
+                var x = new Matrix3(1, 0, 0, 0, Math.Cos(ax), -Math.Sin(ax), 0, Math.Sin(ax), Math.Cos(ax));
+                var y = new Matrix3(Math.Cos(ay), 0, Math.Sin(ay), 0, 1, 0, -Math.Sin(ay), 0, Math.Cos(ay));
+                return y.Mul(x);
+            }
+
+            private Matrix3 Mul(Matrix3 o) => new Matrix3(
+                _a * o._a + _b * o._d + _c * o._g, _a * o._b + _b * o._e + _c * o._h, _a * o._c + _b * o._f + _c * o._i,
+                _d * o._a + _e * o._d + _f * o._g, _d * o._b + _e * o._e + _f * o._h, _d * o._c + _e * o._f + _f * o._i,
+                _g * o._a + _h * o._d + _i * o._g, _g * o._b + _h * o._e + _i * o._h, _g * o._c + _h * o._f + _i * o._i);
+
+            public Matrix3 Transpose() => new Matrix3(_a, _d, _g, _b, _e, _h, _c, _f, _i);
+
+            public Double3 Rotate(Double3 v) => new Double3(_a * v.X + _b * v.Y + _c * v.Z, _d * v.X + _e * v.Y + _f * v.Z, _g * v.X + _h * v.Y + _i * v.Z);
+        }
     }
 }

@@ -509,6 +509,12 @@ error multiplies `o`. Applied as `N.Origin + R × (p − F.Origin)` (D4), the er
 which is metres. Face rotations are normalised and rounded to 10⁻⁶ as `InstanceBoundary.PoseRotation` is, so one door
 always prepares one definition.
 
+> **As built (NEB-428, NEB-430).** One type holds the maths of a link in one direction: `PortalMap` (`PortalTypes.cs`), `ToOrigin + Turn × (p − FromOrigin)` with both origins `Double3` and the turn the
+> near face's rotation times the far face's inverse, applied in double (`PhysicsFrames.Rotate` normalises the float quaternion in double first). `PortalLink.ToNear`, `ToFar` and `Turn` are that map; a crossing, the history,
+> the interpolation buffer and the prediction history all go through it, so nothing else holds a link's pose. The pin that the other form is wrong is a test, not a comment
+> (`ConformanceFarInstanceFrameTests.TheTranslationFormOfALinkWouldBeOffByMetresFiveTimesTenToTheSeventhOut`): for the door turned 55° about x and 180° about y on a planet 5×10⁷ m out, `T + R p` with `T` baked from the exact
+> rotation and applied with the float one is 31 m off, and the pivot form 0.7 µm.
+
 **D38 Geometry is face-relative, so the float parts are small.** An entity's root is read as an absolute `Double3`
 (`ContainerRegistry.ToAbsolutePrecise`), the face origin subtracted in double, and only then narrowed to the face-relative
 offset `OrientedBox` tests. Commits use the double overloads that exist (`TryCommitTransfer(transfer, frame, Double3,
@@ -516,10 +522,24 @@ rotation)`), so an entity lands to the millimetre wherever the scope's frame ori
 NEB-426: a pinned frame per instance on workers (`docs/scope-frames.md` D11) and, on a client, an instance sharing the
 frame of the scope its pawn entered from.
 
+> **As built (NEB-430).** The aperture test never leaves double: the root is `Double3` absolute, `PortalFace.ToLocal` subtracts the face origin and turns back by its rotation in double, and `PortalAperture.Contains` takes the
+> two face-relative doubles, so there is no `OrientedBox` and no float between the entity and the decision (`OrientedBox` stays as the internal helper its own tests cover). An audit of the portal, transfer and preparation paths found no absolute position left in float except
+> four, each deliberate: `ScopeDefinition.ObservationCenter` and `InstanceContainerInfo.ObservationCenter` (`(absoluteOrigin + PublicView.center).ToVector3()` in `PrepareInstance`), a wire field that goes with `ObservePublic` in NEB-431 (D24, D47);
+> the `PrepareInstance(template, key, Vector3 origin)` overload, whose float is the caller's and is widened exactly; `TryCommitTransfer(transfer, Vector3 position, Quaternion rotation)` and `TryCommitTransfers(..., Vector3 translation)`, the explicit-transfer API
+> that has `Double3` overloads; and the float frame positions `ContainerRegistry.ToFrame` hands to `FindDestination` and `ResolveEntry` only to find which container holds a point, small by construction because a scope's frame is kept near what it holds. `PrepareInstance`'s part
+> bounds are relative to the origin (small) and are added to it in double, as NEB-426 left them. A crossing lands to the millimetre both ways at 5×10⁷ m with the door turned 55° about x and 180° about y: in, 24 µm from the door's own offsets (the face's
+> origin is rounded to a millimetre, so the door is up to 0.87 mm from it); out, 2 µm from where it walked.
+
 **D39 A link pose subsumes an instance pose.** For a template far side, the link's rotation is the instance's pose
 against its host (`InstancePoses`, learned from lease rows, `docs/scope-frames.md` D12). `InstancePoses` stays as the
 source for it; `Portals.Map(from, to, pose)` and `Portals.Turn(from, to)` replace direct uses for anything
 that crosses a portal, and answer for offset portals too.
+
+> **As built (NEB-428, NEB-430).** `Portals.Map(from, to, pose)` (a `PortalPose`, or a `Double3` alone) and `Portals.Turn(from, to)` are in `Portals.cs` and answer from `Portals.TryMap`: first a link a worker holds between the two scopes (the one whose
+> face is nearest the pose when several join them), then a portal record a client was sent for a portal with a fixed far side (a template's far face is the near face's origin, so its turn is the instance's pose and needs no record), then the pose of the
+> instance one of the scopes is (`InstancePoses`, learned from lease rows, so a process that holds no link answers the same for a template). Scopes nothing relates, and a scope with itself, return the pose unchanged and the identity.
+> `Portals.Turn(from, to)` is `InstancePoses.Turn(from, to)` for a template, and is a link's turn for an offset one. A fixed far side maps through the translation too. They landed with NEB-429, whose client path needs the same lookup;
+> NEB-430 pins them (`PortalMapTests`) and removes the second copy of the link maths.
 
 ## 10. Rendering on the client
 
