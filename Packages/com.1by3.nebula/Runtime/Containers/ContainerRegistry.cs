@@ -582,7 +582,14 @@ namespace Nebula
         public static Container RegisterRuntime(ulong id, ContainerPlacement placement, InstanceContainerInfo instance = null)
         {
             if (placement.IsRoot)
+            {
+                // An instance scope's first root container here pins the scope's own origin frame near it, so the
+                // instance is simulated near Unity's origin however far out it is (docs/scope-frames.md D11). A scope
+                // that already has a frame (a scoped grid's, or the pin of an earlier part) keeps it.
+                if (instance != null && instance.InstanceId != 0 && !ScopeFrames.HasFrame(instance.InstanceId))
+                    ScopeFrames.Pin(instance.ScopeKey, instance.InstanceId, placement.Center.X, placement.Center.Y, placement.Center.Z);
                 return RegisterRuntime(id, new Bounds(ToFrame(placement.Center, instance?.InstanceId ?? 0UL), placement.Size), instance, placement, fromPlacement: true);
+            }
             var parent = FindById(placement.ParentId);
             if (parent == null)
             {
@@ -792,6 +799,7 @@ namespace Nebula
             c.IsRuntime = false;
             c.Index = ushort.MaxValue;
             c.FixedParent = null;
+            UnpinIfLast(c.InstanceId);
             if (c.gameObject != null)
             {
                 if (Application.isPlaying) UnityEngine.Object.Destroy(c.gameObject);
@@ -836,6 +844,14 @@ namespace Nebula
             foreach (var id in PendingChildren.Keys) if (!keep.Contains(id)) RuntimeScratchIds.Add(id);
             foreach (var id in RuntimeScratchIds) UnregisterRuntime(id);
             RuntimeScratchIds.Clear();
+        }
+
+        /// <summary>An instance scope's pinned frame goes with the scope's last container here (docs/scope-frames.md D11).</summary>
+        private static void UnpinIfLast(ulong instanceId)
+        {
+            if (instanceId == 0 || !ScopeFrames.HasFrame(instanceId) || !ScopeFrames.Of(instanceId).IsPinned) return;
+            foreach (var other in RuntimeList) if (other != null && other.InstanceId == instanceId) return;
+            ScopeFrames.Unpin(instanceId);
         }
 
         /// <summary>An absolute box (as leases and telemetry carry it) in the public world's frame.</summary>
