@@ -461,7 +461,7 @@ A few rules to design around:
 - **A reconnect inside sees out again.** The link records live on the gateway, so nothing about where a player came from is remembered.
 - **Nothing is simulated across except at the face.** A client holds what it is sent as replicas in their own scope. It collides with them only through the proxies it builds in the band for its pawn (see [Collide across a portal](#collide-across-a-portal)), and it aims at them and hits them with a portal query (see [Cast through a portal](#cast-through-a-portal)); the scopes it draws are posed at their doors (see [Draw what is through a portal](#draw-what-is-through-a-portal)). A client that is sent an entity naming a container it has no row for holds the update, whatever the container's kind, until the row arrives.
 
-A window onto ground that is a planet carrying its own frame is authorized and its rows are kept, and the ground's entities are found through the planet's own regions.
+A window onto ground that is a planet carrying its own frame is authorized and its rows are kept, and the ground's entities are found through the planet's own regions. This works the same on a gateway that runs in the same process as a worker, such as the Editor's Multiplayer Play Mode loop.
 
 If you used the options that earlier versions had for this, `ObservePublic`, `PublicView` and `ObserveHost` on the instance template and their counterparts on `ScopeDefinition`, remove them. They no longer exist: what a room looks out at is its portals' windows, and what a street looks into is the same windows. Set `Portal.ObserveAnyone` or `Portal.AddObserver` to decide who may look.
 

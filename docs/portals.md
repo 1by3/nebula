@@ -431,8 +431,10 @@ read from the world root, about 1.2 km off).
 > (`ClientConn.WindowCarriers`: what `HostCarriers` was, computed from the link records at each evaluation and not from a connection's history). A carrier is sent before the entities that stand in its rows.
 > **Holding.** `NebulaClient.OnEntitySpawn`, the reconcile path (`OnOwnerState`) and `NetworkIdentity.ReceiveState` hold what names a container the client cannot resolve whatever its kind
 > (`ContainerRef.NamesAContainer`: only `None` means the world root); a held spawn for a baked container binds when `ContainerRegistry.Rebuilt` finds it. Tests: `ClientHoldsUnresolvedContainerTests` (the spawn, a known entity,
-> a state entry, the reconcile path). **Limit:** a window whose ground is a frame with regions of its own (a planet that is a carrier) is authorized in the scope's space (a position composed through the frame) but
-> subscribed in the scope's own region space only, so the entities standing on such ground are not found by the window's focus; the host-side focus in the frame's region space is not built (see the seams under §15).
+> a state entry, the reconcile path). A window whose ground is a frame with regions of its own (a planet that is a carrier, its ground a grid hosted in it) is also a box in that frame's coordinates (`ClientConn.FrameWindows`,
+> `CollectFrameWindows`): a focus in the frame's region space finds what stands on the ground, the ground's rows are found from their placements in the frame, and the carrier they are fixed in is kept in the client's set.
+> The frames are the lease rows that say so (`OwnPhysicsFrame` with `FrameInterestMode.OwnRegions`), a carried one known by its dynamic id: a network gateway that shares its process with a worker (the Editor's Multiplayer
+> Play Mode loop) also has the carrier's box in its registry, and is no different for it (NEB-431 fix, `NebulaGateway.IndexLeases`, `PortalWindowSharedProcessTests`). A frame nested in another frame is not followed.
 
 **D21 The network gateway authorises it in `CanObserve`, from link records only.** One rule is added after the existing
 ones: an entity in scope T is observable by a client in scope S when an Open or Closing link joins S and T, the client is
@@ -1048,7 +1050,7 @@ announced to the game by `Portal.Crossed` and `Portals.Crossed`; neither tells a
 `GatewayInterest.cs` (`EvaluateClient`, `UpdateClientRegions`, `UpdateSubscriptions`, `CollectNeededContainers`, `ApplyInterestChanges`, the eviction sweep) and `GatewayPortals.cs`, and the client's
 holding is in `NebulaClient.cs` and `NetworkIdentity.ReceiveState`. Tests: tier A, `ConformancePortalWindowTests` (8: both ways, non-observers and the pawn outside the window, walking in and out, one portal deep, closing, a reconnect inside,
 `MaxPortalWindows`), `ConformancePortalCrossingGatewayTests` (3: six crossings with no despawn or respawn for the thrower, the onlooker's wire, closing after a crossing), `PortalWindowFrameTests` (a window onto a
-planet's ground: the frame box, the rows of that ground and the planet only, the authorization through the frame); tier B, `PortalWindowTests` (geometry to the millimetre 5×10⁷ m out, what the worker publishes,
+planet's ground: the frame box, the rows of that ground and the planet only, the authorization through the frame) and its shared-process twin `PortalWindowSharedProcessTests` (2: the carried frame known from its lease row when the registry also holds its box); tier B, `PortalWindowTests` (geometry to the millimetre 5×10⁷ m out, what the worker publishes,
 `Portal.AddObserver`) and `ClientHoldsUnresolvedContainerTests` (conformance scenarios 55 to 57). For the issues that follow: NEB-432's proxies are in the band, which is inside both windows, and read the window records the same way;
 NEB-435 draws the windows' scopes and finds them by `Portals.Known` and the links a client holds (`Observer` is on its link record); NEB-437 needs nothing in observation, because each window is measured in its own face's axes. **Not built:** the
 deepest far container as a crossing's destination (D16, above); a window whose frame is nested in another frame; `Closing` links are windows both ways like `Open` ones, as D9 says, but a client is not told the difference.

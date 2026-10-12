@@ -1128,21 +1128,39 @@ namespace Nebula
             _roster.Observe(ControlPlane, _declaredDead);
             for (int i = 0; i < _declaredDead.Count; i++) DropDeclaredDeadWorker(_declaredDead[i]);
 
-            ContainerRegistry.SyncRuntime(ControlPlane.Leases);
+            IndexLeases(ControlPlane.Leases);
+            // Ownership is a per-client delta now (design §8): only the rows a client already holds are refreshed,
+            // and a client learns of a new container when something it can see needs it.
+            RefreshOwnership();
+            // Leases moved, so a region may belong to a different worker: re-resolve, and let the subscription
+            // pass link the new owner before the link linger lets the old one go.
+            _regionWorkers.Clear();
+            _subscriptionsDirty = true;
+        }
+
+        /// <summary>
+        /// Mirror the lease rows: the runtime containers they describe, each row's owner, and the frames with regions of their own
+        /// (<c>docs/container-tree.md</c> D18). A carried frame (a planet that is a carrier) is known by its dynamic id whether or not
+        /// this process's registry also holds its box: a network gateway of its own never does, but one that shares a process with a
+        /// worker (the Editor's Multiplayer Play Mode loop, any in-process host) does, and must still treat it as the frame it is.
+        /// </summary>
+        private void IndexLeases(IReadOnlyList<LeaseInfo> leases)
+        {
+            ContainerRegistry.SyncRuntime(leases);
             _ownership.Clear();
             _ownershipById.Clear();
             _ownRegionFrames.Clear();
             _ownRegionCarriers.Clear();
             _approachMargins.Clear();
             _frameExtents.Clear();
-            foreach (var lease in ControlPlane.Leases)
+            foreach (var lease in leases)
             {
-                // Dynamic containers have no registry entry here (the gateway holds no entities); their leases are
+                // Dynamic containers have no registry entry on a gateway of its own (it holds no entities); their leases are
                 // still relayed so clients that do hold the carrier can show who is pinned to it.
                 var c = ContainerRegistry.FindById(lease.ContainerId);
-                bool dynamic = c == null && ContainerRegistry.IsDynamicId(lease.ContainerId);
-                if (c == null && !dynamic) continue;
-                var w = ControlPlane.FindWorker(lease.WorkerId);
+                bool carried = ContainerRegistry.IsDynamicId(lease.ContainerId);
+                if (c == null && !carried) continue;
+                var w = ControlPlane?.FindWorker(lease.WorkerId);
                 ushort idx = w != null ? (ushort)w.WorkerIndex : ushort.MaxValue;
                 string owner = LeaseState.IsOwning(lease.State) ? lease.WorkerId : "";
                 if (c != null) ContainerRegistry.ApplyLease(lease.ContainerId, owner, idx, lease.Epoch, lease.State);
@@ -1152,18 +1170,14 @@ namespace Nebula
                 {
                     _ownRegionFrames.Add(lease.ContainerId);
                     if (lease.FrameApproachMargin > 0f) _approachMargins[lease.ContainerId] = lease.FrameApproachMargin;
-                    if (dynamic) _ownRegionCarriers.Add(ContainerRegistry.CarrierNetIdOf(lease.ContainerId));
+                    // By its id, not by whether the registry here resolves it: in a shared process it does, and a planet left out of
+                    // this set would be an ordinary carrier to interest, its ground's windows would find no frame and a client looking
+                    // out through a door on it would be sent none of it (NEB-431).
+                    if (carried) _ownRegionCarriers.Add(ContainerRegistry.CarrierNetIdOf(lease.ContainerId));
                 }
                 _ownership.Add(entry);
                 if (!string.IsNullOrEmpty(entry.ContainerId)) _ownershipById[entry.ContainerId] = entry;
             }
-            // Ownership is a per-client delta now (design §8): only the rows a client already holds are refreshed,
-            // and a client learns of a new container when something it can see needs it.
-            RefreshOwnership();
-            // Leases moved, so a region may belong to a different worker: re-resolve, and let the subscription
-            // pass link the new owner before the link linger lets the old one go.
-            _regionWorkers.Clear();
-            _subscriptionsDirty = true;
         }
 
         // ---------------------------------------------------------------------------------------- transport
