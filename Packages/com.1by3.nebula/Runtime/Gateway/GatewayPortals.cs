@@ -86,6 +86,8 @@ namespace Nebula
                 foreach (var link in entry.Links.ToArray()) ForgetLink(link);
                 _portals.Remove(id);
             }
+            // A portal's window or far face may have moved: who looks through what is worked out again before anything is sent.
+            ReviseWindows();
             SyncAllPortals();
         }
 
@@ -117,6 +119,8 @@ namespace Nebula
                 if (!_portalLinks.TryGetValue(id, out var link) || link.Worker != w.Index) continue;
                 ForgetLink(link);
             }
+            // Who looks through what is worked out again from the new records, before anything is sent: a link that closed takes the far side away now.
+            ReviseWindows();
             // A member's far row is sent now, ahead of the link, rather than at its next scheduled evaluation.
             foreach (var record in update.Upserts)
                 if (_portalLinks.TryGetValue(record.LinkId, out var link))
@@ -156,6 +160,7 @@ namespace Nebula
                 _portals.Remove(id);
             }
             _portalIdScratch.Clear();
+            ReviseWindows();
             SyncAllPortals();
         }
 

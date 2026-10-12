@@ -10,7 +10,7 @@ namespace Nebula
     /// </summary>
     public sealed partial class Portal
     {
-        private bool _ignored, _warnedDuplicate, _warnedObserve;
+        private bool _ignored, _warnedDuplicate;
 
         /// <summary>Whether this component lost its id to another portal in the same container (<c>docs/portals.md</c> D6): it is ignored and does nothing.</summary>
         public bool IsIgnored => _ignored;
@@ -270,11 +270,6 @@ namespace Nebula
                 WarnLinkError(link);
                 return false;
             }
-            if (NearScope != 0 && FarTemplate.ObservePublic && !_warnedObserve)
-            {
-                _warnedObserve = true;
-                NebulaLog.Warn($"Portal '{AuthoredId}' stands in a scoped grid, but its template '{FarTemplate.TemplateId}' has ObservePublic on: occupants would see the public world, not this scope. Turn ObservePublic off for portals in scoped grids, and turn ObserveHost on to keep this scope's ground loaded while occupants are inside.");
-            }
             try
             {
                 var near = NearFace;
@@ -331,8 +326,8 @@ namespace Nebula
                 NearRotation = near.Rotation,
                 FarKind = HasFixedFarSide ? PortalFarKind.Fixed : PortalFarKind.Template,
                 FarScope = HasFixedFarSide ? ScopeKeys.Hash(_fixedScopeKey) : 0UL,
-                FarOrigin = HasFixedFarSide ? _fixedOrigin : Double3.Zero,
-                FarRotation = HasFixedFarSide ? _fixedRotation : Quaternion.identity,
+                FarOrigin = HasFixedFarSide ? _fixedOrigin : near.Origin,
+                FarRotation = HasFixedFarSide ? _fixedRotation : (TurnWithFace ? Quaternion.identity : near.Rotation),
                 TemplateId = FarTemplate != null ? FarTemplate.TemplateId : "",
                 ApertureKind = Aperture.Kind,
                 HalfWidth = Aperture.HalfWidth,

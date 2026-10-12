@@ -69,7 +69,6 @@ namespace Nebula.Tests
             _template = ScriptableObject.CreateInstance<InstanceTemplate>();
             _template.TemplateId = "hangar";
             _template.Parts = new[] { new InstanceTemplate.Part { Id = "hall", Bounds = new Bounds(new Vector3(0f, 2f, 0f), new Vector3(16f, 4f, 16f)) } };
-            _template.ObservePublic = false;
 
             var planet = new GameObject("planet-prefab");
             planet.AddComponent<NetworkIdentity>();

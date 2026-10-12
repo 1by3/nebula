@@ -335,6 +335,24 @@ public bool AddMember(string party, ulong clientId);
 
 Add a client to a live link's members (`docs/portals.md` D13). It warms on its own, without closing the link for the others: its wait is [`PortalWait.ClientWarming`](/docs/reference/protocol/portal-wait#clientwarming), and its own entities are refused at the aperture until it is warm.
 
+### AddObserver [#addobserver]
+
+```csharp
+public bool AddObserver(string party, ulong clientId);
+```
+
+Let a client look through a party's link without being a member (`docs/portals.md` D11, D20): a bystander at a door, a friend watching a room. While the link is open and the client stands inside the near window it is sent the far window; when it stands in the far window it is sent the near one. It is not held to warm the far window, so the link never waits for it, and its own entities are not admitted by the default [`CanEnter`](#canenter). Members are observers already unless [`CanObserve`](#canobserve) says otherwise.
+
+**Returns:** True when the client was not an observer of a live link before.
+
+### RemoveObserver [#removeobserver]
+
+```csharp
+public bool RemoveObserver(string party, ulong clientId);
+```
+
+Stop a client looking through a party's link. A member keeps its part in readiness; it just no longer sees through.
+
 ### RemoveMember [#removemember]
 
 ```csharp

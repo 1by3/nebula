@@ -108,7 +108,11 @@ namespace Nebula
         public PortalFarKind FarKind;
         /// <summary>A fixed far side's scope; 0 for a template, whose far scope belongs to each link.</summary>
         public ulong FarScope;
-        /// <summary>A fixed far side's face, absolute in the far scope.</summary>
+        /// <summary>
+        /// The far face, absolute in the far scope. A template's far face is the near face's origin read in the instance's own upright space,
+        /// with the identity rotation, or the near face's when the portal does not turn with its face (<c>docs/portals.md</c> D5), so it is the
+        /// same for every party's far scope and the network gateway can place the far window without a link's help (D21).
+        /// </summary>
         public Double3 FarOrigin;
         public Quaternion FarRotation;
         /// <summary>A template far side's template id; empty for a fixed one.</summary>
@@ -121,6 +125,17 @@ namespace Nebula
         public float WindowMargin, WindowDepth;
         /// <summary>Reserved flags (observation-only portals, <c>docs/portals.md</c> §17). 0 today.</summary>
         public byte Flags;
+
+        /// <summary>The near side's window: the aperture grown by <see cref="WindowMargin"/> sideways and <see cref="WindowDepth"/> deep into the near scope (<c>docs/portals.md</c> D3).</summary>
+        public PortalWindow NearWindow => new PortalWindow(NearScope, NearOrigin, NearRotation,
+            HalfWidth + Math.Max(0f, WindowMargin), HalfHeight + Math.Max(0f, WindowMargin), WindowDepth, true);
+
+        /// <summary>
+        /// The far side's window in <paramref name="farScope"/> (a link's far scope; a fixed far side's own when 0): the aperture grown by
+        /// <see cref="WindowMargin"/> sideways and <see cref="WindowDepth"/> deep into the far scope, in the far face's axes.
+        /// </summary>
+        public PortalWindow FarWindow(ulong farScope = 0UL) => new PortalWindow(farScope != 0 ? farScope : FarScope, FarOrigin, FarRotation,
+            HalfWidth + Math.Max(0f, WindowMargin), HalfHeight + Math.Max(0f, WindowMargin), WindowDepth, false);
 
         internal void Write(NetworkWriter w)
         {

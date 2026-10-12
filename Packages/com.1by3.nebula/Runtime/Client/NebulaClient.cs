@@ -520,6 +520,7 @@ namespace Nebula
             SceneEntities.Unregistering += OnSceneEntityUnregistering;
             ContainerRegistry.DynamicRegistered += OnLateContainerRegistered;
             ContainerRegistry.RuntimeRegistered += OnLateContainerRegistered;
+            ContainerRegistry.Rebuilt += ReleaseResolvedHolds;
             if (connectNow) Connect();
         }
 
@@ -752,6 +753,7 @@ namespace Nebula
             SceneEntities.Unregistering -= OnSceneEntityUnregistering;
             ContainerRegistry.DynamicRegistered -= OnLateContainerRegistered;
             ContainerRegistry.RuntimeRegistered -= OnLateContainerRegistered;
+            ContainerRegistry.Rebuilt -= ReleaseResolvedHolds;
             _transport?.Dispose();
             _transport = null;
         }
@@ -1655,7 +1657,9 @@ namespace Nebula
                 if (msg.ViewSeq > held) { _viewSeq[msg.NetId] = msg.ViewSeq; SpawnsReceived++; }
             }
             var container = ContainerRegistry.Resolve(msg.Container);
-            if (container == null && msg.Container.MayArriveLater)
+            // A container this client cannot resolve holds the spawn, whatever the container's kind: an entity placed in the public world with
+            // coordinates local to a container it does not have would be drawn about 1.2 km off (docs/portals.md D20, §18).
+            if (container == null && msg.Container.NamesAContainer)
             {
                 if (_entities.ContainsKey(msg.NetId))
                 {
@@ -1908,6 +1912,24 @@ namespace Nebula
             foreach (var msg in list) OnEntitySpawn(msg);
         }
 
+        private readonly List<ContainerRef> _releaseScratch = new List<ContainerRef>();
+
+        /// <summary>The baked containers were collected again (a scene loaded): a spawn held for one that is here now binds (<c>docs/portals.md</c> D20).</summary>
+        private void ReleaseResolvedHolds()
+        {
+            if (_pendingByCarrier.Count == 0) return;
+            _releaseScratch.Clear();
+            foreach (var kv in _pendingByCarrier) if (kv.Key.IsStatic && ContainerRegistry.Resolve(kv.Key) != null) _releaseScratch.Add(kv.Key);
+            for (int i = 0; i < _releaseScratch.Count; i++)
+            {
+                var key = _releaseScratch[i];
+                if (!_pendingByCarrier.TryGetValue(key, out var list)) continue;
+                _pendingByCarrier.Remove(key);
+                foreach (var msg in list) OnEntitySpawn(msg);
+            }
+            _releaseScratch.Clear();
+        }
+
         private void HoldSceneSpawn(EntitySpawnMsg msg)
         {
             if (_pendingScene.TryGetValue(msg.SceneId, out var held))
@@ -2048,7 +2070,7 @@ namespace Nebula
             // The state is in the worker's container frame for that tick; move there first, or a seam crossing
             // would reconcile against the wrong origin for a tick and snap the pawn across the map.
             var container = ContainerRegistry.Resolve(msg.Container);
-            if (container == null && msg.Container.MayArriveLater) return; // the container is not here yet; the next report will do
+            if (container == null && msg.Container.NamesAContainer) return; // the container is not here yet (of any kind); the next report will do
             if (container != target.Container) target.SetContainer(container);
             _reader.Set(new ArraySegment<byte>(msg.State));
             // A correction replays inputs, which is simulation: in the pawn's frame at its simulation pose (D11).

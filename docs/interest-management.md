@@ -128,8 +128,8 @@ run the **same** code:
   `u16 ViewSeq` assigned by the gateway per client).
 - Rate tiers stay as LOD inside the set (`InterestNearRadius` / `InterestFarRadius` / divisors), computed from the
   record's cached absolute position and the client's cached foci — no recursive container walk per pair.
-- `ObservePublic` windows are an extra *box* source for clients inside that instance; private-instance isolation is the
-  authorization step and is evaluated before anything spatial.
+- A portal's windows (`docs/portals.md` D20 to D23; this was `ObservePublic`) are an extra *box* source for a client that may look through an open link and stands in the window of its own side: a focus in the other
+  side's scope, salted with that scope. Scope isolation is the authorization step and is evaluated before anything spatial; the window is the only way around it, and it is checked on link records.
 - Pawn-less clients have no default focus: they receive only global entities (replaces "everything at far rate").
   A policy may give them a focus (spectators).
 

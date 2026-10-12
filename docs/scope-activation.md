@@ -75,8 +75,6 @@ Unity.
 ```csharp
 new ScopeDefinition {
     Kind = ScopeKind.Parts,
-    ObservePublic = true,
-    ObservationCenter = new Vector3(500, 0, 0), ObservationSize = new Vector3(60, 30, 60),
     Parts = {
         new ScopePart { PartId = "interior", Center = new Vector3(500, 0, 0), Size = new Vector3(20, 10, 20),
                         ContentResource = "Instances/Room" },
@@ -226,7 +224,7 @@ whole HTTP surface. No new endpoint, no new authentication path:
 curl -X POST http://orchestrator:7080/api/control-plane \
   -H 'X-Nebula-Token: <mesh token>' -H 'Content-Type: application/json' \
   -d '{"ops":[{"op":"ActivateScope","scopeKey":"raid/molten-core#run-4812","workerId":"","requester":"matchmaker",
-       "definition":"{\"kind\":\"parts\",\"parts\":[{\"partId\":\"interior\",\"center\":[500,0,0],\"size\":[20,10,20],\"content\":\"Instances/Room\"}],\"observePublic\":false,\"observationCenter\":[0,0,0],\"observationSize\":[0,0,0],\"payload\":\"\"}"}]}'
+       "definition":"{\"kind\":\"parts\",\"parts\":[{\"partId\":\"interior\",\"center\":[500,0,0],\"size\":[20,10,20],\"content\":\"Instances/Room\"}],\"payload\":\"\"}"}]}'
 ```
 
 The definition travels as a JSON document inside a JSON string, for the same reason `InstanceContainerInfo` travels
@@ -413,8 +411,8 @@ clients follow it. Both are tested.
 **Superseded by `docs/portals.md` (NEB-427).** `ObserveHost` and the per-connection host history (`HostViews`) are
 replaced by a portal's windows: the near side's window of an open link keeps the host's rows and entities around
 the door, from link records rather than connection history, so the limits in §12.3 (a reconnect inside, entities not
-sent) go (portals D20, D24). NEB-431 maps `ObserveHost` onto that window; NEB-436 removes this path. The section is
-kept as the record of what shipped.
+sent) go (portals D20, D24). **Removed in NEB-431:** `ObserveHost`, `ObservePublic`, `HostViews`, `HostCarriers` and the observation box of a scope definition no longer exist, with no mapping; a game that
+kept its host loaded declares its portal's observers instead (the window brings the host's rows and entities, and the host's carriers). The section is kept as the record of what shipped.
 
 ### 12.1 What went wrong
 

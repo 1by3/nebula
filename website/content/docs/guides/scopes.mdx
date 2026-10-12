@@ -19,7 +19,6 @@ controlPlane.ActivateScope(new ScopeActivationRequest
     Definition = new ScopeDefinition
     {
         Kind = ScopeKind.Parts,
-        ObservePublic = false,
         Parts =
         {
             new ScopePart
@@ -36,7 +35,7 @@ controlPlane.ActivateScope(new ScopeActivationRequest
 
 Each part becomes one [runtime container](/docs/guides/runtime-containers) with a lease row the orchestrator can deal out. The call is available on any `IControlPlane`: a worker, a gateway, the orchestrator, or a standalone service holding a `RemoteControlPlane`. **Nothing has to be running inside the scope**, and no player has to be standing anywhere.
 
-The bounds are absolute world coordinates, the same frame the control plane's lease rows use. `ObservePublic` and the observation box let the scope's occupants receive public entities within a box, exactly as an instance template's `PublicView` does.
+The bounds are absolute world coordinates, the same frame the control plane's lease rows use. What a scope's occupants see of the world around it is decided by the [portals](/docs/guides/instancing#look-through-a-portal) that lead into it, not by the definition: an open portal shows each side's window to the other.
 
 ### Asking twice is safe
 
@@ -212,7 +211,7 @@ curl -X POST http://orchestrator:7080/api/control-plane \
   -H 'X-Nebula-Token: <mesh token>' \
   -H 'Content-Type: application/json' \
   -d '{"ops":[{"op":"ActivateScope","scopeKey":"raid/molten-core#run-4812","workerId":"","requester":"matchmaker",
-       "definition":"{\"kind\":\"parts\",\"parts\":[{\"partId\":\"interior\",\"center\":[2000,0,0],\"size\":[120,40,120],\"content\":\"Instances/MoltenCore\"}],\"observePublic\":false,\"observationCenter\":[0,0,0],\"observationSize\":[0,0,0],\"payload\":\"\"}"}]}'
+       "definition":"{\"kind\":\"parts\",\"parts\":[{\"partId\":\"interior\",\"center\":[2000,0,0],\"size\":[120,40,120],\"content\":\"Instances/MoltenCore\"}],\"payload\":\"\"}"}]}'
 ```
 
 The definition travels as a JSON document inside a JSON string. Read the result back from `GET /api/control-plane`, whose document carries a `scopes` array.

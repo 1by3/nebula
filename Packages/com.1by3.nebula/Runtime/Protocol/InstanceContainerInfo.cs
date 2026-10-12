@@ -41,16 +41,13 @@ namespace Nebula
         };
     }
 
-    /// <summary>Identifies a private container's simulation scope, content, and optional outward view.</summary>
+    /// <summary>Identifies a private container's simulation scope and content. What it looks out at is its portals' windows (<c>docs/portals.md</c> D20).</summary>
     [Serializable]
     public sealed class InstanceContainerInfo
     {
         /// <summary>The 64-bit simulation scope (<see cref="NebulaWorker.InstanceKey"/> of <see cref="ScopeKey"/>). Zero is the public world.</summary>
         public ulong InstanceId;
         public string ContentResource = "";
-        public bool ObservePublic;
-        public Vector3 ObservationCenter;
-        public Vector3 ObservationSize;
         /// <summary>
         /// The opaque scope key the game chose for this instance (<c>TemplateId/key</c>, as passed to
         /// <see cref="NebulaWorker.PrepareInstance"/>), carried so every process can report it in
@@ -67,13 +64,6 @@ namespace Nebula
         /// </summary>
         public string PartId = "";
         /// <summary>
-        /// Occupants keep the container rows of the scope they came from, around where they left it
-        /// (<see cref="ScopeDefinition.ObserveHost"/>). Only the gateway acts on it: it is stored on the lease row but
-        /// not written by <see cref="Write"/>, so what a client is sent is unchanged.
-        /// </summary>
-        public bool ObserveHost;
-
-        /// <summary>
         /// Whether the instance's own space is turned against its host scope's (NEB-426, <c>docs/scope-frames.md</c> D12):
         /// an instance entered through a door that is not upright in its host (a door on a sphere) is built upright in its
         /// own space and posed at the door. A point p of the instance's space is <see cref="PoseOrigin"/> +
@@ -87,8 +77,7 @@ namespace Nebula
         public Quaternion PoseRotation = Quaternion.identity;
 
         /// <summary>Bit of the trailing flags byte a stored lease row carries when any flag is set.</summary>
-        private const byte FlagObserveHost = 1;
-        private const byte FlagPose = 2;
+        private const byte FlagPose = 1;
 
         /// <summary>The pose, after the flags byte of a stored row or in a message's trailing section.</summary>
         internal void WritePose(NetworkWriter writer)
@@ -108,9 +97,6 @@ namespace Nebula
         {
             writer.WriteULong(InstanceId);
             writer.WriteString(ContentResource ?? "");
-            writer.WriteBool(ObservePublic);
-            writer.WriteVector3(ObservationCenter);
-            writer.WriteVector3(ObservationSize);
             writer.WriteString(ScopeKey ?? "");
             writer.WriteString(PartId ?? "");
         }
@@ -118,8 +104,6 @@ namespace Nebula
         public static InstanceContainerInfo Read(NetworkReader reader) => new InstanceContainerInfo
         {
             InstanceId = reader.ReadULong(), ContentResource = reader.ReadString(),
-            ObservePublic = reader.ReadBool(), ObservationCenter = reader.ReadVector3(),
-            ObservationSize = reader.ReadVector3(),
             // A stored lease row from before the key was recorded ends here (Decode); on the wire it is always present.
             ScopeKey = reader.Remaining > 0 ? reader.ReadString() : "",
             PartId = reader.Remaining > 0 ? reader.ReadString() : ""
@@ -131,7 +115,7 @@ namespace Nebula
             var writer = new NetworkWriter();
             info.Write(writer);
             // A trailing flags byte, written only when a flag is set, so a row without one is the bytes it always was.
-            byte flags = (byte)((info.ObserveHost ? FlagObserveHost : 0) | (info.HasPose ? FlagPose : 0));
+            byte flags = (byte)(info.HasPose ? FlagPose : 0);
             if (flags != 0) writer.WriteByte(flags);
             if (info.HasPose) info.WritePose(writer);
             return Convert.ToBase64String(writer.ToArray());
@@ -145,7 +129,6 @@ namespace Nebula
             if (reader.Remaining > 0)
             {
                 byte flags = reader.ReadByte();
-                info.ObserveHost = (flags & FlagObserveHost) != 0;
                 if ((flags & FlagPose) != 0) info.ReadPose(reader);
             }
             return info;

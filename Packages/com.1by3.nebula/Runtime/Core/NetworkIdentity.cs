@@ -894,7 +894,9 @@ namespace Nebula
             if (entry.NetId != NetId) return false;
             if (entry.Epoch < Epoch || (entry.Epoch == Epoch && HasStateTick && tick <= LastStateTick)) return false;
             var container = ContainerRegistry.Resolve(entry.Container);
-            if (container == null && entry.Container.MayArriveLater)
+            // Held for a container this process cannot resolve, whatever its kind: placing the entity at the world root with coordinates local to it
+            // would be about 1.2 km off for a crate that crossed out of an instance (docs/portals.md D20).
+            if (container == null && entry.Container.NamesAContainer)
             {
                 if (!_hasPendingState || entry.Epoch > _pendingState.Epoch || (entry.Epoch == _pendingState.Epoch && tick > _pendingStateTick))
                 { _pendingState = entry; _pendingStateTick = tick; _pendingStateWorker = worker; _hasPendingState = true; }

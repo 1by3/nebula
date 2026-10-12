@@ -105,6 +105,12 @@ face axes:
 > `WindowMargin`/`WindowDepth`) and `Portal` has the sizes as `BandMargin`, `WindowMargin`, `WindowDepth` (fields) and `BandDepth`, `CrossDepth`,
 > `CloseTimeoutSeconds`, `ApproachDistance` (constants). Today the cross-section decides crossing and the band decides when a closing link may close; the
 > windows are carried and unused until NEB-431.
+>
+> **As built (NEB-431).** The window is a public value type, `PortalWindow` (`Runtime/Protocol/PortalWindow.cs`), built from a `PortalRecord` alone: `PortalRecord.NearWindow` and
+> `PortalRecord.FarWindow(farScope)`, so the network gateway, which runs no game code, and a client compute the same box. It is closed (a point on its boundary is inside), measured in
+> its own face's axes in double, and empty when `WindowDepth` is 0. A template's record now carries its far face (the near face's origin and the identity rotation, or the near face's
+> own with `TurnWithFace` off), because a window is measured in the far face's axes; it is the same for every party's far scope, so it is one record and not one per link. The sizes
+> are `Portal.WindowMargin` and `Portal.WindowDepth` (8 m and 48 m), carried in the record since NEB-428.
 
 **D4 The link pose is derived from the two faces, never stored on its own.** With N the near face's pose in the near
 scope's space and F the far face's in the far scope's, a point of the far scope maps into the near scope as
@@ -299,6 +305,11 @@ and tested again on the next.
 > and finishes each (velocities, history, epoch; D18). The lease-epoch check of D16 is the epoch the link was ready with (`PortalLink.ReadyEpoch`): if the far
 > container's lease moved, the commit is refused for that tick and the link prepares again. **Kept:** a crossing enters the template's entry part, or the container that holds
 > the point 25 cm inside a fixed far face, because a member's client is warm only for that container; the deepest container holding the mapped point waits for NEB-431's window.
+>
+> **As built (NEB-431): the entry-container rule stays.** A window gives a member client the far window's *rows*, but it does not make the client warm for them: `PortalWarm` is sent
+> for the entry container alone, and a deeper container's content would be built on the client at the commit, which is the hitch D10 exists to remove. Making the deepest container
+> the destination needs the warm handshake to cover every container the far window touches, and the lease check of D16 to cover each of them; both belong with NEB-434's cross-worker
+> commits. Nothing in the window code depends on it.
 > Leaving looks for the container of the near scope that holds the mapped point, descending into physics frames. A server-owned entity needs no client warmth:
 > `Admits` is true for it (`ClientReady` was always true for unowned entities).
 
@@ -354,8 +365,12 @@ observer loses it at once and is never told where it went, as now. The order is 
 only after its members' `PortalWarm` acknowledgements went through the network gateway, so that gateway holds the
 link and its observers before any commit through it can be relayed.
 
-> **As built (NEB-428).** Untouched here: `ObservePublic`, `PublicView`, `ObserveHost` and `HostCarriers` keep working with a portal's template exactly as
-> they did with a boundary's (they live on `InstanceTemplate` and the scope definition), and `NebulaGateway.CanObserve` is unchanged.
+> **As built (NEB-431).** Built as written. A commit changes the entity's scope and bumps its epoch as before; the network gateway refreshes the record's place in the new scope
+> and then re-authorizes every client that holds it (`RevokeAcrossScope`), before the destination's row is sent to anyone. `CanObserve` has the window rule (D21), so a client on the link's
+> observer list whose pawn is inside the near window keeps the crate with no despawn and no new spawn, and an onlooker who is not an observer loses it and is never told the room exists
+> (`ConformancePortalCrossingGatewayTests`: six crossings in and out, no despawn and no respawn for the thrower; the onlooker's wire holds no row of the room). The eviction sweep also leaves a
+> record alone while one of its observers holds it through a window (`HeldThroughWindow`), so a crossing that outruns the client's next subscription update cannot blink it out. Which clients may
+> look is the worker's: members are asked (`Portal.CanObserve`), `Portal.ObserveAnyone` opens a door to everyone, and the new `Portal.AddObserver(party, clientId)` lets a bystander look without being a member.
 
 ## 5. Observation
 
@@ -370,6 +385,15 @@ in the public world (§18: today `NebulaClient.OnEntitySpawn` holds only for car
 calls `SetContainer(null)`, so a crate crossing out of an instance landed in scope 0 with its container-local coordinates
 read from the world root, about 1.2 km off).
 
+> **As built (NEB-431).** The window is a focus: for each window a client looks through, `AddPortalWindows` adds a box focus in the *other* side's scope (`InterestFocus.InScope`), small in reach
+> (`WindowFocusScale`) because authorization, not distance, decides what is inside. The container rows inside the window are collected after the client's own windows and foci
+> (`CollectNeededContainers`, `AddWindowRows`, queried in the other side's scope), and the carriers of those rows, out to the root of their chain, are kept in the client's set
+> (`ClientConn.WindowCarriers`: what `HostCarriers` was, computed from the link records at each evaluation and not from a connection's history). A carrier is sent before the entities that stand in its rows.
+> **Holding.** `NebulaClient.OnEntitySpawn`, the reconcile path (`OnOwnerState`) and `NetworkIdentity.ReceiveState` hold what names a container the client cannot resolve whatever its kind
+> (`ContainerRef.NamesAContainer`: only `None` means the world root); a held spawn for a baked container binds when `ContainerRegistry.Rebuilt` finds it. Tests: `ClientHoldsUnresolvedContainerTests` (the spawn, a known entity,
+> a state entry, the reconcile path). **Limit:** a window whose ground is a frame with regions of its own (a planet that is a carrier) is authorized in the scope's space (a position composed through the frame) but
+> subscribed in the scope's own region space only, so the entities standing on such ground are not found by the window's focus; the host-side focus in the frame's region space is not built (see the seams under §15).
+
 **D21 The network gateway authorises it in `CanObserve`, from link records only.** One rule is added after the existing
 ones: an entity in scope T is observable by a client in scope S when an Open or Closing link joins S and T, the client is
 on its observer list (or the list is `Anyone`), the client's pawn is inside S's window, and the entity's record is
@@ -377,9 +401,20 @@ inside T's window. Both window tests are on the absolute records the network gat
 (`EntityRecord.AbsX/AbsY/AbsZ`), transformed through the link pose for an offset portal. The worker decides policy; the
 network gateway only enforces the list (D11).
 
+> **As built (NEB-431).** The rule is `ObservableThroughWindow`, after the existing ones, on the entity's *root* (a passenger is judged where its carrier is): the client has a window whose other side
+> is the entity's scope, and the root's place, from `EntityRecord.AbsX/Y/Z` (composed through a frame for a record in a frame's region space), is inside it. Each side's window is measured in its own face's
+> axes in its own scope, so no mapping through the link is needed for the test and an offset portal observes exactly as a coincident one (`PortalMap` is for what crosses, not for what is seen).
+> The windows are `ClientConn.Windows`, recomputed from the portal and link records (`RefreshWindows`) at each of the client's evaluations, whenever a record changes (`ReviseWindows`: a client that lost a window is
+> re-authorized at once, so a closing link takes the far side away now) and before a revalidation. A client qualifies when the link is Open or Closing, the client is on the observer list (or the list is `Anyone`), its
+> scope is a side's scope and its pawn is inside that side's window. A pawn that crosses is re-evaluated the same way, because the record's place is refreshed before anybody is asked.
+
 **D22 One portal deep.** Windows do not chain. An entity received through a link is never the source of another link's
 window, and a client is never sent a scope two links away: on floor 1 you see floor 2's landing, not floor 3. This bounds
 the cost per client at the windows of the links it stands in, at most `MaxPortalWindows` (4) at once, nearest first.
+
+> **As built (NEB-431).** Windows are computed from the client's own scope only, so nothing is two links away by construction (`ConformancePortalWindowTests.WindowsDoNotChain...`): a client on the street that is an
+> observer of both the door and a second door inside the room sees the room and not the second room. `NebulaGateway.MaxPortalWindows` (4) bounds the windows one client looks through, nearest first by the distance
+> from its pawn to the face of its own side; the rest are simply not looked through. `InterestClient.PortalWindows` tells a policy how many, and `NebulaGateway.PortalWindowCount` and `PortalWindowsOf(clientId)` the operator.
 
 **D23 A client's subscriptions span scopes.** Region ids are salted with their scope (`docs/scope-frames.md` D7), and a
 client's set is today salted with one scope (`ClientInterest.ScopeSalt`, `UpdateClientRegions`). The far window's
@@ -391,6 +426,11 @@ Window rows count against `MaxContainerRows` after the client's
 own windows and foci, as `docs/scope-activation.md` D23 rows do, so a full budget withholds window ground, never the rows
 the client stands in.
 
+> **As built (NEB-431).** `InterestFocus` has a scope (`Scope`, `HasScope`, `InScope`), and `ClientInterest` salts a scoped focus's regions with it and lets it see only that scope's entities; the gateway's `UpdateClientRegions`
+> keeps a scope per region, so a client's `Regions` hold its own scope's keys and each window's far scope's, and `UpdateSubscriptions` salts the focus regions it passes to the workers the same way. Nothing changes on
+> the worker. The container rows of a window count against `MaxContainerRows` after the client's own, because the foci loop reaches them last (points, then boxes). The record's re-filing is the existing rebucket (`RebucketIfMoved`),
+> which keeps the record and moves its region key; what NEB-431 adds is that the new key is one the client already subscribes (the window's), and the eviction guard of D19.
+
 **D24 Windows replace `ObservePublic`, `ObserveHost`, `HostCarriers` and NEB-370.** `ObservePublic` only ever looked
 into scope 0 and only through an axis-aligned box fixed at preparation; `ObserveHost` kept the host's rows from a
 per-connection history (`ClientConn.HostViews`), lost on a reconnect inside (`docs/scope-activation.md` §12.3), and no
@@ -399,6 +439,13 @@ survive a reconnect. `ObservePublic`, `PublicView`, `ObserveHost`, `ClientConn.H
 brings windows (NEB-431), with no mapping onto them: a game that looked out of a room declares the host side's window of
 its portal instead. NEB-370's sibling
 observation (one instance seeing another's entities) is the general case of D20.
+
+> **As built (NEB-431).** Removed, with no mapping: `InstanceTemplate.ObservePublic`, `PublicView` and `ObserveHost`; `ScopeDefinition.ObservePublic`, `ObservationCenter`, `ObservationSize` and `ObserveHost` (and their canonical JSON);
+> `InstanceContainerInfo.ObservePublic`, `ObservationCenter` and `ObservationSize` (on the client wire, which is shorter by 25 bytes per instance row) and `ObserveHost` (the flags byte of a stored lease row, which now holds only the pose
+> bit, value 1); `ClientConn.HostViews`, `HostCarriers`, `Placed`, `NebulaGateway.MaxHostViews`, `ClientInterest.ScanPublicToo`. Still protocol 28: nothing has shipped, and the frozen decoder skips instance rows. A game that
+> looked out of a room declares its portal's observers instead: `Portal.ObserveAnyone` for a door anyone may look through, `Portal.CanObserve` for the members it allows, `Portal.AddObserver` for a bystander. Ported tests:
+> `InstanceObserveHostTests` became `ScopedChunkViewTests` (a client hides a scoped grid's chunks while its pawn is elsewhere; the rest of it was `ObserveHost`), and its carrier test is `PortalWindowFrameTests`
+> (a window onto a planet's ground); `InstanceTests`, `InterestTests` and the scope tests lost their `ObservePublic` lines.
 
 **D25 Observed entities are replicas in their own scope.** A client never simulates them; it predicts against them only
 through proxies in the band (D26, D27), which it builds for its pawn's scope as the worker does. A client's dynamic
@@ -629,6 +676,9 @@ apply: a `protocol-28-handshake.json` recording, a frozen decoder for the next b
 leaves lease rows and the `ObservePublic` fields leave scope definitions under protocol 28 (NEB-431); nothing a client
 reads changes.
 
+> **As built (NEB-431).** `InstanceContainerInfo.Write`, which is what a client is sent, loses the `ObservePublic` flag and the two observation vectors (25 bytes), so an instance row is shorter under 28; a stored lease row's
+> trailing flags byte keeps only the pose bit (value 1). The frozen protocol-28 decoder skips instance rows and the recorded handshake holds none, so the fixture is unchanged.
+
 > **As built (NEB-428), §14 item 3.** `InstanceScenes.Prepare` creates the scope's physics scene and moves the container into it when it is first
 > called (`SceneManager.CreateScene` has no asynchronous form, so this stays synchronous, but it happens while a link prepares and not in a commit), and
 > loads the content with `Resources.LoadAsync` and instantiates it with `InstantiateAsync`, one step each time `ContentState` is asked; a missing
@@ -673,14 +723,15 @@ How the design keeps them, and what a test pins:
 4. **Revocation at a scope change.** `docs/scope-activation.md` D13 and `NebulaGateway.CanObserve`'s single-scope test
    (`(target?.InstanceId ?? 0) == scope`, then `ObservePublic` in scope 0 only) mean a crate thrown into a room is
    despawned for its thrower at the commit. Until NEB-431 lands, NEB-429's crossings show exactly that; D19 and D21 fix it.
+   *Fixed by NEB-431.*
 5. **One salt per client.** `ClientInterest.ScopeSalt`, `UpdateClientRegions` and the foci keys salt with the client's
-   one scope; D23 makes the salt per window.
+   one scope; D23 makes the salt per window. *Done in NEB-431: an `InterestFocus` can carry its own scope.*
 6. **No adjacency across scopes.** `ContainerRegistry.Link` refuses it, by design, and stays so; portal adjacency is a
    second relation with its own band test (D30), so the ghost band changes only where it consults it.
 7. **The world is turned to draw.** `InstanceViews.Begin` turns every scene root from inside a turned instance; D41 poses
    the view and its cameras instead.
 8. **Host observation lives on the connection.** `ClientConn.HostViews` and `HostCarriers` are per-connection history;
-   link records replace them (D24).
+   link records replace them (D24). *Done in NEB-431.*
 9. **History is left behind.** `StateHistory` entries hold a world pose and their container (`docs/state-history.md` D4)
    and are not touched at a crossing; D18 rewrites them.
 10. **The crossing test is a volume.** `InstanceBoundary.InteriorContains` makes the whole `Interior` box the inside, so
@@ -743,6 +794,16 @@ keeps the entity by consulting the link records, and a copy in a window that the
 only fires for an entity within `Portals.CarryRange` (48 m) of the face it used, which is the window's depth, so a replica a window shows is carried when it crosses at the face, not when it stands deep in the window. A crossing is
 announced to the game by `Portal.Crossed` and `Portals.Crossed`; neither tells a client that a crossing was refused (`Refused` is worker-side). A seated rider's `StateHistory` on a ghost holder is not rewritten
 (NEB-434).
+
+**NEB-431 as built, and the seams it leaves.** The windows are `Runtime/Protocol/PortalWindow.cs` (`PortalWindow`, `PortalGeometry`, `PortalRecord.NearWindow/FarWindow`), the network gateway's side is
+`Runtime/Gateway/GatewayWindows.cs` (`RefreshWindows`, `ObservableThroughWindow`, `AddPortalWindows`, `CollectWindowCarriers`, `ReviseWindows`, frame windows) with the hooks in `NebulaGateway.CanObserve`,
+`GatewayInterest.cs` (`EvaluateClient`, `UpdateClientRegions`, `UpdateSubscriptions`, `CollectNeededContainers`, `ApplyInterestChanges`, the eviction sweep) and `GatewayPortals.cs`, and the client's
+holding is in `NebulaClient.cs` and `NetworkIdentity.ReceiveState`. Tests: tier A, `ConformancePortalWindowTests` (8: both ways, non-observers and the pawn outside the window, walking in and out, one portal deep, closing, a reconnect inside,
+`MaxPortalWindows`), `ConformancePortalCrossingGatewayTests` (3: six crossings with no despawn or respawn for the thrower, the onlooker's wire, closing after a crossing), `PortalWindowFrameTests` (a window onto a
+planet's ground: the frame box, the rows of that ground and the planet only, the authorization through the frame); tier B, `PortalWindowTests` (geometry to the millimetre 5×10⁷ m out, what the worker publishes,
+`Portal.AddObserver`) and `ClientHoldsUnresolvedContainerTests` (conformance scenarios 55 to 57). For the issues that follow: NEB-432's proxies are in the band, which is inside both windows, and read the window records the same way;
+NEB-435 draws the windows' scopes and finds them by `Portals.Known` and the links a client holds (`Observer` is on its link record); NEB-437 needs nothing in observation, because each window is measured in its own face's axes. **Not built:** the
+deepest far container as a crossing's destination (D16, above); a window whose frame is nested in another frame; `Closing` links are windows both ways like `Open` ones, as D9 says, but a client is not told the difference.
 
 **Milestone 2, seeing and acting across.** The three issues are independent.
 

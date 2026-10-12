@@ -117,6 +117,14 @@ public bool MayArriveLater { get; }
 
 The container may be unknown on this process for a while and show up later: a dynamic container arrives with its carrier, a runtime container with its lease. Messages naming one that has not arrived wait for it instead of being dropped.
 
+### NamesAContainer [#namesacontainer]
+
+```csharp
+public bool NamesAContainer { get; }
+```
+
+The reference names a container (it is not [`None`](#none)). A client that cannot resolve one holds the update that names it, whatever the container's kind, instead of placing the entity in the public world, where its container-local coordinates would be read from the world root (`docs/portals.md` D20). Only [`None`](#none) means "no container".
+
 ## Methods
 
 ### Of [#of]

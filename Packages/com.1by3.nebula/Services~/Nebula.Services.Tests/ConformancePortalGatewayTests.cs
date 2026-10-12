@@ -46,7 +46,6 @@ public class ConformancePortalGatewayTests
     private static ScopeDefinition Room(float x) => new()
     {
         Kind = ScopeKind.Parts,
-        ObservePublic = false,
         Parts = { new ScopePart { PartId = "room", Center = new(x, 0, 0), Size = new(40, 40, 40) } },
     };
 

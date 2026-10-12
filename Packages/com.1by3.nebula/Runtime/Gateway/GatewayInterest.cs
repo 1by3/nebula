@@ -430,7 +430,9 @@ namespace Nebula
             try
             {
                 // The snapshot is retaken here and not reused: the tag, the mode or the pawn is exactly what
-                // just changed, and authorizing against the stale one would answer the previous question.
+                // just changed, and authorizing against the stale one would answer the previous question. So are
+                // the windows: a link that just closed, or a pawn that just crossed, changes what may be seen through them.
+                RefreshWindows(client, false);
                 client.Interest.Client = SnapshotClient(client);
                 _revokeLeft.Clear();
                 client.Interest.Revalidate(_index, _revokeLeft);
@@ -796,10 +798,10 @@ namespace Nebula
             client.KnownPortalLinks.Clear();
             client.PreparedRows.Clear();
             client.RowsLeaving.Clear();
-            client.HostViews.Clear();
-            client.HostCarriers.Clear();
+            client.Windows.Clear();
+            client.WindowCarriers.Clear();
+            client.FrameWindows.Clear();
             ReleaseFar(client, sendGone: false);
-            client.HasPlaced = false;
             _hintFilter.Forget(client.ClientId);
             _subscriptionsDirty = true;
             if (welcomed) RaiseClientEvent(ClientLeft, client, nameof(ClientLeft));
@@ -871,11 +873,13 @@ namespace Nebula
             client.Interest.ScopeSalt = RegionKeys.SaltOf(InstanceOf(client));
             client.Query ??= new InterestQuery();
 
+            // The windows first: they decide what the client may see beyond its own scope, and the snapshot reports them.
+            RefreshWindows(client, true);
             var snapshot = SnapshotClient(client);
             client.Interest.Client = snapshot;
             client.Query.Reset(_interest);
             _policy.Collect(snapshot, client.Query);
-            AddObservationWindows(client, snapshot, client.Query);
+            AddPortalWindows(client, client.Query);
             AddEnclosingSpaceFoci(client, snapshot, client.Query);
             AddFrameApproachFoci(client, snapshot, client.Query);
             if (client.Query.Overflowed) WarnOnce(client, $"its policy asked for more than {_interest.MaxFoci} foci or {_interest.MaxExplicitPerClient} explicit entities; the rest are dropped.");
@@ -890,7 +894,7 @@ namespace Nebula
             foreach (var rec in _entities.Values) if (rec.OwnerClientId == client.ClientId || rec.DriverClientId == client.ClientId) _alwaysScratch.Add(rec.NetId);
             var extras = client.Query.Entities;
             for (int i = 0; i < extras.Count; i++) _alwaysScratch.Add(extras[i]);
-            foreach (ulong carrier in client.HostCarriers) _alwaysScratch.Add(carrier);
+            foreach (ulong carrier in client.WindowCarriers) _alwaysScratch.Add(carrier);
             client.Interest.SetAlways(_alwaysScratch);
 
             _entered.Clear();
@@ -924,6 +928,7 @@ namespace Nebula
                 Team = client.Team,
                 Tags = client.Tags,
                 FocusMode = client.FocusMode,
+                PortalWindows = client.Windows.Count,
             };
             if (client.PawnNetId != 0 && _entities.TryGetValue(client.PawnNetId, out var pawn))
             {
@@ -1082,26 +1087,8 @@ namespace Nebula
         }
 
         /// <summary>
-        /// An <c>ObservePublic</c> instance is a window onto the public world: while the client is inside it, the
-        /// window's box is an extra focus, so the hallway outside is in the client's set without the client having
-        /// to stand in it. Instance isolation itself is authorization (see <see cref="AuthorizeEntity"/>).
-        /// </summary>
-        private void AddObservationWindows(ClientConn client, in InterestClient snapshot, InterestQuery query)
-        {
-            if (client.Interest != null) client.Interest.ScanPublicToo = false;
-            if (client.PawnNetId == 0 || !_entities.TryGetValue(client.PawnNetId, out var pawn)) return;
-            var view = ScopeContainer(pawn.Container)?.Instance;
-            if (view == null || !view.ObservePublic) return;
-            // Entities seen through the window are bucketed in the public world, not in this client's scope
-            // (docs/scope-frames.md D7); the window's box focus alone would scan the wrong buckets.
-            if (client.Interest != null) client.Interest.ScanPublicToo = true;
-            query.AddFocus(InterestFocus.Box(view.ObservationCenter.x, view.ObservationCenter.y, view.ObservationCenter.z,
-                view.ObservationSize.x, view.ObservationSize.y, view.ObservationSize.z));
-        }
-
-        /// <summary>
         /// Authorization checks the instance rules first (an unknown container is never
-        /// observable, a private instance is isolated), then the game's policy. A failure here removes the entity
+        /// observable, a scope is isolated except through the window of an open portal link, <c>docs/portals.md</c> D21), then the game's policy. A failure here removes the entity
         /// at once with no hysteresis, because this is a boundary and not a distance.
         /// </summary>
         private bool AuthorizeEntity(in InterestClient client, in InterestEntity entity)
@@ -1128,12 +1115,16 @@ namespace Nebula
 
         /// <summary>The region space of each entry of <see cref="_regionScratch"/> (0: the scope's own).</summary>
         private readonly List<ulong> _regionSpaceScratch = new List<ulong>();
+        /// <summary>The scope of each entry of <see cref="_regionScratch"/>: the client's own, or the far side's of a window (<c>docs/portals.md</c> D23).</summary>
+        private readonly List<ulong> _regionScopeScratch = new List<ulong>();
         private readonly List<string> _ownerScratch = new List<string>();
 
         private void UpdateClientRegions(ClientConn client)
         {
             _regionScratch.Clear();
             _regionSpaceScratch.Clear();
+            _regionScopeScratch.Clear();
+            ulong instance = InstanceOf(client);
             var foci = client.Interest.Foci;
             for (int i = 0; i < foci.Count; i++)
             {
@@ -1145,23 +1136,20 @@ namespace Nebula
                         focus.X + focus.HalfX + reach, focus.Y + focus.HalfY + reach, focus.Z + focus.HalfZ + reach, _regionScratch);
                 else _interestGrid.CollectDisc(focus.X, focus.Y, focus.Z, reach, _regionScratch);
                 // Which region space each collected region is in: a focus on a planet collects the planet's (D18).
-                for (int r = from; r < _regionScratch.Count; r++) _regionSpaceScratch.Add(focus.Space);
+                for (int r = from; r < _regionScratch.Count; r++) { _regionSpaceScratch.Add(focus.Space); _regionScopeScratch.Add(focus.HasScope ? focus.Scope : instance); }
             }
             bool changed = false;
-            // A client is in one scope, so its window is salted with that scope: it asks its workers for the regions
-            // of its own world and never for another's (docs/scope-frames.md D7). The one exception is a scope that
-            // is an ObservePublic window onto the public world — what it may see through the window is bucketed in
-            // the public world, so those keys are subscribed as well, and CanSee still decides what reaches it.
-            ulong instance = InstanceOf(client);
-            ulong salt = RegionKeys.SaltOf(instance);
-            bool alsoPublic = salt != 0 && (client.Interest?.ScanPublicToo ?? false);
+            // A client is in one scope, so its regions are salted with that scope: it asks its workers for the regions
+            // of its own world and never for another's (docs/scope-frames.md D7). The one exception is a window onto
+            // another scope through an open portal link: its regions are salted with the far side's scope and subscribed
+            // beside the client's own, and the window rule of CanObserve decides what reaches it (docs/portals.md D23).
             client.NextRegions.Clear();
             for (int i = 0; i < _regionScratch.Count; i++)
             {
                 ulong frameKey = _regionSpaceScratch[i];
-                if (frameKey != 0) { Want(client, RegionKeys.Salt(_regionScratch[i], instance, frameKey), instance, ref changed, frameKey); continue; }
-                Want(client, _regionScratch[i] ^ salt, instance, ref changed);
-                if (alsoPublic) Want(client, _regionScratch[i], 0UL, ref changed);
+                ulong scope = _regionScopeScratch[i];
+                if (frameKey != 0) { Want(client, RegionKeys.Salt(_regionScratch[i], scope, frameKey), scope, ref changed, frameKey); continue; }
+                Want(client, _regionScratch[i] ^ RegionKeys.SaltOf(scope), scope, ref changed);
             }
             foreach (ulong region in client.Regions)
             {
@@ -1184,9 +1172,20 @@ namespace Nebula
         {
             if (entered.Count == 0 && left.Count == 0) return;
             if (entered.Count > 0) SendOwnershipUpserts(client, entered);
+            // The carriers the rows of a window are fixed in come first, whatever their depth: a row's frame cannot be built without them (docs/portals.md D20).
+            if (client.WindowCarriers.Count > 0)
+                for (int i = 0; i < entered.Count; i++)
+                {
+                    if (!client.WindowCarriers.Contains(entered[i]) || !_entities.TryGetValue(entered[i], out var carrier)) continue;
+                    client.Visible.Add(carrier.NetId);
+                    PromoteFromFar(client, carrier.NetId);
+                    AddObserver(carrier, client);
+                    SendSpawn(client, carrier);
+                }
             for (int i = 0; i < entered.Count; i++)
             {
                 if (!_entities.TryGetValue(entered[i], out var rec)) continue;
+                if (client.WindowCarriers.Count > 0 && client.WindowCarriers.Contains(rec.NetId)) continue; // sent above
                 client.Visible.Add(rec.NetId);
                 PromoteFromFar(client, rec.NetId);
                 AddObserver(rec, client);
@@ -1341,7 +1340,7 @@ namespace Nebula
             foreach (var client in _clientsById.Values)
             {
                 if (!client.Welcomed) continue;
-                // Every region id this client contributes is its own scope's (docs/scope-frames.md D7).
+                // Every region id this client contributes is its own scope's, or a window's far scope (docs/scope-frames.md D7, docs/portals.md D23).
                 ulong instance = InstanceOf(client);
                 foreach (ulong region in client.Regions)
                 {
@@ -1353,7 +1352,8 @@ namespace Nebula
                     var foci = client.Interest.Foci;
                     for (int i = 0; i < foci.Count; i++)
                     {
-                        ulong key = RegionKeys.Salt(_interestGrid.RegionOf(foci[i].X, foci[i].Y, foci[i].Z), instance, foci[i].Space);
+                        ulong focusScope = foci[i].HasScope ? foci[i].Scope : instance;
+                        ulong key = RegionKeys.Salt(_interestGrid.RegionOf(foci[i].X, foci[i].Y, foci[i].Z), focusScope, foci[i].Space);
                         if (!_fociRegions.Contains(key)) _fociRegions.Add(key);
                         LinkNearbyOwners(foci[i]);
                     }
@@ -1363,8 +1363,8 @@ namespace Nebula
                         for (int i = 0; i < extras.Count; i++) AddExplicit(extras[i]);
                     }
                 }
-                // The carriers of the host ground it observes, wherever their workers are (NEB-426).
-                foreach (ulong carrier in client.HostCarriers) AddExplicit(carrier);
+                // The carriers of the ground a window shows it, wherever their workers are (NEB-426, docs/portals.md D20).
+                foreach (ulong carrier in client.WindowCarriers) AddExplicit(carrier);
                 // A client that owns an entity must hear about it wherever it is, so its worker is linked. The
                 // worker is resolved through the control plane, not through the links we already hold: after a
                 // handover the owner may be one we have never dialled, and this is where we dial it.
@@ -1539,7 +1539,9 @@ namespace Nebula
             }
             float reach = _interest.MaxRadius;
             var box = new Bounds(new Vector3((float)focus.X, (float)focus.Y, (float)focus.Z), new Vector3(2 * reach, 2 * reach, 2 * reach));
-            ContainerRegistry.Overlapping(InRegistryFrame(box, 0UL), _containerScratch);
+            // A window's focus is in the far scope's space, and the owners of its boxes are the ones whose wide entities could reach it.
+            ulong scope = focus.HasScope ? focus.Scope : 0UL;
+            ContainerRegistry.Overlapping(InRegistryFrame(box, scope), _containerScratch, scope);
             for (int i = 0; i < _containerScratch.Count; i++) Reason(_containerScratch[i].OwnerWorkerId, InterestLinkReason.Foci);
         }
 
@@ -1645,10 +1647,26 @@ namespace Nebula
                 // worker keeps publishing it wherever it is, so its region being unsubscribed says nothing about
                 // whether we still want it.
                 if (_explicitSet.Contains(rec.NetId)) continue;
+                // A record a window still authorises survives its scope change: it was re-filed under its new region key in place, and the
+                // regions of the window that holds it are subscribed at the client's next evaluation. Evicting it and fetching it again blinked
+                // a crossing crate out for 0.3 s in two of six crossings of the HVR-683 spike (docs/portals.md D23, §18).
+                if (rec.Observers.Count > 0 && HeldThroughWindow(rec)) continue;
                 _evictScratch.Add(rec.NetId);
             }
             for (int i = 0; i < _evictScratch.Count; i++) ForgetEntity(_evictScratch[i]);
             _evictScratch.Clear();
+        }
+
+        /// <summary>Whether a client that holds this record holds it through a window (<c>docs/portals.md</c> D23).</summary>
+        private bool HeldThroughWindow(EntityRecord rec)
+        {
+            ulong scope = InstanceOf(rec);
+            for (int i = 0; i < rec.Observers.Count; i++)
+            {
+                var client = rec.Observers[i];
+                if (client.Windows.Count > 0 && ObservableThroughWindow(client, rec, scope)) return true;
+            }
+            return false;
         }
 
         /// <summary>Forget one record entirely: out of the index, out of every set, despawned from every observer.</summary>
@@ -1788,15 +1806,11 @@ namespace Nebula
 
             ulong pawnNetId = 0;
             // Which scope's rows this client may hold. A scoped grid (NEB-239) is a whole world of containers at
-            // coordinates another scope also uses, so a window must be queried in the client's own scope and only
-            // in the public world as well when its scope looks out at it. Both directions fail closed: a public
-            // client is never told about a scope's chunks, and a scoped client is never told about the public
-            // world's unless its scope observes it.
+            // coordinates another scope also uses, so a window must be queried in the client's own scope. Both directions
+            // fail closed: a public client is never told about a scope's chunks, and a scoped client is never told about
+            // the public world's, except through the window of an open portal link (docs/portals.md D20), which is
+            // queried in the scope on its other side.
             ulong scopeInstance = 0;
-            bool observePublic = true;
-            // The scope the pawn came from, when its scope keeps that one in view (docs/scope-activation.md §12).
-            bool observeHost = false;
-            HostView host = default;
             if (client.PawnNetId != 0 && _entities.TryGetValue(client.PawnNetId, out var pawn))
             {
                 var root = RootOf(pawn);
@@ -1805,7 +1819,6 @@ namespace Nebula
                 // An unresolvable carrier chain keeps the client in the scope it was last in, and a scope nobody
                 // can describe does not look out at the public world (docs/scope-activation.md D16).
                 scopeInstance = ScopeOfClient(client);
-                observePublic = scopeInstance == 0 || (scope != null && scope.Instance != null && scope.Instance.ObservePublic);
                 // The pawn's own window first: whatever a camera is doing, the player's body must be able to
                 // stand on the ground, and this is the one focus that exists before any evaluation has run. The
                 // window is in the scope's own space, which a pawn on a planet with regions of its own is not.
@@ -1821,8 +1834,6 @@ namespace Nebula
                 // query in the scope's space finds (NEB-394).
                 if (root.FrameKey != 0) AddFrameWindow(root.FrameKey, root.AbsX, root.AbsY, root.AbsZ, 0, 0, 0, reach);
                 if (scope != null) Add(scope.ContainerId);
-                if (scope != null || pawn.Container.IsNone) TrackHostViews(client, scopeInstance, px, py, pz, root.FrameKey, root.AbsX, root.AbsY, root.AbsZ);
-                observeHost = TryGetObservedHost(client, scope, out host);
             }
             var foci = client.Interest?.Foci;
             if (foci != null)
@@ -1839,23 +1850,12 @@ namespace Nebula
                         // A focus in a frame's region space (D18, D23) is in that frame's coordinates: its window is there,
                         // and the pawn's own window above does not cover it, even when the pawn is its source (an approach focus).
                         if (focus.Space == 0 && !focus.IsBox && focus.SourceNetId != 0 && focus.SourceNetId == pawnNetId) continue;
+                        // A window onto a planet's ground is a focus in the planet's frame (the first branch), and one onto another scope's space is
+                        // queried in that scope: the window rows come after the client's own, so the budget withholds only ground it is not standing on (docs/portals.md D23).
                         if (focus.Space != 0) AddFrameWindow(focus.Space, focus.X, focus.Y, focus.Z, focus.HalfX, focus.HalfY, focus.HalfZ, (float)focus.Scaled(reach));
+                        else if (focus.HasScope) AddWindowRows(focus.Scope, focus.X, focus.Y, focus.Z, focus.HalfX, focus.HalfY, focus.HalfZ, (float)focus.Scaled(reach));
                         else AddWindow(focus.X, focus.Y, focus.Z, focus.HalfX, focus.HalfY, focus.HalfZ, (float)focus.Scaled(reach));
                     }
-            }
-            // The host's window after the client's own: the budget can only ever withhold ground it is not standing on.
-            client.HostCarriers.Clear();
-            if (observeHost)
-            {
-                int hostFrom = _containerIdScratch.Count;
-                AddHostWindow();
-                // The ground the pawn left was in a frame with regions of its own (a planet that is a carrier, D22):
-                // those rows are boxes in the frame's coordinates, which the scope query above never finds.
-                if (host.FrameKey != 0) AddFrameWindow(host.FrameKey, host.FX, host.FY, host.FZ, 0, 0, 0, reach);
-                // A host row fixed in a carrier cannot be built without that carrier, so the carriers of exactly these
-                // rows, out to the root of their chain, are kept in the client's set too (NEB-426): from inside, the
-                // ground beyond the door is there to draw. Only these, never the carrier's other interest.
-                for (int i = hostFrom; i < _containerIdScratch.Count; i++) CollectHostCarriers(client, _containerIdScratch[i]);
             }
             // A destination a worker asked this client to prepare (D14): pinned for the life of the crossing, whatever
             // the window says, so the client can still resolve it when the commit names it.
@@ -1894,7 +1894,7 @@ namespace Nebula
                         if (budget <= 0) { truncated = true; return; }
                         if (Add(_containerScratch[i].ContainerId)) budget--;
                     }
-                    if (!observePublic) return;
+                    return;
                 }
                 ContainerRegistry.Overlapping(InRegistryFrame(box, 0UL), _containerScratch);
                 for (int i = 0; i < _containerScratch.Count; i++)
@@ -1921,13 +1921,14 @@ namespace Nebula
                     if (Add(kv.Key)) budget--;
                 }
             }
-            // The window the pawn had where it left the host, queried in the host's scope only: the public world's rows
-            // only when the host is the public world, and no other scope's ever.
-            void AddHostWindow()
+            // The rows of a portal's window, queried in the scope on its other side only, after the client's own windows and foci have used
+            // what they need: the budget can only ever withhold ground the client is not standing on (docs/portals.md D23).
+            void AddWindowRows(ulong windowScope, double x, double y, double z, double halfX, double halfY, double halfZ, float window)
             {
                 if (budget <= 0) { truncated = true; return; }
-                var box = new Bounds(new Vector3((float)host.X, (float)host.Y, (float)host.Z), new Vector3(2 * reach, 2 * reach, 2 * reach));
-                ContainerRegistry.Overlapping(InRegistryFrame(box, host.Scope), _containerScratch, host.Scope);
+                var box = new Bounds(new Vector3((float)x, (float)y, (float)z),
+                    new Vector3((float)(2 * (halfX + window)), (float)(2 * (halfY + window)), (float)(2 * (halfZ + window))));
+                ContainerRegistry.Overlapping(InRegistryFrame(box, windowScope), _containerScratch, windowScope);
                 for (int i = 0; i < _containerScratch.Count; i++)
                 {
                     if (budget <= 0) { truncated = true; return; }
@@ -2090,6 +2091,8 @@ namespace Nebula
         /// <summary>A client that just joined gets a Full snapshot of the containers it needs, and nothing else.</summary>
         private void SendOwnershipFull(ClientConn client)
         {
+            // A client that joins inside a window, or reconnects there, is sent what it looks at from the link records alone.
+            RefreshWindows(client, true);
             CollectNeededContainers(client, null);
             client.KnownContainers.Clear();
             client.RowsLeaving.Clear();

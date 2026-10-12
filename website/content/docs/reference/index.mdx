@@ -384,7 +384,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [GoodbyeMsg](/docs/reference/protocol/goodbye-msg) | Struct. Client -\> gateway: the player is leaving for good (MsgId.Goodbye, protocol 23). |
 | [HelloFlags](/docs/reference/protocol/hello-flags) | Enum. Lists the supported hello flags values. |
 | [HelloMsg](/docs/reference/protocol/hello-msg) | Struct. Carries the hello protocol message. |
-| [InstanceContainerInfo](/docs/reference/protocol/instance-container-info) | Class. Identifies a private container's simulation scope, content, and optional outward view. |
+| [InstanceContainerInfo](/docs/reference/protocol/instance-container-info) | Class. Identifies a private container's simulation scope and content. |
 | [InstancePreparationMsg](/docs/reference/protocol/instance-preparation-msg) | Struct. Carries the instance preparation protocol message. |
 | [InterestResyncMsg](/docs/reference/protocol/interest-resync-msg) | Struct. Worker -\> gateway: the last InterestSubscribeMsg could not be applied (wrong base sequence, or the result did not verify). |
 | [InterestSubscribeFlags](/docs/reference/protocol/interest-subscribe-flags) | Enum. Lists the supported interest subscribe flags values. |
@@ -416,6 +416,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [PortalState](/docs/reference/protocol/portal-state) | Enum. Where a party's PortalLink stands (docs/portals.md D9). |
 | [PortalWait](/docs/reference/protocol/portal-wait) | Enum. Why a link is not PortalState.Open (docs/portals.md D9). |
 | [PortalWarmMsg](/docs/reference/protocol/portal-warm-msg) | Struct. MsgId.PortalWarm: a member client holds the far window of a link and its content is ready. |
+| [PortalWindow](/docs/reference/protocol/portal-window) | Struct. One side's window of a portal (docs/portals.md D3, D20): the cross-section of the aperture grown by the portal's WindowMargin sideways and extruded WindowDepth into that side, an oriented box in the face's axes. |
 | [PortalsMsg](/docs/reference/protocol/portals-msg) | Static class. MsgId.Portals: \[upserts:ushort\]\{record\}\[removes:ushort\]\{portalId\}, worker → network gateway → client. |
 | [PortalsUpdate](/docs/reference/protocol/portals-update) | Class. A change to the portals a receiver knows (MsgId.Portals): records to add or replace, and ids to forget. |
 | [ProtocolCompatibility](/docs/reference/protocol/protocol-compatibility) | Static class. Checks client protocol and game content versions against the gateway's supported range. |
@@ -489,7 +490,7 @@ Keep the control plane and saved entities in SQLite or PostgreSQL from the stand
 | [IInterestSource\<T\>](/docs/reference/interest/i-interest-source) | Interface. What ClientInterest\<T,TSource\> needs to know about the records it is evaluating. |
 | [InterestClient](/docs/reference/interest/interest-client) | Struct. What a policy is told about the client it is deciding for. |
 | [InterestEntity](/docs/reference/interest/interest-entity) | Struct. What a policy is told about the entity it is deciding on. |
-| [InterestFocus](/docs/reference/interest/interest-focus) | Struct. One place a client is interested in: a point (the usual case, its pawn) or a box (an ObservePublic window, an RTS selection). |
+| [InterestFocus](/docs/reference/interest/interest-focus) | Struct. One place a client is interested in: a point (the usual case, its pawn) or a box (a portal's window, an RTS selection). |
 | [InterestGrid](/docs/reference/interest/interest-grid) | Struct. A uniform spatial hash over absolute world coordinates: the region arithmetic every part of interest management shares (gateway, worker, standalone services). |
 | [InterestIndex\<T\>](/docs/reference/interest/interest-index) | Class. Region → dense list of items, with swap-remove and O(1) rebucketing. |
 | [InterestPlacement](/docs/reference/interest/interest-placement) | Enum. Where an item sits in an InterestIndex\<T\>. |

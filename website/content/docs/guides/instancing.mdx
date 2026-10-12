@@ -18,10 +18,10 @@ A portal has one **link** per **party**, an opaque string your game chooses: the
 | Player location | Simulation scope | Visible networked entities |
 | --- | --- | --- |
 | Street or hallway | Public (`0`) | Public entities; no private occupants. |
-| Their apartment | Private instance selected by the party | Entities in that instance, plus public entities in its configured observation bounds. |
-| Another player's apartment | A different private instance | That instance's entities and its configured public view; no occupants of other private copies. |
+| Their apartment | Private instance selected by the party | Entities in that instance, plus what the door's window shows while they stand in it. |
+| Another player's apartment | A different private instance | That instance's entities, and what its own door's window shows; no occupants of other private copies. |
 
-When the player crosses, their connection stays open and their network ID stays the same. Outside observers stop receiving that player's entity. From inside, the player can still see people in the hallway when it is within `PublicView`. The game controls the door animation, fade, or other visual treatment.
+When the player crosses, their connection stays open and their network ID stays the same. Outside observers stop receiving that player's entity, unless they may look through the portal and stand in its window (see [Look through a portal](#look-through-a-portal)). From inside, the player sees the hallway the same way. The game controls the door animation, fade, or other visual treatment.
 
 The same player can leave through the portal to return to the public world. The destination must be covered by a public container.
 
@@ -45,15 +45,14 @@ Static content prefabs must not contain `NetworkIdentity` components. Spawn netw
 | `Parts[].Id` | A unique, nonempty name within the template, such as `living-room`. |
 | `Parts[].Bounds` | A positive-size box relative to the instance origin. Cover every area players can enter. |
 | `Parts[].ContentResource` | A static prefab path, such as `Instances/Apartment`, for `Resources/Instances/Apartment.prefab`. An empty path creates a container with no static content. |
-| `ObservePublic` | Whether occupants receive the bounded public view. Disable it for a fully separate encounter. |
-| `PublicView` | The public observation box relative to the instance origin, shared by the template's parts. |
-| `ObserveHost` | Keep the area the player entered from loaded on their client while they are inside, so leaving rebuilds nothing. Off by default. See [Keep the host loaded while inside](#keep-the-host-loaded-while-inside). |
 | `Portal.Id` | A name unique within the container the portal stands in. With that container's id it derives the portal's id on every process. |
 | `Portal.FarTemplate` | The template behind the face. The far scope of a party is `TemplateId + "/" + party`. For a scope that exists anyway, call `SetFixedFarSide` instead. |
 | `Portal.Aperture` | The opening on the face's plane: `PortalAperture.Box(halfWidth, halfHeight)`, centered on the portal's position. |
 | `Portal.TurnWithFace` | Build the far scope in the portal's axes (on by default), so the interior stands behind a door that is not upright. Off keeps the near scope's axes. |
 | `Portal.PartyOf` | Which party an entity belongs to. By default the owner's identity. See [Choose who enters together](#choose-who-enters-together). |
 | `Portal.CanEnter` | Admission into a link's far scope. By default a server-owned entity, or a member's entity once the member is warm. |
+| `Portal.WindowMargin`, `Portal.WindowDepth` | The size of the portal's two windows (8 m and 48 m by default). See [Look through a portal](#look-through-a-portal). |
+| `Portal.CanObserve`, `Portal.ObserveAnyone`, `Portal.AddObserver` | Who may look through the portal's links. By default every member; see [Look through a portal](#look-through-a-portal). |
 
 For a single-room apartment, start with an aperture the size of the door and a template part that begins at the portal's position. For multiple rooms, put the arrival room first. Keep the portal position and the template's instance origin aligned.
 
@@ -121,8 +120,7 @@ Your game is responsible for the rest:
 
 - **Keep the entrance chunk leased and the near scope active while the instance is occupied.** A scoped grid leases chunks around the players standing in it, and players inside the instance are not standing in it. Pin the entrance chunk on the grid's allocator (`RuntimeGridAllocator.AddPin`) while anyone is inside, and keep the scope from retiring.
 - **Open and close the portal on the worker that owns its container.** A link lives on that worker, and so does the crossing test; the instance is leased first by the worker that prepared it.
-- **Turn `ObservePublic` off.** It observes the public world, not the near scope, so occupants cannot see out into the grid. The portal logs a warning when it is on.
-- **Turn `ObserveHost` on** to keep the grid's chunks around the entrance loaded, hidden, while players are inside. Without it, the client unloads them shortly after a player enters and loads them again after the player leaves. See [Keep the host loaded while inside](#keep-the-host-loaded-while-inside).
+- **Let occupants look out.** A client inside sees the grid's chunks and entities around the door through the portal's window, from the link records, with no option to set. Make the players who should look out members of the link, or mark the door `ObserveAnyone`; see [Look through a portal](#look-through-a-portal).
 - **Looking through the doorway.** On the client an instance entered from the scope the player stands in shares that scope's origin frame, so its content is drawn exactly behind the door and the host's scenery exactly outside it; keep the content drawn with `InstanceScenes.KeepDrawn` while the door is open. Build the interior in the portal's own axes (its forward is the way in): an instance is prepared with the portal's rotation (`Portal.PoseRotation`, off with `TurnWithFace`), so on a curved surface it stands behind the door the way the door stands, crossings carry the player's facing and velocity through it, and each side is drawn turned for the other.
 
 ## Open and close a portal
@@ -335,36 +333,38 @@ Group commits accept a translation applied to each member's world position and p
 
 The gateway connection stays open. The entity keeps its network ID and velocity. Ordinary worker handover moves authority when the destination belongs to another worker.
 
-## See outside from inside
+## Look through a portal
 
-Enable `ObservePublic` and set the template's `PublicView` bounds relative to its origin. Occupants receive public entities within those bounds, while public observers receive no private entities. Other private instances remain hidden. Replicas visible before and after crossing stay resident on the client.
+An open portal shows each side to the other. Each side of a link has a **window**: the doorway grown `WindowMargin` meters sideways and extruded `WindowDepth` meters into that side, measured in the portal's own axes (the far side's window in the far face's axes). A client qualifies on a side when it is allowed to look through the link, its pawn is in that side's scope, and the pawn is inside that side's window. It is then sent what stands in the other side's window: the container rows inside it, the carriers those rows are fixed in (a planet whose ground holds the door), and every entity there. It works both ways, for every link: from the street into the room and from the room out into the street.
 
-This is an observation-only connection. It does not grant cross-instance collision, targeting, or damage. The game supplies the public scenery and the visual treatment of the entrance. Portal rendering, remote camera views, and moving entrance anchors are not provided by `Portal`.
+```csharp
+portal.WindowMargin = 8f;      // sideways, beyond the doorway (the default)
+portal.WindowDepth  = 48f;     // into each side (the default)
+portal.ObserveAnyone = true;   // a door any passer-by may look through
+```
 
-`PublicView` selects public entities by position in a box. It is not a camera frustum, line-of-sight test, or a window-shaped portal. Within the private scope, entities remain eligible for replication regardless of distance; distance affects update frequency. Public-to-private and private-to-other-private visibility are not configurable through this template.
+Who may look through a link is decided on the worker and enforced by the gateway, which runs none of your code:
 
-## Keep the host loaded while inside
+- **Members** are observers unless `Portal.CanObserve(clientId, link)` says otherwise. It is asked when a client becomes a member.
+- **`Portal.ObserveAnyone`** lets every client look through every link of the portal.
+- **`Portal.AddObserver(party, clientId)`** lets a bystander (a friend watching a room) look without being a member, so the link never waits for it and its own entities are not admitted. `RemoveObserver` takes it back.
 
-The host scope is the scope a player was in before they entered the instance: the public world, a scoped grid, or another instance. By default, an occupant's client is sent no container assignments of the host scope. About one second after a player enters, the client unloads the host's containers and the content your game built in them. When the player leaves, the client loads that area again from nothing, which can cause a visible hitch.
+A few rules to design around:
 
-To keep the host loaded, enable `ObserveHost` on the template. If you create the scope yourself, set `ScopeDefinition.ObserveHost` instead. While the player is inside:
+- **One portal deep.** A window shows the scope on the other side of the links a client stands in the window of, and no further: from the street you see the room, not the room behind its inner door, even if you may look through that door too.
+- **At most four at once.** `NebulaGateway.MaxPortalWindows` is 4; a client standing where more windows overlap sees through the nearest four, measured from its pawn to each doorway. `InterestClient.PortalWindows` tells a policy how many a client has.
+- **Closing takes it away at once.** A link that is `Open` or `Closing` shows both sides; when it closes, the far side's entities are despawned for the client, and its container rows follow after the usual linger.
+- **A thrown crate stays with its thrower.** An entity that crosses changes scope, and a client that may look through the link it went through, from inside the near window, keeps it: no despawn, no new spawn, no blink. An onlooker who may not look through loses it at once and is never told the other scope exists.
+- **A reconnect inside sees out again.** The link records live on the gateway, so nothing about where a player came from is remembered.
+- **Nothing is simulated across.** A client holds what it is sent as replicas in their own scope. It does not collide with them, target them or hit them; proxies in the doorway, queries and drawing the other scope posed at the door are separate features. A client that is sent an entity naming a container it has no row for holds the update, whatever the container's kind, until the row arrives.
 
-- The gateway keeps sending the client the host's containers that were around the player when they entered. The area is the same one the player had loaded at the entrance, centered where they left the host. It doesn't follow the player through the instance, so it costs no more than what the client already had.
-- The client keeps those containers and their content in memory. A scoped grid's chunks are hidden while the player is in another scope, the same way an instance's static content is hidden until a player enters it. The public world is drawn as it always was.
-- The player receives none of the host's entities. Use `ObservePublic` to see public entities from inside.
-- Physics stays separate. The host's colliders don't affect anything in the instance.
-
-When the player leaves, the area is already loaded, so nothing is rebuilt. After that, the host's containers are unloaded as the player moves away, like any other.
-
-`ObserveHost` keeps one host. In an instance entered from another instance, the client keeps the outer instance's area around the inner entrance, not the world outside the outer instance. When the player returns to the outer instance, the gateway sends its host's area again.
-
-The gateway remembers where a player entered only for the current connection. A player who joins or reconnects while inside an instance has no host to keep until they leave and enter again.
+`ObservePublic`, `PublicView` and `ObserveHost` of the instance template, and their counterparts on `ScopeDefinition`, no longer exist: what a room looks out at is its portals' windows, and what a street looks into is the same windows. A window onto ground that is a planet carrying its own frame is authorized and its rows are kept, and the ground's entities are found through the planet's own regions.
 
 If your game builds a chunk's content after `NebulaChunks.Loaded` returns, check `NebulaChunks.IsDrawn` and keep new renderers hidden while it is `false`. Otherwise the client hides them only when the player next moves into another container.
 
 ## Show both sides of an open portal
 
-A client draws only the scope the local player is in, plus the public world. Another scope's content can be loaded on the client and still be hidden: an instance's static content before the player enters, or a scoped grid's chunks while the player is inside an instance with `ObserveHost`. So a player standing at an open door sees only their own side, and the other side appears all at once when they cross.
+A client draws only the scope the local player is in, plus the public world. Another scope's content can be loaded on the client and still be hidden: an instance's static content before the player enters, or a scoped grid's chunks while the player is inside an instance. So a player standing at an open door sees only their own side, and the other side appears all at once when they cross.
 
 To draw the other side while the door is open (a link's state is `Open`), call `InstanceScenes.KeepDrawn` on the client with that scope's instance ID. Call `InstanceScenes.StopKeepingDrawn` when the door closes:
 
@@ -398,7 +398,7 @@ While a scope is kept drawn:
 - When the player crosses, the scope they left stays drawn while it is kept, so the doorway looks the same from both sides.
 - Nebula turns on only the renderers it turned off itself. A renderer your game turned off stays off, whether the scope is kept, hidden again or entered.
 
-`KeepDrawn` changes rendering only. It loads nothing, so the other side must already be on the client: for example, a member's client holds the far window of an open link, or the instance keeps its host with `ObserveHost`. Physics scenes, interest, ownership and network messages don't change, so the player still can't collide with, target or affect anything on the other side. Workers ignore the call, and the public world is always drawn.
+`KeepDrawn` changes rendering only. It loads nothing, so the other side must already be on the client: for example, a member's client holds the far window of an open link, or the player stands in the window of a link they may look through. Physics scenes, interest, ownership and network messages don't change, so the player still can't collide with, target or affect anything on the other side. Workers ignore the call, and the public world is always drawn.
 
 A request outlives the scope's content. If the content is unloaded and loaded again while the request is live, it starts drawn. Call `StopKeepingDrawn` once for each `KeepDrawn`. Use `InstanceScenes.IsDrawn` to check whether a scope is drawn on this client.
 
@@ -433,7 +433,7 @@ Nebula filters gateway spawns, variables, transform state, behavior state, and e
 
 ## Interest behavior
 
-[Interest management](/docs/guides/interest-management) checks instance authorization before any spatial test: an unknown container is never added to a client's set, and a private instance's entities are only reachable by clients inside that same instance. `ObservePublic` supplies an additional focus box rather than changing this check, so an occupant's outward view is still limited to `PublicView`'s bounds and never crosses into another private instance.
+[Interest management](/docs/guides/interest-management) checks instance authorization before any spatial test: an unknown container is never added to a client's set, and a private instance's entities are only reachable by clients inside that same instance, or standing in the window of an open portal they may look through. A window supplies an additional focus box in the other side's scope rather than changing this check, so an occupant's outward view is limited to the window's bounds and never crosses into a third scope.
 
 ## Save and retire an instance
 
@@ -449,14 +449,14 @@ Releasing one part by hand does not retire the others; use the [scope lifecycle]
 
 Rebuild workers, gateways, and clients together. Instance metadata changes the wire protocol to version `12`.
 
-Use two clients to check that public observers lose sight of an entering player, occupants retain the configured outward view, and different private copies cannot see or hit each other. Test missing content and worker reassignment during preparation: both must leave the source authoritative until a valid transfer can be committed.
+Use two clients to check that public observers lose sight of an entering player, occupants see out through the door's window, and different private copies cannot see or hit each other. Test missing content and worker reassignment during preparation: both must leave the source authoritative until a valid transfer can be committed.
 
 Use distinct player identities for the personal-instance test. Two clients sharing a saved anonymous token or signing into the same account select the same personal key, even with different display names.
 
 | Test | Expected result |
 | --- | --- |
 | One player enters while another waits outside | The entering player disappears from the public observer. |
-| Occupant looks toward the public hallway | Public entities within `PublicView` remain visible. |
+| Occupant looks toward the public hallway | Public entities inside the door's window are visible, and nothing outside it. |
 | Two distinct identities enter a personal area | Each sees their own private copy. |
 | Two admitted players resolve the same key | They see each other inside the same copy. |
 | Occupant leaves | Public visibility returns without reconnecting. |
@@ -494,8 +494,8 @@ See [Running locally](/docs/getting-started/running-locally) for build paths and
 | Two players unexpectedly share a personal room | Compare their `OwnerIdentity` values and any custom `ResolveKey` callback. |
 | Floor or wall collision disappears inside | Include those colliders in private static content and use scoped physics queries. |
 | Interior surfaces flicker | Remove overlapping visible geometry between the public shell and private prefab. |
-| Hallway players disappear from inside | Enable `ObservePublic` and check `PublicView` relative to the instance origin. |
-| The area outside pops in again after a player leaves | Enable `ObserveHost` on the template, so the client keeps the host loaded while the player is inside. |
+| Hallway players disappear from inside | Check the player is a member of the link or an observer (`Portal.CanObserve`, `ObserveAnyone`), the link is `Open`, and the player stands inside the near face's window (`WindowMargin`, `WindowDepth`). |
+| The area outside pops in again after a player leaves | Keep the player inside the door's window and the link open: the window keeps the rows around the doorway. |
 | The other side of an open door is empty until the player crosses | Call `InstanceScenes.KeepDrawn` for that scope while the door is open. |
 | Saved furniture is missing or shared across copies | Check stable template/part/key values, `PersistentEntity`, and instance-specific persistence keys. |
 

@@ -66,7 +66,6 @@ namespace Nebula.Tests
             _template = ScriptableObject.CreateInstance<InstanceTemplate>();
             _template.TemplateId = "vault";
             _template.Parts = new[] { new InstanceTemplate.Part { Id = "hall", Bounds = new Bounds(new Vector3(0f, 2f, 0f), new Vector3(8f, 4f, 8f)) } };
-            _template.ObservePublic = false;
             var pawn = new GameObject("pawn-prefab");
             pawn.AddComponent<NetworkIdentity>();
             _pawnPrefab = _mesh.RegisterPrefab(pawn);

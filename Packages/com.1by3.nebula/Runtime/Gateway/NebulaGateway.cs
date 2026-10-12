@@ -143,21 +143,18 @@ namespace Nebula
             /// </summary>
             public readonly Dictionary<string, double> RowsLeaving = new Dictionary<string, double>();
             /// <summary>
-            /// The scopes this client's pawn has left, with where it last stood in each, oldest first and at most
-            /// <see cref="NebulaGateway.MaxHostViews"/>. Going back to one of them drops it and every later one. The
-            /// last is the host an <see cref="InstanceContainerInfo.ObserveHost"/> scope keeps in the client's view
-            /// (docs/scope-activation.md §12).
+            /// The windows this client is looking through right now (<c>docs/portals.md</c> D20, D22): the other side of each open or closing
+            /// link it may look through and stands in the window of, nearest first, at most <see cref="NebulaGateway.MaxPortalWindows"/>.
+            /// Recomputed from the link records at every evaluation and whenever a link changes, so a reconnect needs no history.
             /// </summary>
-            public readonly List<HostView> HostViews = new List<HostView>();
+            public readonly List<ClientWindow> Windows = new List<ClientWindow>();
             /// <summary>
-            /// The carriers the observed host's rows are fixed in, out to their root (a planet whose ground holds the
-            /// door): kept in this client's set while it observes the host, so those rows can be built (NEB-426).
+            /// The carriers the container rows of those windows are fixed in, out to the root of their chain (a planet whose ground holds the
+            /// door), kept in this client's set while it looks through the windows, so those rows can be built (NEB-426, <c>docs/portals.md</c> D20).
             /// </summary>
-            public readonly HashSet<ulong> HostCarriers = new HashSet<ulong>();
-            /// <summary>Whether <see cref="Placed"/> has been recorded.</summary>
-            public bool HasPlaced;
-            /// <summary>The pawn's scope and absolute position the last time its scope resolved: what a scope change pushes onto <see cref="HostViews"/>.</summary>
-            public HostView Placed;
+            public readonly HashSet<ulong> WindowCarriers = new HashSet<ulong>();
+            /// <summary>The same windows as boxes in the frame of a planet they reach into, where the ground's entities are bucketed (<see cref="FrameWindow"/>).</summary>
+            public readonly List<FrameWindow> FrameWindows = new List<FrameWindow>();
             /// <summary>
             /// The accepted version from this connection's Hello, echoed in the welcome.
             /// The gateway accepts protocol 18 only.
@@ -652,21 +649,19 @@ namespace Nebula
         {
             if (!client.Welcomed) return false;
             if (entity.NetId == client.PawnNetId) return true;
-            // A carrier the observed host's rows are fixed in (NEB-426): the client may hold those rows, so it may hold
-            // the body they are fixed in. Nothing it carries comes with it.
-            if (client.HostCarriers.Count > 0 && client.HostCarriers.Contains(entity.NetId)) return true;
+            // A carrier the rows of a window the client looks through are fixed in (NEB-426): the client may hold those rows, so it may
+            // hold the body they are fixed in. Nothing it carries comes with it.
+            if (client.WindowCarriers.Count > 0 && client.WindowCarriers.Contains(entity.NetId)) return true;
             var target = ScopeContainer(entity.Container);
             // Unknown runtime containers must never fall back to public visibility.
             if (target == null && !entity.Container.IsNone) return false;
-            var source = _entities.TryGetValue(client.PawnNetId, out var pawn) ? ScopeContainer(pawn.Container) : null;
             // The client's scope, which stays the last one it was known to be in while its pawn's carrier chain is
             // being re-resolved, rather than becoming the public world (docs/scope-activation.md D16).
             ulong scope = ScopeOfClient(client);
-            if ((target?.InstanceId ?? 0) == scope) return true;
-            if (target != null && target.InstanceId != 0) return false;
-            var view = source?.Instance;
-            return view != null && view.ObservePublic && new Bounds(view.ObservationCenter, view.ObservationSize)
-                .Contains(WorldPosition(entity.Container, entity.LastSpawn.LocalPosition));
+            ulong targetScope = target?.InstanceId ?? 0;
+            if (targetScope == scope) return true;
+            // Another scope: only through a window of an open link, decided from the link records alone (docs/portals.md D21).
+            return client.Windows.Count > 0 && ObservableThroughWindow(client, entity, targetScope);
         }
 
         /// <summary>
@@ -1615,6 +1610,8 @@ namespace Nebula
             // A scope or carrier change invalidates a decision that was made on the old one; a plain move only
             // has to be rebucketed, and only when its region key actually changed.
             if (changedCarrier) RelinkCarrier(rec);
+            // Where it is now, in its new scope's space, before anybody is asked: a window decides on the record's place (docs/portals.md D21).
+            if (changedScope) RefreshAbsolute(rec);
             // Another scope: the observers that may no longer see it (an onlooker on the planet a ship just left)
             // lose it now, before anything about the destination is sent, so none of them is ever told the other
             // scope's container exists. The ones that stay (the ship's own crew) are re-authorized in the new

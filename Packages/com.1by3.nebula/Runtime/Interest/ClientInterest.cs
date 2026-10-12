@@ -68,12 +68,6 @@ namespace Nebula
         /// bucketed with, or the scan looks in another world's buckets (<c>docs/scope-frames.md</c> D7).
         /// </summary>
         public ulong ScopeSalt;
-        /// <summary>
-        /// Also scan the public world's buckets (salt 0). Set for a client whose scope is an <c>ObservePublic</c>
-        /// window onto the public world: the entities it may see through that window are bucketed in the public
-        /// world, not in its scope, and <c>NebulaGateway.CanSee</c> is what decides which of them it actually gets.
-        /// </summary>
-        public bool ScanPublicToo;
         /// <summary>Where the evaluation gets "now" from; tests and the standalone gateway supply their own.</summary>
         public Func<double> Clock;
 
@@ -213,13 +207,11 @@ namespace Nebula
                     Grid.CollectBox(focus.X - focus.HalfX - reach, focus.Y - focus.HalfY - reach, focus.Z - focus.HalfZ - reach,
                         focus.X + focus.HalfX + reach, focus.Y + focus.HalfY + reach, focus.Z + focus.HalfZ + reach, _regions);
                 else Grid.CollectDisc(focus.X, focus.Y, focus.Z, reach, _regions);
-                // A focus in a frame with regions of its own scans that frame's buckets (docs/container-tree.md D18).
-                ulong salt = focus.Space == 0 ? ScopeSalt : ScopeSalt ^ RegionKeys.SaltOf(0, focus.Space);
-                for (int r = 0; r < _regions.Count; r++)
-                {
-                    ScanRegion(index, _regions[r] ^ salt, now, entered, left);
-                    if (ScanPublicToo && ScopeSalt != 0 && focus.Space == 0) ScanRegion(index, _regions[r], now, entered, left);
-                }
+                // A focus in a frame with regions of its own scans that frame's buckets (docs/container-tree.md D18); a focus in another
+                // scope (a portal's window, docs/portals.md D23) scans that scope's.
+                ulong scopeSalt = focus.HasScope ? RegionKeys.SaltOf(focus.Scope) : ScopeSalt;
+                ulong salt = focus.Space == 0 ? scopeSalt : scopeSalt ^ RegionKeys.SaltOf(0, focus.Space);
+                for (int r = 0; r < _regions.Count; r++) ScanRegion(index, _regions[r] ^ salt, now, entered, left);
             }
 
             ScanRest(index, now, entered, left, enterFrom, leaveFrom);
@@ -300,6 +292,7 @@ namespace Nebula
             {
                 var focus = _foci[i];
                 if (focus.Space != entity.Space) continue; // coordinates of different spaces are not comparable
+                if (focus.HasScope && focus.Scope != entity.InstanceId) continue; // a window sees its own scope's entities and no other's
                 double d2 = focus.SqrDistanceTo(entity.X, entity.Y, entity.Z);
                 double enterAt = focus.Scaled(radius);
                 double exitAt = focus.Scaled(radius + Settings.ExitMargin);

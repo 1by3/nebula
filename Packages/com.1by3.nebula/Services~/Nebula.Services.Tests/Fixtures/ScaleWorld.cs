@@ -54,7 +54,6 @@ public sealed class ScaleWorld : IDisposable
     public static ScopeDefinition Room(int ordinal) => new()
     {
         Kind = ScopeKind.Parts,
-        ObservePublic = false,
         Parts = { new ScopePart { PartId = "room", Center = new Vector3(100_000 + ordinal * 10_000, 0, 0), Size = new Vector3(64, 64, 64) } },
     };
 

@@ -406,6 +406,28 @@ namespace Nebula
         public bool AddMember(string party, ulong clientId) =>
             _links.TryGetValue(party ?? "", out var link) && link.State != PortalState.Closed && AddMemberTo(link, clientId);
 
+        /// <summary>
+        /// Let a client look through a party's link without being a member (<c>docs/portals.md</c> D11, D20): a bystander at a door, a friend
+        /// watching a room. While the link is open and the client stands inside the near window it is sent the far window; when it stands in
+        /// the far window it is sent the near one. It is not held to warm the far window, so the link never waits for it, and its own entities are
+        /// not admitted by the default <see cref="CanEnter"/>. Members are observers already unless <see cref="CanObserve"/> says otherwise.
+        /// </summary>
+        /// <returns>True when the client was not an observer of a live link before.</returns>
+        public bool AddObserver(string party, ulong clientId)
+        {
+            if (clientId == 0 || !_links.TryGetValue(party ?? "", out var link) || link.State == PortalState.Closed || !link.ObserverSet.Add(clientId)) return false;
+            link.Dirty = true;
+            return true;
+        }
+
+        /// <summary>Stop a client looking through a party's link. A member keeps its part in readiness; it just no longer sees through.</summary>
+        public bool RemoveObserver(string party, ulong clientId)
+        {
+            if (!_links.TryGetValue(party ?? "", out var link) || !link.ObserverSet.Remove(clientId)) return false;
+            link.Dirty = true;
+            return true;
+        }
+
         /// <summary>Remove a client from a link's members; it no longer holds the link back and no longer looks through it.</summary>
         public bool RemoveMember(string party, ulong clientId)
         {

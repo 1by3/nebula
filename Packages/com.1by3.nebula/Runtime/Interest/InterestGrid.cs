@@ -189,7 +189,7 @@ namespace Nebula
                 true, x, y, z, radius * radius, into);
         }
 
-        /// <summary>Append every region overlapping an absolute box (an <c>ObservePublic</c> window, a container).</summary>
+        /// <summary>Append every region overlapping an absolute box (a portal's window, a container).</summary>
         public void CollectBox(double minX, double minY, double minZ, double maxX, double maxY, double maxZ, List<ulong> into)
         {
             if (into == null || !IsValid) return;

@@ -117,6 +117,14 @@ public FocusMode FocusMode;
 
 What the server allows this client's hint to do (`gateway.SetClientFocusMode`).
 
+### PortalWindows [#portalwindows]
+
+```csharp
+public int PortalWindows;
+```
+
+How many portal windows the client is looking through right now (`docs/portals.md` D22): the other sides of the open links it stands in the window of and may look through, at most `NebulaGateway.MaxPortalWindows`. 0 for a client that sees nothing through a portal.
+
 ## Properties
 
 ### FreeHint [#freehint]

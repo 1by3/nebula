@@ -1,6 +1,6 @@
 ---
 title: "InstanceContainerInfo"
-description: "Identifies a private container's simulation scope, content, and optional outward view."
+description: "Identifies a private container's simulation scope and content."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/InstanceContainerInfo.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/InstanceContainerInfo.cs)</div>
@@ -10,7 +10,7 @@ description: "Identifies a private container's simulation scope, content, and op
 public sealed class InstanceContainerInfo
 ```
 
-Identifies a private container's simulation scope, content, and optional outward view.
+Identifies a private container's simulation scope and content. What it looks out at is its portals' windows (`docs/portals.md` D20).
 
 ## Fields
 
@@ -28,24 +28,6 @@ The 64-bit simulation scope ([`NebulaWorker.InstanceKey`](/docs/reference/worker
 public string ContentResource = "";
 ```
 
-### ObservePublic [#observepublic]
-
-```csharp
-public bool ObservePublic;
-```
-
-### ObservationCenter [#observationcenter]
-
-```csharp
-public Vector3 ObservationCenter;
-```
-
-### ObservationSize [#observationsize]
-
-```csharp
-public Vector3 ObservationSize;
-```
-
 ### ScopeKey [#scopekey]
 
 ```csharp
@@ -61,14 +43,6 @@ public string PartId = "";
 ```
 
 The scope part this container is ([`ScopePart.PartId`](/docs/reference/control-plane/scope-part#partid)), carried so a role that was handed the row — a client, a gateway — can say *which* part of the scope it holds without inverting the hash that named it. A scoped chunk's part id is its coordinate ([`ChunkKeys.PartId`](/docs/reference/world/chunk-keys#partid)), which is how every role rebuilds the chunk grid's coordinate map from lease rows alone. Empty on a row written before the part id was recorded, and on a public-world container.
-
-### ObserveHost [#observehost]
-
-```csharp
-public bool ObserveHost;
-```
-
-Occupants keep the container rows of the scope they came from, around where they left it ([`ScopeDefinition.ObserveHost`](/docs/reference/control-plane/scope-definition#observehost)). Only the gateway acts on it: it is stored on the lease row but not written by [`Write`](#write), so what a client is sent is unchanged.
 
 ### HasPose [#haspose]
 

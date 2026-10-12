@@ -175,7 +175,7 @@ only stand behind the door if its space is turned the way the door is.
   exactly the host rows it keeps, out to the root of their chain, in the client's set (`ClientConn.HostCarriers`: always
   relevant, authorized by `CanObserve`, followed by name on their workers). Nothing those carriers hold comes with them,
   and the rest of the planet's ground stays out. No protocol change: the carrier arrives as any spawn does.
-  (`InstanceObserveHostTests.AnOccupantKeepsTheCarrierOfTheHostGroundAtTheDoorAndNothingElseOfIt`.)
+  (`InstanceObserveHostTests.AnOccupantKeepsTheCarrierOfTheHostGroundAtTheDoorAndNothingElseOfIt`.) *Since NEB-431 this is a portal's window onto the ground: `ObserveHost` and `HostCarriers` are gone, the carriers are `ClientConn.WindowCarriers` and the test is `PortalWindowFrameTests`.*
 
 Conformance: `ConformanceFarInstanceFrameTests.ATurnedDoorTurnsItsInstanceAndCrossingsTurnWithIt` and
 `ConformanceFarInstanceClientFrameTests.TheClientDrawsATurnedInstanceTurnedBehindItsDoorAndTheWorldTurnedBackFromInside`.

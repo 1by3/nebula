@@ -272,7 +272,7 @@ the fix and the runs that pass.
 - **Private-instance behaviour end to end in the shooter.** The shooter has private quarters
   (`InstanceTemplate` / `InstanceBoundary`), but no bot ever entered one in any run — `instance` appears zero
   times in every worker and gateway log. Instance isolation and `ObservePublic` under interest management are
-  covered by `InterestTests.InstanceIsolationAndObservePublicSurviveInterestManagement` and `InstanceTests`,
+  covered by `InterestTests.InstanceIsolationSurvivesInterestManagement` and `InstanceTests`,
   which run the real gateway, but not by a mesh run. Risk (d) is therefore **unverified end to end**.
 - **The Arena scene.** `GameScene` is `Corporation` and the CLI passes no `-nebula-scene` to workers or the
   gateway, so the Arena cannot be brought up as a mesh without editing `NebulaConfig.asset` and rebuilding.

@@ -476,8 +476,8 @@ namespace Nebula.World
         /// <summary>
         /// Whether a chunk's content is drawn on this client: false for a chunk of a scoped grid while the local pawn
         /// is in another scope that is not kept drawn (<see cref="InstanceScenes.KeepDrawn"/>), true otherwise. A
-        /// client is told about another scope's chunks while its pawn is in an instance that keeps its host loaded
-        /// (<see cref="ScopeDefinition.ObserveHost"/>), or while it prepares to cross into another scope. Content a
+        /// client is told about another scope's chunks while its pawn stands in the window of an open portal link
+        /// (<c>docs/portals.md</c> D20), or while it prepares to cross into another scope. Content a
         /// game adds to a chunk after <see cref="Loaded"/> should start hidden when this is false; the public world's
         /// chunks are always drawn, as they always were.
         /// </summary>

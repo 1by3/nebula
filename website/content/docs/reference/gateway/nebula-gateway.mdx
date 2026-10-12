@@ -57,14 +57,6 @@ public const double HoldSeconds = 10;
 
 The longest an entity's updates wait for a container row this gateway does not have. The control plane delivers a new lease in one long-poll round; past this bound the updates are applied anyway and the entity fails closed exactly as an unknown container always did.
 
-### MaxHostViews [#maxhostviews]
-
-```csharp
-public const int MaxHostViews = 4;
-```
-
-Most scopes a client's pawn has left that the gateway remembers where it stood in. Only the last one is ever observed; the earlier ones are what lets the scope before it be observed again after the pawn goes back (an instance entered from another instance, and left again).
-
 ### MaxFollowedPassengers [#maxfollowedpassengers]
 
 ```csharp
@@ -72,6 +64,14 @@ public const int MaxFollowedPassengers = 4096;
 ```
 
 Most passengers named by [`FollowPassengers`](#followpassengers) in one subscription pass, across all the carriers this gateway follows. It keeps the explicit list of an [`InterestSubscribeMsg`](/docs/reference/protocol/interest-subscribe-msg) well inside its count field; cargo past it is served as before, by region, and may flicker on a scope change.
+
+### MaxPortalWindows [#maxportalwindows]
+
+```csharp
+public const int MaxPortalWindows = 4;
+```
+
+Most windows one client looks through at once, nearest first (`docs/portals.md` D22). A client standing where more links' windows overlap sees through the nearest this many.
 
 ## Properties
 
@@ -363,6 +363,14 @@ public int PortalLinkCount { get; }
 
 How many portal links this gateway holds a record of.
 
+### PortalWindowCount [#portalwindowcount]
+
+```csharp
+public int PortalWindowCount { get; }
+```
+
+How many windows this gateway's clients look through right now, in all (`docs/portals.md` D22): what an operator reads to see how much of the mesh's interest is spent on portals.
+
 ## Events
 
 ### ClientJoined [#clientjoined]
@@ -567,6 +575,14 @@ public bool PortalObserves(ulong clientId, ulong linkId);
 ```
 
 Whether a client may look through a link, from the observer list its worker published (`docs/portals.md` D21): the rule the gateway enforces without running game code. False for a link it has no record of.
+
+### PortalWindowsOf [#portalwindowsof]
+
+```csharp
+public int PortalWindowsOf(ulong clientId);
+```
+
+How many windows one client looks through right now ([`InterestClient.PortalWindows`](/docs/reference/interest/interest-client#portalwindows)); 0 for a client this gateway does not know.
 
 ## Nested types
 

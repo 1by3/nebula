@@ -110,10 +110,6 @@ namespace Nebula
             var definition = new ScopeDefinition
             {
                 Kind = ScopeKind.Parts,
-                ObservePublic = template.ObservePublic,
-                ObserveHost = template.ObserveHost,
-                ObservationCenter = (absoluteOrigin + template.PublicView.center).ToVector3(),
-                ObservationSize = template.PublicView.size,
             };
             if (Quaternion.Angle(Quaternion.identity, rotation) > PoseAngleEpsilon)
             {

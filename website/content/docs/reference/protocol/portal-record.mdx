@@ -85,7 +85,7 @@ A fixed far side's scope; 0 for a template, whose far scope belongs to each link
 public Double3 FarOrigin;
 ```
 
-A fixed far side's face, absolute in the far scope.
+The far face, absolute in the far scope. A template's far face is the near face's origin read in the instance's own upright space, with the identity rotation, or the near face's when the portal does not turn with its face (`docs/portals.md` D5), so it is the same for every party's far scope and the network gateway can place the far window without a link's help (D21).
 
 ### FarRotation [#farrotation]
 
@@ -136,3 +136,23 @@ public byte Flags;
 ```
 
 Reserved flags (observation-only portals, `docs/portals.md` §17). 0 today.
+
+## Properties
+
+### NearWindow [#nearwindow]
+
+```csharp
+public PortalWindow NearWindow { get; }
+```
+
+The near side's window: the aperture grown by [`WindowMargin`](#windowmargin) sideways and [`WindowDepth`](#windowdepth) deep into the near scope (`docs/portals.md` D3).
+
+## Methods
+
+### FarWindow [#farwindow]
+
+```csharp
+public PortalWindow FarWindow(ulong farScope = 0UL);
+```
+
+The far side's window in `farScope` (a link's far scope; a fixed far side's own when 0): the aperture grown by [`WindowMargin`](#windowmargin) sideways and [`WindowDepth`](#windowdepth) deep into the far scope, in the far face's axes.
