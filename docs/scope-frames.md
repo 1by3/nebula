@@ -1,6 +1,6 @@
 # Per-scope origin frames — design
 
-Status: design of record for **NEB-241**, protocol **v18** (no message, field or version changed; see §6). Decisions
+Status: design of record for **NEB-241**, protocol **v18**, and **NEB-426** (instance frames, D11, no protocol change) (no message, field or version changed; see §6). Decisions
 made without asking are marked **D#**. Builds directly on `docs/scoped-chunk-grids.md` (NEB-239) and closes its D12.
 User-facing pages: `website/content/docs/guides/infinite-runtime-world.mdx` (§"Two worlds on one worker") and
 `website/content/docs/guides/scopes.mdx`. Conformance: scenario 14 of `docs/conformance-suite.md`
@@ -41,12 +41,13 @@ every existing test and every game that never activates a scope sees no change a
 not one byte on the wire. The new surface (`ScopeFrame`, `ScopeFrames`, `RuntimeGrid.Frame`,
 `RuntimeGrid.ShiftOrigin`) sits beside it.
 
-**D2 A scope gets a frame of its own only when it has a grid in this process; everything else stays in the public
-frame.** `ScopeFrames.FrameIdOf(instanceId)` answers "which frame do this scope's containers move with" and
-returns 0 — the public frame — for every scope that has not asked for one. That is deliberate and it is what keeps
-NEB-233's *instance* scopes (a room, a dungeon, an interior) behaving precisely as they did: they are placed
-relative to the public origin, they move with it, and nothing about them changed. Only a **scoped chunk grid** —
-a whole world, which is the thing that can be millions of metres from the public world — takes a frame.
+**D2 A scoped chunk grid gets a frame of its own when it has a grid in this process; an instance scope gets a pinned
+one (D11); nothing else leaves the public frame.** `ScopeFrames.FrameIdOf(instanceId)` answers "which frame do this
+scope's containers move with" and returns 0, the public frame, for a scope that has neither. A **scoped chunk grid** (a
+whole world, which can be millions of metres from the public world) takes a frame that follows its players. Until
+NEB-426, NEB-233's *instance* scopes (a room, a dungeon, an interior) had none: they were placed relative to the public
+origin and moved with it, so an instance prepared 10^8 m from that origin was simulated 10^8 m from Unity's origin, where
+a float is 8 m apart, and its player, colliders and physics snapped. D11 replaces that rule.
 
 The frame is registered by `NebulaChunks.Activate`, which is already the one place a grid comes into being in a
 process, on the rule NEB-239 D7 set: the first time one of the scope's containers turns up here.
@@ -107,6 +108,33 @@ own new frame. One pass, no special case anywhere else.
 one scope at a time, so it picks the grid of the scope its pawn stands in and follows that one — which for an
 unscoped game *is* the public grid, so the client's behaviour is unchanged, and for a client in scope B is B's
 frame and only B's. The conformance test asserts exactly that.
+
+**D11 An instance scope gets a pinned frame of its own, near its origin, in every process that registers it
+(NEB-426).** When an instance scope's first root container is registered here from its placement (a lease row),
+`ContainerRegistry.RegisterRuntime` calls `ScopeFrames.Pin`: a frame whose origin cell is the cell of the public
+world's lattice nearest the container's absolute centre (the public definition's cell size, or
+`ScopeFrames.PinnedCellSize`, 1,024 m, without one). It is chosen once and never shifts (`ScopeFrame.IsPinned`), and it
+goes with the scope's last container here (`ScopeFrames.Unpin`). Every rule of D4 then applies unchanged: entering an
+instance converts with `ToFrame(absolute, scope)` and leaving with `ToFrame(absolute, host)`, both in double, so a
+crossing lands to the millimetre however far out the instance is. The decisions behind it:
+
+- *Uniform, not distance-gated.* Every instance gets one, so behaviour does not depend on where an instance happens to
+  be. It is harmless near the origin: snapping to the public lattice means that while this process's public origin is at
+  the pinned cell, the two frames coincide exactly, so an instance next to the public world (an observed interior,
+  `ObservePublic`) appears exactly where it did before.
+- *Process-local, no protocol change.* Frames never reach the wire (D4): lease rows and telemetry carry absolute
+  coordinates and entity poses are container-local, so a worker and a client may pin one instance differently and still
+  agree on everything. A client in an instance has no grid to follow; its public origin stays where it was (D6).
+- *Part centres are double end to end.* `ScopePart.Center` is a `Double3` (a `Vector3` converts implicitly),
+  `PrepareInstance` composes `absoluteOrigin + part.Center` in double and the lease row stores it so; before, the
+  absolute centre was narrowed to float on the way, metres off at 10^8 m. A part centre that is a float is written to a
+  scope definition exactly as before, so stored definitions still compare equal.
+- *A grid wins.* If a scope that was pinned turns out to have a scoped grid here, `ScopeFrames.Ensure` replaces the pin
+  with the grid's frame and D5's zero-delta shift re-places its containers.
+
+Conformance: `Tests/EditMode/ConformanceFarInstanceFrameTests.cs` (an instance 5×10^7 m out: a player crosses in, is
+simulated within 10 km of Unity's origin at the absolute point it walked through to the millimetre, and walks back out
+as precisely).
 
 ## 3. Interest: scope-salted region ids
 

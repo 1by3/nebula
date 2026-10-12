@@ -114,7 +114,7 @@ The boundary's host scope is the scope of the container it is parented under. `H
 
 - Only entities in the host scope, or already in the boundary's own instance, cross it. A boundary on one planet ignores players standing at the same coordinates on another.
 - Positions are compared in absolute coordinates. A scoped grid moves its own origin on each worker, so the boundary converts its position and the player's through each scope's frame. The instance is created at the boundary's absolute position rounded to a millimeter (`InstanceOrigin`), so every worker names the same instance.
-- A crossing keeps the player's absolute position. The instance has no origin frame of its own, so the player's numbers in Unity change when they cross, but where they stand does not.
+- A crossing keeps the player's absolute position, to the millimetre. The instance has an origin frame of its own, pinned near the instance's origin in each process that holds it, so an instance far from the public origin (a dungeon on a planet 50,000 km out) is still simulated near Unity's origin. The player's numbers in Unity change when they cross, but where they stand does not.
 - A player who leaves returns to a container of the host scope that holds their position. Until that chunk is leased, they stay inside at the last position the boundary recorded.
 
 Your game is responsible for the rest:

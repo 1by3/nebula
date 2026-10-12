@@ -11,7 +11,7 @@ public static class ScopeFrames
 
 The origin frames this process holds, one per scope. The public world's frame always exists and is [`WorldOrigin`](/docs/reference/world/world-origin); a scope gets one the first time this process names it, which on a worker is the first time one of its containers turns up here (`docs/scoped-chunk-grids.md` D7).
 
-A container or an entity whose scope has **no** frame here is in the public frame: that is what keeps an instance scope (a room, a dungeon) behaving exactly as it did before per-scope frames existed. Only a scope that asked for a frame of its own — a scoped chunk grid — leaves it.
+A container or an entity whose scope has **no** frame here is in the public frame. A scoped chunk grid takes a frame of its own (`Ensure`), and an instance scope (a room, a dungeon, an interior) takes a pinned one near its origin when its first container is registered here (`Pin`), so an instance far from the public origin is still simulated near Unity's origin (`docs/scope-frames.md` D11).
 
 ## Properties
 
@@ -82,7 +82,23 @@ The id of the frame a scope's containers move with: the scope's own id when it h
 public static ScopeFrame Ensure(string scopeKey, ulong instanceId, Vector3 cellSize);
 ```
 
-Give a scope a frame of its own, or return the one it has. The public world's is [`Public`](#public) and is never created here. The cell size is the scope's grid's; a later call with a different one updates it (a definition is validated once at activation, so this only ever refines a frame made from an inference).
+Give a scope a frame of its own, or return the one it has. The public world's is [`Public`](#public) and is never created here. The cell size is the scope's grid's; a later call with a different one updates it (a definition is validated once at activation, so this only ever refines a frame made from an inference). An instance scope's pinned frame gives way to the grid's.
+
+### Pin [#pin]
+
+```csharp
+public static ScopeFrame Pin(string scopeKey, ulong instanceId, double x, double y, double z);
+```
+
+Give an instance scope a frame of its own, pinned so that the absolute point (x, y, z) sits near Unity's origin, or return the frame it already has. The pin is the nearest cell of the public world's lattice (its cell size, or `PinnedCellSize`, 1,024 m, without a world definition), so while the public origin is at that cell the two frames coincide. A pinned frame (`ScopeFrame.IsPinned`) never shifts. `ContainerRegistry.RegisterRuntime` calls it for an instance scope's first root container; a game rarely needs to.
+
+### Unpin [#unpin]
+
+```csharp
+public static void Unpin(ulong instanceId);
+```
+
+Forget an instance scope's pinned frame. The registry calls it when the scope's last container here goes away. Any other frame is left alone.
 
 ### Remove [#remove]
 
