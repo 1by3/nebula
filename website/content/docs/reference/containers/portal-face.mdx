@@ -1,0 +1,90 @@
+---
+title: "PortalFace"
+description: "One side of a Portal (docs/portals.md D2): a scope, the container the face is fixed in, and a pose, an absolute Double3 position in that scope and a rotation."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PortalTypes.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PortalTypes.cs)</div>
+
+```csharp
+public readonly struct PortalFace
+```
+
+One side of a [`Portal`](/docs/reference/containers/portal) (`docs/portals.md` D2): a scope, the container the face is fixed in, and a pose, an absolute [`Double3`](/docs/reference/containers/double3) position in that scope and a rotation. The face's +z axis is the way from the near scope into the far one: in its axes, z \< 0 is the near side's region and z ≥ 0 the far side's.
+
+As built, the pose is held in the scope's own absolute space (what [`ContainerRegistry.ToAbsolutePrecise`](/docs/reference/containers/container-registry#toabsoluteprecise) gives, out of any physics frame the container is in) rather than in the container's local space, which is the form every crossing already compares in; the container is kept for ownership, lookup and the network gateway's rows.
+
+## Constructors
+
+### PortalFace [#portalface]
+
+```csharp
+public PortalFace(ulong scope, string containerId, Double3 origin, Quaternion rotation);
+```
+
+A face.
+
+## Properties
+
+### Scope [#scope]
+
+```csharp
+public ulong Scope { get; }
+```
+
+The scope the face is in ([`Container.InstanceId`](/docs/reference/containers/container#instanceid); 0 is the public world).
+
+### ContainerId [#containerid]
+
+```csharp
+public string ContainerId { get; }
+```
+
+The id of the container the face is fixed in; empty when it is not known yet.
+
+### Origin [#origin]
+
+```csharp
+public Double3 Origin { get; }
+```
+
+The face's origin, absolute in [`Scope`](#scope).
+
+### Rotation [#rotation]
+
+```csharp
+public Quaternion Rotation { get; }
+```
+
+The face's axes in [`Scope`](#scope)'s space, normalised and rounded to 10⁻⁶ (`docs/portals.md` D37).
+
+### Forward [#forward]
+
+```csharp
+public Vector3 Forward { get; }
+```
+
+The way through, in the scope's axes.
+
+## Methods
+
+### ToLocal [#tolocal]
+
+```csharp
+public Double3 ToLocal(Double3 absolute);
+```
+
+A point of the scope (absolute) in the face's axes: the offset from the origin, turned back by the face's rotation, in double.
+
+### ToAbsolute [#toabsolute]
+
+```csharp
+public Double3 ToAbsolute(Double3 local);
+```
+
+A point in the face's axes as an absolute point of the scope.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

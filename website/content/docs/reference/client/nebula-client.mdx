@@ -6,7 +6,7 @@ description: "The game client."
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Client/NebulaClient.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Client/NebulaClient.cs)</div>
 
 ```csharp
-public sealed class NebulaClient : MonoBehaviour, IRpcSink
+public sealed partial class NebulaClient : MonoBehaviour, IRpcSink
 ```
 
 The game client. Talks only to the gateway, sends inputs, receives snapshots tagged (tick, epoch, owner) and predicts its own player. It is never a party to the handover protocol: which worker produced a snapshot is metadata used for epoch filtering and the debug overlay, nothing else.
@@ -382,6 +382,14 @@ public bool IsLeaving { get; }
 ```
 
 True from [`Leave`](#leave) until the gateway has confirmed the goodbye or the timeout has passed; see [`LeaveFinished`](#leavefinished).
+
+### LinksWarming [#linkswarming]
+
+```csharp
+public int LinksWarming { get; }
+```
+
+How many links this client is a member of and has not yet told their worker it holds the far window of.
 
 ## Events
 

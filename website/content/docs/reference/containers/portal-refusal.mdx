@@ -1,0 +1,25 @@
+---
+title: "PortalRefusal"
+description: "Why a portal did not let an entity through, or leave a companion behind (docs/portals.md D17)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/Portal.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/Portal.cs)</div>
+
+```csharp
+public enum PortalRefusal
+```
+
+Why a portal did not let an entity through, or leave a companion behind (`docs/portals.md` D17).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` |  | Nothing refused it. |
+| <span id="linknotopen"></span>`LinkNotOpen` |  | The entity's party has no link, or its link is not [`PortalState.Open`](/docs/reference/protocol/portal-state#open). |
+| <span id="notadmitted"></span>`NotAdmitted` |  | [`Portal.CanEnter`](/docs/reference/containers/portal#canenter) refused it, or it belongs to a client that is not a warm member of the link. |
+| <span id="ambiguousparty"></span>`AmbiguousParty` |  | It has no party and more than one link is open on this face (`docs/portals.md` D12). |
+| <span id="notsimulated"></span>`NotSimulated` |  | This worker does not simulate it. |
+| <span id="pinned"></span>`Pinned` |  | It is a scene entity, which cannot leave its authored scene, or it is pinned to its container. |
+| <span id="otherscope"></span>`OtherScope` |  | It is in another scope than its leader. |
+| <span id="nodestination"></span>`NoDestination` |  | The container it would arrive in is not here yet, or no worker holds an active lease on it. |

@@ -1,0 +1,26 @@
+---
+title: "PortalsUpdate"
+description: "A change to the portals a receiver knows (MsgId.Portals): records to add or replace, and ids to forget."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs)</div>
+
+```csharp
+public sealed class PortalsUpdate
+```
+
+A change to the portals a receiver knows ([`MsgId.Portals`](/docs/reference/protocol/msg-id#portals)): records to add or replace, and ids to forget.
+
+## Fields
+
+### Upserts [#upserts]
+
+```csharp
+public List<PortalRecord> Upserts = new List<PortalRecord>();
+```
+
+### Removes [#removes]
+
+```csharp
+public List<ulong> Removes = new List<ulong>();
+```

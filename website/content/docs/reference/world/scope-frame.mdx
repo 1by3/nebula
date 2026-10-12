@@ -23,14 +23,6 @@ public string ScopeKey { get; }
 
 The opaque scope key (`""` is the public world).
 
-### IsPinned [#ispinned]
-
-```csharp
-public bool IsPinned { get; }
-```
-
-Whether this is an instance scope's frame: an origin cell chosen once, near the instance's origin, when its first container turned up here, and never shifted (`docs/scope-frames.md` D11).
-
 ### InstanceId [#instanceid]
 
 ```csharp
@@ -46,6 +38,14 @@ public bool IsPublic { get; }
 ```
 
 Whether this is the public world's frame, which is [`WorldOrigin`](/docs/reference/world/world-origin).
+
+### IsPinned [#ispinned]
+
+```csharp
+public bool IsPinned { get; }
+```
+
+Whether this is an instance scope's frame (`docs/scope-frames.md` D11): an origin cell chosen once, near the instance's origin, when the instance's first container turned up here, and never shifted. A scoped grid that later names the same scope replaces it ([`ScopeFrames.Ensure`](/docs/reference/world/scope-frames#ensure)).
 
 ### IsFollowing [#isfollowing]
 

@@ -6,7 +6,7 @@ The policy itself, and why it is shaped this way, is `docs/compatibility-policy.
 ## The rule, in one paragraph
 
 A **client** may talk to a **gateway** that accepts its protocol: the accepted range is
-`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 25..26; protocols 18 to 24 are not supported. Anything outside that is refused
+`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 28..28; protocols 27 and older are not supported. Anything outside that is refused
 with `JoinRejectReason.ProtocolUnsupported` and the gateway's range, so the client can tell "update the game"
 from "this server has not been upgraded yet". A **gateway, worker and orchestrator of one mesh** must speak the
 **same** protocol, exactly; a mismatch is refused with a logged reason. The game's own content version is a
@@ -37,7 +37,8 @@ Protocol numbers are read from `HelloMsg.ProtocolVersion` at each release tag (`
 | v0.1.0-alpha.31 – alpha.32 | 19 | `DynamicContainer` folded into `Container` (NEB-264, `docs/container-tree.md` D21); **not additive**, so the minimum is 19 too |
 | v0.1.0-beta.0 | 20 | sync audiences (NEB-321, `docs/sync-audience.md` D10); **additive**, so the minimum stays 19 |
 | v0.1.0-beta.1 | 24 | relevance tiers (NEB-359, `docs/server-owned-entities.md` D5); **additive** for clients, so the window is 23..24. 21 (replicated maps, NEB-335), 22 (forwarded token claims, NEB-357) and 23 (deliberate session endings, recovering hold, owner-connected flag, NEB-354 to NEB-356; **closes the window to 23..23**, pre-1.0, see `docs/compatibility-policy.md` D1) were never released under a tag |
-| unreleased | 27 | an instance's pose against its host (NEB-426, `docs/scope-frames.md` D12), a trailing section of `ContainerOwnership`; **additive**, so the window is 26..27 |
+| unreleased | 28 | portals (NEB-428, `docs/portals.md` D45, D46): messages `Portals` (27), `PortalLinks` (28) and `PortalWarm` (29) and a trailing link id on `InstancePrepare` and `InstanceReady`; additive bytes but not meaning, so **closes the window to 28..28**, pre-1.0 |
+| never released | 27 | an instance's pose against its host (NEB-426, `docs/scope-frames.md` D12), a trailing section of `ContainerOwnership`; **additive**, so the window was 26..27 |
 | never released | 26 | the far relevance tier (NEB-388, `docs/interest-management.md` §16); **additive** for clients, so the window is 25..26. 25 (driven vehicles, NEB-361, `docs/driven-vehicles.md` §4; window 24..25) was never released under a tag, so this release refuses clients of `0.1.0-beta.1` (24) |
 
 Every step in that table was breaking, because until now there was no window to be additive inside: a gateway
@@ -114,6 +115,21 @@ although nothing it reads changed, because 25 was never released under a tag. Th
 through a frozen protocol-25 decoder (`Fixtures/Protocol25GatewayDecoder.cs`, the protocol-24 one with its literals
 raised: 25 added a message a client sends and a trailing spawn field it leaves unread), the protocol-24 recording was
 removed, and `protocol-26-handshake.json` was recorded for the next bump.
+
+27 is additive: the instance's pose against its host travels in a trailing section of `ContainerOwnership` that a
+protocol-26 client stops before, and then draws a turned instance unturned. The window was 26..27 and the protocol-27 recording
+was made for the next bump.
+
+28 closes the window to itself: `MinProtocolVersion` is 28 and every older client is refused with `ProtocolUnsupported`
+(`docs/compatibility-policy.md` D1, `docs/portals.md` D46). The bytes alone would be additive (three new message ids, 27
+`Portals`, 28 `PortalLinks` and 29 `PortalWarm`, which a gateway sends a client and a client sends back, and a trailing `link_id`
+on `InstancePrepare` and `InstanceReady`, which workers exchange), but the meaning is not: a 27 client would be sent replicas
+of scopes it believes hidden and never draw them posed, and would predict its pawn into an aperture it does not know is solid.
+There is no N-1 replay in a closed window, so the replay test now replays `protocol-28-handshake.json` through a frozen
+protocol-28 decoder (`Fixtures/Protocol28GatewayDecoder.cs`, the protocol-20 reader with its literals raised: nothing from 21 to
+28 changed a frame that decoder reads), the protocol-27 recording is kept to prove such a client is refused with the gateway's range
+(as the protocol-18 one proves the step from 18), the protocol-25 and -26 recordings and decoders were removed, and the 28
+recording is the one the next additive bump replays for N-1.
 
 ## Bumping the protocol
 

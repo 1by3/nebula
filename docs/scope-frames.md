@@ -150,8 +150,8 @@ protocol 27).** A door on a sphere stands along the local up, not the scope's: S
 about x and 180° about y. Its interior is authored in the door's own axes (forward is the way in, up is up), so it can
 only stand behind the door if its space is turned the way the door is.
 
-- *The pose.* `InstanceBoundary.PoseRotation` is the door's rotation in its host scope's space (`ScopeRotation`, rounded
-  to 1e-6, identity within 0.01°; `TurnWithDoor = false` keeps the host's axes). `PrepareInstance(template, key, origin,
+- *The pose.* `Portal.PoseRotation` (`InstanceBoundary.PoseRotation` before NEB-428) is the door's rotation in its host scope's space (`ScopeRotation`, rounded
+  to 1e-6, identity within 0.01°; `TurnWithDoor = false`, `TurnWithFace = false` on a `Portal`, keeps the host's axes). `PrepareInstance(template, key, origin,
   rotation)` records it on the scope definition (`HasPose`, `PoseOrigin`, `PoseRotation`, JSON written only when set) and
   every part's lease row (`InstanceContainerInfo.HasPose`, stored after the row's flags byte). A point p of the instance's
   space is `origin + rotation × (p − origin)` in the host's. The parts' boxes stay upright about the origin, so a worker

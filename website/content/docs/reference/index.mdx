@@ -83,10 +83,8 @@ Define container volumes and look up their current worker assignments.
 | [FrameInterestMode](/docs/reference/containers/frame-interest-mode) | Enum. How the contents of a container with its own physics frame are bucketed for interest management (docs/container-tree.md D18). |
 | [IFrameCrossingPolicy](/docs/reference/containers/i-frame-crossing-policy) | Interface. The game's say over where entities may cross a physics frame's boundary: anywhere on the hull, or only through portals. |
 | [IInstanceContentLoader](/docs/reference/containers/i-instance-content-loader) | Interface. Content of an instance part that finishes loading after InstanceScenes.Prepare returns: geometry a component builds over several frames, or assets it loads asynchronously. |
-| [InstanceBoundary](/docs/reference/containers/instance-boundary) | Class. Prepares a private area as players approach and crosses its bounds without changing their absolute pose. |
 | [InstanceContentState](/docs/reference/containers/instance-content-state) | Enum. Whether an instance part's content is still loading, ready, or failed. |
-| [InstanceCrossingState](/docs/reference/containers/instance-crossing-state) | Struct. The state of one entity's crossing through an InstanceBoundary, as InstanceBoundary.TryGetPreparation and InstanceBoundary.CrossingReady report it. |
-| [InstanceCrossingStatus](/docs/reference/containers/instance-crossing-status) | Enum. Where an InstanceBoundary crossing stands: ready to commit, or the first reason it is not. |
+| [InstancePoses](/docs/reference/containers/instance-poses) | Static class. The instances this process holds whose own space is turned against their host scope's (NEB-426, docs/scope-frames.md D12): built upright in their own space and posed at a door that is not upright in the host (a door on a sphere). |
 | [InstanceScenes](/docs/reference/containers/instance-scenes) | Static class. Loads instance geometry into separate physics scenes. |
 | [InstanceTemplate](/docs/reference/containers/instance-template) | Class. Reusable geometry and container bounds for a private area. |
 | [LocationContainerKind](/docs/reference/containers/location-container-kind) | Enum. Which kind of container an EntityLocation.ContainerId names. |
@@ -94,6 +92,12 @@ Define container volumes and look up their current worker assignments.
 | [PhysicsFrame](/docs/reference/containers/physics-frame) | Class. A container's own physics frame: a local physics scene in which the container stands still (docs/container-tree.md §3). |
 | [PhysicsFrameState](/docs/reference/containers/physics-frame-state) | Struct. The motion of a physics frame in the space around it, once per tick, on every process that holds the frame (docs/container-tree.md D14): its pose, linear and angular velocity, and linear acceleration. |
 | [PhysicsFrames](/docs/reference/containers/physics-frames) | Static class. The physics frames this process holds, one per container with Container.OwnPhysicsFrame (docs/container-tree.md §3): scene lifetime and pooling, interior colliders, frame state, conversion between spaces, the crossing policy, and — on a ... |
+| [Portal](/docs/reference/containers/portal) | Class. A way between two scopes: an opening in a wall, a hatch, a gate, a door to a room of its own (docs/portals.md). |
+| [PortalAperture](/docs/reference/containers/portal-aperture) | Struct. The opening of a portal, on its face's z = 0 plane (docs/portals.md D3): an oriented box centred on the face's origin. |
+| [PortalFace](/docs/reference/containers/portal-face) | Struct. One side of a Portal (docs/portals.md D2): a scope, the container the face is fixed in, and a pose, an absolute Double3 position in that scope and a rotation. |
+| [PortalLink](/docs/reference/containers/portal-link) | Class. One party's link through a Portal (docs/portals.md D8, D9): the far scope, the state the link is in and, when it is not open, what it waits for. |
+| [PortalRefusal](/docs/reference/containers/portal-refusal) | Enum. Why a portal did not let an entity through, or leave a companion behind (docs/portals.md D17). |
+| [Portals](/docs/reference/containers/portals) | Static class. Lookup for portals (docs/portals.md D1): the Portal components on this process, and, on a client, what the network gateway has told it about the portals near it. |
 
 ## World partition
 
@@ -400,6 +404,19 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [PlayerClaims](/docs/reference/protocol/player-claims) | Static class. Claims from a player's verified sign-in token that the gateway forwards to workers (NebulaConfig.ForwardedClaims): the claim names the game listed, with their values as strings. |
 | [PlayerSessions](/docs/reference/protocol/player-sessions) | Class. A worker's view of which gateway currently speaks for each player session, and how new that claim is. |
 | [PongMsg](/docs/reference/protocol/pong-msg) | Struct. Carries the pong protocol message. |
+| [PortalApertureKind](/docs/reference/protocol/portal-aperture-kind) | Enum. The shape of a Portal's aperture, the opening on its face's z = 0 plane (docs/portals.md D3). |
+| [PortalFarKind](/docs/reference/protocol/portal-far-kind) | Enum. How a portal names its far side (docs/portals.md D5). |
+| [PortalIds](/docs/reference/protocol/portal-ids) | Static class. The ids portals and their links are named by (docs/portals.md D6): derived, so every process computes the same one. |
+| [PortalLinkFlags](/docs/reference/protocol/portal-link-flags) | Enum. Bit flags of a PortalLinkRecord. |
+| [PortalLinkRecord](/docs/reference/protocol/portal-link-record) | Struct. One party's link through a portal, as the network gateway and a client learn it (MsgId.PortalLinks). |
+| [PortalLinksMsg](/docs/reference/protocol/portal-links-msg) | Static class. MsgId.PortalLinks: \[upserts:ushort\]\{record\}\[removes:ushort\]\{linkId\}, worker → network gateway → client. |
+| [PortalLinksUpdate](/docs/reference/protocol/portal-links-update) | Class. A change to the links a receiver knows (MsgId.PortalLinks). |
+| [PortalRecord](/docs/reference/protocol/portal-record) | Struct. A portal as the network gateway and a client learn it (MsgId.Portals, protocol 28): the near face, the far side, the aperture and the sizes of the regions derived from it. |
+| [PortalState](/docs/reference/protocol/portal-state) | Enum. Where a party's PortalLink stands (docs/portals.md D9). |
+| [PortalWait](/docs/reference/protocol/portal-wait) | Enum. Why a link is not PortalState.Open (docs/portals.md D9). |
+| [PortalWarmMsg](/docs/reference/protocol/portal-warm-msg) | Struct. MsgId.PortalWarm: a member client holds the far window of a link and its content is ready. |
+| [PortalsMsg](/docs/reference/protocol/portals-msg) | Static class. MsgId.Portals: \[upserts:ushort\]\{record\}\[removes:ushort\]\{portalId\}, worker → network gateway → client. |
+| [PortalsUpdate](/docs/reference/protocol/portals-update) | Class. A change to the portals a receiver knows (MsgId.Portals): records to add or replace, and ids to forget. |
 | [ProtocolCompatibility](/docs/reference/protocol/protocol-compatibility) | Static class. Checks client protocol and game content versions against the gateway's supported range. |
 | [SessionReplacedMsg](/docs/reference/protocol/session-replaced-msg) | Struct. Gateway -\> client: the player this client signed in as connected again elsewhere, and that newer connection now holds the session and the pawn (NebulaConfig.SingleSessionPerPlayer). |
 | [SpawnPlayerMsg](/docs/reference/protocol/spawn-player-msg) | Struct. Gateway -\> worker: a client wants a pawn. |

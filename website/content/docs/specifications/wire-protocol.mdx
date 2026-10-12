@@ -1,17 +1,19 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 24, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 28, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 24. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 28. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `26`. Every `Hello` carries the version its sender speaks.
+The current protocol version is `28`. Every `Hello` carries the version its sender speaks.
 
-A gateway accepts clients of protocols 25 and 26: `HelloMsg.MinProtocolVersion` is `25` and `HelloMsg.ProtocolVersion` is `26`. Gateway-to-worker and worker-to-worker connections MUST match protocol `26` exactly. Before 1.0 a protocol change may close the client window to the new version; protocol 23 did, and protocols 24 to 26 do not.
+A gateway accepts clients of protocol 28 only: `HelloMsg.MinProtocolVersion` and `HelloMsg.ProtocolVersion` are both `28`, and a client of 27 or older is refused with `ProtocolUnsupported` and the gateway's range. Gateway-to-worker and worker-to-worker connections MUST match protocol `28` exactly. Before 1.0 a protocol change may close the client window to the new version; protocols 23 and 28 did, and protocols 24 to 27 did not.
+
+Protocol 28 added [portals](/docs/guides/instancing): three messages, `Portals` (27), `PortalLinks` (28) and `PortalWarm` (29), and a trailing `link_id` on `InstancePreparation`. The bytes alone are additive, but the meaning is not: a protocol-27 client would be sent replicas of scopes it believes hidden, would never draw them posed, and would predict its pawn into an aperture it does not know is solid, so the window closes.
 
 Protocol 26 added the [far relevance tier](/docs/guides/interest-management#see-ships-and-outposts-from-far-away): a new message, `FarEntities`, that a worker sends to gateways and a gateway sends only to clients that negotiated 26. Nothing a protocol-25 client sends or reads changed. The worker heartbeat gains `hasFarEntities`.
 
@@ -171,6 +173,9 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 24 | `Goodbye` | `C-G` | Reliable ordered | [`Goodbye`](#hello-and-session-messages) |
 | 25 | `DriveInput` | `C-G-W`, `W-W` | Sequenced | [`DriveInputBody`](#prediction-messages) |
 | 26 | `FarEntities` | `W-G-C` | Reliable ordered | [`FarEntities`](#interest-management) |
+| 27 | `Portals` | `W-G-C` | Reliable ordered | [`Portals`](#portals) |
+| 28 | `PortalLinks` | `W-G-C` | Reliable ordered | [`PortalLinks`](#portals) |
+| 29 | `PortalWarm` | `C-G-W` | Reliable ordered | [`PortalWarm`](#portals) |
 | 30 | `SpawnPlayer` | `G-W` | Reliable ordered | [`SpawnPlayer`](#player-lifecycle) |
 | 31 | `DespawnPlayer` | `G-W` | Reliable ordered | [`DespawnPlayer`](#player-lifecycle) |
 | 32 | `EndSession` | `W-G` | Reliable ordered | [`EndSession`](#player-lifecycle) |
@@ -193,7 +198,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 49 | `AuthorityRpcReply` | `W-W` | Reliable ordered | [`AuthorityCallReply`](#authority-calls) |
 | 50 | `GhostMaps` | `W-W` | Reliable ordered | [`EntityMapsBody`](#replicated-maps) |
 
-IDs not listed in this table are reserved. A version 24 sender MUST NOT use them.
+IDs not listed in this table are reserved. A version 28 sender MUST NOT use them.
 
 ## Message layouts
 
@@ -510,14 +515,35 @@ InstanceContainerInfo := u64 instance_id, string content_resource,
   bool observe_public, vector3 observation_center, vector3 observation_size,
   string scope_key, string part_id
 InstancePreparation := u32 request_id, u64 entity_id, ContainerRef destination,
-  u16 source_worker, u64 lease_epoch, bool success
+  u16 source_worker, u64 lease_epoch, bool success, u64 link_id
 ```
 
-Preparation asks the destination worker and owning client to load content before crossing. The gateway routes requests only for a pawn owned by the sending worker and routes replies only for the sending client's pawn. The source validates the request, destination lease, and authority before committing. Observation bounds are in absolute world coordinates.
+Preparation asks the destination worker and owning client to load content before crossing. `link_id` is a trailing field: nonzero, the preparation readies a portal link (`entity_id` is then 0) and only workers exchange it; zero is one entity's crossing. A body that ends before it reads as zero. The gateway routes requests only for a pawn owned by the sending worker and routes replies only for the sending client's pawn. The source validates the request, destination lease, and authority before committing. Observation bounds are in absolute world coordinates.
 
 `scope_key` is the opaque instance key the game chose (`TemplateId/key`); `instance_id` is its 64-bit hash. A receiver MUST NOT parse `scope_key`; it is compared with ordinal string equality only. The [entity location contract](/docs/specifications/entity-location) defines how it names an entity's scope. A sender MUST write it on the wire; only the Base64 copy stored on a control-plane lease row written by an earlier release may end before it, in which case it reads as empty.
 
 `part_id` says which part of its scope this container is: the `ScopePart.PartId` the scope was activated with. For a chunk of a [scoped chunk grid](/docs/guides/scopes#a-scope-can-be-a-whole-world) it is the chunk's coordinate, written as `c/x/y/z`, which is what lets a receiver place a container whose id is a hash of the scope key rather than a packed coordinate. A receiver MUST treat any other value as opaque. It is written after `scope_key` and read with the same tolerance: a message or stored row that ends before it reads as empty, which is what every row written before protocol 18 does.
+
+### Portals
+
+```text
+Portals := u16 upsert_count, PortalRecord[upsert_count], u16 remove_count, u64[remove_count] portal_id
+PortalRecord := u64 portal_id, string id, u64 near_scope, string near_container_id, ContainerRef near_container,
+  double3 near_origin, f32x4 near_rotation, u8 far_kind, u64 far_scope, double3 far_origin, f32x4 far_rotation,
+  string template_id, u8 aperture_kind, f32 half_width, f32 half_height, f32 band_margin, f32 band_depth,
+  f32 window_margin, f32 window_depth, u8 flags
+PortalLinks := u16 upsert_count, PortalLinkRecord[upsert_count], u16 remove_count, u64[remove_count] link_id
+PortalLinkRecord := u64 link_id, u64 portal_id, u64 party_hash, u64 far_scope, string far_entry_id, ContainerRef far_entry,
+  u8 state, u8 wait, u64 wait_client, u8 progress, u32 generation, u8 flags,
+  u16 member_count, u64[member_count] members, u16 observer_count, u64[observer_count] observers
+PortalWarm := u64 link_id, u32 generation, u64 client_id
+```
+
+A portal is a way between two scopes. A worker sends `Portals` for the portals whose container it owns, and `PortalLinks` for the state of each party's link through them; it sends both to every gateway when a gateway connects and again whenever a record changes, a portal's records before its links. `portal_id` is the 64-bit FNV hash (`ScopeKeys.Hash`) of the near container's id, `#` and the portal's authored id; `link_id` is a hash of the portal id and the party; only `party_hash` of the party travels. `far_kind` 0 is a fixed far scope (`far_scope` and the far face), 1 a template (`template_id`; the far scope of each link is in the link). `state` is 0 closed, 1 preparing, 2 open, 3 closing. `wait` is 0 none, 1 far scope activating, 2 far worker content, 3 far entities restoring, 4 client warming, 5 far worker handshake, 6 band occupied, 7 far scope retired, 8 near container moving. `flags` of a link are bit 0 observer, bit 1 member, bit 2 observer-anyone. `progress` is 0 to 255.
+
+To a gateway a link carries its members (the clients that must be warm) and its observers (the clients that may look through); a gateway keeps them and enforces the observer list without running game code. A gateway sends a client a portal's record and its links on the reliable stream behind the container row of either face, so the receiver already holds the row, and withdraws them when the row is withdrawn or the portal removed. To a client the two lists are empty and `flags` says whether that client is a member and whether it is an observer. A link is sent to a member only once it holds the far entry container's row, which the gateway keeps sent for it while the link is live. A receiver MUST NOT parse a portal's authored id.
+
+A member client prepares the far entry container and, once its content is ready, sends `PortalWarm` with the link's `generation`. The gateway forwards it to the worker that owns the portal only from a member of the link, with `client_id` set to the sending client's id (a client writes 0). The worker ignores a warm whose `generation` is not the link's current one.
 
 ### Reliable message batch
 

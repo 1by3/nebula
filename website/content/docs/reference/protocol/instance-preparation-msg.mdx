@@ -49,6 +49,14 @@ public ulong LeaseEpoch;
 public bool Success;
 ```
 
+### LinkId [#linkid]
+
+```csharp
+public ulong LinkId;
+```
+
+The portal link this preparation readies (`docs/portals.md` D35, D45), or 0 for a preparation of one entity's crossing ([`NebulaWorker.PrepareTransfer`](/docs/reference/worker/nebula-worker#preparetransfer)). A trailing field: an older body ends before it.
+
 ## Methods
 
 ### Write [#write]

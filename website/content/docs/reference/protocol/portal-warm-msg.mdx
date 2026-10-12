@@ -1,0 +1,48 @@
+---
+title: "PortalWarmMsg"
+description: "MsgId.PortalWarm: a member client holds the far window of a link and its content is ready."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs)</div>
+
+```csharp
+public struct PortalWarmMsg
+```
+
+[`MsgId.PortalWarm`](/docs/reference/protocol/msg-id#portalwarm): a member client holds the far window of a link and its content is ready. The client sends it with a zero [`ClientId`](#clientid); the network gateway stamps the client's id before it forwards it to the worker.
+
+## Fields
+
+### LinkId [#linkid]
+
+```csharp
+public ulong LinkId;
+```
+
+### Generation [#generation]
+
+```csharp
+public uint Generation;
+```
+
+The [`PortalLinkRecord.Generation`](/docs/reference/protocol/portal-link-record#generation) the client saw.
+
+### ClientId [#clientid]
+
+```csharp
+public ulong ClientId;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static PortalWarmMsg Read(NetworkReader r);
+```

@@ -9,7 +9,7 @@ transfers across scopes (§11, no wire change). Decisions made without asking ar
 ## 0. Problem
 
 Before this item there was exactly one way to bring a private world into being: a `NebulaWorker` had to call
-`PrepareInstance(template, key, origin)` while a player was already standing next to an `InstanceBoundary` in the
+`PrepareInstance(template, key, origin)` while a player was already standing next to an `InstanceBoundary` (a `Portal` since NEB-428) in the
 public world. That shape rules out everything that decides where a player should go *before* the player is anywhere:
 
 - a matchmaking service that wants the raid instance to exist before it tells four clients to connect;
@@ -17,7 +17,7 @@ public world. That shape rules out everything that decides where a player should
 - a login flow that must put a returning player back in the scope their last save names;
 - a second gateway that must send its player to the *same* world the first gateway's player went to.
 
-`InstanceBoundary` also hard-codes the policy (a trigger volume, a key from the owner's identity) into the mechanism
+`InstanceBoundary` (since NEB-428: `Portal`, whose party, admission and observation hooks keep the policy out of the mechanism) also hard-codes the policy (a trigger volume, a key from the owner's identity) into the mechanism
 (make the containers exist). The mechanism is what other things need.
 
 The location contract (`docs/location-contract.md`) already gave a scope a name that every role agrees on: the
@@ -438,7 +438,7 @@ bookkeeping runs for every client, sends nothing, and changes nothing unless the
 
 **D23 The window is the one the pawn had at the boundary.** While the pawn's scope has `ObserveHost`, the gateway adds
 one window to the client's rows: the pawn's own window (`NearCells` x cell size on each side), centred on the last
-host-side position, queried in the host's scope only. An `InstanceBoundary` crossing keeps the absolute pose, so that
+host-side position, queried in the host's scope only. A `Portal` crossing (an `InstanceBoundary` crossing before NEB-428) keeps the absolute pose, so that
 is the boundary. It does not follow the occupant through the instance, so its cost is fixed at what the client already
 held when it crossed, at most one window's rows. It is collected after the client's own windows and foci and counts
 against the same `MaxContainerRows` budget, so exhausting the budget can only withhold host ground, never the rows the
@@ -494,7 +494,7 @@ off, every lease row, scope definition and client message is byte-identical to b
 
 D27 draws exactly one private scope on a client: the local pawn's. `InstanceScenes.SetView` hides the static content
 of every other prepared instance part, and `NebulaChunks.SetView` the chunks of every other scoped grid. A player at
-an open `InstanceBoundary` therefore sees only their own side. The other side is prepared and resident (the crossing's
+an open `Portal` therefore sees only their own side until windows land (NEB-431, `docs/portals.md` D20). The other side is prepared and resident (the crossing's
 destination, or the host kept by `ObserveHost`), but not drawn, and the crossing visibly swaps one scene for the other.
 
 ### 13.2 Decisions

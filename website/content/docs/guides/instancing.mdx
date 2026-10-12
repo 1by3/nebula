@@ -1,43 +1,43 @@
 ---
 title: Create private instances
-description: Define private areas with containers, prepare player crossings, and allow a bounded view of the public world.
+description: Define private areas with containers, open a portal to them for a party, and let players and their companions cross.
 ---
 
 An instance is a separate [simulation scope](/docs/guides/scopes) containing one or more [runtime containers](/docs/guides/runtime-containers). Its entities have independent authority and physics. Instance ID `0` is the public world. Multiple instances can occupy the same coordinates.
 
-This page is the worker-side path: a player walks into an `InstanceBoundary` and the worker prepares the instance as they approach. To create a scope from outside a worker — from a matchmaker, a travel menu or a login flow — or to route a player into one at join, see [Simulation scopes](/docs/guides/scopes). Both paths produce the same scope for the same key.
+This page is the worker-side path: your game opens a `Portal` for a party, the worker prepares the instance behind it, and players walk through. To create a scope from outside a worker — from a matchmaker, a travel menu or a login flow — or to route a player into one at join, see [Simulation scopes](/docs/guides/scopes). Both paths produce the same scope for the same key.
 
 Use instances for private homes, party dungeons, training rooms, or separate copies of a mission. A container still defines where simulation happens and which [worker](/docs/concepts/containers-and-handover) is responsible. The instance ID determines which copy an entity belongs to. Creating an ordinary runtime container alone does not make it private.
 
 ## Model an apartment entrance
 
-Keep the street and hallway in the public world. Define the apartment interior as one or more template parts. Place an `InstanceBoundary` at the entrance, with its `Interior` volume covering the private rooms.
+Keep the street and hallway in the public world. Define the apartment interior as one or more template parts. Place a `Portal` on the face a player walks through, with the template as its far side and an `Aperture` the size of the doorway.
 
-The hallway can provide space to prepare the apartment before the player reaches its door. It does not need a special transition container type. `PreparationDistance` expands the interior bounds to determine when preparation starts.
+A portal has one **link** per **party**, an opaque string your game chooses: the owner's identity for a personal home, a run ID for a party dungeon. Each party's link has its own far scope behind the same face. Your game opens a link with `Open(party, members)`, naming the clients that will cross (its **members**), and closes it with `Close(party)`. Nebula prepares the far scope, loads its content, asks each member's client to hold it, and turns the link `Open` only when all of it is ready. Open the portal early enough for that: when a player enters the building, or walks up the hallway, or starts the lift.
 
 | Player location | Simulation scope | Visible networked entities |
 | --- | --- | --- |
 | Street or hallway | Public (`0`) | Public entities; no private occupants. |
-| Their apartment | Private instance selected by the entrance | Entities in that instance, plus public entities in its configured observation bounds. |
+| Their apartment | Private instance selected by the party | Entities in that instance, plus public entities in its configured observation bounds. |
 | Another player's apartment | A different private instance | That instance's entities and its configured public view; no occupants of other private copies. |
 
 When the player crosses, their connection stays open and their network ID stays the same. Outside observers stop receiving that player's entity. From inside, the player can still see people in the hallway when it is within `PublicView`. The game controls the door animation, fade, or other visual treatment.
 
-The same player can leave through the boundary to return to the public world. The destination must be covered by a public container.
+The same player can leave through the portal to return to the public world. The destination must be covered by a public container.
 
 ## Define an area
 
 1. Create an **Instance Template** asset from **Assets > Create > Nebula > Instance Template**.
 2. Give the template a stable `TemplateId`. Add a part for each container, with a unique part ID and bounds relative to the instance origin.
 3. Put each part's static geometry prefab in a `Resources` folder. Set `ContentResource` to its resource path without the extension. Position the prefab's content relative to the center of the part's bounds.
-4. Add an `InstanceBoundary` to the shared scene, or to chunk content you build in a scoped grid (see [Place a boundary in a scoped grid](#place-a-boundary-in-a-scoped-grid)). Assign the template and set `Interior` to the volume players enter. Place the boundary at the instance origin.
-5. Set `PreparationDistance` to start loading before players enter the volume.
+4. Add a `Portal` to the shared scene, or to chunk content you build in a scoped grid (see [Place a portal in a scoped grid](#place-a-portal-in-a-scoped-grid)). Give it an `Id` that is unique within its container, assign the template to `FarTemplate`, and size `Aperture` to the doorway. Place the portal at the instance origin, on the face players walk through, with its forward (+z) pointing the way in.
+5. Call `Open(party, members)` on the worker that owns the portal's container when players should be able to cross.
 
-The boundary preserves world position when crossing. Its volumes turn with the boundary: they are measured in its own axes, so a door on sloping ground has a crossing volume that slopes with it. Scale does not transform them. The first template part is the entry container. Within the instance, ordinary container resolution chooses the appropriate part.
+The portal preserves world position when crossing. Its aperture is a rectangle on the plane through its position, perpendicular to its forward, measured in the portal's own axes, so a door on sloping ground has an opening that slopes with it. Scale does not transform it. The first template part is the entry container. Within the instance, ordinary container resolution chooses the appropriate part. The template is built behind the face, in the portal's own axes: the far scope's origin is the portal's position.
 
 Static content prefabs must not contain `NetworkIdentity` components. Spawn networked furniture, enemies, and other stateful objects through the worker's spawn API, passing an instance container. Add `PersistentEntity` and use instance-specific persistence keys for objects that must survive a restart.
 
-### Template and entrance settings
+### Template and portal settings
 
 | Setting | What to configure |
 | --- | --- |
@@ -48,16 +48,16 @@ Static content prefabs must not contain `NetworkIdentity` components. Spawn netw
 | `ObservePublic` | Whether occupants receive the bounded public view. Disable it for a fully separate encounter. |
 | `PublicView` | The public observation box relative to the instance origin, shared by the template's parts. |
 | `ObserveHost` | Keep the area the player entered from loaded on their client while they are inside, so leaving rebuilds nothing. Off by default. See [Keep the host loaded while inside](#keep-the-host-loaded-while-inside). |
-| `Interior` | The private crossing volume relative to the boundary's position. |
-| `PreparationDistance` | Distance added on each side of the crossing volume to begin preparation. Increase it if players can reach the entrance before loading finishes. |
-| `Personal` | Use `OwnerIdentity` as the destination key when enabled and no custom resolver is set. |
-| `SharedKey` | Key used when `Personal` is disabled and no custom resolver is set. Defaults to `shared`. |
-| `RequireRequest` | Prepare crossings only when your game calls `Request`, not because a player is near. Off by default. See [Prepare crossings on request](#prepare-crossings-on-request). |
-| `ExitMargin` | How far outside `Interior`, in meters, an occupant must go before it leaves the instance. `0`, the default, leaves at the face. See [Stop flickering at the face](#stop-flickering-at-the-face). |
+| `Portal.Id` | A name unique within the container the portal stands in. With that container's id it derives the portal's id on every process. |
+| `Portal.FarTemplate` | The template behind the face. The far scope of a party is `TemplateId + "/" + party`. For a scope that exists anyway, call `SetFixedFarSide` instead. |
+| `Portal.Aperture` | The opening on the face's plane: `PortalAperture.Box(halfWidth, halfHeight)`, centered on the portal's position. |
+| `Portal.TurnWithFace` | Build the far scope in the portal's axes (on by default), so the interior stands behind a door that is not upright. Off keeps the near scope's axes. |
+| `Portal.PartyOf` | Which party an entity belongs to. By default the owner's identity. See [Choose who enters together](#choose-who-enters-together). |
+| `Portal.CanEnter` | Admission into a link's far scope. By default a server-owned entity, or a member's entity once the member is warm. |
 
-For a single-room apartment, start with matching template-part and interior bounds. For multiple rooms, put the arrival room first and make `Interior` cover the entire private area. Keep the boundary position and the template's instance origin aligned. Boundary rotation and scale do not transform these bounds.
+For a single-room apartment, start with an aperture the size of the door and a template part that begins at the portal's position. For multiple rooms, put the arrival room first. Keep the portal position and the template's instance origin aligned.
 
-Include the boundary in the scenes loaded by workers, not only in client presentation. Include the static resources in both worker and client builds. The built-in boundary handles authoritative player-owned entities; use explicit transfers for server-controlled entities.
+Include the portal in the scenes loaded by workers, not only in client presentation. Include the static resources in both worker and client builds. A portal lets player-owned pawns through by themselves, and the entities that cross with a pawn as its companions; other server-controlled entities use explicit transfers.
 
 ### Separate scenery from collision
 
@@ -69,9 +69,9 @@ Preparation loads bundled assets on the client before entry. Entity visibility f
 
 ### Wait for content that finishes loading later
 
-Preparation creates a part's content prefab in one frame. If your content keeps building after that, for example geometry a component generates over several frames, or assets it loads asynchronously, make the crossing wait for it. Otherwise a player can cross into a part whose floor does not exist yet.
+Preparation creates a part's content prefab without blocking a tick: in play mode `InstanceScenes.Prepare` creates the physics scene and then loads and instantiates the prefab asynchronously, and `InstanceScenes.ContentState` reports `Loading` until that is done. If your content keeps building after that, for example geometry a component generates over several frames, or assets it loads asynchronously, make the crossing wait for it. Otherwise a player can cross into a part whose floor does not exist yet.
 
-To make a crossing wait, implement `IInstanceContentLoader` on a component in the content prefab:
+To make the portal wait, implement `IInstanceContentLoader` on a component in the content prefab:
 
 ```csharp title="StreamedRoom.cs"
 using Nebula;
@@ -97,201 +97,201 @@ public sealed class StreamedRoom : MonoBehaviour, IInstanceContentLoader
 
 When the content is created, Nebula collects the active components under the part's container that implement `IInstanceContentLoader`. Add them to the prefab, or add them in `Awake`; a loader added later is not collected. Then:
 
-- The owning client acknowledges the preparation only once every loader reports `Ready`. The destination worker marks itself ready the same way.
-- A loader that reports `Failed` refuses the crossing, as a missing content resource does.
-- Content with no loaders is ready as soon as it is created, as before.
-- If the content is still loading when the preparation times out, the crossing does not commit. The worker logs a warning and sets `InstanceTransfer.Error`, and an `InstanceBoundary` prepares the crossing again.
+- The link stays `Preparing`, with `PortalWait.FarWorkerContent`, until every loader reports `Ready`. A member's client says it holds the far window (`PortalWarm`) the same way.
+- A loader that reports `Failed` keeps the link from opening, as a missing content resource does; the link says so in `PortalLink.Error`.
+- Content with no loaders is ready as soon as it is created.
+- A transfer you prepare yourself (see [Prepare a transfer from game code](#prepare-a-transfer-from-game-code)) that is still waiting for content when its preparation times out does not commit; the worker logs a warning and sets `InstanceTransfer.Error`.
 
-Nebula reads `State` once a frame on a client and once a tick on a worker, only while a preparation waits for it, so keep it cheap. Keep `Progress` between 0 and 1. To show a loading indicator, read `InstanceScenes.ContentProgress(container)`. To check readiness yourself, read `InstanceScenes.ContentState(container)`.
+Nebula reads `State` once a frame on a client and once a tick on a worker, only while a link or a preparation waits for it, so keep it cheap. Keep `Progress` between 0 and 1. To show a loading indicator, read `InstanceScenes.ContentProgress(container)`. To check readiness yourself, read `InstanceScenes.ContentState(container)`.
 
-Leave enough `PreparationDistance` for the content to load before the player reaches the boundary. While the crossing waits, the boundary holds a player who reaches it at the last position it recorded.
+Open the portal early enough for the content to load before the player reaches the face. While the link is not open, a player who reaches the face is held at the last position the portal recorded.
 
-## Place a boundary in a scoped grid
+## Place a portal in a scoped grid
 
-A boundary can also stand in a [scoped chunk grid](/docs/guides/infinite-runtime-world), such as a planet whose buildings and caves your game builds per chunk at runtime. Parent the boundary under the chunk's content root (`ChunkContext.Root`), as you would the rest of the chunk's content.
+A portal can also stand in a [scoped chunk grid](/docs/guides/infinite-runtime-world), such as a planet whose buildings and caves your game builds per chunk at runtime. Parent the portal under the chunk's content root (`ChunkContext.Root`), as you would the rest of the chunk's content.
 
-The boundary's host scope is the scope of the container it is parented under. `HostInstanceId` reports it, and it is `0`, the public world, for a boundary in the shared scene. The boundary then works like this:
+The portal's near scope is the scope of the container it is parented under. `Portal.NearScope` reports it, and it is `0`, the public world, for a portal in the shared scene. The portal then works like this:
 
-- Only entities in the host scope, or already in the boundary's own instance, cross it. A boundary on one planet ignores players standing at the same coordinates on another.
-- Positions are compared in absolute coordinates. A scoped grid moves its own origin on each worker, so the boundary converts its position and the player's through each scope's frame. The instance is created at the boundary's absolute position rounded to a millimeter (`InstanceOrigin`), so every worker names the same instance.
+- Only entities in the near scope, or in a link's far scope, cross it. A portal on one planet ignores players standing at the same coordinates on another.
+- Positions are compared in absolute coordinates. A scoped grid moves its own origin on each worker, so the portal converts its position and the player's through each scope's frame. The instance is created at the portal's absolute position rounded to a millimeter (`NearFace.Origin`), so every worker names the same instance.
 - A crossing keeps the player's absolute position, to the millimetre. The instance has an origin frame of its own, pinned near the instance's origin in each process that holds it, so an instance far from the public origin (a dungeon on a planet 50,000 km out) is still simulated near Unity's origin. The player's numbers in Unity change when they cross, but where they stand does not.
-- A player who leaves returns to a container of the host scope that holds their position. Until that chunk is leased, they stay inside at the last position the boundary recorded.
+- A player who leaves returns to a container of the near scope that holds their position. Until that chunk is leased, they stay inside at the last position the portal recorded.
 
 Your game is responsible for the rest:
 
-- **Keep the entrance chunk leased and the host scope active while the instance is occupied.** A scoped grid leases chunks around the players standing in it, and players inside the instance are not standing in it. Pin the entrance chunk on the grid's allocator (`RuntimeGridAllocator.AddPin`) while anyone is inside, and keep the scope from retiring.
-- **Keep the boundary on the worker that simulates the occupants.** The boundary runs on each worker that has built the chunk's content. The instance is leased first by the worker that prepared it.
-- **Turn `ObservePublic` off.** It observes the public world, not the host scope, so occupants cannot see out into the grid. The boundary logs a warning when it is on.
+- **Keep the entrance chunk leased and the near scope active while the instance is occupied.** A scoped grid leases chunks around the players standing in it, and players inside the instance are not standing in it. Pin the entrance chunk on the grid's allocator (`RuntimeGridAllocator.AddPin`) while anyone is inside, and keep the scope from retiring.
+- **Open and close the portal on the worker that owns its container.** A link lives on that worker, and so does the crossing test; the instance is leased first by the worker that prepared it.
+- **Turn `ObservePublic` off.** It observes the public world, not the near scope, so occupants cannot see out into the grid. The portal logs a warning when it is on.
 - **Turn `ObserveHost` on** to keep the grid's chunks around the entrance loaded, hidden, while players are inside. Without it, the client unloads them shortly after a player enters and loads them again after the player leaves. See [Keep the host loaded while inside](#keep-the-host-loaded-while-inside).
-- **Looking through the doorway.** On the client an instance entered from the scope the player stands in shares that scope's origin frame, so its content is drawn exactly behind the door and the host's scenery exactly outside it, and keep the content drawn with `InstanceScenes.KeepDrawn` while the door is open. Build the interior in the boundary's own axes (its forward is the way in): an instance is prepared with the door's rotation (`InstanceBoundary.PoseRotation`, off with `TurnWithDoor`), so on a curved surface it stands behind the door the way the door stands, crossings carry the player's facing and velocity through it, and each side is drawn turned for the other.
+- **Looking through the doorway.** On the client an instance entered from the scope the player stands in shares that scope's origin frame, so its content is drawn exactly behind the door and the host's scenery exactly outside it; keep the content drawn with `InstanceScenes.KeepDrawn` while the door is open. Build the interior in the portal's own axes (its forward is the way in): an instance is prepared with the portal's rotation (`Portal.PoseRotation`, off with `TurnWithFace`), so on a curved surface it stands behind the door the way the door stands, crossings carry the player's facing and velocity through it, and each side is drawn turned for the other.
 
-## Prepare crossings on request
+## Open and close a portal
 
-By default, the boundary prepares a player's crossing whenever they are within `PreparationDistance` of `Interior`, and prepares an occupant's way out for as long as they are inside. To decide yourself when a crossing is prepared, for example only while a door is open or an elevator is moving, turn on `RequireRequest` and call `Request` on the worker that simulates the player:
+A portal is closed until your game opens it for a party. Call `Open` on the worker that owns the portal's container:
 
 ```csharp title="InstanceDoor.cs"
 using Nebula;
 using UnityEngine;
 
-[RequireComponent(typeof(InstanceBoundary))]
+[RequireComponent(typeof(Portal))]
 public sealed class InstanceDoor : MonoBehaviour
 {
-    private InstanceBoundary boundary;
+    private Portal portal;
 
-    private void Awake()
-    {
-        boundary = GetComponent<InstanceBoundary>();
-        boundary.RequireRequest = true;
-    }
+    private void Awake() => portal = GetComponent<Portal>();
 
     // Call on the worker when a player opens the door.
-    public void Open(NetworkIdentity player)
+    public void OpenFor(NetworkIdentity player)
     {
-        boundary.Request(player, 10f);
+        portal.Open(player.OwnerIdentity, new[] { player.OwnerClientId });
     }
+
+    // Call on the worker when the door should shut.
+    public void CloseFor(NetworkIdentity player) => portal.Close(player.OwnerIdentity);
 }
 ```
 
-`Request(entity, seconds)` prepares that entity's crossing, in whichever direction it would cross, for `seconds` of unscaled time. Each call replaces the entity's previous request, and a value of `0` or less withdraws it.
+`Open(party, members)` creates the party's link, or returns the one it has. The members are the client IDs that will cross; each must hold the far window and say so before the link opens. Opening a link that is already live adds the members, and opening one that is closing opens it again at once. `AddMember` and `RemoveMember` change the members while the link lives. A member added to an open link warms on its own, without closing the link for the others, and its own entities are refused at the face until it is warm. `Close(party)` waits for the band around the face (two meters either side) to be empty, for at most `Portal.CloseTimeoutSeconds`, and then closes the link.
 
-With `RequireRequest` on:
+A link goes through four states, and every one but `Open` says why it is not open:
 
-- Being near the boundary prepares nothing. A player who reaches the face without a ready crossing is held where they last stood.
-- An occupant leaves only on request too.
-- When a request expires, a crossing prepared under it is dropped and can no longer commit.
-
-With `RequireRequest` off, a request starts preparation early, even beyond `PreparationDistance`, so the crossing can be ready before the player arrives.
-
-Either way, the player must be in the boundary's host scope or its instance, and entry must still pass `CanEnter`.
-
-## Check whether a crossing is ready
-
-To find out whether a player's crossing can commit, call `TryGetPreparation` on the worker. It returns `true` when the crossing is ready. Its `InstanceCrossingState` says which way the crossing leads (`Leaving`) and, when it isn't ready, why (`Status`):
-
-| `Status` | Meaning |
+| `State` | Meaning |
 | --- | --- |
-| `None` | The boundary isn't preparing a crossing for this entity. |
-| `NotRequested` | `RequireRequest` is on and no request is live. |
-| `Refused` | `CanEnter` refused entry. |
-| `NoDestination` | The destination container isn't there yet. |
-| `DestinationNotLeased` | The destination exists, but no worker holds an active lease on it yet. |
-| `PendingWorker` | The worker that owns the destination hasn't finished preparing it. |
-| `PendingContent` | This worker owns the destination, and its content is still loading. |
-| `PendingClient` | The player's client hasn't finished preparing the destination. |
-| `Failed` | Preparation failed. `Error` says why. The boundary prepares the crossing again after it expires. |
-| `Ready` | The crossing commits when the player crosses the face. |
+| `Closed` | Nothing is prepared and nothing crosses. A player who reaches the face is held where they last stood. |
+| `Preparing` | `Open` was called. `Wait` says what the link waits for, and `Progress` (0 to 1) can drive a loading bar. |
+| `Open` | Everything the far side needs is standing. Entities cross on the tick their root passes the face. |
+| `Closing` | `Close` was called and a body is still in the band. |
 
-To react when a crossing becomes ready, for example to open a door only once the other side has loaded, subscribe to `CrossingReady`. The worker raises it once per crossing, during its tick and before that tick commits the crossing:
+Readiness is standing, not per player: it is held while the link is open, so a crossing prepares nothing, loads nothing and holds nothing at the face.
+
+A player stops at the face when the link is not open, when they are not admitted, or when their client is not a warm member. Nebula holds them at the last position it recorded, and counts the refusal in `NebulaDiagnostics.PortalRefusals`.
+
+## Read a link's state
+
+To find out why a door is not open, read the link on the worker. `Portal.TryGetLink(party, out var link)` returns it, and `Portal.StateOf(party)` is `Closed` for a party with no link:
+
+| `Wait` | Meaning |
+| --- | --- |
+| `FarScopeActivating` | The far scope is not active yet, or its entry container has no owning lease. |
+| `FarWorkerContent` | The far content, or this portal's own container's, is still loading, or failed (`Error`). |
+| `FarEntitiesRestoring` | The far scope is restoring its persisted entities. |
+| `FarWorkerHandshake` | The far container belongs to another worker, which has not answered yet. |
+| `ClientWarming` | A member's client has not said it holds the far window. `WaitClient` is that client. |
+| `BandOccupied` | The link is closing and a body still stands in the band. |
+| `FarScopeRetired` | The far scope is retiring or retired, so the link reads closed. |
+| `NearContainerMoving` | The portal's container is being reassigned to another worker. |
+
+To react when a link changes, for example to open a door only once the other side is ready, subscribe to `LinkChanged`. The worker raises it during its tick whenever a link's state, wait, members or observers change:
 
 ```csharp
-boundary.CrossingReady += (player, state) =>
+portal.LinkChanged += link =>
 {
-    if (!state.Leaving) OpenDoorFor(player);
+    if (link.State == PortalState.Open) PlayOpenAnimation(link.Party);
 };
 ```
 
-`OpenDoorFor` stands for your own game code. A ready crossing isn't a reservation: the commit still checks admission, the player's authority and the destination's lease.
+`PlayOpenAnimation` stands for your own game code. A link is not a reservation of anything for a player: the crossing still checks admission, the player's authority and the far container's lease.
 
-## Stop flickering at the face
+On a client, `Portals.Known` and `Portals.KnownLinks` list what the network gateway has told it: a portal's record and its links, behind the container row of either face, with whether this client is a member and whether it may look through. A door's UI can show a link's `Wait` and `Progress` from them.
 
-A player standing exactly at the face of `Interior` can enter on one tick and leave on the next, because the same face is used both ways. Set `ExitMargin` to give the way out some slack: an occupant then leaves only once they are that many meters outside `Interior`. Entry still happens at `Interior`'s face. A margin of half a meter to a meter is usually enough. Within the margin the occupant is still in the instance, and moves against the instance's colliders, not the public ones. Make the template part's bounds and its collision content cover the margin as well.
+## Cross at the face
+
+A pawn crosses when the segment its root travels in a tick passes through the aperture and ends at least `Portal.CrossDepth` (5 cm) beyond the face's plane. It crosses back when it ends 5 cm short of it on the other side. That depth is the hysteresis that keeps a player standing at the face from crossing and returning on every tick; there is no margin to configure. A player who walks past the face outside the aperture, or who did not walk through it (a spawn behind the face), does not cross.
 
 ## Cross with companions
 
-The boundary only crosses entities a player owns, one at a time. An entity no player owns, such as an item the player is carrying, a pet, a cart they tow or an escort, would stay behind at the face. To take such entities along, set `ResolveCompanions` on every worker that can simulate the entrance, and add the entities that must cross with the player to the list it's given:
+A portal lets through the entities a player owns. An entity no player owns, such as an item the player is carrying, a pet, a cart they tow or an escort, would stay behind at the face. To take such entities along, set `ResolveCompanions` on every worker that can simulate the portal, and add the entities that must cross with the player to the list it's given:
 
 ```csharp title="CarryThroughDoors.cs"
 using Nebula;
 using UnityEngine;
 
-[RequireComponent(typeof(InstanceBoundary))]
+[RequireComponent(typeof(Portal))]
 public sealed class CarryThroughDoors : MonoBehaviour
 {
-    private InstanceBoundary boundary;
+    private Portal portal;
 
     private void Awake()
     {
-        boundary = GetComponent<InstanceBoundary>();
-        boundary.ResolveCompanions = (player, companions) =>
+        portal = GetComponent<Portal>();
+        portal.ResolveCompanions = (player, companions) =>
         {
             var held = HeldItemOf(player);
             if (held != null) companions.Add(held);
         };
-        boundary.CompanionLeftBehind += (player, item, state) => Drop(player, item);
+        portal.CompanionLeftBehind += (player, item, why) => Drop(player, item);
     }
 }
 ```
 
-`HeldItemOf` and `Drop` stand for your own game code. The worker calls `ResolveCompanions` once a tick while the player's crossing is being prepared, with an empty list. Then:
+`HeldItemOf` and `Drop` stand for your own game code. The worker calls `ResolveCompanions` once a tick while the player is near the face of an open link, with an empty list. Then:
 
-- **Each companion is prepared too,** into the player's own destination. `TryGetPreparation` and `CrossingReady` cover the whole group: the player's crossing isn't ready until every companion's is, and while one is pending, the player's state reports that companion's status. Call `TryGetPreparation` with a companion to see its own state.
-- **The group commits as one,** with `TryCommitTransfers`, on the tick the player crosses the face. Every member keeps its network ID and absolute pose and arrives in the same destination container, so it ends up on the same worker, whichever worker owns the destination.
-- **A companion moves with the player.** It doesn't cross on its own while it's a companion, even if it's a player's pawn standing inside `Interior`.
-- **Requests and the exit margin are the player's.** With `RequireRequest` on, the player's request prepares the companions as well. The player's position alone decides when the group crosses, so a carried item can be past the face, inside the margin, without leaving.
+- **The group commits as one,** on the tick the player crosses the face. Every member keeps its network ID and arrives in the same destination container, so it ends up on the same worker, whichever worker owns the destination. Each member's own position and rotation are carried through the link, so through a door that is turned against the far scope a held item arrives turned with its holder.
+- **A companion moves with the player.** It doesn't cross on its own while it's a companion, even if it's a player's pawn standing at the face.
+- **The player's position alone decides when the group crosses,** so a carried item can be past the face without leaving.
+- **Nothing waits.** The far side is ready before the link opens, so a companion has no preparation of its own to wait for.
 
-A companion that can't cross is **left behind**, and the player crosses without it. `CompanionLeftBehind` reports each one when the group commits, with the companion's state to say why:
+A companion that can't cross is **left behind**, and the player crosses without it. `CompanionLeftBehind` reports each one when the group commits, with a `PortalRefusal` that says why:
 
-| Why | `Status` |
+| Why | `PortalRefusal` |
 | --- | --- |
-| `CanEnter` refused it. Entry checks each companion as well as the player. | `Refused` |
-| Its preparation failed: the destination was at capacity or refused the transfer, its content was unavailable, or the preparation expired. | `Failed`, with `Error` |
-| It isn't simulated by the player's worker, it's in another scope, or it's a pinned or authored scene entity. | `Failed`, with `Error` |
-| Its preparation was still pending `CompanionWaitSeconds` (5 by default) after the player's own was ready. | the pending status |
+| `CanEnter` refused it, or it belongs to a client that is not a warm member of the link. | `NotAdmitted` |
+| It isn't simulated by the player's worker. | `NotSimulated` |
+| It's a pinned or authored scene entity. | `Pinned` |
+| It's in another scope than the player. | `OtherScope` |
 
-A failed or refused companion never holds the player back. A pending one holds the player at the face, as an unready crossing does, until it's ready or `CompanionWaitSeconds` runs out. Set it to `0` to never wait. A companion that failed is prepared again only alongside a new preparation of the player's, so it doesn't make the player wait over and over.
-
-All members must be simulated by the player's worker when the group crosses, because `TryCommitTransfers` only moves its own entities. Keep a carried item in the same container as its holder, or at least on the same worker. Groups don't nest: an entity crossing with companions of its own isn't anyone's companion. With no `ResolveCompanions`, or when it adds nothing, the boundary behaves exactly as before.
+All members must be simulated by the player's worker when the group crosses. Keep a carried item in the same container as its holder, or at least on the same worker. Groups don't nest: an entity crossing with companions of its own isn't anyone's companion.
 
 ## Choose who enters together
 
-With `Personal` enabled, the boundary uses the player's authenticated `OwnerIdentity` as its key. Returning players resolve the same container IDs. With `Personal` disabled, everyone using the same `SharedKey` enters the same instance.
+A pawn belongs to the party `PartyOf` names; by default that is the player's authenticated `OwnerIdentity`, so returning players resolve the same container IDs. A server-owned entity has no party by default. An entity crosses through its party's link; with no party it uses the face's one open link, when there is exactly one, and otherwise it is refused.
 
 `OwnerIdentity` is the stable [player identity](/docs/guides/authentication), including anonymous identities. A display name or connection ID is not a substitute. Changing a display name does not select another personal apartment.
 
-| Use case | Destination key | Game responsibility |
+| Use case | Party | Game responsibility |
 | --- | --- | --- |
 | Personal home | Owner identity | Save furniture using keys specific to that home. |
-| Invited visitor | Home owner's identity | Resolve the selected home and check invitations. |
+| Invited visitor | Home owner's identity | Open the owner's link for the visitor (`AddMember`) and check invitations. |
 | Party dungeon | Party or run ID | Check party membership and use a new run ID for a fresh copy. |
 | Match or training session | Match or session ID | Control admission, entry pose, exit, and cleanup. |
 | Persistent guild hall | Stable guild ID | Check membership and retain the same layout identifiers. |
 
-For housing assignments, invitations, or party runs, supply server-side `ResolveKey` and `CanEnter` callbacks. The resolver selects the destination; the admission callback decides whether the player may enter it. Admission is checked again at crossing. Preparation does not reveal destination entities to the client.
+For housing assignments, invitations, or party runs, supply server-side `PartyOf` and `CanEnter` callbacks. `PartyOf` selects the link; `CanEnter` decides whether the entity may enter it. Admission is checked again at every crossing. A link also names its members: a player who is not a warm member of the link is refused by the default `CanEnter`. Preparation does not reveal destination entities to the client.
 
-Install these callbacks on every worker that can simulate the entrance. The following component shows the wiring for an owner-only home; replace the predicate with your server-side invitation check to admit guests:
+Install these callbacks on every worker that can simulate the portal. The following component shows the wiring for an owner-only home; replace the predicate with your server-side invitation check to admit guests:
 
 ```csharp title="HomeAdmission.cs"
 using Nebula;
 using UnityEngine;
 
-[RequireComponent(typeof(InstanceBoundary))]
+[RequireComponent(typeof(Portal))]
 public sealed class HomeAdmission : MonoBehaviour
 {
     public string HomeOwnerIdentity;
-    private InstanceBoundary boundary;
+    private Portal portal;
 
     private void Awake()
     {
-        boundary = GetComponent<InstanceBoundary>();
-        boundary.ResolveKey = player => HomeOwnerIdentity;
-        boundary.CanEnter = (player, key) =>
-            !string.IsNullOrEmpty(key) && player.OwnerIdentity == key;
+        portal = GetComponent<Portal>();
+        portal.PartyOf = player => HomeOwnerIdentity;
+        portal.CanEnter = (player, link) =>
+            !string.IsNullOrEmpty(link.Party) && player.OwnerIdentity == link.Party;
     }
 
     private void OnDestroy()
     {
-        if (boundary == null) return;
-        boundary.ResolveKey = null;
-        boundary.CanEnter = null;
+        if (portal == null) return;
+        portal.PartyOf = null;
+        portal.CanEnter = null;
     }
 }
 ```
 
-Set `HomeOwnerIdentity` from your server's housing data. A resolver selects a key; it does not enforce permission by itself. With no `CanEnter` callback, the entrance allows any player to use its resolved key. Keep the key stable while a player occupies the area so the boundary can recognize their private scope on exit. The built-in boundary permits occupants to leave even if admission is later revoked.
+Set `HomeOwnerIdentity` from your server's housing data. `PartyOf` selects a link; it does not enforce permission by itself. A custom `CanEnter` replaces the default rule, so it must check what the default checks if you still want it (a member that is warm). Keep the party stable while a player occupies the area so the portal can recognise their private scope on exit. A portal permits occupants to leave even if admission is later revoked.
 
-For temporary runs, include a run identifier in the key. An instance is a [simulation scope](/docs/guides/scopes), so an empty one is retired automatically after `ScopeIdleRetireSeconds`: its persistent entities are checkpointed, its container leases released, and it comes back — the same instance, with the same saved contents — when the key is activated again. Set `ScopeIdleRetireSeconds` to 0, or replace `ScopeLifecycle.ShouldRetire`, to decide otherwise.
+For temporary runs, include a run identifier in the party. An instance is a [simulation scope](/docs/guides/scopes), so an empty one is retired automatically after `ScopeIdleRetireSeconds`, unless a portal link that is not closed leads into it: its persistent entities are checkpointed, its container leases released, and it comes back — the same instance, with the same saved contents — when the key is activated again. Set `ScopeIdleRetireSeconds` to 0, or replace `ScopeLifecycle.ShouldRetire`, to decide otherwise.
 
-The scope is derived from `TemplateId + "/" + key`; each part's runtime ID also includes its part ID. Reusing those values selects the same copy. Changing them selects new container IDs. Use a consistent key format and delimiters. Reusing a key with different bounds or a different content resource is rejected while its lease exists; treat layout changes as a migration or choose a new template ID.
+The scope is derived from `TemplateId + "/" + party`; each part's runtime ID also includes its part ID. Reusing those values selects the same copy. Changing them selects new container IDs. Use a consistent format and delimiters. Reusing a key with different bounds or a different content resource is rejected while its lease exists; treat layout changes as a migration or choose a new template ID.
 
 ## Prepare a transfer from game code
 
@@ -310,7 +310,7 @@ Follow this sequence on the entity's authoritative worker:
 
 `Ready` alone is not a reservation: the commit checks the entity's authority, its source container and epoch, and the destination lease again. An **epoch** is a version number for authority or assignment. A change invalidates older preparations. `Error` reports a failure; `Finished` also becomes true after a successful commit or an expired/invalidated attempt.
 
-The built-in boundary handles this sequence automatically. If a crossing cannot commit, it holds the player at the last position it recorded. To see where a boundary's crossing stands, call `TryGetPreparation` (see [Check whether a crossing is ready](#check-whether-a-crossing-is-ready)). Place spawn points outside the crossing volume so players approach it normally.
+A `Portal` does none of this per player: it prepares the far side once for a party and commits through the open link (see [Open and close a portal](#open-and-close-a-portal)). Use a transfer for the entities a portal does not carry, or to send a player somewhere no portal leads. Place spawn points on the near side of a portal's face so players approach it normally.
 
 The destination must be a static container. Authored scene entities cannot transfer out of their scene. For a return trip from game code, select a public container and prepare another transfer; do not change only the transform or `InstanceId`.
 
@@ -324,7 +324,7 @@ The gateway connection stays open. The entity keeps its network ID and velocity.
 
 Enable `ObservePublic` and set the template's `PublicView` bounds relative to its origin. Occupants receive public entities within those bounds, while public observers receive no private entities. Other private instances remain hidden. Replicas visible before and after crossing stay resident on the client.
 
-This is an observation-only connection. It does not grant cross-instance collision, targeting, or damage. The game supplies the public scenery and the visual treatment of the entrance. Portal rendering, remote camera views, and moving entrance anchors are not provided by `InstanceBoundary`.
+This is an observation-only connection. It does not grant cross-instance collision, targeting, or damage. The game supplies the public scenery and the visual treatment of the entrance. Portal rendering, remote camera views, and moving entrance anchors are not provided by `Portal`.
 
 `PublicView` selects public entities by position in a box. It is not a camera frustum, line-of-sight test, or a window-shaped portal. Within the private scope, entities remain eligible for replication regardless of distance; distance affects update frequency. Public-to-private and private-to-other-private visibility are not configurable through this template.
 
@@ -347,11 +347,11 @@ The gateway remembers where a player entered only for the current connection. A 
 
 If your game builds a chunk's content after `NebulaChunks.Loaded` returns, check `NebulaChunks.IsDrawn` and keep new renderers hidden while it is `false`. Otherwise the client hides them only when the player next moves into another container.
 
-## Show both sides of an open boundary
+## Show both sides of an open portal
 
 A client draws only the scope the local player is in, plus the public world. Another scope's content can be loaded on the client and still be hidden: an instance's static content before the player enters, or a scoped grid's chunks while the player is inside an instance with `ObserveHost`. So a player standing at an open door sees only their own side, and the other side appears all at once when they cross.
 
-To draw the other side while the door is open, call `InstanceScenes.KeepDrawn` on the client with that scope's instance ID. Call `InstanceScenes.StopKeepingDrawn` when the door closes:
+To draw the other side while the door is open (a link's state is `Open`), call `InstanceScenes.KeepDrawn` on the client with that scope's instance ID. Call `InstanceScenes.StopKeepingDrawn` when the door closes:
 
 ```csharp
 using Nebula;
@@ -383,7 +383,7 @@ While a scope is kept drawn:
 - When the player crosses, the scope they left stays drawn while it is kept, so the doorway looks the same from both sides.
 - Nebula turns on only the renderers it turned off itself. A renderer your game turned off stays off, whether the scope is kept, hidden again or entered.
 
-`KeepDrawn` changes rendering only. It loads nothing, so the other side must already be on the client: for example, a boundary has prepared the crossing, or the instance keeps its host with `ObserveHost`. Physics scenes, interest, ownership and network messages don't change, so the player still can't collide with, target or affect anything on the other side. Workers ignore the call, and the public world is always drawn.
+`KeepDrawn` changes rendering only. It loads nothing, so the other side must already be on the client: for example, a member's client holds the far window of an open link, or the instance keeps its host with `ObserveHost`. Physics scenes, interest, ownership and network messages don't change, so the player still can't collide with, target or affect anything on the other side. Workers ignore the call, and the public world is always drawn.
 
 A request outlives the scope's content. If the content is unloaded and loaded again while the request is live, it starts drawn. Call `StopKeepingDrawn` once for each `KeepDrawn`. Use `InstanceScenes.IsDrawn` to check whether a scope is drawn on this client.
 
@@ -447,7 +447,7 @@ Use distinct player identities for the personal-instance test. Two clients shari
 | Occupant leaves | Public visibility returns without reconnecting. |
 | Run a raycast or spawn a projectile at overlapping coordinates | Gameplay affects only the intended scope. |
 | Traverse multiple private parts | Ordinary container resolution stays within that instance. |
-| Deny entry, remove a required resource, or change a lease during preparation | The crossing does not commit; the game can retry after correcting the condition. |
+| Deny entry, remove a required resource, or change a lease while a link prepares | The link does not open, or the crossing is refused; the game can retry after correcting the condition. |
 | Restart and enter a saved home | Persistent contents restore when the same containers are recreated. |
 
 ### Rebuild after a protocol change
@@ -471,10 +471,10 @@ See [Running locally](/docs/getting-started/running-locally) for build paths and
 | Symptom | Check |
 | --- | --- |
 | Repeated connection attempts without joining | Compare protocol versions in the gateway log and rebuild all roles together. |
-| Player stops at the entrance | Inspect `InstanceTransfer.Error`, resource paths, client/worker content availability, and destination lease ownership. Check that every `IInstanceContentLoader` in the content reaches `Ready`. Allow enough preparation distance. |
-| Crossing never starts | Confirm the boundary is loaded on the worker, the template is assigned, the identity key is nonempty, and `Interior` covers the doorway. With `RequireRequest` on, check that your game calls `Request` on the worker that simulates the player. `TryGetPreparation` reports the reason. |
-| Player flickers in and out at the doorway | Set `ExitMargin` so an occupant must step clear of the face before leaving. |
-| Crossing never starts in a scoped grid | Confirm the boundary is parented under the chunk's content, so `HostInstanceId` is the grid's scope. |
+| Player stops at the entrance | Read the link's `State`, `Wait` and `Error`. Check resource paths, client/worker content availability, and destination lease ownership, that every `IInstanceContentLoader` in the content reaches `Ready`, and that the player's client is a member and has sent its `PortalWarm`. Open the portal earlier. |
+| Crossing never starts | Confirm the portal is loaded on the worker that owns its container, the template is assigned, the party is nonempty, your game called `Open` there, and the aperture covers the doorway on the plane the player walks through. `PortalLink.Wait` and `Error` report the reason. |
+| Player is held at the face though the link is open | The player's client is not a warm member of the link, `CanEnter` refused them, or two parties' links are open and nothing says whose they are (`PartyOf`). |
+| Crossing never starts in a scoped grid | Confirm the portal is parented under the chunk's content, so `NearScope` is the grid's scope. |
 | Player can't leave an instance in a scoped grid | Check that the chunk outside the doorway is leased; pin it while the instance is occupied. |
 | Two players unexpectedly share a personal room | Compare their `OwnerIdentity` values and any custom `ResolveKey` callback. |
 | Floor or wall collision disappears inside | Include those colliders in private static content and use scoped physics queries. |
@@ -487,7 +487,9 @@ See [Running locally](/docs/getting-started/running-locally) for build paths and
 ## API and protocol reference
 
 - [InstanceTemplate](/docs/reference/containers/instance-template) defines content and bounds.
-- [InstanceBoundary](/docs/reference/containers/instance-boundary) implements positional entry and exit.
+- [Portal](/docs/reference/containers/portal) opens a way between two scopes for a party.
+- [PortalLink](/docs/reference/containers/portal-link) reports a party's link: its state, wait and progress.
+- [Portals](/docs/reference/containers/portals) finds portals and, on a client, lists what the network gateway told it.
 - [NebulaWorker](/docs/reference/worker/nebula-worker) creates instances and prepares or commits transfers.
 - [InstanceTransfer](/docs/reference/worker/instance-transfer) reports preparation state.
 - [InstanceScenes](/docs/reference/containers/instance-scenes) exposes scoped physics and content preparation.

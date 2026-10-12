@@ -1,0 +1,19 @@
+---
+title: "PortalFarKind"
+description: "How a portal names its far side (docs/portals.md D5)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs)</div>
+
+```csharp
+public enum PortalFarKind : byte
+```
+
+How a portal names its far side (`docs/portals.md` D5).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="fixed"></span>`Fixed` | `0` | A scope that exists anyway, named by its scope key, with the far face's pose given in that scope. |
+| <span id="template"></span>`Template` | `1` | An [`InstanceTemplate`](/docs/reference/containers/instance-template): one far scope per party, created on demand at the near face's pose. |

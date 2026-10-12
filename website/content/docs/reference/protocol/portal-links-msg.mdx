@@ -1,0 +1,28 @@
+---
+title: "PortalLinksMsg"
+description: "MsgId.PortalLinks: [upserts:ushort]{record}[removes:ushort]{linkId}, worker → network gateway → client."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs)</div>
+
+```csharp
+public static class PortalLinksMsg
+```
+
+[`MsgId.PortalLinks`](/docs/reference/protocol/msg-id#portallinks): `[upserts:ushort]{record}[removes:ushort]{linkId}`, worker → network gateway → client.
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public static void Write(NetworkWriter w, IList<PortalLinkRecord> upserts, IList<ulong> removes);
+```
+
+### Read [#read]
+
+```csharp
+public static PortalLinksUpdate Read(NetworkReader r);
+```
+
+Read the body after the id byte.

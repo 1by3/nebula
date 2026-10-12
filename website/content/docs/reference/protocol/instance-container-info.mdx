@@ -70,6 +70,30 @@ public bool ObserveHost;
 
 Occupants keep the container rows of the scope they came from, around where they left it ([`ScopeDefinition.ObserveHost`](/docs/reference/control-plane/scope-definition#observehost)). Only the gateway acts on it: it is stored on the lease row but not written by [`Write`](#write), so what a client is sent is unchanged.
 
+### HasPose [#haspose]
+
+```csharp
+public bool HasPose;
+```
+
+Whether the instance's own space is turned against its host scope's (NEB-426, `docs/scope-frames.md` D12): an instance entered through a door that is not upright in its host (a door on a sphere) is built upright in its own space and posed at the door. A point p of the instance's space is [`PoseOrigin`](#poseorigin) + [`PoseRotation`](#poserotation) × (p − [`PoseOrigin`](#poseorigin)) in the host's. False for an instance whose axes are its host's, which is every instance prepared without a rotation.
+
+### PoseOrigin [#poseorigin]
+
+```csharp
+public Double3 PoseOrigin;
+```
+
+The point both spaces share, absolute (the door): the instance's origin.
+
+### PoseRotation [#poserotation]
+
+```csharp
+public Quaternion PoseRotation = Quaternion.identity;
+```
+
+The instance's axes in its host scope's.
+
 ## Methods
 
 ### Write [#write]

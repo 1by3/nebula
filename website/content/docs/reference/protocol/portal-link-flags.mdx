@@ -1,0 +1,22 @@
+---
+title: "PortalLinkFlags"
+description: "Bit flags of a PortalLinkRecord."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs)</div>
+
+```csharp
+[Flags]
+public enum PortalLinkFlags : byte
+```
+
+Bit flags of a [`PortalLinkRecord`](/docs/reference/protocol/portal-link-record).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` | `0` |  |
+| <span id="observer"></span>`Observer` | `1` | The receiving client may look through the link. |
+| <span id="member"></span>`Member` | `2` | The receiving client is a member: it must hold the far window and acknowledge it with [`MsgId.PortalWarm`](/docs/reference/protocol/msg-id#portalwarm). |
+| <span id="observeranyone"></span>`ObserverAnyone` | `4` | Anyone may look through the link, not only its observers. |

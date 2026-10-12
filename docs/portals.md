@@ -82,6 +82,14 @@ itself today (out of any physics frame, through the container's scope frame, in 
 the face's +z axis is the way from the near scope into the far one. In either face's axes, z < 0 is the near side's
 region and z ≥ 0 is the far side's.
 
+> **As built (NEB-428).** `PortalFace` holds the scope, the id of the container the face is fixed in, the origin **absolute in the scope's own
+> space** (read out of any physics frame, in double, rounded to 1 mm) and the rotation (normalised, in the hemisphere w ≥ 0, rounded to 10⁻⁶, and the
+> identity within `NebulaWorker.PoseAngleEpsilon`). It is not stored in the container's own space, because every crossing compares in the scope's
+> absolute space and a face in a framed container would have to be converted into it on every test; the container is kept for ownership, for the
+> derived id (D6) and for the network gateway's rows. A face fixed in a *moving* container (§17) is still not built. `Portal.NearContainer` is the
+> nearest `Container` among the component's parents (a chunk, an instance part, a carrier) or, for content in the shared scene, the container that holds
+> its position.
+
 **D3 The aperture is an oriented box in the face's axes, centred on the face's origin, the opening on its z = 0 plane.**
 `PortalAperture` holds the half extents across the opening (x, y) and a `Kind`, `Box` today; any convex shape is
 a later kind with the same contract (a cross-section test and a bounding box). Three regions derive from it, each in
@@ -92,6 +100,11 @@ face axes:
 | cross-section | the opening: \|x\| ≤ hx, \|y\| ≤ hy, z = 0 | crossing (§4), queries (§7) |
 | band | cross-section grown by `BandMargin` sideways, \|z\| ≤ `BandDepth` (2 m) | proxies (§6), cross-worker ghosting (D30) |
 | window, per side | cross-section grown by `WindowMargin` sideways, extruded `WindowDepth` into that side | observation (§5) |
+
+> **As built (NEB-428).** The aperture's three regions are carried on the wire (`PortalRecord`: half extents, `BandMargin`/`BandDepth`,
+> `WindowMargin`/`WindowDepth`) and `Portal` has the sizes as `BandMargin`, `WindowMargin`, `WindowDepth` (fields) and `BandDepth`, `CrossDepth`,
+> `CloseTimeoutSeconds`, `ApproachDistance` (constants). Today the cross-section decides crossing and the band decides when a closing link may close; the
+> windows are carried and unused until NEB-431.
 
 **D4 The link pose is derived from the two faces, never stored on its own.** With N the near face's pose in the near
 scope's space and F the far face's in the far scope's, a point of the far scope maps into the near scope as
@@ -111,10 +124,21 @@ side is `InstanceBoundary`'s rule unchanged: the far scope's key is `TemplateId 
 its far face is the near face's absolute pose read in the instance's upright space. Keeping the derivation byte for byte
 is what lets a game find every instance it has already persisted; that rule stands on its own (D7).
 
+> **As built (NEB-428).** The far scope is the template's `TemplateId + "/" + party`, prepared with `PrepareInstance(template, key, nearFace.Origin,
+> PoseRotation)`; `Portal.PoseRotation` is the near face's rotation, or the identity when `TurnWithFace` is off (the old `TurnWithDoor`). The far face
+> of a template is the near face's origin with the identity rotation (or, with `TurnWithFace` off, the near face's own rotation, so `Turn` is
+> the identity). A crossing enters the template's **first part** (the entry part `PrepareInstance` returns first), as
+> `InstanceBoundary` did; for a fixed far side it is the container of the far scope that holds the point 25 cm inside the far face. The deepest container
+> holding the mapped point (D16) waits for NEB-431's window, because a member client is warm only for the entry container.
+
 **D6 A portal's id is derived, not allocated.** `PortalId = ScopeKeys.Hash(containerId + "#" + Id)`, where `Id` is
 authored and unique within the near container (a second component with the same id is ignored and logged). Every
 worker, network gateway and client computes the same id from what it already has, as `docs/scope-activation.md` D3 does
 for container ids.
+
+> **As built (NEB-428).** A second component with the same derived id is ignored (`Portal.IsIgnored`) and logged once; the first registered keeps the id.
+> `PortalIds.Of`, `PartyHash` and `Link` are in `Runtime/Protocol/PortalMessages.cs` so the network gateway and the standalone services compute them
+> without Unity.
 
 **D7 `InstanceBoundary` is removed, not shimmed; decided by the project owner on 2026-10-12.** There is no
 backwards compatibility and no incremental shipping: only Holoverse uses this code and it has no active users. The type
@@ -125,6 +149,10 @@ the game chooses (D8), and move the door onto the face, because a plane aperture
 `CrossingReady`, `TryGetPreparation` and `InstanceCrossingState` become the link's state and wait (§3),
 `ResolveCompanions` and `CompanionLeftBehind` map onto D13, and `CanEnter` onto D11. D5's key derivation stays byte for
 byte, so persisted instances are still found.
+
+> **As built (NEB-428).** `InstanceBoundary`, `InstanceCrossingState` and `InstanceCrossingStatus` are deleted with no shim. `OrientedBox` (an internal
+> pure-C# helper with its own tests, which the service tests compile) stays: D38's face-relative tests are the next user of an oriented box. The
+> mapping a game ports by is in the changelog's *Removed* entry.
 
 ## 3. Parties, state and readiness
 
@@ -150,6 +178,15 @@ root's side and is pushed out of the aperture box, and the overrun is logged. Ev
 client, `FarWorkerHandshake`, `BandOccupied`, `FarScopeRetired`, `NearContainerMoving`), so a door that will not open
 always says why, and `PortalLink.Progress` (0..1) gives a door's UI something to show.
 
+> **As built (NEB-428).** The link table keeps a link after it closes (its `Generation` counts openings), so a closed link can still say why and an
+> occupant meets the aperture from inside (D17); a link is created by `Open` and lives as long as the component is enabled. `Open` on a closing link
+> prepares it again at once and, as every condition still holds, opens it on the next tick without asking the clients again. A member added to an
+> open link leaves the state `Open` and sets the *wait* to `ClientWarming` with `WaitClient`; every state but Open carries a wait, and Open carries
+> one only for that case. An open link costs a lease-epoch check, a member check and, once a second, a lookup of its far scope; it does not poll content.
+> `BandOccupied` is decided from the roots of the entities the worker simulates in either face's band, because there are no proxies yet (NEB-432). A
+> link to a template with an empty party cannot open (`Error` says so) and a link whose far content failed stays in `Preparing` with
+> `FarWorkerContent` and an `Error`: there is no wait reason for a failure.
+
 **D10 Opening is readiness, and readiness is standing, not per entity.** A link turns Open when all of these hold:
 
 1. the far scope is active and every container of it the far window touches is leased in an owning state
@@ -164,6 +201,15 @@ always says why, and `PortalLink.Progress` (0..1) gives a door's UI something to
 
 This generalises the per-entity handshake (`InstanceTransfer.WorkerReady`, `ClientReady`, `WorkerContentPending`) into a
 property of the link, held for as long as the link is open. It is what lets a commit load nothing (D16).
+
+> **As built (NEB-428).** The conditions of D10 are all there, with these limits: the far window is the entry container (the one row the network
+> gateway keeps pinned for a member), item 4 (proxies and aperture colliders) is true until NEB-432 builds them, and the "first full delivery for the
+> window, which the network gateway marks" is the arrival of the entry container's row ahead of the link, since entities are not delivered through a
+> link until NEB-431. A member client prepares the container (`InstanceScenes.Prepare`, then `ContentState`), and answers once with `PortalWarm`
+> carrying the link's id and `Generation`; a warm for an earlier opening, from a non-member or for an unknown link is ignored by the network gateway
+> and by the worker. When the far container belongs to another worker, readiness includes that worker's answer to an `InstancePrepare` carrying the
+> link id (`FarWorkerHandshake`); the commit then relies on the ordinary handover, as D35 describes. The scope lifecycle treats a live link as interest
+> in its far entry container (D43).
 
 **D11 Three hooks, on the near worker, keyed by party.** `PartyOf(entity)` says which party an entity belongs to (default:
 the owner's identity when it has an owner, as `InstanceBoundary.Personal`; null for a server-owned entity).
@@ -185,6 +231,11 @@ the members; `AddMember` and `RemoveMember` change them while the link lives. A 
 its own (its wait is `ClientWarming`) without closing the link for the others, and its own entities are refused at the
 aperture until it is warm, so it never loads at the face either.
 
+> **As built (NEB-428).** The default `CanEnter` admits a server-owned entity, and an owned one only when its client is a member of the link **and
+> warm** (D13). `CanObserve(clientId, link)` is asked when a client becomes a member, and `Portal.ObserveAnyone` marks a door anyone may look through;
+> both are published in the link record, `NebulaGateway.PortalObserves(clientId, linkId)` answers from them, and nothing consults them to decide
+> visibility until NEB-431.
+
 ## 4. Crossing
 
 **D14 Anything whose root is the root of its carrier chain crosses.** Every authoritative, spawned entity that is not an
@@ -196,6 +247,13 @@ front of its holder and must not cross first. With the far side warm, a companio
 own, so `CompanionWaitSeconds` has nothing to bound for a portal. Whether an NPC may follow a player through is
 `CanEnter`'s answer, which is the game's; nothing in the portal stops it.
 
+> **As built (NEB-428).** Only entities with an owning client (pawns) cross on their own: D14's "anything crosses" is NEB-429's. Companions are not asked for
+> once, at the commit, but every tick while the leader is within `ApproachDistance` (8 m) of an open face, as the boundary asked them while its
+> crossing was live, so that one in front of its holder is already a companion when it reaches the face. `ResolveCompanions` keeps its meaning, a leader and its companions commit as one group and each member arrives at
+> **its own** pose mapped through the link (rotation and `Motion.Velocity` turned), where the boundary moved the group by one translation.
+> `CompanionWaitSeconds` and the pending-companion wait are gone, as D14 says; `CompanionLeftBehind` carries a `PortalRefusal`. A pinned or scene
+> entity, one in another scope than its leader and one this worker does not simulate is left behind.
+
 **D15 The test is a swept segment against the aperture, on the worker that simulates the entity.** After each tick's
 simulation, for each portal registered on the entity's container chain (not every portal in the process: today's
 `InstanceBoundary.Tick` asks every active boundary about every entity), Nebula takes the root's segment from last tick's
@@ -206,12 +264,27 @@ m a tick) is tested on its predicted segment for the next step, `position + velo
 that would carry it through, so it never simulates a step behind the face in the near scene, where a coincident far
 scope is solid mass.
 
+> **As built (NEB-428).** The test is the segment from the entity's position last tick to this tick's, in the face's axes and in double, against the
+> plane z = +`CrossDepth` (entering) or z = −`CrossDepth` (leaving): it crosses when the segment passes that plane inside the cross-section. That is the
+> hysteresis of D15, and it works for a root that creeps across the plane. There is no predictive step for a body faster than `CrossDepth` a tick, no
+> tracking beyond `ApproachDistance`, and no entity without an owning client: NEB-429. An entity is tracked (its last position kept) only while it is
+> within `ApproachDistance` of a face of a portal that has the right to run on this worker; every portal is tested, linked or not, so a portal nobody
+> opened is solid to a pawn. The near face is read once per worker tick per portal for the test.
+
 **D16 A commit goes through the link's standing preparation.** Because the link is Open (D10), Nebula commits without a
 per-entity `PrepareTransfer`: an internal `CommitThrough(link, entity, pose)` does what `BeginCommit`/`EndCommit` do (the
 same container selection, `FindDestination` into the deepest far container holding the mapped point; the same lease-epoch
 check; `Epoch++`; `HasStateTick = false`) on the tick the root passes. Nothing is loaded and nothing is held. The one way
 it can fail is that the far container's lease changed on this very tick; the entity is then refused for that tick (D17)
 and tested again on the next.
+
+> **As built (NEB-428).** `Portals.Tick` runs where `InstanceBoundary.Tick` ran, after each entity's simulation. The commit is
+> `NebulaWorker.CommitThrough(members, destination, positions, rotations)`: it checks that every member is simulated here and not a scene entity, that the
+> destination's lease is owning and its scope admits, completes the destination's content (a no-op once the link is open, `InstanceScenes.Complete`
+> otherwise), puts each non-seated member into the destination at its pose in the destination scope's space *in double* (`SetFramePose`), keeps seated
+> riders in place, and bumps each epoch. The lease-epoch check of D16 is the epoch the link was ready with (`PortalLink.ReadyEpoch`): if the far container's
+> lease moved, the commit is refused for that tick and the link prepares again. Leaving looks for the container of the near scope that holds the mapped
+> point (descending into physics frames, as the boundary did).
 
 **D17 Straddling resolves to the root's side; a refused entity meets the aperture.** An entity is in exactly one scope at
 a time, the one its root is in; the part of it beyond the plane is a proxy in the other scope (§6). An entity that is
@@ -220,6 +293,12 @@ aperture collider, which is solid for it. A mover with no body of its own (a `Ch
 projectile) is clamped: its root is put back `CrossDepth` short of the plane and its velocity's component along the face
 normal removed. Either way the near worker raises `Refused(entity, link, reason)` so the game can bounce, drop or destroy
 it. Nothing holds an entity where it last stood.
+
+> **As built (NEB-428).** A refused crossing holds the entity at the position it last stood, read back through its scope's frame (the interim for the
+> clamp against the plane that NEB-429 builds); `Refused` is not raised yet, the refusal reason exists as `PortalRefusal` (used by
+> `CompanionLeftBehind`) and `NebulaDiagnostics.PortalRefusals` counts. A crossing carries the position (double), the rotation and `Motion.Velocity`.
+> A `Rigidbody`'s velocity, `StateHistory`, the interpolation buffer and the prediction history are NEB-429's. `Portal.Crossed(entity, link, leaving)` is
+> raised on the worker for every member of a committed group; there is no client-side `Crossed` yet.
 
 **D18 Everything an entity carries in time goes through the link pose with it.** At the commit: the position in double
 (D37) and rotation; `Motion.Velocity`; a `Rigidbody`'s linear and angular velocity; and the `StateHistory` ring, whose
@@ -241,6 +320,9 @@ through, from inside the near window, still passes, so the thrower keeps the cra
 observer loses it at once and is never told where it went, as now. The order is safe by construction: a link is Open
 only after its members' `PortalWarm` acknowledgements went through the network gateway, so that gateway holds the
 link and its observers before any commit through it can be relayed.
+
+> **As built (NEB-428).** Untouched here: `ObservePublic`, `PublicView`, `ObserveHost` and `HostCarriers` keep working with a portal's template exactly as
+> they did with a boundary's (they live on `InstanceTemplate` and the scope definition), and `NebulaGateway.CanObserve` is unchanged.
 
 ## 5. Observation
 
@@ -437,6 +519,12 @@ an offset portal (D4) needs the far scope clipped to the aperture, which is a re
 
 ## 11. Lifetime and persistence
 
+> **As built (NEB-428), D43 and D44 in part.** `WorkerScopeLifecycle.IsBusy` is true for a container a live link (preparing, open or closing) enters
+> (`Portals.HoldsFarContainer`), so a door left open onto an empty room does not lose the room. An open link whose far scope begins to retire closes with
+> `FarScopeRetired` within a second; a preparing link waits for the scope it just asked for. When the near container's owner changes, the links read
+> Closed with `NearContainerMoving` and the portal is withdrawn from the network gateways; the `PortalHandoff` message that carries them to the new
+> owner is NEB-434's.
+
 **D43 Scope lifecycle is unchanged, and an open link counts as interest.** A link that is Preparing, Open or Closing keeps
 its far scope from being judged idle, as an occupant does (`docs/scope-lifecycle.md`). A far scope that is retiring or
 retired makes its links read Closed with `FarScopeRetired`, which makes the aperture solid. A portal goes with its near
@@ -464,6 +552,14 @@ The network gateway sends a client a portal's record and its links on the reliab
 (as `docs/scope-activation.md` D14 and D15 order rows before what names them), and withdraws them with the row. Spawns,
 state entries and container rows are unchanged.
 
+> **As built (NEB-428).** The records: `PortalRecord` carries the derived id, the authored id, the near scope and container (by id *and* reference),
+> the near face, the far side (fixed: scope id and far face; template: the template id), the aperture, the band and window sizes and a reserved flags
+> byte. `PortalLinkRecord` carries the link, portal and party hash, the far scope, the entry container (by id and reference), the state, wait, the member
+> the link waits for, progress as a byte, the generation of the opening, a flags byte (`Member`, `Observer`, `ObserverAnyone`), and, toward the network
+> gateway only, the members and the observers. `PortalWarm` carries the link id, the generation and, forwarded by the gateway, the client id it stamps.
+> `PortalAdjacency` and `PortalHandoff` are not built (NEB-434). The network gateway keeps the records and sends them per client as D45 describes, a
+> link to a member only once it holds the far row; a worker publishes to every gateway on connect (`AddGatewayLink`) and on change.
+
 **D46 Protocol 28, and older clients are refused.** `HelloMsg.ProtocolVersion` becomes 28 and `MinProtocolVersion` 28: the
 window closes, as `docs/compatibility-policy.md` D1 allows before 1.0, and a client of 27 is refused with
 `ProtocolUnsupported`. The bytes alone would be additive (new message ids), but the meaning is not: a 27 client would be
@@ -471,10 +567,21 @@ sent replicas of scopes it believes hidden and never draw them posed, and would 
 not know is solid. Decided by the project owner; no compatibility window. The usual steps of `docs/protocol-versions.md`
 apply: a `protocol-28-handshake.json` recording, a frozen decoder for the next bump, the table row.
 
+> **As built (NEB-428).** The handshake recording is `protocol-28-handshake.json`, the frozen decoder is `Fixtures/Protocol28GatewayDecoder.cs`, and the
+> protocol-27 recording is kept to prove a client of 27 is refused with the gateway's range (28..28). The protocol-25 and -26 recordings and decoders
+> were removed with the window they served. The table row and the paragraph are in `docs/protocol-versions.md`.
+
 **D47 What 27 added stays.** The pose section of `ContainerOwnership` (`docs/scope-frames.md` D12) still carries
 `InstancePoses` to clients, now as the source of a template link's rotation (D39). The `ObserveHost` flag byte
 leaves lease rows and the `ObservePublic` fields leave scope definitions under protocol 28 (NEB-431); nothing a client
 reads changes.
+
+> **As built (NEB-428), §14 item 3.** `InstanceScenes.Prepare` creates the scope's physics scene and moves the container into it when it is first
+> called (`SceneManager.CreateScene` has no asynchronous form, so this stays synchronous, but it happens while a link prepares and not in a commit), and
+> loads the content with `Resources.LoadAsync` and instantiates it with `InstantiateAsync`, one step each time `ContentState` is asked; a missing
+> resource is found when the load finishes and reads `Failed`. The new `InstanceScenes.Complete` is the synchronous fallback, used by
+> `NetworkIdentity.SetContainer` and by every commit, so an entity placed in a container nobody warmed still never stands on geometry that does not exist.
+> A client's `PortalWarm` polls `ContentState` once a frame. The play-mode tests are `Tests/PlayMode/InstanceAsyncContentPlayTests.cs`.
 
 ## 13. Hitch budget
 
@@ -563,6 +670,17 @@ of `docs/conformance-suite.md` (50 onwards) in the commit that implements them.
   `OrientedBox` tests, `Portals.Map` and `Turn`. Tests: a portal 5×10⁷ m out on a door turned 55° about x and 180°
   about y, crossings both ways land to the millimetre with rotation and velocity turned (extending
   `ConformanceFarInstanceFrameTests`); a pin that the translation form would have been off by metres there.
+
+**NEB-428 as built, and the seams it leaves.** `Portal`, `PortalFace`, `PortalAperture`, `PortalLink`, `PortalState`, `PortalWait`, `PortalRefusal` and
+`Portals` (`Runtime/Containers`), the worker's side (`Runtime/Worker/PortalLinks.cs`, `PortalCrossing.cs`, `NebulaWorker.Portals.cs`), the messages
+(`Runtime/Protocol/PortalMessages.cs`), the network gateway (`Runtime/Gateway/GatewayPortals.cs`) and the client (`Runtime/Client/NebulaClient.Portals.cs`).
+For the issues that follow: NEB-429 replaces `Portals.Tick`'s owner test and `Portal.Cross`'s segment test and hold (both in `PortalCrossing.cs`; the
+commit, `NebulaWorker.CommitThrough`, takes a group of members with their poses and stays), and adds what travels with an entity at the commit; NEB-430
+moves the face and link maths (`PortalFace`, `PortalLink.ToNear/ToFar/Turn`, already in double and in the pivot form of D37) behind `Portals.Map` and
+`Portals.Turn` and adds the far-out tests; NEB-431 widens the far window from the entry container to the rows a window touches (`GatewayPortals.cs`:
+`HoldsLink`, `AddMemberRows` in `CollectNeededContainers`; `NebulaClient.Portals.cs`: the container prepared), uses the observer lists the records
+already carry in `NebulaGateway.CanObserve`, and removes `ObservePublic`, `ObserveHost` and `HostCarriers`; NEB-432 sets the throat and aperture-collider
+condition (`Portal.Evaluate`, condition 4, true today) and replaces the roots-only band test (`Portal.BandOccupied`) with proxies.
 
 **Milestone 2, seeing and acting across.** The three issues are independent.
 

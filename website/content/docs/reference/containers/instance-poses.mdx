@@ -1,0 +1,72 @@
+---
+title: "InstancePoses"
+description: "The instances this process holds whose own space is turned against their host scope's (NEB-426, docs/scope-frames.md D12): built upright in their own space and posed at a door that is not upright in the host (a door on a sphere)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/InstancePoses.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/InstancePoses.cs)</div>
+
+```csharp
+public static class InstancePoses
+```
+
+The instances this process holds whose own space is turned against their host scope's (NEB-426, `docs/scope-frames.md` D12): built upright in their own space and posed at a door that is not upright in the host (a door on a sphere). Learned from the instances' lease rows ([`InstanceContainerInfo.HasPose`](/docs/reference/protocol/instance-container-info#haspose)) when their first container is registered here, and forgotten with their last. A point p of the instance's space is `origin + rotation × (p − origin)` in its host's.
+
+## Properties
+
+### Count [#count]
+
+```csharp
+public static int Count { get; }
+```
+
+How many turned instances this process holds.
+
+### Instances [#instances]
+
+```csharp
+public static IEnumerable<ulong> Instances { get; }
+```
+
+Every turned instance's id (the client's drawing pass walks them).
+
+## Methods
+
+### TryGet [#tryget]
+
+```csharp
+public static bool TryGet(ulong instanceId, out Double3 origin, out Quaternion rotation);
+```
+
+The pose of `instanceId`, when it is turned against its host.
+
+### RotationOf [#rotationof]
+
+```csharp
+public static Quaternion RotationOf(ulong instanceId);
+```
+
+The instance's axes in its host's: identity for any scope that is not turned.
+
+### Turn [#turn]
+
+```csharp
+public static Quaternion Turn(ulong from, ulong to);
+```
+
+What turns a rotation (or a direction) of scope `from`'s space into scope `to`'s, for an entity crossing between them through a door: identity unless either is a turned instance. A game keeping its own heading or velocity bookkeeping (a pawn's yaw) applies it when its entity changes scope.
+
+### ToHost [#tohost]
+
+```csharp
+public static Double3 ToHost(ulong instanceId, Double3 point);
+```
+
+A point of `instanceId`'s own space in its host's (the identity for a scope that is not turned).
+
+### FromHost [#fromhost]
+
+```csharp
+public static Double3 FromHost(ulong instanceId, Double3 point);
+```
+
+A point of the host's space in `instanceId`'s own (the inverse of [`ToHost`](#tohost)).

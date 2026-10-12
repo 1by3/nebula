@@ -28,3 +28,35 @@ public static int SplitCohesionGroups { get; }
 ```
 
 How many handovers this worker could not carry out as a unit because a member of the entity's [`NetworkIdentity.CohesionGroup`](/docs/reference/core/network-identity#cohesiongroup) was not owned here (`docs/cohesion-hints.md`, D4). Each one is also logged through [`NebulaLog.Warn`](/docs/reference/core/nebula-log#warn). A group is never split silently.
+
+### PortalCloseOverruns [#portalcloseoverruns]
+
+```csharp
+public static int PortalCloseOverruns { get; }
+```
+
+How many portal links closed because the band never emptied within [`Portal.CloseTimeoutSeconds`](/docs/reference/containers/portal#closetimeoutseconds) (`docs/portals.md` D9, D36). Each one is also logged through [`NebulaLog.Warn`](/docs/reference/core/nebula-log#warn).
+
+### PortalRefusals [#portalrefusals]
+
+```csharp
+public static int PortalRefusals { get; }
+```
+
+How many crossings portals refused: an entity that met the aperture while its link was not open, or that was not admitted (`docs/portals.md` D17, D36).
+
+### OpenPortalLinks [#openportallinks]
+
+```csharp
+public static int OpenPortalLinks { get; }
+```
+
+How many portal links are open on this worker right now (`docs/portals.md` D36).
+
+### SplitPortalLinks [#splitportallinks]
+
+```csharp
+public static int SplitPortalLinks { get; }
+```
+
+How many of this worker's open portal links lead into a container another worker owns (`docs/portals.md` D36).

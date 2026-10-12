@@ -1,0 +1,38 @@
+---
+title: "PortalIds"
+description: "The ids portals and their links are named by (docs/portals.md D6): derived, so every process computes the same one."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs)</div>
+
+```csharp
+public static class PortalIds
+```
+
+The ids portals and their links are named by (`docs/portals.md` D6): derived, so every process computes the same one.
+
+## Methods
+
+### Of [#of]
+
+```csharp
+public static ulong Of(string containerId, string id);
+```
+
+A portal's id: [`ScopeKeys.Hash`](/docs/reference/control-plane/scope-keys#hash) of `containerId + "#" + id`, `id` unique within the near container.
+
+### PartyHash [#partyhash]
+
+```csharp
+public static ulong PartyHash(string party);
+```
+
+The hash a party travels as: parties are opaque strings (`docs/portals.md` D8) and may be a player's identity, so only this goes to clients.
+
+### Link [#link]
+
+```csharp
+public static ulong Link(ulong portalId, string party);
+```
+
+A link's id: the portal and the party it is for.

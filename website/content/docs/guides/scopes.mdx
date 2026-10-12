@@ -169,7 +169,7 @@ worker.TryCommitTransfer(transfer, planet, localPosition, localRotation);
 
 `localPosition` is a `Double3` in the frame's own coordinates. Pass `null` as the frame to give a world pose in double precision.
 
-[`InstanceBoundary`](/docs/guides/instancing) is this path driven by a trigger volume. `PrepareInstance` now activates a scope like any other caller, so an instance a boundary created and a scope a matchmaker created are the same thing.
+[`Portal`](/docs/guides/instancing) is this path driven by your game opening a door for a party. `PrepareInstance` activates a scope like any other caller, so an instance a portal created and a scope a matchmaker created are the same thing.
 
 The destination can be in another scope, including a chunk of another [scoped world](#a-scope-can-be-a-whole-world). The player's client does not need to know about the destination beforehand: the gateway sends it the destination container's description together with the preparation request, and tells no other client.
 

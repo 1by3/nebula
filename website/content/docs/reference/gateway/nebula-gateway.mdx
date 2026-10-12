@@ -347,6 +347,22 @@ public long ContainerBudgetHits { get; }
 
 Evaluations in which a client's foci asked for more container rows than [`ContainerRowCap`](#containerrowcap) allows, so the far ones were withheld. A number that keeps climbing means a policy is handing out more or wider foci than the mesh is sized for; it is never a correctness problem, because the rows entities stand in are collected before the cap applies.
 
+### PortalCount [#portalcount]
+
+```csharp
+public int PortalCount { get; }
+```
+
+How many portals this gateway holds a record of (`docs/portals.md` D45).
+
+### PortalLinkCount [#portallinkcount]
+
+```csharp
+public int PortalLinkCount { get; }
+```
+
+How many portal links this gateway holds a record of.
+
 ## Events
 
 ### ClientJoined [#clientjoined]
@@ -535,6 +551,22 @@ public int InterestSetSize(ulong clientId);
 ```
 
 Entities in one client's set right now (-1 when there is no such client). For tests and tooling.
+
+### TryGetPortalLinkState [#trygetportallinkstate]
+
+```csharp
+public bool TryGetPortalLinkState(ulong linkId, out PortalState state, out PortalWait wait);
+```
+
+The state this gateway last heard of a link, or false when it has no record of it.
+
+### PortalObserves [#portalobserves]
+
+```csharp
+public bool PortalObserves(ulong clientId, ulong linkId);
+```
+
+Whether a client may look through a link, from the observer list its worker published (`docs/portals.md` D21): the rule the gateway enforces without running game code. False for a link it has no record of.
 
 ## Nested types
 

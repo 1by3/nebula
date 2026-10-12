@@ -1,0 +1,66 @@
+---
+title: "Portals"
+description: "Lookup for portals (docs/portals.md D1): the Portal components on this process, and, on a client, what the network gateway has told it about the portals near it."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/Portals.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/Portals.cs)</div>
+
+```csharp
+public static class Portals
+```
+
+Lookup for portals (`docs/portals.md` D1): the [`Portal`](/docs/reference/containers/portal) components on this process, and, on a client, what the network gateway has told it about the portals near it. Link poses (`Map`, `Turn`) and per-scope drawing slots are added by later milestones of the same design.
+
+## Properties
+
+### All [#all]
+
+```csharp
+public static IReadOnlyList<Portal> All { get; }
+```
+
+Every enabled portal component on this process.
+
+### Known [#known]
+
+```csharp
+public static IReadOnlyDictionary<ulong, PortalRecord> Known { get; }
+```
+
+On a client: the portals the network gateway has told it about, by derived id. A portal is sent behind the container row of either of its faces and withdrawn with the row (`docs/portals.md` D45).
+
+### KnownLinks [#knownlinks]
+
+```csharp
+public static IReadOnlyDictionary<ulong, PortalLinkRecord> KnownLinks { get; }
+```
+
+On a client: the state of each link the network gateway has told it about, by link id. A link is sent to the clients that hold the container row of either face, with whether this client is a member and whether it may look through.
+
+## Events
+
+### KnownChanged [#knownchanged]
+
+```csharp
+public static event Action KnownChanged;
+```
+
+Raised on a client when a portal record or a link record arrived or was withdrawn.
+
+## Methods
+
+### Find [#find]
+
+```csharp
+public static Portal Find(ulong portalId);
+```
+
+The enabled portal component with this derived id ([`Portal.PortalId`](/docs/reference/containers/portal#portalid)), or null.
+
+### FindLink [#findlink]
+
+```csharp
+public static PortalLink FindLink(ulong linkId);
+```
+
+The live link with this id ([`PortalLink.Id`](/docs/reference/containers/portal-link#id)) of any enabled portal on this process, or null.
