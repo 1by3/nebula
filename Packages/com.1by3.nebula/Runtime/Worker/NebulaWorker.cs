@@ -511,7 +511,7 @@ namespace Nebula
                 bool leased = carried.Authority == ContainerAuthority.Leased;
                 if (lease == null)
                 {
-                    ControlPlane.EnsureContainer(carried.ContainerId, carried.Authority, carried.OwnPhysicsFrame, carried.FrameInterest);
+                    ControlPlane.EnsureContainer(carried.ContainerId, carried.Authority, carried.OwnPhysicsFrame, carried.FrameInterest, carried.FrameApproachMargin);
                     if (leased) ControlPlane.PinContainer(carried.ContainerId, WorkerId);
                     else ControlPlane.AssignContainer(carried.ContainerId, WorkerId);
                     continue;

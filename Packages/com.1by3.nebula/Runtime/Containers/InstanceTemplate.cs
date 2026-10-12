@@ -22,7 +22,7 @@ namespace Nebula
 
         /// <summary>Stable layout identifier combined with the game-selected instance key to derive a private scope.</summary>
         public string TemplateId = "interior";
-        /// <summary>Containers in the layout. The boundary uses the first part as its entry destination.</summary>
+        /// <summary>Containers in the layout. A portal uses the first part as its entry destination.</summary>
         public Part[] Parts = { new Part() };
     }
 }

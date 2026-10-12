@@ -96,6 +96,7 @@ namespace Nebula.Tests
             box.Center = PlanetBoxCenter;
             box.OwnPhysicsFrame = true;
             box.FrameInterest = FrameInterestMode.OwnRegions;
+            box.FrameApproachMargin = 4000f;
             planet.AddComponent<NetworkTransform>();
             _planetPrefab = _mesh.RegisterPrefab(planet);
 
@@ -629,7 +630,7 @@ namespace Nebula.Tests
         /// <summary>
         /// The crew member's client should hold the ground pawn whenever the ship is within the pawn's radius, inside the
         /// planet's box or above it. Above the box it does so through the focus the gateway adds in the planet's frame while
-        /// the pawn is within <c>InterestFrameApproachMargin</c> of its box (NEB-386, <c>docs/container-tree.md</c> D23, scenario 42):
+        /// the pawn is within the planet's <c>FrameApproachMargin</c> of its box (NEB-386, <c>docs/container-tree.md</c> D23, scenario 42):
         /// before it, the pawn was lost the moment the ship left the box and came back only when it was inside it again.
         /// </summary>
         [TestCase(false, TestName = "TheCrewSeesTheGroundUntilInterestMaxRadius(planet still)")]

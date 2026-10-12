@@ -51,6 +51,5 @@ namespace Nebula
         public override string ToString() => $"scope {Scope:x} in {Anchor:x}: {FromOrigin} to {ToOrigin} turned {Turn.eulerAngles}";
 
         internal static ScopePose From(in PortalMap map, ulong anchor) => new ScopePose(map.FromScope, anchor, map.FromOrigin, map.ToOrigin, map.Turn);
-        internal PortalMap ToMap() => new PortalMap(Scope, Anchor, FromOrigin, ToOrigin, Turn);
     }
 }

@@ -13,7 +13,7 @@ namespace Nebula.Tests
     /// <summary>
     /// A client outside a framed container's box sees what stands in it (<c>docs/container-tree.md</c> D23, scenario 42,
     /// NEB-386). A pilot over a planet's box sees an entity standing on the planet below, loses it when the pilot is more
-    /// than <c>InterestFrameApproachMargin</c> from the box, and sees it again on the way back; the entity on the ground
+    /// than the container's <c>FrameApproachMargin</c> from the box, and sees it again on the way back; the entity on the ground
     /// sees the pilot overhead the whole time (<c>AddEnclosingSpaceFoci</c>, the other direction, already). The same rule
     /// serves a station seen from a ship, a frame that is a small carried box in open space.
     /// <para>
@@ -54,6 +54,7 @@ namespace Nebula.Tests
         private ConformanceMesh _mesh;
         private Container _space;
         private ushort _planetPrefab, _stationPrefab, _pawnPrefab;
+        private Container _planetBox, _stationBox;
         private NetworkIdentity _planet, _station;
         private readonly List<Container> _chunks = new List<Container>();
         private readonly List<Vector3> _chunkCenters = new List<Vector3>();
@@ -68,30 +69,31 @@ namespace Nebula.Tests
             PhysicsFrames.SceneFactory = () => EditorSceneManager.NewPreviewScene();
             PhysicsFrames.SceneDisposer = s => EditorSceneManager.ClosePreviewScene(s);
             _mesh = new ConformanceMesh(1);
-            _mesh.Config.InterestFrameApproachMargin = Margin;
             _space = _mesh.AddStaticContainer("system", Vector3.zero, new Vector3(200000f, 200000f, 200000f));
             _space.Center = Vector3.zero;
             ContainerRegistry.Rebuild();
             _mesh.SetOwner(_space, W1);
 
-            _planetPrefab = RegisterFrame("planet-prefab", "planet", PlanetBox, PlanetBoxCenter);
-            _stationPrefab = RegisterFrame("station-prefab", "station", StationBox, Vector3.zero);
+            _planetPrefab = RegisterFrame("planet-prefab", "planet", PlanetBox, PlanetBoxCenter, out _planetBox);
+            _stationPrefab = RegisterFrame("station-prefab", "station", StationBox, Vector3.zero, out _stationBox);
             var pawn = new GameObject("pawn-prefab");
             // Asks for more than InterestMaxRadius: wide, clamped to it, so a distance is the entity's own to decide.
             pawn.AddComponent<NetworkIdentity>().RelevanceRadius = 4096f;
             _pawnPrefab = _mesh.RegisterPrefab(pawn);
         }
 
-        private ushort RegisterFrame(string name, string id, Vector3 size, Vector3 center)
+        private ushort RegisterFrame(string name, string id, Vector3 size, Vector3 center, out Container box)
         {
             var go = new GameObject(name);
             go.AddComponent<NetworkIdentity>();
-            var box = go.AddComponent<Container>();
+            box = go.AddComponent<Container>();
             box.ContainerId = id;
             box.Size = size;
             box.Center = center;
             box.OwnPhysicsFrame = true;
             box.FrameInterest = FrameInterestMode.OwnRegions;
+            // Each container opts in on its own (NEB-408): the frames are off by default.
+            box.FrameApproachMargin = Margin;
             go.AddComponent<NetworkTransform>();
             return _mesh.RegisterPrefab(go);
         }
@@ -322,15 +324,14 @@ namespace Nebula.Tests
         }
 
         /// <summary>
-        /// At the default margin (4 km) the pilot sees the ground from kilometres up, though the entity's radius reaches
+        /// With a margin of 4 km on the planet the pilot sees the ground from kilometres up, though the entity's radius reaches
         /// 1,024 m: the focus is on the box's face, not at the pilot's own place, and the box's face is 600 m above the
         /// entity. It stops at the margin plus a tenth of it.
         /// </summary>
         [Test]
-        public void AtTheDefaultMarginAPilotSeesTheGroundFromKilometresUp()
+        public void AtAMarginOfKilometresAPilotSeesTheGroundFromKilometresUp()
         {
-            _mesh.Config.InterestFrameApproachMargin = new NebulaConfig().InterestFrameApproachMargin;
-            Assert.AreEqual(4000f, _mesh.Config.InterestFrameApproachMargin, "the default is a few kilometres");
+            _planetBox.FrameApproachMargin = 4000f;
             var ground = BuildPlanet();
             var pilot = SpawnIn(_pawnPrefab, _space, PlanetAt + new Vector3(GroundAt.x, PlanetBoxTop + 2000f, 0f));
             W1.Tick(1); _mesh.Pump();
@@ -345,11 +346,17 @@ namespace Nebula.Tests
             Assert.That(sweep.RegainedAt, Is.GreaterThan(0f).And.LessThanOrEqualTo(4000f), "and seen again within the margin");
         }
 
-        /// <summary>The margin is what does it: with <c>InterestFrameApproachMargin</c> 0 the pilot over the box never sees the ground.</summary>
+        /// <summary>
+        /// The margin is the container's own and is off by default (NEB-408): a planet that did not set
+        /// <c>FrameApproachMargin</c> is never looked into from over its box, however near the pilot is.
+        /// </summary>
         [Test]
         public void WithTheMarginOffAPilotAboveAPlanetNeverSeesTheGround()
         {
-            _mesh.Config.InterestFrameApproachMargin = 0f;
+            var fresh = new GameObject("fresh");
+            Assert.AreEqual(0f, fresh.AddComponent<Container>().FrameApproachMargin, "off by default");
+            Object.DestroyImmediate(fresh);
+            _planetBox.FrameApproachMargin = 0f;
             var ground = BuildPlanet();
             var pilot = SpawnIn(_pawnPrefab, _space, PlanetAt + new Vector3(GroundAt.x, PlanetBoxTop + 50f, 0f));
             W1.Tick(1); _mesh.Pump();

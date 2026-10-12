@@ -109,6 +109,7 @@ namespace Nebula
             c.Authority = e.Authority;
             c.OwnPhysicsFrame = e.OwnPhysicsFrame;
             c.FrameInterest = e.FrameInterest;
+            c.FrameApproachMargin = e.FrameApproachMargin;
         }
 
         /// <summary>New play session without a domain reload: drop references to the previous session's objects without touching them.</summary>

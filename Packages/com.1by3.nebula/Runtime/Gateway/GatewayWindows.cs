@@ -105,7 +105,7 @@ namespace Nebula
                     if (!_portals.TryGetValue(record.PortalId, out var portal)) continue;
                     var portalRecord = portal.Record;
                     ulong farScope = record.FarScope != 0 ? record.FarScope : portalRecord.FarScope;
-                    if (farScope == 0 || farScope == portalRecord.NearScope) continue; // one scope: nothing to look through to (offset portals within a scope are NEB-437)
+                    if (farScope == 0 || farScope == portalRecord.NearScope) continue; // one scope: nothing to look through to (a portal between two places of one scope is the offset portal of docs/portals.md §15, milestone 7)
                     PortalWindow home, other;
                     if (scope == portalRecord.NearScope) { home = portalRecord.NearWindow; other = portalRecord.FarWindow(farScope); }
                     else if (scope == farScope) { home = portalRecord.FarWindow(farScope); other = portalRecord.NearWindow; }

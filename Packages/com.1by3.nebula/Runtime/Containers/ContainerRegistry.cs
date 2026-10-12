@@ -671,6 +671,7 @@ namespace Nebula
                 c.Authority = placement.Authority;
                 c.OwnPhysicsFrame = placement.OwnPhysicsFrame;
                 c.FrameInterest = placement.FrameInterest;
+                c.FrameApproachMargin = placement.FrameApproachMargin;
             }
             if (parent != null)
             {
@@ -679,6 +680,9 @@ namespace Nebula
                 if (c.AuthorityDemoted)
                     NebulaLog.Warn($"runtime container {c.ContainerId} is leased but its parent {parent.ContainerId} moves and has no physics frame of its own; it is simulated as inherited (docs/container-tree.md D7)");
             }
+            // A client holds a scope's root container in the scope's physics scene from the moment it exists, empty or not: what a
+            // game builds under it (a chunk's colliders) must not collide with the public world's, which is the default scene (NEB-308).
+            if (parent == null && NebulaRuntime.IsClient) InstanceScenes.Place(c);
             c.RefreshCache();
             if (c.OwnPhysicsFrame) PhysicsFrames.Create(c);
             RuntimeList.Add(c);
@@ -711,6 +715,7 @@ namespace Nebula
                 Authority = c.Authority,
                 OwnPhysicsFrame = c.OwnPhysicsFrame,
                 FrameInterest = c.FrameInterest,
+                FrameApproachMargin = c.FrameApproachMargin,
             };
         }
 
@@ -747,6 +752,7 @@ namespace Nebula
                     Authority = child.Authority,
                     OwnPhysicsFrame = child.OwnPhysicsFrame,
                     FrameInterest = child.FrameInterest,
+                    FrameApproachMargin = child.FrameApproachMargin,
                 };
                 ulong id = child.RuntimeId;
                 var instance = child.Instance?.Copy();

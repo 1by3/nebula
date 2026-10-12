@@ -106,6 +106,7 @@ namespace Nebula
                 if (l.Authority != ContainerAuthority.Auto) w.Prop("authority", AuthorityName(l.Authority));
                 if (l.OwnPhysicsFrame) w.Prop("frame", true);
                 if (l.FrameInterest != FrameInterestMode.WithCarrier) w.Prop("interest", (long)l.FrameInterest);
+                if (l.FrameApproachMargin > 0f) { w.Key("approach"); Num(w, l.FrameApproachMargin); }
                 // The hint travels beside the lease in its compact string form, so a row costs a handful of bytes
                 // when nothing was hinted and stays readable in the stored document when something was.
                 if (l.HasHint) w.Prop("hint", l.Hint.ToString());
@@ -228,6 +229,7 @@ namespace Nebula
                     l.Authority = AuthorityOf(Str(o, "authority"));
                     l.OwnPhysicsFrame = Bool(o, "frame");
                     l.FrameInterest = (FrameInterestMode)(byte)Num(o, "interest");
+                    l.FrameApproachMargin = (float)Num(o, "approach");
                     string hint = Str(o, "hint");
                     if (!string.IsNullOrEmpty(hint)) { l.HasHint = true; l.Hint = ContainerHint.Parse(hint); }
                     string dominant = Str(o, "dominant");
@@ -449,7 +451,7 @@ namespace Nebula
                 case SetGatewayDraining: cp.SetGatewayDraining(Str(o, "gatewayId"), Bool(o, "draining")); return null;
                 case HeartbeatOrchestrator: cp.HeartbeatOrchestrator(Str(o, "orchestratorId"), (uint)Num(o, "desiredWorkers")); return null;
                 case SetSetting: cp.SetSetting(Str(o, "key"), Str(o, "value")); return null;
-                case EnsureContainer: cp.EnsureContainer(Str(o, "containerId"), AuthorityOf(Str(o, "authority")), Bool(o, "frame"), (FrameInterestMode)(byte)Num(o, "interest")); return null;
+                case EnsureContainer: cp.EnsureContainer(Str(o, "containerId"), AuthorityOf(Str(o, "authority")), Bool(o, "frame"), (FrameInterestMode)(byte)Num(o, "interest"), (float)Num(o, "approach")); return null;
                 case EnsureRuntimeContainer: cp.EnsureRuntimeContainer(Str(o, "containerId"), PlacementOf(o), Str(o, "workerId"), InstanceContainerInfo.Decode(Str(o, "instance"))); return null;
                 case TouchContainer: cp.TouchContainer(Str(o, "containerId")); return null;
                 case AssignContainer: cp.AssignContainer(Str(o, "containerId"), Str(o, "workerId")); return null;
@@ -552,6 +554,7 @@ namespace Nebula
             Authority = AuthorityOf(Str(o, "authority")),
             OwnPhysicsFrame = Bool(o, "frame"),
             FrameInterest = (FrameInterestMode)(byte)Num(o, "interest"),
+            FrameApproachMargin = (float)Num(o, "approach"),
         };
 
         /// <summary>Write a placement as the arguments of an <c>EnsureRuntimeContainer</c> op.</summary>
@@ -562,6 +565,7 @@ namespace Nebula
             if (p.Authority != ContainerAuthority.Auto) op.Arg("authority", AuthorityName(p.Authority));
             if (p.OwnPhysicsFrame) op.Arg("frame", true);
             if (p.FrameInterest != FrameInterestMode.WithCarrier) op.Arg("interest", (long)p.FrameInterest);
+            if (p.FrameApproachMargin > 0f) op.Arg("approach", p.FrameApproachMargin);
             return op;
         }
 

@@ -120,6 +120,12 @@ while ($queue.Count -gt 0) {
 
 function New-Csproj($a) {
     $j        = $a.Json
+    # The legacy optionalUnityReferences: ["TestAssemblies"] (the samples' tests) means NUnit and the test runners.
+    if (@($j.optionalUnityReferences) -contains 'TestAssemblies') {
+        $j = $j | Select-Object *
+        $j | Add-Member -Force -NotePropertyName precompiledReferences -NotePropertyValue (@($j.precompiledReferences) + 'nunit.framework.dll' | Where-Object { $_ })
+        $j | Add-Member -Force -NotePropertyName references -NotePropertyValue (@($j.references) + 'UnityEngine.TestRunner' + 'UnityEditor.TestRunner' | Where-Object { $_ })
+    }
     $isEditor = $j.includePlatforms -and ($j.includePlatforms -contains 'Editor')
     $unsafe   = if ($j.allowUnsafeCode) { 'true' } else { 'false' }
     $nullable = 'disable'
@@ -130,7 +136,9 @@ function New-Csproj($a) {
     foreach ($dll in $engineDlls) {
         [void]$refs.AppendLine("    <Reference Include=`"$([System.IO.Path]::GetFileNameWithoutExtension($dll))`"><HintPath>$dll</HintPath><Private>false</Private></Reference>")
     }
-    if ($isEditor) {
+    # UNITY_EDITOR is defined for every assembly below, and the Editor lets any assembly it builds use the UnityEditor
+    # namespace inside #if UNITY_EDITOR (a runtime assembly's [InitializeOnLoadMethod] hook, say), so all of them see it.
+    if ($true) {
         foreach ($dll in $editorDlls) {
             [void]$refs.AppendLine("    <Reference Include=`"$([System.IO.Path]::GetFileNameWithoutExtension($dll))`"><HintPath>$dll</HintPath><Private>false</Private></Reference>")
         }

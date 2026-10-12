@@ -11,6 +11,19 @@ namespace Nebula.Tests
     /// <summary>The wire and storage format shared by the hosted control plane, its mirrors and the persistence host.</summary>
     public class ControlPlaneJsonTests
     {
+        /// <summary>A frame's approach margin (NEB-408) is stored with its lease row, survives a snapshot, and is absent (0) when never set.</summary>
+        [Test]
+        public void AFrameApproachMarginSurvivesARoundTrip()
+        {
+            var cp = new LocalControlPlane();
+            cp.Connect();
+            cp.EnsureContainer("planet#7", ContainerAuthority.Auto, true, FrameInterestMode.OwnRegions, 2500f);
+            cp.EnsureContainer("moon#8", ContainerAuthority.Auto, true, FrameInterestMode.OwnRegions);
+            var s = ControlPlaneJson.Parse(cp.ToJson());
+            Assert.AreEqual(2500f, s.Leases.Find(l => l.ContainerId == "planet#7").FrameApproachMargin);
+            Assert.AreEqual(0f, s.Leases.Find(l => l.ContainerId == "moon#8").FrameApproachMargin, "off unless the container opted in");
+        }
+
         [Test]
         public void SnapshotSurvivesARoundTrip()
         {

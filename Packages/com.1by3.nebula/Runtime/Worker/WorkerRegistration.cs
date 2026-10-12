@@ -145,7 +145,7 @@ namespace Nebula
                 {
                     ContainerId = c.ContainerId, HasBounds = true,
                     ParentId = placement.ParentId, Center = placement.Center, BoundsSize = placement.Size,
-                    Authority = placement.Authority, OwnPhysicsFrame = placement.OwnPhysicsFrame, FrameInterest = placement.FrameInterest,
+                    Authority = placement.Authority, OwnPhysicsFrame = placement.OwnPhysicsFrame, FrameInterest = placement.FrameInterest, FrameApproachMargin = placement.FrameApproachMargin,
                     Instance = c.Instance,
                 });
             }

@@ -72,7 +72,7 @@ namespace Nebula
             public readonly Dictionary<ulong, int> KnownPortalLinks = new Dictionary<ulong, int>();
             /// <summary>An interest limit this client ran into (foci, box size, container rows) has been reported; said once, not four times a second.</summary>
             public bool InterestLimitWarned;
-            /// <summary>Frames (<see cref="RegionKeys.FrameKeyOf"/>) this client is looking into from outside their box, held until it is a little further than <see cref="InterestSettings.FrameApproachMargin"/>, so a pawn hovering at the margin does not flap.</summary>
+            /// <summary>Frames (<see cref="RegionKeys.FrameKeyOf"/>) this client is looking into from outside their box, held until it is a little further than the frame's <see cref="Container.FrameApproachMargin"/>, so a pawn hovering at the margin does not flap.</summary>
             public readonly HashSet<ulong> ApproachFrames = new HashSet<ulong>();
             /// <summary>The far tier (NEB-388): entities this client sees as markers beyond the normal radius, never also in <see cref="Visible"/>.</summary>
             public readonly HashSet<ulong> FarHeld = new HashSet<ulong>();
@@ -487,6 +487,8 @@ namespace Nebula
         private readonly HashSet<string> _ownRegionFrames = new HashSet<string>(StringComparer.Ordinal);
         /// <summary>Carrier net ids whose box is a physics frame with regions of its own (a planet).</summary>
         private readonly HashSet<ulong> _ownRegionCarriers = new HashSet<ulong>();
+        /// <summary>The approach margin (<see cref="ContainerPlacement.FrameApproachMargin"/>) each lease row names, for the frames in <see cref="_ownRegionFrames"/> that opted in.</summary>
+        private readonly Dictionary<string, float> _approachMargins = new Dictionary<string, float>(StringComparer.Ordinal);
 
         /// <summary>Whether a reference names a physics frame with regions of its own (<see cref="FrameInterestMode.OwnRegions"/>).</summary>
         internal bool IsOwnRegionsFrame(ContainerRef reference)
@@ -1131,6 +1133,7 @@ namespace Nebula
             _ownershipById.Clear();
             _ownRegionFrames.Clear();
             _ownRegionCarriers.Clear();
+            _approachMargins.Clear();
             _frameExtents.Clear();
             foreach (var lease in ControlPlane.Leases)
             {
@@ -1148,6 +1151,7 @@ namespace Nebula
                 if (lease.OwnPhysicsFrame && lease.FrameInterest == FrameInterestMode.OwnRegions)
                 {
                     _ownRegionFrames.Add(lease.ContainerId);
+                    if (lease.FrameApproachMargin > 0f) _approachMargins[lease.ContainerId] = lease.FrameApproachMargin;
                     if (dynamic) _ownRegionCarriers.Add(ContainerRegistry.CarrierNetIdOf(lease.ContainerId));
                 }
                 _ownership.Add(entry);

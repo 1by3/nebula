@@ -973,7 +973,7 @@ namespace Nebula
 
         /// <summary>
         /// The mirror of <see cref="AddEnclosingSpaceFoci"/>: a pawn in the space around a frame with regions of its own
-        /// (a planet, a station) that is within <see cref="InterestSettings.FrameApproachMargin"/> of the frame's box
+        /// (a planet, a station) that opted in and is within the frame's own <see cref="Container.FrameApproachMargin"/> of its box
         /// also gets a focus <i>in</i> that frame, so a pilot over a planet sees the outposts and players standing on it
         /// (<c>docs/container-tree.md</c> D18, D23). The focus is at the point of the frame's box nearest the pawn, in the
         /// frame's coordinates: a focus at the pawn's own place would be at the pawn's true distance from the ground, further
@@ -986,8 +986,7 @@ namespace Nebula
         /// </summary>
         private void AddFrameApproachFoci(ClientConn client, in InterestClient snapshot, InterestQuery query)
         {
-            float margin = _interest.FrameApproachMargin;
-            if (margin <= 0 || _ownRegionFrames.Count == 0 || !snapshot.HasPawn || !_entities.TryGetValue(client.PawnNetId, out var pawn)) return;
+            if (_ownRegionFrames.Count == 0 || !snapshot.HasPawn || !_entities.TryGetValue(client.PawnNetId, out var pawn)) return;
             var root = RootOf(pawn);
             ulong key = root.FrameKey;
             var space = FrameOfRecordSpace(root.Container, key);
@@ -1005,6 +1004,9 @@ namespace Nebula
                 // A frame fixed inside a carrier's frame (an octant) is lifted out through its parent's placement, not here.
                 if (frame.IsNone || frame.IsRuntime) continue;
                 ulong frameKey = RegionKeys.FrameKeyOf(frame);
+                // Off unless the container opted in: looking into a frame from outside widens every near client's interest.
+                float margin = ApproachMarginOf(id, frame);
+                if (margin <= 0f) { client.ApproachFrames.Remove(frameKey); continue; }
                 int inside = -1;
                 for (int i = 0; i < levels && inside < 0; i++) if (_chainKeys[i] == frameKey) inside = i;
                 if (inside >= 0) { client.ApproachFrames.Remove(frameKey); continue; }
@@ -1042,6 +1044,14 @@ namespace Nebula
                 client.ApproachFrames.Add(frameKey);
                 query.AddFocus(InterestFocus.Point(nearest.x, nearest.y, nearest.z, 1f, client.PawnNetId, frameKey));
             }
+        }
+
+        /// <summary>The approach margin a frame opted into (<see cref="Container.FrameApproachMargin"/>): its lease row's, else the registry's container's; 0 is off.</summary>
+        private float ApproachMarginOf(string id, ContainerRef frame)
+        {
+            if (_approachMargins.TryGetValue(id, out float margin)) return margin;
+            var box = ContainerRegistry.Resolve(frame);
+            return box != null ? box.FrameApproachMargin : 0f;
         }
 
         /// <summary>A point of a frame in the region space around it (<see cref="TryLiftOut"/> for one point).</summary>

@@ -7,11 +7,6 @@ namespace Nebula
 {
     public sealed partial class Portal
     {
-        /// <summary>The margin, in meters, by which the validated volume is drawn in from the cross-section's edges, so a floor or a frame that touches them does not count.</summary>
-        private const float ValidateSkin = 0.05f;
-
-        private static readonly Collider[] ValidateHits = new Collider[64];
-
         /// <summary>
         /// Check that this side's own static colliders leave the cross-section clear for <see cref="BandDepth"/> beyond the face (<c>docs/portals.md</c> D27): the
         /// tunnel mouth a game builds so that a body straddling the face is not pushed out of the doorway by the mass behind it. Run it in the Editor (a portal

@@ -90,6 +90,7 @@ namespace Nebula.Editor
                                 Authority = c.Authority,
                                 OwnPhysicsFrame = c.OwnPhysicsFrame,
                                 FrameInterest = c.FrameInterest,
+                                FrameApproachMargin = c.FrameApproachMargin,
                             });
                             report.Containers++;
                         }

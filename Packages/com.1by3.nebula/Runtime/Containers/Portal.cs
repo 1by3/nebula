@@ -75,7 +75,7 @@ namespace Nebula
 
         /// <summary>
         /// Whether a template far scope turns with this face: its interior is built in the face's own axes (its forward is the way
-        /// in) and stands behind the face however the face is turned. Off keeps the far scope in the near scope's axes.
+        /// in) and stands behind the face however the face is turned. On by default; off keeps the far scope in the near scope's axes.
         /// </summary>
         [Tooltip("Turn the far scope with this face: its interior is built in the face's own axes. Off keeps the near scope's axes.")]
         public bool TurnWithFace = true;

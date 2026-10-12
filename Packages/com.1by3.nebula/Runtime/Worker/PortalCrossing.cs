@@ -387,8 +387,8 @@ namespace Nebula
 
         /// <summary>
         /// Stop an entity the link did not let through (<c>docs/portals.md</c> D17): its root goes back <see cref="CrossDepth"/> short of the
-        /// plane, where its path met it, and the part of its velocity that pointed through is removed. A physical body is left to meet the
-        /// aperture collider, which is NEB-432's; until that is built it is stopped like any other mover.
+        /// plane, where its path met it, and the part of its velocity that pointed through is removed. A physical body also meets the
+        /// throat's aperture collider (<c>docs/portals.md</c> D28); this stop is for every mover, a body included.
         /// </summary>
         private static void Stop(NetworkIdentity entity, PortalFace face, Double3 hit, bool leaving)
         {

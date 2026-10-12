@@ -39,6 +39,8 @@ namespace Nebula
         public GameObject FrameContent;
         [Tooltip("Frame only: WithCarrier publishes everything inside with the carrier (ships); OwnRegions buckets it in regions of the frame itself (planets).")]
         public FrameInterestMode FrameInterest = FrameInterestMode.WithCarrier;
+        [Tooltip("Frame with OwnRegions only: metres from this container's box within which a client in the space around it also looks into it (a pilot over a planet sees what stands on it). 0, the default, turns it off: nobody outside the box sees in. Hold it to the distance a viewer can use; it widens interest to every client that comes that near.")]
+        [Min(0f)] public float FrameApproachMargin;
 
         /// <summary>
         /// Dense index assigned by <see cref="ContainerRegistry"/> (sorted by id, or manifest order in a partitioned

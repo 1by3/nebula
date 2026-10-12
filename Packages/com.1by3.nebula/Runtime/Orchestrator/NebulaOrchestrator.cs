@@ -1558,7 +1558,9 @@ namespace Nebula
                     if (body.TryGetValue("frame", out var frameValue) && PersistenceJson.AsString(frameValue) == "true")
                     {
                         string interest = body.TryGetValue("interest", out var interestValue) ? PersistenceJson.AsString(interestValue) ?? "" : "";
-                        placement = placement.WithPhysicsFrame(interest == "ownRegions" ? FrameInterestMode.OwnRegions : FrameInterestMode.WithCarrier);
+                        float approach = 0f;
+                        if (body.TryGetValue("approachMargin", out var approachValue)) float.TryParse(PersistenceJson.AsString(approachValue), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out approach);
+                        placement = placement.WithPhysicsFrame(interest == "ownRegions" ? FrameInterestMode.OwnRegions : FrameInterestMode.WithCarrier, Math.Max(0f, approach));
                     }
                     string error = EnsureRuntimeContainer(id, placement);
                     if (error != null) return OrchestratorHttpServer.Response.Error(400, error);

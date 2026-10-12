@@ -52,8 +52,16 @@ namespace Nebula
         public static PhysicsScene PhysicsFor(ulong instanceId) => instanceId == 0 ? Physics.defaultPhysicsScene :
             Scenes.TryGetValue(instanceId, out var scene) ? scene.GetPhysicsScene() : default;
 
+        /// <summary>Scenes that were asked to unload and may still be loaded for a frame: never reused, and never a name to take (NEB-405).</summary>
+        private static readonly HashSet<Scene> Unloading = new HashSet<Scene>();
+        private static int _sceneSerial;
+
         internal static void Reset()
         {
+            // The scenes it forgets are unloaded, or a client that rejoins in the same process would find their names
+            // taken and fail to create its own (NEB-405). Outside play mode there are none to unload.
+            if (Application.isPlaying)
+                foreach (var scene in Scenes.Values) Unload(scene);
             Scenes.Clear();
             Content.Clear();
             Pending.Clear();
@@ -138,17 +146,49 @@ namespace Nebula
             return Content.ContainsKey(holder.RuntimeId);
         }
 
+        /// <summary>
+        /// Put a scope's root container in the scope's physics scene without preparing its content (NEB-308): a client does it
+        /// as a container appears, so an empty scoped-grid chunk is not left in the default scene. Nothing happens for the
+        /// public world, outside play mode, or for a container whose scene is already this one.
+        /// </summary>
+        internal static void Place(Container container)
+        {
+            if (container == null || container.InstanceId == 0 || container.Instance == null || !Application.isPlaying) return;
+            EnsureScene(container, container.Instance);
+        }
+
         /// <summary>The scope's physics scene, created the first time one of its containers is prepared, with the container moved into it.</summary>
         private static void EnsureScene(Container container, InstanceContainerInfo info)
         {
             if (!Scenes.TryGetValue(info.InstanceId, out var scene))
             {
-                scene = SceneManager.CreateScene("Nebula instance " + info.InstanceId,
-                    new CreateSceneParameters(LocalPhysicsMode.Physics3D));
+                scene = SceneFor(info.InstanceId);
                 Scenes.Add(info.InstanceId, scene);
             }
             container.transform.SetParent(null, true);
             SceneManager.MoveGameObjectToScene(container.gameObject, scene);
+        }
+
+        /// <summary>
+        /// A physics scene for a scope: a loaded scene already carrying its name is reused (a client that rejoined in
+        /// this process, whose old scene was not forgotten by <see cref="Reset"/>); one still unloading is not, and its name is
+        /// not taken, so the new scene is named apart (NEB-405). Creating a scene under a name that is in use fails.
+        /// </summary>
+        private static Scene SceneFor(ulong instanceId)
+        {
+            string name = "Nebula instance " + instanceId;
+            var existing = SceneManager.GetSceneByName(name);
+            if (existing.IsValid() && existing.isLoaded && !Unloading.Contains(existing) && !Scenes.ContainsValue(existing)) return existing;
+            if (existing.IsValid()) name += " #" + (++_sceneSerial);
+            return SceneManager.CreateScene(name, new CreateSceneParameters(LocalPhysicsMode.Physics3D));
+        }
+
+        private static void Unload(Scene scene)
+        {
+            Unloading.RemoveWhere(unloaded => !unloaded.IsValid());
+            if (!scene.IsValid()) return;
+            Unloading.Add(scene);
+            SceneManager.UnloadSceneAsync(scene);
         }
 
         /// <summary>Begin instantiating a loaded prefab under its container; false (and the content failed) when the prefab is unusable.</summary>
@@ -454,7 +494,7 @@ namespace Nebula
             if (Scenes.TryGetValue(container.InstanceId, out var scene))
             {
                 Scenes.Remove(container.InstanceId);
-                if (scene.IsValid() && Application.isPlaying) SceneManager.UnloadSceneAsync(scene);
+                if (Application.isPlaying) Unload(scene);
             }
         }
     }

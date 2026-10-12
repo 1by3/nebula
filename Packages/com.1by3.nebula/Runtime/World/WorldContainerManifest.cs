@@ -39,6 +39,8 @@ namespace Nebula
             public bool OwnPhysicsFrame;
             [Tooltip("How a framed container's contents are bucketed for interest (Container.FrameInterest).")]
             public FrameInterestMode FrameInterest;
+            [Tooltip("Frame with OwnRegions: metres from the box within which a client in the space around it also looks in (Container.FrameApproachMargin). 0 is off.")]
+            public float FrameApproachMargin;
         }
 
         public WorldDefinition World;

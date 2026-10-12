@@ -117,6 +117,7 @@ namespace Nebula
         public Vector3 LocalCenter;
         public bool OwnPhysicsFrame;
         public FrameInterestMode FrameInterest;
+        public float FrameApproachMargin;
         /// <summary>The container this one sits in, or null for a root (docs/container-tree.md D2).</summary>
         [System.Text.Json.Serialization.JsonIgnore] public Container Parent { get; internal set; }
         [System.Text.Json.Serialization.JsonIgnore] public List<Container> Children { get; } = new List<Container>();
@@ -254,7 +255,7 @@ namespace Nebula
             Size = c.Size,
             Authority = c.Authority,
             OwnPhysicsFrame = c.OwnPhysicsFrame,
-            FrameInterest = c.FrameInterest,
+            FrameInterest = c.FrameInterest, FrameApproachMargin = c.FrameApproachMargin,
         };
 
         /// <summary>
@@ -373,7 +374,7 @@ namespace Nebula
                 var c = new Container
                 {
                     ContainerId = l.ContainerId, Index = ContainerRef.RuntimeIndex, IsRuntime = true, RuntimeId = id, Size = l.BoundsSize, Instance = l.Instance,
-                    Authority = l.Authority, ParentId = l.ParentId ?? "", LocalCenter = l.BoundsCenter, OwnPhysicsFrame = l.OwnPhysicsFrame, FrameInterest = l.FrameInterest,
+                    Authority = l.Authority, ParentId = l.ParentId ?? "", LocalCenter = l.BoundsCenter, OwnPhysicsFrame = l.OwnPhysicsFrame, FrameInterest = l.FrameInterest, FrameApproachMargin = l.FrameApproachMargin,
                     Parent = parent, transform = frame,
                 };
                 parent?.Children.Add(c);
