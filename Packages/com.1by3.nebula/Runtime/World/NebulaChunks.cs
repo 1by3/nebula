@@ -195,6 +195,12 @@ namespace Nebula.World
         /// and answer only for ids they actually named; the public grid is asked last because every 64-bit value
         /// unpacks to one of its coordinates.
         /// </summary>
+        /// <summary>Whether a root grid of scope <paramref name="instanceId"/> is active here.</summary>
+        internal static bool HasGridFor(ulong instanceId) => GridsByInstance.ContainsKey(instanceId);
+
+        /// <summary>The root grid of scope <paramref name="instanceId"/> active here, or null.</summary>
+        internal static RuntimeGrid RootGridOf(ulong instanceId) => GridsByInstance.TryGetValue(instanceId, out var g) ? g : null;
+
         public static RuntimeGrid GridOf(ulong id)
         {
             foreach (var grid in GridsByScope.Values)

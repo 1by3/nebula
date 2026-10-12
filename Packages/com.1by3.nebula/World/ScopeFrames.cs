@@ -214,14 +214,49 @@ namespace Nebula.World
         }
 
         /// <summary>Whether <paramref name="instanceId"/> has a frame of its own here (false for the public world and for any scope that shares it).</summary>
-        public static bool HasFrame(ulong instanceId) => instanceId != 0 && ByInstance.ContainsKey(instanceId);
+        public static bool HasFrame(ulong instanceId)
+        {
+            instanceId = Resolve(instanceId);
+            return instanceId != 0 && ByInstance.ContainsKey(instanceId);
+        }
+
+        /// <summary>Instance scopes that share another scope's frame here (a client's instance shares its host's, D11).</summary>
+        private static readonly Dictionary<ulong, ulong> SharedWith = new Dictionary<ulong, ulong>();
+
+        /// <summary>The scope whose frame <paramref name="instanceId"/> lives in: itself, or the host it shares a frame with.</summary>
+        public static ulong Resolve(ulong instanceId)
+        {
+            for (int hops = 0; hops < 8 && instanceId != 0 && SharedWith.Count > 0 && SharedWith.TryGetValue(instanceId, out var host); hops++)
+                instanceId = host;
+            return instanceId;
+        }
+
+        /// <summary>Whether <paramref name="instanceId"/> shares the frame of the scope it was entered from (<see cref="Share"/>).</summary>
+        public static bool IsShared(ulong instanceId) => instanceId != 0 && SharedWith.ContainsKey(instanceId);
+
+        /// <summary>
+        /// Make an instance scope live in <paramref name="hostInstanceId"/>'s frame (0: the public frame), and move with it,
+        /// as every instance did before NEB-426. A client does this for an instance entered from a scope it is in, so the
+        /// instance is drawn exactly where it is relative to that world (a doorway looks through to the right place, both
+        /// ways) and a crossing does not move the pawn in Unity; the client keeps that frame's origin near its pawn, so
+        /// it stays precise (<c>docs/scope-frames.md</c> D11). Ignored for a scope that already has or shares a frame.
+        /// </summary>
+        public static void Share(ulong instanceId, ulong hostInstanceId)
+        {
+            if (instanceId == 0 || instanceId == hostInstanceId || ByInstance.ContainsKey(instanceId) || SharedWith.ContainsKey(instanceId)) return;
+            if (Resolve(hostInstanceId) == instanceId) return; // never a loop
+            SharedWith[instanceId] = hostInstanceId;
+        }
 
         /// <summary>
         /// The frame <paramref name="instanceId"/>'s containers live in: its own when it has one, the public frame
         /// otherwise. Never null, so every caller has one answer to convert with.
         /// </summary>
-        public static ScopeFrame Of(ulong instanceId) =>
-            instanceId != 0 && ByInstance.TryGetValue(instanceId, out var frame) ? frame : Public;
+        public static ScopeFrame Of(ulong instanceId)
+        {
+            instanceId = Resolve(instanceId);
+            return instanceId != 0 && ByInstance.TryGetValue(instanceId, out var frame) ? frame : Public;
+        }
 
         /// <summary>The frame of a scope key; the public frame for <c>""</c> and for a scope with none of its own.</summary>
         public static ScopeFrame Of(string scopeKey) =>
@@ -231,7 +266,11 @@ namespace Nebula.World
         /// The id of the frame a scope's containers move with: the scope's own id when it has a frame, 0 (the public
         /// frame) otherwise. This is the key an origin shift is addressed to.
         /// </summary>
-        public static ulong FrameIdOf(ulong instanceId) => HasFrame(instanceId) ? instanceId : 0UL;
+        public static ulong FrameIdOf(ulong instanceId)
+        {
+            instanceId = Resolve(instanceId);
+            return instanceId != 0 && ByInstance.ContainsKey(instanceId) ? instanceId : 0UL;
+        }
 
         /// <summary>
         /// Give a scope a frame of its own, or return the one it has. The public world's is <see cref="Public"/> and
@@ -244,6 +283,7 @@ namespace Nebula.World
             // An instance frame pinned before this process knew the scope has a grid gives way to the grid's own
             // (docs/scope-frames.md D11); the activation's zero-delta shift re-places the containers (D5).
             if (ByInstance.TryGetValue(instanceId, out var pinned) && pinned.IsPinned) Unpin(instanceId);
+            SharedWith.Remove(instanceId);
             if (ByInstance.TryGetValue(instanceId, out var frame))
             {
                 if (cellSize.x > 0f && cellSize.y > 0f && cellSize.z > 0f) frame.CellSize = cellSize;
@@ -275,6 +315,7 @@ namespace Nebula.World
         {
             if (instanceId == 0) return Public;
             if (ByInstance.TryGetValue(instanceId, out var existing)) return existing;
+            if (SharedWith.ContainsKey(instanceId)) return Of(instanceId);
             var world = WorldOrigin.Definition;
             var size = world != null ? world.CellSize : Vector3.zero;
             if (!(size.x > 0f && size.y > 0f && size.z > 0f)) size = new Vector3(PinnedCellSize, PinnedCellSize, PinnedCellSize);
@@ -294,6 +335,7 @@ namespace Nebula.World
         /// <summary>Forget an instance scope's pinned frame (its last container here went away). Any other frame is left alone.</summary>
         public static void Unpin(ulong instanceId)
         {
+            if (SharedWith.Remove(instanceId)) return;
             if (!ByInstance.TryGetValue(instanceId, out var frame) || !frame.IsPinned) return;
             ByInstance.Remove(instanceId);
             if (!string.IsNullOrEmpty(frame.ScopeKey) && ByScope.TryGetValue(frame.ScopeKey, out var named) && named == frame) ByScope.Remove(frame.ScopeKey);
@@ -310,6 +352,7 @@ namespace Nebula.World
         /// <summary>New play session, or the world was unloaded: every scoped frame goes, the public one is reset by <see cref="WorldOrigin.Reset"/>.</summary>
         internal static void Clear()
         {
+            SharedWith.Clear();
             ByInstance.Clear();
             ByScope.Clear();
         }

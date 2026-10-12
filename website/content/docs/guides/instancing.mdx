@@ -123,7 +123,7 @@ Your game is responsible for the rest:
 - **Keep the boundary on the worker that simulates the occupants.** The boundary runs on each worker that has built the chunk's content. The instance is leased first by the worker that prepared it.
 - **Turn `ObservePublic` off.** It observes the public world, not the host scope, so occupants cannot see out into the grid. The boundary logs a warning when it is on.
 - **Turn `ObserveHost` on** to keep the grid's chunks around the entrance loaded, hidden, while players are inside. Without it, the client unloads them shortly after a player enters and loads them again after the player leaves. See [Keep the host loaded while inside](#keep-the-host-loaded-while-inside).
-- **Close the view between the two sides.** The host scope's scenery and the instance's content render in different origin frames on the client, so a player inside cannot look out through the doorway. Put a door, a turn, or a dark passage at the crossing.
+- **Looking through the doorway.** On the client an instance entered from the scope the player stands in shares that scope's origin frame, so its content is drawn exactly behind the door and the host's scenery exactly outside it, and keep the content drawn with `InstanceScenes.KeepDrawn` while the door is open. The instance's axes are the world's: a door whose axes are turned against them (on a curved surface) shows the interior turned too.
 
 ## Prepare crossings on request
 

@@ -129,6 +129,16 @@ crossing lands to the millimetre however far out the instance is. The decisions 
   `PrepareInstance` composes `absoluteOrigin + part.Center` in double and the lease row stores it so; before, the
   absolute centre was narrowed to float on the way, metres off at 10^8 m. A part centre that is a float is written to a
   scope definition exactly as before, so stored definitions still compare equal.
+- *A client shares the host's frame instead of pinning.* Pinning is right for simulation, but a client draws both
+  sides of a door. When an instance's first container reaches a client whose pawn stands in another scope (the one it
+  will enter from), `NebulaClient` calls `ScopeFrames.Share(instance, host)` before registering it: the instance lives
+  in that scope's frame on that client and moves with it (`ScopeFrames.Resolve`, `IsShared`), as instances shared the
+  public frame before. The interior is then drawn exactly behind the door, the crossing does not move the pawn in Unity,
+  and the world outside stays where it was. Inside, the client keeps that frame's origin near its pawn
+  (`NebulaChunkedWorld.OriginGridOf` follows the host's root grid), so both stay near Unity's origin. Without a pawn, or
+  for the pawn's own scope, the instance is pinned. Known gap: frames carry no rotation, so a door whose axes differ from
+  the instance's (a door on a sphere, tilted by its latitude) still shows the interior turned; that needs the instance
+  posed with the door's rotation (NEB-426 follow-up).
 - *A grid wins.* If a scope that was pinned turns out to have a scoped grid here, `ScopeFrames.Ensure` replaces the pin
   with the grid's frame and D5's zero-delta shift re-places its containers.
 

@@ -1588,7 +1588,13 @@ namespace Nebula
                 if (!e.HasBounds || !ContainerRegistry.TryParseRuntimeId(e.ContainerId, out ulong runtimeId)) continue;
                 _runtimeKeep.Add(runtimeId);
                 if (ContainerRegistry.GetRuntime(runtimeId) == null)
+                {
+                    // An instance this client's pawn will enter from the scope it stands in shares that scope's frame
+                    // here, so the two are drawn where they are relative to each other through a doorway, both ways, and
+                    // the crossing does not move the pawn in Unity (docs/scope-frames.md D11). Otherwise it is pinned.
+                    ShareInstanceFrame(e.Instance);
                     ContainerRegistry.RegisterRuntime(runtimeId, e.PlacementOrRoot, e.Instance);
+                }
             }
 
             // Capture occupants before PruneRuntime evacuates them into a neighbouring box. Runtime retirement
@@ -2009,6 +2015,20 @@ namespace Nebula
             _reader.Set(new ArraySegment<byte>(msg.Chunks));
             // The channel matters to a behaviour this client has just left the audience of (docs/sync-audience.md D9).
             e.ReadSyncState(_reader, msg.Tick, ContainerRegistry.Resolve(msg.Container) ?? e.Container, msg.Reliable);
+        }
+
+        /// <summary>
+        /// Before an instance scope's first container registers here: share the frame of the scope the local pawn stands
+        /// in (docs/scope-frames.md D11). Without a pawn, or for the pawn's own scope, the registry pins a frame instead.
+        /// </summary>
+        internal void ShareInstanceFrame(InstanceContainerInfo instance)
+        {
+            if (instance == null || instance.InstanceId == 0 || LocalPlayer == null) return;
+            ulong id = instance.InstanceId;
+            if (LocalPlayer.InstanceId == id || World.ScopeFrames.HasFrame(id) || World.ScopeFrames.IsShared(id)) return;
+            // A scoped grid's chunks carry instance info too; a grid this process knows takes its own frame.
+            if (World.NebulaChunks.HasGridFor(id)) return;
+            World.ScopeFrames.Share(id, LocalPlayer.InstanceId);
         }
 
         private void OnOwnerState(OwnerStateMsg msg)
