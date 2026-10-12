@@ -14,7 +14,7 @@ A way between two scopes: an opening in a wall, a hatch, a gate, a door to a roo
 
 The game opens it for a party with [`Open`](#open), naming the clients that will cross (its members), and closes it with [`Close`](#close). Each party has its own [`PortalLink`](/docs/reference/containers/portal-link) with a state and, while it is not open, the reason ([`PortalLink.Wait`](/docs/reference/containers/portal-link#wait)). A link is open once the far scope is active and its content loaded on the worker that owns it, and every member's client holds the far window and has said so: readiness is standing, held for as long as the link is open, so crossing loads nothing and holds nothing at the face. Everything runs on the worker that owns the portal's container.
 
-An entity crosses when it passes through the aperture, the opening on the face's z = 0 plane: a player's pawn walks through an open link on the tick its root ends [`CrossDepth`](#crossdepth) beyond the plane, keeping its identity, its absolute pose and its velocity, turned by the link when the faces are turned against each other. [`ResolveCompanions`](#resolvecompanions) names entities that cross with it. The hooks [`PartyOf`](#partyof), [`CanEnter`](#canenter) and [`CanObserve`](#canobserve) are the game's policy.
+An entity crosses when it passes through the aperture, the opening on the face's z = 0 plane: anything simulated here (a player's pawn, a crate, a projectile, a vehicle with its passengers) goes through an open link on the tick its root ends [`CrossDepth`](#crossdepth) beyond the plane, or, for a body that moves further than that in a step, on the tick before the step that would carry it through. It keeps its identity and carries its pose, its velocities and its history, turned by the link when the faces are turned against each other. One the link does not let through is stopped at the face ([`Refused`](#refused)). [`ResolveCompanions`](#resolvecompanions) names entities that cross with it. The hooks [`PartyOf`](#partyof), [`CanEnter`](#canenter) and [`CanObserve`](#canobserve) are the game's policy.
 
 ## Fields
 
@@ -257,10 +257,18 @@ Raised on this worker when a crossing entity committed without one of its compan
 ### Crossed [#crossed]
 
 ```csharp
-public event Action<NetworkIdentity, PortalLink, bool> Crossed;
+public event Action<NetworkIdentity, Portal, ulong, ulong> Crossed;
 ```
 
-Raised on this worker after an entity crossed: the entity, the link it went through, and whether it left the far scope (true) or entered it. A game's own heading bookkeeping turns with [`InstancePoses.Turn`](/docs/reference/containers/instance-poses#turn) here.
+Raised after an entity crossed through this portal, on the worker that committed it and on every client that holds the entity when its container change arrives: the entity, this portal, the scope it left and the scope it entered (so `to` is the far scope when it went in and the near scope when it came out). A game's own heading bookkeeping turns with [`Portals.Turn`](/docs/reference/containers/portals#turn)`(from, to)` here. On a client the event is raised only where this component exists; [`Portals.Crossed`](/docs/reference/containers/portals#crossed) is raised wherever the crossing is seen. Handlers run inside the worker's tick (or the client's frame) and must not throw.
+
+### Refused [#refused]
+
+```csharp
+public event Action<NetworkIdentity, PortalLink, PortalRefusal> Refused;
+```
+
+Raised on this worker every time an entity reached the aperture and was not let through (`docs/portals.md` D17): the entity, the link it was refused by (null when it has no link here: its party never opened one, or the face has several parties' links open and nothing says whose it is, [`PortalRefusal.AmbiguousParty`](/docs/reference/containers/portal-refusal#ambiguousparty)), and why. The entity has been stopped at the face already: its root put back [`CrossDepth`](#crossdepth) short of the plane and the part of its velocity that pointed through removed, so a game can bounce, drop or destroy it. A body that keeps pushing against the aperture is refused on every tick it reaches it. Handlers run inside the worker's tick and must not throw.
 
 ### LinkChanged [#linkchanged]
 

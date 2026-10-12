@@ -30,7 +30,7 @@ namespace Nebula
         /// <summary>Advance every link one step on the worker that owns the portal's container.</summary>
         internal void Drive(NebulaWorker worker)
         {
-            if (_crossings.Count > 0) PruneCrossings();
+            if (_crossings.Count > 0) PruneCrossings(worker.CurrentTick);
             if (_links.Count == 0) return;
             _linkScratch.Clear();
             _linkScratch.AddRange(_links.Values);

@@ -38,9 +38,11 @@ namespace Nebula
     /// that owns the portal's container.
     /// </para>
     /// <para>
-    /// An entity crosses when it passes through the aperture, the opening on the face's z = 0 plane: a player's pawn walks
-    /// through an open link on the tick its root ends <see cref="CrossDepth"/> beyond the plane, keeping its identity, its
-    /// absolute pose and its velocity, turned by the link when the faces are turned against each other.
+    /// An entity crosses when it passes through the aperture, the opening on the face's z = 0 plane: anything simulated here (a
+    /// player's pawn, a crate, a projectile, a vehicle with its passengers) goes through an open link on the tick its root ends
+    /// <see cref="CrossDepth"/> beyond the plane, or, for a body that moves further than that in a step, on the tick before the step
+    /// that would carry it through. It keeps its identity and carries its pose, its velocities and its history, turned by the link when
+    /// the faces are turned against each other. One the link does not let through is stopped at the face (<see cref="Refused"/>).
     /// <see cref="ResolveCompanions"/> names entities that cross with it. The hooks <see cref="PartyOf"/>,
     /// <see cref="CanEnter"/> and <see cref="CanObserve"/> are the game's policy.
     /// </para>
@@ -139,10 +141,22 @@ namespace Nebula
         public event Action<NetworkIdentity, NetworkIdentity, PortalRefusal> CompanionLeftBehind;
 
         /// <summary>
-        /// Raised on this worker after an entity crossed: the entity, the link it went through, and whether it left the far scope
-        /// (true) or entered it. A game's own heading bookkeeping turns with <see cref="InstancePoses.Turn"/> here.
+        /// Raised after an entity crossed through this portal, on the worker that committed it and on every client that holds the entity when its
+        /// container change arrives: the entity, this portal, the scope it left and the scope it entered (so <c>to</c> is the far scope when it
+        /// went in and the near scope when it came out). A game's own heading bookkeeping turns with <see cref="Portals.Turn"/><c>(from, to)</c>
+        /// here. On a client the event is raised only where this component exists; <see cref="Portals.Crossed"/> is raised wherever the crossing is seen.
+        /// Handlers run inside the worker's tick (or the client's frame) and must not throw.
         /// </summary>
-        public event Action<NetworkIdentity, PortalLink, bool> Crossed;
+        public event Action<NetworkIdentity, Portal, ulong, ulong> Crossed;
+
+        /// <summary>
+        /// Raised on this worker every time an entity reached the aperture and was not let through (<c>docs/portals.md</c> D17): the entity, the
+        /// link it was refused by (null when it has no link here: its party never opened one, or the face has several parties' links open and
+        /// nothing says whose it is, <see cref="PortalRefusal.AmbiguousParty"/>), and why. The entity has been stopped at the face already: its root put back
+        /// <see cref="CrossDepth"/> short of the plane and the part of its velocity that pointed through removed, so a game can bounce, drop or
+        /// destroy it. A body that keeps pushing against the aperture is refused on every tick it reaches it. Handlers run inside the worker's tick and must not throw.
+        /// </summary>
+        public event Action<NetworkIdentity, PortalLink, PortalRefusal> Refused;
 
         /// <summary>Raised on this worker when a link's state, wait, members or observers changed. Handlers run inside the worker's tick and must not throw.</summary>
         public event Action<PortalLink> LinkChanged;

@@ -5,23 +5,28 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// Crossing, on the worker that simulates the entity and owns the portal (<c>docs/portals.md</c> D14 to D17). A link that is open has
+    /// Crossing, on the worker that simulates the entity and owns the portal (<c>docs/portals.md</c> D14 to D18). A link that is open has
     /// its far side ready already, so a crossing prepares and loads nothing: the entity is committed on the tick its root passes the
-    /// face. Today only player-owned pawns cross by themselves, and the test is the segment from last tick's position to this tick's;
-    /// every other entity and the predictive test for fast bodies are NEB-429's.
+    /// face, or, for a body that moves further than <see cref="CrossDepth"/> in a step, on the tick before the step that would carry it
+    /// through. Any entity this worker simulates crosses on its own (<see cref="Portals.Tick"/> decides which portals are asked); one the
+    /// link does not let through is stopped at the face and <see cref="Refused"/> is raised.
     /// </summary>
     public sealed partial class Portal
     {
         private sealed class Crossing
         {
             public NetworkIdentity Entity;
-            /// <summary>Where the entity stood last tick, absolute in the scope it was in then.</summary>
+            /// <summary>Where the entity stood the last time this portal looked, absolute in the scope it was in then.</summary>
             public Double3 Last;
             public ulong LastScope;
+            public uint LastTick;
             public bool HasLast;
             /// <summary>What crosses with it (<see cref="ResolveCompanions"/>).</summary>
             public readonly List<NetworkIdentity> Companions = new List<NetworkIdentity>();
         }
+
+        /// <summary>A crossing nobody has asked about for this many ticks is dropped: the entity moved away from the face.</summary>
+        private const uint StaleCrossingTicks = 120;
 
         private readonly Dictionary<ulong, Crossing> _crossings = new Dictionary<ulong, Crossing>();
         /// <summary>Each companion's leader, by net id.</summary>
@@ -56,6 +61,15 @@ namespace Nebula
             return PhysicsFrames.InSimulationPose(space) ? PhysicsFrames.Convert(entity.transform.rotation, space, null) : entity.transform.rotation;
         }
 
+        /// <summary>An entity's velocity in its scope's own axes: its dynamic body's when it has one, else the velocity it reports.</summary>
+        private static Vector3 ScopeVelocityOf(NetworkIdentity entity)
+        {
+            var space = entity.Space;
+            var body = entity.GetComponent<Rigidbody>();
+            var velocity = body != null && !body.isKinematic ? body.linearVelocity : entity.Motion.Velocity;
+            return PhysicsFrames.InSimulationPose(space) ? PhysicsFrames.ConvertVelocity(velocity, entity.transform.position, space, null) : velocity;
+        }
+
         private PortalLink LinkByFarScope(ulong scope)
         {
             foreach (var link in _links.Values)
@@ -63,6 +77,12 @@ namespace Nebula
             // A link that closed under an occupant still owns the scope it leads to: the occupant meets the aperture from inside.
             foreach (var link in _links.Values) if (link.FarScope == scope && link.FarScope != 0) return link;
             return null;
+        }
+
+        private bool AnyLinkOpen()
+        {
+            foreach (var link in _links.Values) if (link.State == PortalState.Open) return true;
+            return false;
         }
 
         private string PartyOfEntity(NetworkIdentity entity)
@@ -102,20 +122,29 @@ namespace Nebula
             return entity.OwnerClientId == 0 || (link.IsMember(entity.OwnerClientId) && link.IsWarm(entity.OwnerClientId));
         }
 
-        private void PruneCrossings()
+        private void PruneCrossings(uint tick)
         {
             StaleScratch.Clear();
             foreach (var kv in _crossings)
-                if (kv.Value.Entity == null || !kv.Value.Entity.IsSpawned || !kv.Value.Entity.HasAuthority) StaleScratch.Add(kv.Key);
+            {
+                var crossing = kv.Value;
+                bool gone = crossing.Entity == null || !crossing.Entity.IsSpawned || !crossing.Entity.HasAuthority;
+                // Nobody has looked at it for a while: it moved away from the face (a companion is looked at by its leader's crossing only).
+                bool stale = !gone && crossing.Companions.Count == 0 && tick - crossing.LastTick > StaleCrossingTicks;
+                if (gone || stale) StaleScratch.Add(kv.Key);
+            }
             for (int i = 0; i < StaleScratch.Count; i++)
             {
-                if (_crossings.TryGetValue(StaleScratch[i], out var gone)) ReleaseCompanions(gone);
+                if (_crossings.TryGetValue(StaleScratch[i], out var dropped)) ReleaseCompanions(dropped);
                 _crossings.Remove(StaleScratch[i]);
             }
             StaleScratch.Clear();
         }
 
-        /// <summary>Test one entity against this portal. Called by <see cref="Portals.Tick"/> for entities this worker simulates.</summary>
+        /// <summary>
+        /// Test one entity against this portal. Called by <see cref="Portals.Tick"/> for the entities this worker simulates that can matter
+        /// to it: those on the face's container chain or in a neighbour of it, and those in a scope one of its links leads into.
+        /// </summary>
         internal void Cross(NebulaWorker worker, NetworkIdentity entity)
         {
             if (_leaderOf.Count > 0 && IsLedCompanion(entity)) return;
@@ -123,15 +152,13 @@ namespace Nebula
             if (near == null || near.OwnerWorkerId != worker.WorkerId) return;
             ulong scope = entity.InstanceId;
             var nearFace = NearFaceOf(worker);
-            PortalLink link;
+            PortalLink link = null;
             PortalFace face;
             bool leaving;
-            var refusal = PortalRefusal.None;
             if (scope == nearFace.Scope)
             {
                 leaving = false;
                 face = nearFace;
-                link = ResolveLink(entity, out refusal);
             }
             else
             {
@@ -142,32 +169,55 @@ namespace Nebula
             }
             var absolute = AbsoluteOf(entity);
             var local = face.ToLocal(absolute);
-            bool inZone = Math.Abs(local.X) <= Aperture.HalfWidth + ApproachDistance && Math.Abs(local.Y) <= Aperture.HalfHeight + ApproachDistance &&
-                          Math.Abs(local.Z) <= ApproachDistance;
+            double step = NetworkTime.TickInterval * Math.Max(1, entity.UpdateInterval);
+            // A body is tracked while it can reach the face within a step as well as while it is near it. (A rigidbody's reported velocity
+            // is its own, mirrored every tick, so the far majority of entities are rejected without looking for a body.)
+            double reach = ApproachDistance + entity.Motion.Velocity.magnitude * step;
+            bool inZone = Math.Abs(local.X) <= Aperture.HalfWidth + reach && Math.Abs(local.Y) <= Aperture.HalfHeight + reach && Math.Abs(local.Z) <= reach;
             if (!inZone) { Forget(entity); return; }
+            var velocity = ScopeVelocityOf(entity);
             if (!_crossings.TryGetValue(entity.NetId, out var crossing)) _crossings.Add(entity.NetId, crossing = new Crossing());
             crossing.Entity = entity;
-            if (crossing.HasLast && crossing.LastScope != scope) crossing.HasLast = false;
+            uint tick = worker.CurrentTick;
+            if (crossing.HasLast && (crossing.LastScope != scope || tick - crossing.LastTick > (uint)Math.Max(1, entity.UpdateInterval) + 1u)) crossing.HasLast = false;
 
-            if (link != null && link.State == PortalState.Open) PrepareCompanions(entity, crossing, link, leaving);
-            else ReleaseCompanions(crossing);
+            if (ResolveCompanions != null && (leaving ? link.State == PortalState.Open : AnyLinkOpen())) PrepareCompanions(entity, crossing);
+            else if (crossing.Companions.Count > 0) ReleaseCompanions(crossing);
 
-            if (crossing.HasLast && Passes(face.ToLocal(crossing.Last), local, leaving))
+            // The swept segment, last look to this one, against the opening (D15); then, for a body that moves further than the depth in a
+            // step, the segment of the step to come, so it is committed before the step that would carry it through.
+            Double3 hit = default;
+            bool passed = crossing.HasLast && Passes(face.ToLocal(crossing.Last), local, leaving, out hit);
+            bool predicted = false;
+            if (!passed)
             {
-                if (!TryCross(worker, entity, crossing, link, leaving, absolute, refusal))
-                {
-                    // Held where it last stood, read back through its scope's frame as it is now: an origin shift while it waits moves the frame,
-                    // not the entity. (The clamp against the plane that replaces this is NEB-429's.)
-                    entity.transform.position = entity.FromScope(ContainerRegistry.ToFrame(crossing.Last, scope));
-                    return;
-                }
-                crossing.Last = AbsoluteOf(entity);
-                crossing.LastScope = entity.InstanceId;
-                crossing.HasLast = true;
+                var along = PhysicsFrames.Rotate(Quaternion.Inverse(face.Rotation), Double3.From(velocity));
+                var ahead = new Double3(along.X * step, along.Y * step, along.Z * step);
+                double length = Math.Sqrt(ahead.X * ahead.X + ahead.Y * ahead.Y + ahead.Z * ahead.Z);
+                predicted = length > CrossDepth && Passes(local, local + ahead, leaving, out hit);
+            }
+            if (!passed && !predicted)
+            {
+                Remember(crossing, absolute, scope, tick);
                 return;
             }
+
+            var refusal = PortalRefusal.None;
+            if (!leaving) link = ResolveLink(entity, out refusal);
+            if (!TryCross(worker, entity, crossing, link, leaving, absolute, refusal, out var why))
+            {
+                Stop(entity, face, hit, leaving);
+                NebulaDiagnostics.PortalRefusals++;
+                RaiseRefused(entity, link, why);
+            }
+            Remember(crossing, AbsoluteOf(entity), entity.InstanceId, tick);
+        }
+
+        private static void Remember(Crossing crossing, Double3 absolute, ulong scope, uint tick)
+        {
             crossing.Last = absolute;
             crossing.LastScope = scope;
+            crossing.LastTick = tick;
             crossing.HasLast = true;
         }
 
@@ -181,81 +231,128 @@ namespace Nebula
         /// <summary>
         /// Whether the segment from <paramref name="last"/> to <paramref name="now"/> (in the face's axes) meets the cross-section and ends at
         /// least <see cref="CrossDepth"/> beyond the plane (entering), or at least <see cref="CrossDepth"/> short of it (leaving): the hysteresis
-        /// that keeps an entity at the face from crossing and returning on every tick (<c>docs/portals.md</c> D15).
+        /// that keeps an entity at the face from crossing and returning on every tick (<c>docs/portals.md</c> D15). <paramref name="hit"/> is
+        /// where the segment meets that plane, in the face's axes.
         /// </summary>
-        private bool Passes(Double3 last, Double3 now, bool leaving)
+        private bool Passes(Double3 last, Double3 now, bool leaving, out Double3 hit)
         {
+            hit = default;
             double plane = leaving ? -CrossDepth : CrossDepth;
             bool through = leaving ? last.Z > plane && now.Z <= plane : last.Z < plane && now.Z >= plane;
             if (!through) return false;
             double t = (plane - last.Z) / (now.Z - last.Z);
-            return Aperture.Contains(last.X + t * (now.X - last.X), last.Y + t * (now.Y - last.Y));
+            double x = last.X + t * (now.X - last.X);
+            double y = last.Y + t * (now.Y - last.Y);
+            hit = new Double3(x, y, plane);
+            return Aperture.Contains(x, y);
         }
 
-        private bool TryCross(NebulaWorker worker, NetworkIdentity entity, Crossing crossing, PortalLink link, bool leaving, Double3 absolute, PortalRefusal refusal)
+        private bool TryCross(NebulaWorker worker, NetworkIdentity entity, Crossing crossing, PortalLink link, bool leaving, Double3 absolute,
+            PortalRefusal refusal, out PortalRefusal why)
         {
-            if (link == null) { Refuse(refusal == PortalRefusal.None ? PortalRefusal.LinkNotOpen : refusal); return false; }
-            if (link.State != PortalState.Open) { Refuse(PortalRefusal.LinkNotOpen); return false; }
-            if (!leaving && !Admits(entity, link)) { Refuse(PortalRefusal.NotAdmitted); return false; }
+            why = PortalRefusal.None;
+            if (link == null) { why = refusal == PortalRefusal.None ? PortalRefusal.LinkNotOpen : refusal; return false; }
+            if (link.State != PortalState.Open) { why = PortalRefusal.LinkNotOpen; return false; }
+            if (!leaving && !Admits(entity, link)) { why = PortalRefusal.NotAdmitted; return false; }
 
-            ulong thereScope = leaving ? NearFaceOf(worker).Scope : link.FarScope;
-            var thereAbsolute = leaving ? link.ToNear(absolute) : link.ToFar(absolute);
+            var map = leaving ? link.ToNearMap : link.ToFarMap;
             Container destination;
             if (leaving)
             {
                 // A container of the near scope that holds the point, never the nearest box of some other scope; none while that ground is not
                 // leased here yet.
-                destination = FindDestination(ContainerRegistry.ToFrame(thereAbsolute, thereScope), thereScope, entity);
+                destination = FindDestination(ContainerRegistry.ToFrame(map.Point(absolute), map.ToScope), map.ToScope, entity);
             }
             else destination = link.FarEntry;
-            if (destination == null || !LeaseState.IsOwning(destination.LeaseState)) { Refuse(PortalRefusal.NoDestination); return false; }
-            if (!leaving && destination.LeaseEpoch != link.ReadyEpoch) { Refuse(PortalRefusal.NoDestination); return false; }
+            if (destination == null || !LeaseState.IsOwning(destination.LeaseState)) { why = PortalRefusal.NoDestination; return false; }
+            if (!leaving && destination.LeaseEpoch != link.ReadyEpoch) { why = PortalRefusal.NoDestination; return false; }
 
-            // The leader and the companions that can cross with it.
+            // The leader with everything aboard it, and the companions that can cross with it, each with theirs (D14).
+            var admit = leaving ? null : link;
             Group.Clear();
             Group.Add(entity);
+            if (!CollectAboard(worker, entity, admit)) { Group.Clear(); why = PortalRefusal.NotAdmitted; return false; }
             foreach (var companion in crossing.Companions)
             {
                 var problem = CompanionProblem(companion, entity);
-                if (problem == PortalRefusal.None && !leaving && !Admits(companion, link)) problem = PortalRefusal.NotAdmitted;
-                if (problem == PortalRefusal.None) Group.Add(companion);
-                else ReportLeftBehind(entity, companion, problem);
-            }
-            var turnAcross = leaving ? link.Turn : Quaternion.Inverse(link.Turn);
-            bool turns = Quaternion.Angle(Quaternion.identity, turnAcross) > NebulaWorker.PoseAngleEpsilon;
-            var origin = ContainerRegistry.ToAbsolutePrecise(Double3.Zero, thereScope);
-            var positions = new Double3[Group.Count];
-            var rotations = new Quaternion[Group.Count];
-            var velocities = new Vector3[Group.Count];
-            for (int i = 0; i < Group.Count; i++)
-            {
-                var member = Group[i];
-                var memberAbsolute = i == 0 ? absolute : AbsoluteOf(member);
-                positions[i] = (leaving ? link.ToNear(memberAbsolute) : link.ToFar(memberAbsolute)) - origin;
-                rotations[i] = turnAcross * ScopeRotationOf(member);
-                velocities[i] = member.Motion.Velocity;
-                if (turns) member.Motion.Velocity = turnAcross * velocities[i];
+                if (problem == PortalRefusal.None && admit != null && !Admits(companion, admit)) problem = PortalRefusal.NotAdmitted;
+                if (problem == PortalRefusal.None)
+                {
+                    int mark = Group.Count;
+                    Group.Add(companion);
+                    if (!CollectAboard(worker, companion, admit)) { Group.RemoveRange(mark, Group.Count - mark); problem = PortalRefusal.NotAdmitted; }
+                }
+                if (problem != PortalRefusal.None) ReportLeftBehind(entity, companion, problem);
             }
             var members = new List<NetworkIdentity>(Group);
             Group.Clear();
-            if (!worker.CommitThrough(members, destination, positions, rotations))
+            if (!worker.CommitThrough(members, destination, in map))
             {
-                for (int i = 0; i < members.Count; i++) members[i].Motion.Velocity = velocities[i];
-                Refuse(PortalRefusal.NoDestination);
+                why = PortalRefusal.NoDestination;
                 return false;
             }
             ReleaseCompanions(crossing);
-            foreach (var member in members) RaiseCrossed(member, link, leaving);
+            foreach (var member in members) Portals.RaiseCrossed(member, PortalId, map.FromScope, map.ToScope);
             return true;
         }
 
-        private static void Refuse(PortalRefusal why) => NebulaDiagnostics.PortalRefusals++;
+        /// <summary>
+        /// Add to <see cref="Group"/> everything this worker simulates that rides in <paramref name="carrier"/>'s box, at any depth (a cargo
+        /// bay, the crew of a ship parked in a hangar): it crosses with its carrier and keeps its seat (<c>docs/scope-activation.md</c> D19, D21).
+        /// False when <paramref name="admit"/> is given and a passenger is not admitted, which refuses the carrier: nobody is carried into a
+        /// scope their client has not been readied for.
+        /// </summary>
+        private bool CollectAboard(NebulaWorker worker, NetworkIdentity carrier, PortalLink admit)
+        {
+            if (carrier.Carried == null || !carrier.Carried.IsDynamic) return true;
+            var entities = worker.AuthoritativeEntities;
+            for (int i = 0; i < entities.Count; i++)
+            {
+                var rider = entities[i];
+                if (rider == null || rider == carrier || !rider.IsSpawned || !rider.HasAuthority || rider.IsSceneEntity || Group.Contains(rider)) continue;
+                if (rider.Container == null || !rider.Container.IsCarriedBy(carrier)) continue;
+                if (admit != null && !Admits(rider, admit)) return false;
+                Group.Add(rider);
+            }
+            return true;
+        }
 
-        private void RaiseCrossed(NetworkIdentity entity, PortalLink link, bool leaving)
+        /// <summary>
+        /// Stop an entity the link did not let through (<c>docs/portals.md</c> D17): its root goes back <see cref="CrossDepth"/> short of the
+        /// plane, where its path met it, and the part of its velocity that pointed through is removed. A physical body is left to meet the
+        /// aperture collider, which is NEB-432's; until that is built it is stopped like any other mover.
+        /// </summary>
+        private static void Stop(NetworkIdentity entity, PortalFace face, Double3 hit, bool leaving)
+        {
+            double z = leaving ? CrossDepth : -CrossDepth;
+            var absolute = face.ToAbsolute(new Double3(hit.X, hit.Y, z));
+            var origin = ContainerRegistry.ToAbsolutePrecise(Double3.Zero, face.Scope);
+            entity.SetFramePose(null, absolute - origin, ScopeRotationOf(entity));
+            var through = PhysicsFrames.DirectionFromScope(leaving ? -face.Forward : face.Forward, entity.Space);
+            entity.Motion.Velocity = WithoutAlong(entity.Motion.Velocity, through);
+            var body = entity.GetComponent<Rigidbody>();
+            if (body != null && !body.isKinematic) body.linearVelocity = WithoutAlong(body.linearVelocity, through);
+        }
+
+        private static Vector3 WithoutAlong(Vector3 velocity, Vector3 direction)
+        {
+            float along = Vector3.Dot(velocity, direction);
+            return along > 0f ? velocity - along * direction : velocity;
+        }
+
+        private void RaiseRefused(NetworkIdentity entity, PortalLink link, PortalRefusal why)
+        {
+            var handler = Refused;
+            if (handler == null) return;
+            try { handler(entity, link, why); }
+            catch (Exception e) { NebulaLog.Error($"Portal '{name}': a Refused handler threw: {e}"); }
+        }
+
+        internal void RaiseCrossed(NetworkIdentity entity, ulong from, ulong to)
         {
             var handler = Crossed;
             if (handler == null) return;
-            try { handler(entity, link, leaving); }
+            try { handler(entity, this, from, to); }
             catch (Exception e) { NebulaLog.Error($"Portal '{name}': a Crossed handler threw: {e}"); }
         }
 
@@ -296,18 +393,19 @@ namespace Nebula
             return false;
         }
 
-        /// <summary>Ask the game for the entity's companions while it is near the face of an open link.</summary>
-        private void PrepareCompanions(NetworkIdentity leader, Crossing crossing, PortalLink link, bool leaving)
+        /// <summary>
+        /// Ask the game for the entity's companions while it is near the face of an open link. They are asked for every tick the leader is near
+        /// rather than once, when it commits: a held item in front of its holder reaches the plane first and, as every entity crosses on its own,
+        /// would cross before the holder unless it is already known to be the holder's.
+        /// </summary>
+        private void PrepareCompanions(NetworkIdentity leader, Crossing crossing)
         {
             Resolved.Clear();
-            if (ResolveCompanions != null)
+            try { ResolveCompanions(leader, Resolved); }
+            catch (Exception e)
             {
-                try { ResolveCompanions(leader, Resolved); }
-                catch (Exception e)
-                {
-                    NebulaLog.Error($"Portal '{name}': a ResolveCompanions handler threw: {e}");
-                    Resolved.Clear();
-                }
+                NebulaLog.Error($"Portal '{name}': a ResolveCompanions handler threw: {e}");
+                Resolved.Clear();
             }
             // Companions no longer reported are released.
             for (int i = crossing.Companions.Count - 1; i >= 0; i--)

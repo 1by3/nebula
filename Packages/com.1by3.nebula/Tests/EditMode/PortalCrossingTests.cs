@@ -21,7 +21,7 @@ namespace Nebula.Tests
         {
             _h = new PortalHarness(1);
             _crossed.Clear();
-            _h.Door.Crossed += (entity, link, leaving) => _crossed.Add((entity, leaving));
+            _h.Door.Crossed += (entity, portal, from, to) => _crossed.Add((entity, to == 0UL));
         }
 
         [TearDown] public void TearDown() => _h.Dispose();
@@ -128,15 +128,21 @@ namespace Nebula.Tests
         // ------------------------------------------------------------------------------------------ meeting the aperture
 
         [Test]
-        public void AClosedPortalHoldsAPawnWhereItLastStood()
+        public void AClosedPortalStopsAPawnShortOfThePlaneAndRaisesRefused()
         {
             _h.Ticks(2); // never opened
             int refusals = NebulaDiagnostics.PortalRefusals;
+            var refused = new List<(NetworkIdentity, PortalLink, PortalRefusal)>();
+            _h.Door.Refused += (entity, link, why) => refused.Add((entity, link, why));
             _h.Player.transform.position = PortalHarness.At(0f, 1f);
+            _h.Player.Motion.Velocity = new Vector3(0f, 0f, 3f);
             _h.Tick();
             Assert.That(_h.Player.Container, Is.SameAs(_h.Street), "the face is closed");
-            Assert.That(_h.Player.transform.position, Is.EqualTo(PortalHarness.At(0f, -6f)), "held where it last stood");
+            Assert.That(_h.Player.transform.position.z, Is.EqualTo(PortalHarness.At(0f, -Portal.CrossDepth).z).Within(1e-4f), "put back CrossDepth short of the plane");
+            Assert.That(_h.Player.transform.position.x, Is.EqualTo(PortalHarness.At(0f, 0f).x).Within(1e-4f), "where its path met the plane");
+            Assert.That(_h.Player.Motion.Velocity.z, Is.EqualTo(0f).Within(1e-5f), "and the part of its velocity that pointed through is gone");
             Assert.That(NebulaDiagnostics.PortalRefusals, Is.EqualTo(refusals + 1));
+            Assert.That(refused, Is.EqualTo(new[] { (_h.Player, (PortalLink)null, PortalRefusal.LinkNotOpen) }), "no link was ever opened for its party");
         }
 
         [Test]
@@ -222,18 +228,7 @@ namespace Nebula.Tests
             _h.Player.transform.position = PortalHarness.At(0f, -0.5f);
             _h.Tick();
             Assert.That(_h.Player.InstanceId, Is.EqualTo(PortalHarness.Private), "a closed aperture is solid from inside as well");
-            Assert.That(_h.Player.transform.position, Is.EqualTo(PortalHarness.At(0f, 3f)), "held where it last stood");
-        }
-
-        [Test]
-        public void AServerOwnedEntityDoesNotCrossOnItsOwn()
-        {
-            _h.OpenDoor();
-            var crate = _h.W.SpawnServerDriven(_h.PawnPrefab, _h.Street, PortalHarness.At(1f, -6f), Quaternion.identity);
-            _h.Tick();
-            crate.transform.position = PortalHarness.At(1f, 1f);
-            _h.Tick();
-            Assert.That(crate.Container, Is.SameAs(_h.Street), "every other entity crossing on its own is NEB-429's");
+            Assert.That(_h.Player.transform.position.z, Is.EqualTo(PortalHarness.At(0f, Portal.CrossDepth).z).Within(1e-4f), "put back CrossDepth short of the plane, on its own side");
         }
 
         // ------------------------------------------------------------------------------------------ parties

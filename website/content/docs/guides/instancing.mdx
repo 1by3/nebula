@@ -57,7 +57,7 @@ Static content prefabs must not contain `NetworkIdentity` components. Spawn netw
 
 For a single-room apartment, start with an aperture the size of the door and a template part that begins at the portal's position. For multiple rooms, put the arrival room first. Keep the portal position and the template's instance origin aligned.
 
-Include the portal in the scenes loaded by workers, not only in client presentation. Include the static resources in both worker and client builds. A portal lets player-owned pawns through by themselves, and the entities that cross with a pawn as its companions; other server-controlled entities use explicit transfers.
+Include the portal in the scenes loaded by workers, not only in client presentation. Include the static resources in both worker and client builds. A portal lets any entity a worker simulates through by itself: a player's pawn, a crate, a projectile, a vehicle with its passengers. Entities that must cross with a pawn even though they are not at the face (an item it holds) are its companions; a transfer you prepare yourself is only for crossings that don't go through a doorway.
 
 ### Separate scenery from collision
 
@@ -104,7 +104,7 @@ When the content is created, Nebula collects the active components under the par
 
 Nebula reads `State` once a frame on a client and once a tick on a worker, only while a link or a preparation waits for it, so keep it cheap. Keep `Progress` between 0 and 1. To show a loading indicator, read `InstanceScenes.ContentProgress(container)`. To check readiness yourself, read `InstanceScenes.ContentState(container)`.
 
-Open the portal early enough for the content to load before the player reaches the face. While the link is not open, a player who reaches the face is held at the last position the portal recorded.
+Open the portal early enough for the content to load before the player reaches the face. While the link is not open, whatever reaches the face is stopped there and `Refused` is raised.
 
 ## Place a portal in a scoped grid
 
@@ -115,7 +115,7 @@ The portal's near scope is the scope of the container it is parented under. `Por
 - Only entities in the near scope, or in a link's far scope, cross it. A portal on one planet ignores players standing at the same coordinates on another.
 - Positions are compared in absolute coordinates. A scoped grid moves its own origin on each worker, so the portal converts its position and the player's through each scope's frame. The instance is created at the portal's absolute position rounded to a millimeter (`NearFace.Origin`), so every worker names the same instance.
 - A crossing keeps the player's absolute position, to the millimetre. The instance has an origin frame of its own, pinned near the instance's origin in each process that holds it, so an instance far from the public origin (a dungeon on a planet 50,000 km out) is still simulated near Unity's origin. The player's numbers in Unity change when they cross, but where they stand does not.
-- A player who leaves returns to a container of the near scope that holds their position. Until that chunk is leased, they stay inside at the last position the portal recorded.
+- A player who leaves returns to a container of the near scope that holds their position. Until that chunk is leased, the portal refuses the crossing (`NoDestination`) and stops them at the face on the inside.
 
 Your game is responsible for the rest:
 
@@ -157,14 +157,23 @@ A link goes through four states, and every one but `Open` says why it is not ope
 
 | `State` | Meaning |
 | --- | --- |
-| `Closed` | Nothing is prepared and nothing crosses. A player who reaches the face is held where they last stood. |
+| `Closed` | Nothing is prepared and nothing crosses. Whatever reaches the face is stopped there. |
 | `Preparing` | `Open` was called. `Wait` says what the link waits for, and `Progress` (0 to 1) can drive a loading bar. |
 | `Open` | Everything the far side needs is standing. Entities cross on the tick their root passes the face. |
 | `Closing` | `Close` was called and a body is still in the band. |
 
 Readiness is standing, not per player: it is held while the link is open, so a crossing prepares nothing, loads nothing and holds nothing at the face.
 
-A player stops at the face when the link is not open, when they are not admitted, or when their client is not a warm member. Nebula holds them at the last position it recorded, and counts the refusal in `NebulaDiagnostics.PortalRefusals`.
+An entity stops at the face when the link is not open, when it is not admitted, when its client is not a warm member, or when it has no party and more than one link is open. Nebula puts it back `Portal.CrossDepth` short of the plane, where its path met it, removes the part of its velocity that pointed through, raises `Portal.Refused(entity, link, reason)` and counts the refusal in `NebulaDiagnostics.PortalRefusals`. `link` is null when the entity has no link here. A body that keeps pushing is refused on every tick it reaches the plane, so rate-limit anything expensive you do in the handler (bouncing, dropping or destroying it, a sound).
+
+| `reason` | Why |
+| --- | --- |
+| `LinkNotOpen` | The entity's party has no link, or its link is not open. |
+| `NotAdmitted` | `CanEnter` refused it, or its client is not a warm member of the link, or someone aboard it is not admitted. |
+| `AmbiguousParty` | `PartyOf` named no party and more than one link is open on this face. |
+| `NoDestination` | The container it would arrive in is not here yet, or its lease moved. |
+
+A physical body is meant to meet a collider across the aperture; until that is built, a refused `Rigidbody` is stopped like any other mover.
 
 ## Read a link's state
 
@@ -196,11 +205,17 @@ On a client, `Portals.Known` and `Portals.KnownLinks` list what the network gate
 
 ## Cross at the face
 
-A pawn crosses when the segment its root travels in a tick passes through the aperture and ends at least `Portal.CrossDepth` (5 cm) beyond the face's plane. It crosses back when it ends 5 cm short of it on the other side. That depth is the hysteresis that keeps a player standing at the face from crossing and returning on every tick; there is no margin to configure. A player who walks past the face outside the aperture, or who did not walk through it (a spawn behind the face), does not cross.
+Any entity the worker simulates crosses when the segment its root travels in a tick passes through the aperture and ends at least `Portal.CrossDepth` (5 cm) beyond the face's plane. It crosses back when it ends 5 cm short of it on the other side. That depth is the hysteresis that keeps something standing at the face from crossing and returning on every tick; there is no margin to configure. Something that passes the face outside the aperture, or that did not walk through it (a spawn behind the face, a teleport), does not cross.
+
+A body that moves further than `CrossDepth` in a step, such as a projectile, is tested on the step to come as well: if its path from where it is now would pass the plane, it is committed on this tick, before the step that would carry it through, so it never simulates a step behind the face in the near scope. It arrives at the pose it has now, carried through the link, and the step runs in the far scope.
+
+Everything the entity carries in time goes through the link with it, in double and about the faces: its position and rotation, its velocity, a `Rigidbody`'s linear and angular velocity, and its recorded `StateHistory`, which `StateAt` answers from in the destination's space. On a client, a replica's container change and its link-composed pose apply in the same step, its interpolation buffer and, for the local pawn, its prediction history are rewritten into the destination, so nothing pops and the pawn is not corrected at a crossing. A door turned against the far scope turns a crate's momentum with it. Raise your own bookkeeping in `Portal.Crossed(entity, portal, from, to)`, on the worker and on clients, and turn headings with `Portals.Turn(from, to)`.
+
+A vehicle crosses with everything aboard it that the worker simulates, each rider keeping its seat. If anyone aboard is not admitted, the vehicle is refused as a whole.
 
 ## Cross with companions
 
-A portal lets through the entities a player owns. An entity no player owns, such as an item the player is carrying, a pet, a cart they tow or an escort, would stay behind at the face. To take such entities along, set `ResolveCompanions` on every worker that can simulate the portal, and add the entities that must cross with the player to the list it's given:
+Every entity crosses on its own, so an item a player holds out in front of them reaches the face first and would cross alone. To take such entities along with the player (an item they carry, a pet, a cart they tow or an escort), set `ResolveCompanions` on every worker that can simulate the portal, and add the entities that must cross with the player to the list it's given:
 
 ```csharp title="CarryThroughDoors.cs"
 using Nebula;
@@ -224,10 +239,10 @@ public sealed class CarryThroughDoors : MonoBehaviour
 }
 ```
 
-`HeldItemOf` and `Drop` stand for your own game code. The worker calls `ResolveCompanions` once a tick while the player is near the face of an open link, with an empty list. Then:
+`HeldItemOf` and `Drop` stand for your own game code. The worker calls `ResolveCompanions` once a tick while the player is within `Portal.ApproachDistance` of the face of an open link, with an empty list, so a companion in front of its holder is already known to be one when it reaches the face. Keep the handler cheap: it runs for every entity near an open face. Then:
 
 - **The group commits as one,** on the tick the player crosses the face. Every member keeps its network ID and arrives in the same destination container, so it ends up on the same worker, whichever worker owns the destination. Each member's own position and rotation are carried through the link, so through a door that is turned against the far scope a held item arrives turned with its holder.
-- **A companion moves with the player.** It doesn't cross on its own while it's a companion, even if it's a player's pawn standing at the face.
+- **A companion moves with the player.** It doesn't cross on its own while it's a companion, even if it's a player's pawn standing at the face. Something aboard a companion that carries it comes along too.
 - **The player's position alone decides when the group crosses,** so a carried item can be past the face without leaving.
 - **Nothing waits.** The far side is ready before the link opens, so a companion has no preparation of its own to wait for.
 
@@ -473,7 +488,7 @@ See [Running locally](/docs/getting-started/running-locally) for build paths and
 | Repeated connection attempts without joining | Compare protocol versions in the gateway log and rebuild all roles together. |
 | Player stops at the entrance | Read the link's `State`, `Wait` and `Error`. Check resource paths, client/worker content availability, and destination lease ownership, that every `IInstanceContentLoader` in the content reaches `Ready`, and that the player's client is a member and has sent its `PortalWarm`. Open the portal earlier. |
 | Crossing never starts | Confirm the portal is loaded on the worker that owns its container, the template is assigned, the party is nonempty, your game called `Open` there, and the aperture covers the doorway on the plane the player walks through. `PortalLink.Wait` and `Error` report the reason. |
-| Player is held at the face though the link is open | The player's client is not a warm member of the link, `CanEnter` refused them, or two parties' links are open and nothing says whose they are (`PartyOf`). |
+| Player or crate is stopped at the face though the link is open | The player's client is not a warm member of the link, `CanEnter` refused them, or two parties' links are open and nothing says whose they are (`PartyOf`). |
 | Crossing never starts in a scoped grid | Confirm the portal is parented under the chunk's content, so `NearScope` is the grid's scope. |
 | Player can't leave an instance in a scoped grid | Check that the chunk outside the doorway is leased; pin it while the instance is occupied. |
 | Two players unexpectedly share a personal room | Compare their `OwnerIdentity` values and any custom `ResolveKey` callback. |

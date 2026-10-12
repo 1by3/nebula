@@ -216,6 +216,13 @@ namespace Nebula
             if ((entry.Fields & TransformFields.Location) == 0) AcceptFields(entry.Fields);
             var buffer = Identity.Interpolator;
             if (buffer == null) buffer = Identity.Interpolator = gameObject.GetComponent<RemoteInterpolator>() ?? gameObject.AddComponent<RemoteInterpolator>();
+            // Into another scope through a portal: what is buffered goes through the link into the new container first, so the interpolator
+            // never bridges the two scopes through their containers' world poses (docs/portals.md D18).
+            if (buffer.HasSamples && buffer.LatestContainer != container && Portals.TryCarryBuffer(buffer.LatestContainer, buffer.LatestPosition, container, out var carry))
+            {
+                buffer.CarryThroughPortal(in carry, container);
+                Identity.History?.CarryThroughPortal(in carry, container, everything: false);
+            }
             var p = Identity.LocalPosition;
             var r = Identity.LocalRotation;
             if (container != Identity.Container)

@@ -1,6 +1,6 @@
 ---
 title: "Portals"
-description: "Lookup for portals (docs/portals.md D1): the Portal components on this process, and, on a client, what the network gateway has told it about the portals near it."
+description: "Lookup for portals (docs/portals.md D1): the Portal components on this process, on a client what the network gateway has told it about the portals near it, and the link poses between scopes (Map, Turn)."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/Portals.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/Portals.cs)</div>
@@ -9,7 +9,7 @@ description: "Lookup for portals (docs/portals.md D1): the Portal components on 
 public static class Portals
 ```
 
-Lookup for portals (`docs/portals.md` D1): the [`Portal`](/docs/reference/containers/portal) components on this process, and, on a client, what the network gateway has told it about the portals near it. Link poses (`Map`, `Turn`) and per-scope drawing slots are added by later milestones of the same design.
+Lookup for portals (`docs/portals.md` D1): the [`Portal`](/docs/reference/containers/portal) components on this process, on a client what the network gateway has told it about the portals near it, and the link poses between scopes ([`Map`](#map), [`Turn`](#turn)). Per-scope drawing slots are added by a later milestone of the same design.
 
 ## Properties
 
@@ -39,6 +39,14 @@ On a client: the state of each link the network gateway has told it about, by li
 
 ## Events
 
+### Crossed [#crossed]
+
+```csharp
+public static event Action<NetworkIdentity, ulong, ulong, ulong> Crossed;
+```
+
+Raised on this process when an entity crossed between two scopes through a portal: on a worker for every committed member, on a client when the entity's container change arrived and was carried through the link. [`Portal.Crossed`](/docs/reference/containers/portal#crossed) says the same for one portal, where its component is known to the process (a client may not have loaded the content a portal stands in). Arguments: the entity, the portal's derived id (0 when only an instance's pose related the scopes), the scope it left and the scope it entered.
+
 ### KnownChanged [#knownchanged]
 
 ```csharp
@@ -64,3 +72,20 @@ public static PortalLink FindLink(ulong linkId);
 ```
 
 The live link with this id ([`PortalLink.Id`](/docs/reference/containers/portal-link#id)) of any enabled portal on this process, or null.
+
+### Map [#map]
+
+```csharp
+public static PortalPose Map(ulong from, ulong to, PortalPose pose);
+public static Double3 Map(ulong from, ulong to, Double3 position);
+```
+
+A pose of scope `from` in scope `to`, carried through the link between them (`docs/portals.md` D39): the position about the faces and in double, the rotation turned. Scopes that no portal and no instance pose relates, and a scope with itself, return the pose unchanged. For an instance a template portal built this is its pose against its host ([`InstancePoses`](/docs/reference/containers/instance-poses)), which every process learns from lease rows; for a portal with a fixed far side it is the portal's two faces, known to a worker for the links it holds and to a client from the portal records it was sent. Where several portals join the same two scopes, the one whose face is nearest the pose is used.
+
+### Turn [#turn]
+
+```csharp
+public static Quaternion Turn(ulong from, ulong to);
+```
+
+What turns a rotation or direction of scope `from`'s axes into scope `to`'s, for an entity crossing between them through a portal: the identity unless the link between them is turned. A game keeping its own heading or velocity bookkeeping (a pawn's yaw) applies it in a [`Portal.Crossed`](/docs/reference/containers/portal#crossed) handler. It replaces [`InstancePoses.Turn`](/docs/reference/containers/instance-poses#turn) for anything that crosses a portal, and answers for a portal with a fixed far side too.

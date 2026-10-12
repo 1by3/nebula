@@ -64,6 +64,12 @@ namespace Nebula
 
         internal int DriverTimeoutTicks => DriverInputTimeoutTicks;
 
+        /// <summary>
+        /// The entity went through a portal (<c>docs/portals.md</c> D18): the positions the client predicted in the scope it left are
+        /// rewritten into <paramref name="destination"/> through the link's pose, so reconciling the ticks around the crossing compares like with like.
+        /// </summary>
+        internal abstract void CarryThroughPortal(in PortalMap map, Container destination);
+
         internal abstract void DriverChanged(ulong previous, ulong current, bool authority);
         internal abstract void ServerReceiveInput(uint tick, NetworkReader payload);
         internal abstract void ClientPredictTick(uint tick, NetworkWriter inputOut);
@@ -210,6 +216,20 @@ namespace Nebula
 
         /// <summary>A driver sent nothing for this tick and nothing for <see cref="PredictedBehaviourBase.DriverInputTimeoutTicks"/> before it.</summary>
         private bool DriverSilent(uint tick) => tick > _lastControllerInputTick && tick - _lastControllerInputTick > (uint)Math.Max(1, DriverTimeoutTicks);
+
+        internal sealed override void CarryThroughPortal(in PortalMap map, Container destination)
+        {
+            for (int i = 0; i < BufferSize; i++)
+            {
+                if (!_history[i].Valid) continue;
+                ulong scope = _history[i].Container != null ? _history[i].Container.InstanceId : 0UL;
+                if (scope != map.FromScope) continue;
+                Portals.CarryLocal(in map, _history[i].Container, _history[i].Position, Quaternion.identity, Vector3.zero, destination,
+                    out var position, out _, out _);
+                _history[i].Position = position;
+                _history[i].Container = destination;
+            }
+        }
 
         internal sealed override void DriverChanged(ulong previous, ulong current, bool authority)
         {

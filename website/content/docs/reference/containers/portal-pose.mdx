@@ -1,0 +1,48 @@
+---
+title: "PortalPose"
+description: "A pose in a scope: an absolute Double3 position and a rotation in the scope's own axes."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PortalTypes.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PortalTypes.cs)</div>
+
+```csharp
+public readonly struct PortalPose
+```
+
+A pose in a scope: an absolute [`Double3`](/docs/reference/containers/double3) position and a rotation in the scope's own axes. What [`Portals.Map`](/docs/reference/containers/portals#map) carries from one scope into another (`docs/portals.md` D39).
+
+## Constructors
+
+### PortalPose [#portalpose]
+
+```csharp
+public PortalPose(Double3 position, Quaternion rotation);
+```
+
+A pose.
+
+## Properties
+
+### Position [#position]
+
+```csharp
+public Double3 Position { get; }
+```
+
+The position, absolute in the scope.
+
+### Rotation [#rotation]
+
+```csharp
+public Quaternion Rotation { get; }
+```
+
+The rotation, in the scope's axes.
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

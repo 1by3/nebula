@@ -5,6 +5,72 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
+    /// A pose in a scope: an absolute <see cref="Double3"/> position and a rotation in the scope's own axes. What
+    /// <see cref="Portals.Map(ulong, ulong, PortalPose)"/> carries from one scope into another (<c>docs/portals.md</c> D39).
+    /// </summary>
+    public readonly struct PortalPose
+    {
+        /// <summary>The position, absolute in the scope.</summary>
+        public Double3 Position { get; }
+        /// <summary>The rotation, in the scope's axes.</summary>
+        public Quaternion Rotation { get; }
+
+        /// <summary>A pose.</summary>
+        public PortalPose(Double3 position, Quaternion rotation)
+        {
+            Position = position;
+            Rotation = rotation;
+        }
+
+        /// <inheritdoc/>
+        public override string ToString() => $"{Position} {Rotation.eulerAngles}";
+    }
+
+    /// <summary>
+    /// One link's maths, one way (<c>docs/portals.md</c> D4, D37): a point of <see cref="FromScope"/> is
+    /// <c>ToOrigin + Turn × (p − FromOrigin)</c> in <see cref="ToScope"/>, applied about the faces and in double. It is never
+    /// stored as <c>T + R × p</c>, whose rotation error multiplies the distance from the scope's origin instead of the distance from
+    /// the face: metres at 10⁸ m.
+    /// </summary>
+    internal readonly struct PortalMap
+    {
+        public readonly ulong FromScope, ToScope;
+        public readonly Double3 FromOrigin, ToOrigin;
+        /// <summary>What turns a rotation or direction of the from scope's axes into the to scope's.</summary>
+        public readonly Quaternion Turn;
+        /// <summary>The portal this map belongs to (its derived id), or 0 when it is learned from an instance's pose alone.</summary>
+        public readonly ulong PortalId;
+
+        public PortalMap(ulong fromScope, ulong toScope, Double3 fromOrigin, Double3 toOrigin, Quaternion turn, ulong portalId = 0)
+        {
+            FromScope = fromScope;
+            ToScope = toScope;
+            FromOrigin = fromOrigin;
+            ToOrigin = toOrigin;
+            Turn = turn;
+            PortalId = portalId;
+        }
+
+        /// <summary>The identity: nothing moves, nothing turns.</summary>
+        public static PortalMap Identity(ulong scope) => new PortalMap(scope, scope, Double3.Zero, Double3.Zero, Quaternion.identity);
+
+        /// <summary>Whether <see cref="Turn"/> is more than the pose epsilon from the identity.</summary>
+        public bool IsTurned => Quaternion.Angle(Quaternion.identity, Turn) > NebulaWorker.PoseAngleEpsilon;
+
+        /// <summary>A point of the from scope (absolute) in the to scope (absolute).</summary>
+        public Double3 Point(Double3 p) => ToOrigin + PhysicsFrames.Rotate(Turn, p - FromOrigin);
+
+        /// <summary>A direction or rotation-free vector of the from scope in the to scope.</summary>
+        public Vector3 Direction(Vector3 v) => Turn * v;
+
+        /// <summary>A rotation of the from scope's axes in the to scope's.</summary>
+        public Quaternion Rotation(Quaternion q) => Turn * q;
+
+        /// <summary>The same link the other way.</summary>
+        public PortalMap Inverse => new PortalMap(ToScope, FromScope, ToOrigin, FromOrigin, Quaternion.Inverse(Turn), PortalId);
+    }
+
+    /// <summary>
     /// One side of a <see cref="Portal"/> (<c>docs/portals.md</c> D2): a scope, the container the face is fixed in, and a
     /// pose, an absolute <see cref="Double3"/> position in that scope and a rotation. The face's +z axis is the way from
     /// the near scope into the far one: in its axes, z &lt; 0 is the near side's region and z ≥ 0 the far side's.
@@ -166,6 +232,20 @@ namespace Nebula
 
         /// <summary>The inverse of <see cref="ToNear"/>: a point of the near scope in the far scope.</summary>
         public Double3 ToFar(Double3 nearPoint) => FarFace.Origin + PhysicsFrames.Rotate(Quaternion.Inverse(Turn), nearPoint - NearFace.Origin);
+
+        /// <summary>The link's maths from the far scope into the near one (<see cref="ToNear"/>), for the pose and velocity of whatever crosses.</summary>
+        internal PortalMap ToNearMap
+        {
+            get
+            {
+                var near = NearFace;
+                var far = FarFace;
+                return new PortalMap(far.Scope, near.Scope, far.Origin, near.Origin, near.Rotation * Quaternion.Inverse(far.Rotation), Portal.PortalId);
+            }
+        }
+
+        /// <summary>The link's maths from the near scope into the far one (<see cref="ToFar"/>).</summary>
+        internal PortalMap ToFarMap => ToNearMap.Inverse;
 
         /// <inheritdoc/>
         public override string ToString() => $"link {Portal.Id}/{Party} {State}{(Wait != PortalWait.None ? " (" + Wait + ")" : "")}";

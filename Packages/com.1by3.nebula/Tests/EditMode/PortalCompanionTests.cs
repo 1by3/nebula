@@ -92,7 +92,7 @@ namespace Nebula.Tests
         }
 
         [Test]
-        public void WithoutCompanionsTheEntityCrossesAlone()
+        public void WithoutCompanionsEachEntityCrossesOnItsOwn()
         {
             _holding = false;
             _h.OpenDoor();
@@ -100,7 +100,7 @@ namespace Nebula.Tests
             StepIn();
             _h.Tick();
             Assert.That(_h.Player.InstanceId, Is.EqualTo(PortalHarness.Private));
-            Assert.That(_crate.Container, Is.SameAs(_h.Street), "a server-owned entity never crosses by itself");
+            Assert.That(_crate.Container, Is.SameAs(_h.Hall), "and a server-owned entity that is nobody's companion crosses on its own (NEB-429)");
         }
 
         [Test]

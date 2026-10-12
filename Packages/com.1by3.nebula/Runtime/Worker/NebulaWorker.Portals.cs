@@ -215,34 +215,31 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Commit a crossing through an open link (<c>docs/portals.md</c> D16): no per-entity preparation, nothing loaded and nothing held. Every
-        /// member is put into <paramref name="destination"/> at its own pose in the destination scope's space, in double, keeping its identity;
-        /// a member riding in another member's carried container, at any depth, keeps its seat. Fails, changing nothing, when an entity is not
-        /// simulated here or cannot leave its scene, the destination's lease or scope no longer admits it, or its content cannot be completed.
+        /// Commit a crossing through an open link (<c>docs/portals.md</c> D16, D18): no per-entity preparation, nothing loaded and nothing held.
+        /// Every member is put into <paramref name="destination"/> at its own pose carried through the link, in double, keeping its identity; a
+        /// member riding in another member's carried container, at any depth, keeps its seat. Its velocities (the reported one and a dynamic
+        /// body's linear and angular), its recorded history and its epoch go through the link with it. Fails, changing nothing, when an entity
+        /// is not simulated here or cannot leave its scene, the destination's lease or scope no longer admits it, or its content cannot be completed.
         /// </summary>
-        internal bool CommitThrough(IReadOnlyList<NetworkIdentity> members, Container destination, Double3[] positions, Quaternion[] rotations)
+        internal bool CommitThrough(IReadOnlyList<NetworkIdentity> members, Container destination, in PortalMap map)
         {
             if (members == null || members.Count == 0 || destination == null || !LeaseState.IsOwning(destination.LeaseState) || !TransferScopeAdmits(destination)) return false;
             var group = new HashSet<NetworkIdentity>();
             foreach (var member in members)
                 if (member == null || !member.IsSpawned || !member.HasAuthority || member.IsSceneEntity || !group.Add(member)) return false;
             if (!InstanceScenes.Complete(destination)) return false;
+            // Everything is read in the scope being left before anything moves: a rider's frame, and so its velocity, changes when its carrier does.
+            var carries = new NetworkIdentity.PortalCarry[members.Count];
+            var seated = new bool[members.Count];
+            for (int i = 0; i < members.Count; i++)
+            {
+                carries[i] = members[i].CapturePortalState();
+                seated[i] = RidesInAny(members[i], group);
+            }
             // Carriers first, then what they carry: a rider is committed in place once the ship it sits in has already moved it
             // (docs/scope-activation.md D19).
-            for (int i = 0; i < members.Count; i++)
-            {
-                if (RidesInAny(members[i], group)) continue;
-                members[i].SetContainer(destination);
-                members[i].SetFramePose(null, positions[i], rotations[i]);
-                members[i].Epoch++;
-                members[i].HasStateTick = false;
-            }
-            for (int i = 0; i < members.Count; i++)
-            {
-                if (!RidesInAny(members[i], group)) continue;
-                members[i].Epoch++;
-                members[i].HasStateTick = false;
-            }
+            for (int i = 0; i < members.Count; i++) if (!seated[i]) members[i].MoveThroughPortal(destination, in map, in carries[i]);
+            for (int i = 0; i < members.Count; i++) members[i].FinishThroughPortal(in map, in carries[i]);
             return true;
         }
     }

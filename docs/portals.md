@@ -247,12 +247,21 @@ front of its holder and must not cross first. With the far side warm, a companio
 own, so `CompanionWaitSeconds` has nothing to bound for a portal. Whether an NPC may follow a player through is
 `CanEnter`'s answer, which is the game's; nothing in the portal stops it.
 
-> **As built (NEB-428).** Only entities with an owning client (pawns) cross on their own: D14's "anything crosses" is NEB-429's. Companions are not asked for
-> once, at the commit, but every tick while the leader is within `ApproachDistance` (8 m) of an open face, as the boundary asked them while its
-> crossing was live, so that one in front of its holder is already a companion when it reaches the face. `ResolveCompanions` keeps its meaning, a leader and its companions commit as one group and each member arrives at
-> **its own** pose mapped through the link (rotation and `Motion.Velocity` turned), where the boundary moved the group by one translation.
-> `CompanionWaitSeconds` and the pending-companion wait are gone, as D14 says; `CompanionLeftBehind` carries a `PortalRefusal`. A pinned or scene
-> entity, one in another scope than its leader and one this worker does not simulate is left behind.
+> **As built (NEB-428, NEB-429).** Every authoritative, spawned entity that is not an authored scene entity and not pinned crosses on its own, player-owned
+> or server-owned; `Portals.Tick` asks the portals on the entity's container chain and those in the neighbours of the container it is in (a door beyond a
+> chunk seam), and, for an entity in a far scope, the portals one of whose links leads into it. The index (portals by container, by far scope) is rebuilt once a
+> worker tick, so an entity is never asked about a portal in a container it has nothing to do with (`Portals.Asks` counts it; the test pins 101 asks for 101
+> entities and 50 doors in another yard). A passenger is not a candidate: walking up from the entity's container, a portal is asked only while no carried
+> container lies below it on the chain, so a ship's passengers go with the ship, and a hatch fixed in the ship's own box is still asked about them. A
+> carrier crosses with everything aboard it that this worker simulates (`Container.IsCarriedBy`, at any depth); each seated rider keeps its container and
+> pose, and takes a new epoch (`docs/scope-activation.md` D19, D21). Admission applies to the whole group: if anyone aboard is not admitted (by default an
+> owned rider is admitted when its client is a member and warm), the carrier is refused as a whole with `NotAdmitted`, so nobody is carried into a scope their
+> client has not been readied for. Companions are asked for **every tick the leader is within `ApproachDistance` of an open face** (the NEB-428 way), not once
+> at the commit, and this is the sounder reading now that everything crosses on its own: a held item in front of its holder reaches the plane first, and unless it
+> is already known to be the holder's it would cross alone and leave the holder behind. The cost is one `ResolveCompanions` call per tick per entity near an
+> open face, only when the hook is set. `ResolveCompanions` keeps its meaning, a leader and its companions commit as one group and each member arrives at **its
+> own** pose mapped through the link. `CompanionLeftBehind` carries a `PortalRefusal`. A pinned or scene entity, one in another scope than its leader and one this worker
+> does not simulate is left behind.
 
 **D15 The test is a swept segment against the aperture, on the worker that simulates the entity.** After each tick's
 simulation, for each portal registered on the entity's container chain (not every portal in the process: today's
@@ -264,12 +273,16 @@ m a tick) is tested on its predicted segment for the next step, `position + velo
 that would carry it through, so it never simulates a step behind the face in the near scene, where a coincident far
 scope is solid mass.
 
-> **As built (NEB-428).** The test is the segment from the entity's position last tick to this tick's, in the face's axes and in double, against the
+> **As built (NEB-428, NEB-429).** The test is the segment from the entity's position at the last look to this one, in the face's axes and in double, against the
 > plane z = +`CrossDepth` (entering) or z = −`CrossDepth` (leaving): it crosses when the segment passes that plane inside the cross-section. That is the
-> hysteresis of D15, and it works for a root that creeps across the plane. There is no predictive step for a body faster than `CrossDepth` a tick, no
-> tracking beyond `ApproachDistance`, and no entity without an owning client: NEB-429. An entity is tracked (its last position kept) only while it is
-> within `ApproachDistance` of a face of a portal that has the right to run on this worker; every portal is tested, linked or not, so a portal nobody
-> opened is solid to a pawn. The near face is read once per worker tick per portal for the test.
+> hysteresis of D15, and it works for a root that creeps across the plane. **The predictive test:** a body that moves further than `CrossDepth` in a step (its velocity
+> in its scope's axes times `TickInterval × UpdateInterval`) is tested on the segment `position → position + velocity × dt` the same way, and committed on this tick
+> if that segment would pass the plane, before the step that would carry it through. It is committed at the pose it stands in now, mapped through the link (not at the
+> predicted one), so the step runs in the far scene from there; it can land up to one step short of the far face, in the throat D27 keeps clear. A refused predictive crossing
+> stops the body where its predicted path meets the plane (D17). A body is tracked while it is within `ApproachDistance` plus a step of a face (the reach grows
+> with its speed, so a 300 m/s projectile is seen a step ahead); the last position is kept per portal for `UpdateInterval + 1` ticks and is not trusted after a longer gap, so a teleport
+> or a respawn through the plane is not a crossing, and an entry nobody has looked at for 120 ticks is dropped. Every portal is tested, linked or not, so a portal nobody
+> opened is solid to anything. The near face is read once per worker tick per portal for the test.
 
 **D16 A commit goes through the link's standing preparation.** Because the link is Open (D10), Nebula commits without a
 per-entity `PrepareTransfer`: an internal `CommitThrough(link, entity, pose)` does what `BeginCommit`/`EndCommit` do (the
@@ -278,13 +291,16 @@ check; `Epoch++`; `HasStateTick = false`) on the tick the root passes. Nothing i
 it can fail is that the far container's lease changed on this very tick; the entity is then refused for that tick (D17)
 and tested again on the next.
 
-> **As built (NEB-428).** `Portals.Tick` runs where `InstanceBoundary.Tick` ran, after each entity's simulation. The commit is
-> `NebulaWorker.CommitThrough(members, destination, positions, rotations)`: it checks that every member is simulated here and not a scene entity, that the
-> destination's lease is owning and its scope admits, completes the destination's content (a no-op once the link is open, `InstanceScenes.Complete`
-> otherwise), puts each non-seated member into the destination at its pose in the destination scope's space *in double* (`SetFramePose`), keeps seated
-> riders in place, and bumps each epoch. The lease-epoch check of D16 is the epoch the link was ready with (`PortalLink.ReadyEpoch`): if the far container's
-> lease moved, the commit is refused for that tick and the link prepares again. Leaving looks for the container of the near scope that holds the mapped
-> point (descending into physics frames, as the boundary did).
+> **As built (NEB-428, NEB-429).** `Portals.Tick` runs where `InstanceBoundary.Tick` ran, after each entity's simulation. The commit is
+> `NebulaWorker.CommitThrough(members, destination, map)` and is kept as it was, with a standing preparation: it checks that every member is simulated here and
+> not a scene entity, that the destination's lease is owning and its scope admits, completes the destination's content (a no-op once the link is open,
+> `InstanceScenes.Complete` otherwise), reads every member's pose and velocities in the scope being left **before anything moves** (a rider's frame, and so its velocity, changes
+> when its carrier does), puts each non-seated member into the destination at its pose carried through `PortalMap` in double (`SetFramePose`), keeps seated riders in place,
+> and finishes each (velocities, history, epoch; D18). The lease-epoch check of D16 is the epoch the link was ready with (`PortalLink.ReadyEpoch`): if the far
+> container's lease moved, the commit is refused for that tick and the link prepares again. **Kept:** a crossing enters the template's entry part, or the container that holds
+> the point 25 cm inside a fixed far face, because a member's client is warm only for that container; the deepest container holding the mapped point waits for NEB-431's window.
+> Leaving looks for the container of the near scope that holds the mapped point, descending into physics frames. A server-owned entity needs no client warmth:
+> `Admits` is true for it (`ClientReady` was always true for unowned entities).
 
 **D17 Straddling resolves to the root's side; a refused entity meets the aperture.** An entity is in exactly one scope at
 a time, the one its root is in; the part of it beyond the plane is a proxy in the other scope (§6). An entity that is
@@ -294,11 +310,13 @@ projectile) is clamped: its root is put back `CrossDepth` short of the plane and
 normal removed. Either way the near worker raises `Refused(entity, link, reason)` so the game can bounce, drop or destroy
 it. Nothing holds an entity where it last stood.
 
-> **As built (NEB-428).** A refused crossing holds the entity at the position it last stood, read back through its scope's frame (the interim for the
-> clamp against the plane that NEB-429 builds); `Refused` is not raised yet, the refusal reason exists as `PortalRefusal` (used by
-> `CompanionLeftBehind`) and `NebulaDiagnostics.PortalRefusals` counts. A crossing carries the position (double), the rotation and `Motion.Velocity`.
-> A `Rigidbody`'s velocity, `StateHistory`, the interpolation buffer and the prediction history are NEB-429's. `Portal.Crossed(entity, link, leaving)` is
-> raised on the worker for every member of a committed group; there is no client-side `Crossed` yet.
+> **As built (NEB-429).** An entity the link does not let through is **stopped, not held**: its root is put at the point where its path met the plane, `CrossDepth` short of
+> it on the side it came from, in double (`SetFramePose`), and the component of its velocity that pointed through is removed, from `Motion.Velocity` and from a dynamic body's
+> `linearVelocity`. A physical body is left to meet the aperture collider; that collider is NEB-432's job, so until then a refused `Rigidbody` is stopped exactly like a
+> mover with no body (a test pins it). `Portal.Refused(entity, link, reason)` is raised on the worker in every case, once for each tick the entity reaches the aperture: `link` is
+> null when the entity has no link here (`LinkNotOpen`, or `AmbiguousParty` when its party named none and more than one link is open), the link itself for `LinkNotOpen` on a closed
+> or preparing link, `NotAdmitted`, and `NoDestination`. A body that keeps pushing is refused on every tick it reaches the plane, and `NebulaDiagnostics.PortalRefusals` counts each.
+> An occupant that a closed link keeps in is stopped `CrossDepth` short of the plane on the inside. `PortalRefusal` gained no member: `AmbiguousParty` was there from NEB-428.
 
 **D18 Everything an entity carries in time goes through the link pose with it.** At the commit: the position in double
 (D37) and rotation; `Motion.Velocity`; a `Rigidbody`'s linear and angular velocity; and the `StateHistory` ring, whose
@@ -312,6 +330,21 @@ never be read for a frame in its new scope with its old pose (§18: at a door tu
 to 0.9 m off). A game's own heading
 bookkeeping turns with `Portals.Turn(from, to)` (today's `InstancePoses.Turn`) in a `Crossed(entity, portal,
 from, to)` handler raised on the worker and on clients.
+
+> **As built (NEB-429).** At the commit, for every member (a seated rider included), in this order: the pose is read in the scope's own axes and in double
+> (`NetworkIdentity.CapturePortalState`); the entity is moved with `SetContainer` and `SetFramePose` to `PortalMap.Point(absolute)` and `Turn × rotation`
+> (`MoveThroughPortal`); then its velocities and history are finished (`FinishThroughPortal`): `Motion.Velocity`, and for a dynamic `Rigidbody` `linearVelocity` and `angularVelocity`,
+> are turned by the link and converted into the destination's physics frame, if it has one, so a crate thrown through a door turned 20° and 90° leaves with its momentum in the
+> room's axes; the `StateHistory` ring has **every entry** rewritten (all of them were recorded before the commit) into the destination's space and container, through the same
+> maths, so `StateAt(crossingTick)` and every earlier tick answer in the room's space and `Container` (a rider's entries recorded inside a physics frame that its carrier has since left are
+> converted as the world now stands). On a copy this process does not simulate (a client; a ghost holder on a worker), `NetworkIdentity.SetContainer` finds the link between the two scopes
+> when a container change crosses scopes (`Portals.TryCarryReplica`: a link a worker holds, a portal record a client was sent, or the pose of the instance, in that order, and only when
+> the entity was within `Portals.CarryRange`, 48 m, of its face) and **in the same call** puts the entity at the link-composed pose, turns its velocity, rewrites its
+> `RemoteInterpolator` buffer (`NetworkTransform.ReceiveRoot` does so as soon as the first sample in the new container arrives, so the interpolator never bridges two scopes through their containers'
+> world poses; that bridge was the 0.34 to 0.9 m pop), its prediction history (`PredictedBehaviour`) and a ghost's `StateHistory` entries recorded in the scope it left, into the destination.
+> `Portal.Crossed(entity, portal, from, to)` (scope ids) is raised on the worker for every member and on a client where the `Portal` component exists; `Portals.Crossed(entity, portalId, from, to)` is raised
+> wherever the crossing is seen and `portalId` is 0 when only the instance's pose related the scopes. A game's heading bookkeeping turns with `Portals.Turn(from, to)`. Not rewritten: the
+> history of a seated rider on a ghost holder (NEB-434).
 
 **D19 Interest at a commit keeps what a window still authorises.** `docs/scope-activation.md` D13 stays: an entity that
 changes scope is re-authorised for every client that holds it (`RevalidateInterest`) before anything about the
@@ -674,13 +707,22 @@ of `docs/conformance-suite.md` (50 onwards) in the commit that implements them.
 **NEB-428 as built, and the seams it leaves.** `Portal`, `PortalFace`, `PortalAperture`, `PortalLink`, `PortalState`, `PortalWait`, `PortalRefusal` and
 `Portals` (`Runtime/Containers`), the worker's side (`Runtime/Worker/PortalLinks.cs`, `PortalCrossing.cs`, `NebulaWorker.Portals.cs`), the messages
 (`Runtime/Protocol/PortalMessages.cs`), the network gateway (`Runtime/Gateway/GatewayPortals.cs`) and the client (`Runtime/Client/NebulaClient.Portals.cs`).
-For the issues that follow: NEB-429 replaces `Portals.Tick`'s owner test and `Portal.Cross`'s segment test and hold (both in `PortalCrossing.cs`; the
-commit, `NebulaWorker.CommitThrough`, takes a group of members with their poses and stays), and adds what travels with an entity at the commit; NEB-430
-moves the face and link maths (`PortalFace`, `PortalLink.ToNear/ToFar/Turn`, already in double and in the pivot form of D37) behind `Portals.Map` and
-`Portals.Turn` and adds the far-out tests; NEB-431 widens the far window from the entry container to the rows a window touches (`GatewayPortals.cs`:
+For the issues that follow: NEB-430 audits the face and link maths (`PortalFace`, `PortalLink.ToNear/ToFar/Turn`, already in double and in the pivot form of D37) and adds the far-out tests;
+NEB-431 widens the far window from the entry container to the rows a window touches (`GatewayPortals.cs`:
 `HoldsLink`, `AddMemberRows` in `CollectNeededContainers`; `NebulaClient.Portals.cs`: the container prepared), uses the observer lists the records
 already carry in `NebulaGateway.CanObserve`, and removes `ObservePublic`, `ObserveHost` and `HostCarriers`; NEB-432 sets the throat and aperture-collider
-condition (`Portal.Evaluate`, condition 4, true today) and replaces the roots-only band test (`Portal.BandOccupied`) with proxies.
+condition (`Portal.Evaluate`, condition 4, true today), replaces the roots-only band test (`Portal.BandOccupied`) with proxies and replaces `Portal.Stop` for a physical body
+with the aperture collider.
+
+**NEB-429 as built, and the seams it leaves.** The crossing test, the index and the stop are in `Portals.cs` (`Tick`, `EnsureIndex`) and `PortalCrossing.cs` (`Cross`, `Passes`, `TryCross`, `Stop`); the
+commit is `NebulaWorker.CommitThrough(members, destination, PortalMap)`; what travels with an entity is `NetworkIdentity.CapturePortalState / MoveThroughPortal / FinishThroughPortal`
+(the authority) and `CarryReplicaThroughPortal` (a copy, from `SetContainer`), with `CarryThroughPortal` on `StateHistory`, `RemoteInterpolator` and `PredictedBehaviour`, and `Portals.CarryLocal`
+for the poses they hold. `Portals.TryMap` finds the link between two scopes (a worker's links, then a client's portal records, then `InstancePoses`) and is what `Portals.Map` and `Portals.Turn` answer from.
+For NEB-431: a commit changes an entity's scope and bumps its epoch exactly as before, so `RevalidateInterest` (D13) still runs before anything about the destination is relayed; the thrower's window
+keeps the entity by consulting the link records, and a copy in a window that then crosses is carried by the same `SetContainer` hook, because both scopes are ones the client holds and `Portals.TryMap` relates them. The hook
+only fires for an entity within `Portals.CarryRange` (48 m) of the face it used, which is the window's depth, so a replica a window shows is carried when it crosses at the face, not when it stands deep in the window. A crossing is
+announced to the game by `Portal.Crossed` and `Portals.Crossed`; neither tells a client that a crossing was refused (`Refused` is worker-side). A seated rider's `StateHistory` on a ghost holder is not rewritten
+(NEB-434).
 
 **Milestone 2, seeing and acting across.** The three issues are independent.
 

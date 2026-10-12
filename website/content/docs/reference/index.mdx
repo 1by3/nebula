@@ -96,8 +96,9 @@ Define container volumes and look up their current worker assignments.
 | [PortalAperture](/docs/reference/containers/portal-aperture) | Struct. The opening of a portal, on its face's z = 0 plane (docs/portals.md D3): an oriented box centred on the face's origin. |
 | [PortalFace](/docs/reference/containers/portal-face) | Struct. One side of a Portal (docs/portals.md D2): a scope, the container the face is fixed in, and a pose, an absolute Double3 position in that scope and a rotation. |
 | [PortalLink](/docs/reference/containers/portal-link) | Class. One party's link through a Portal (docs/portals.md D8, D9): the far scope, the state the link is in and, when it is not open, what it waits for. |
+| [PortalPose](/docs/reference/containers/portal-pose) | Struct. A pose in a scope: an absolute Double3 position and a rotation in the scope's own axes. |
 | [PortalRefusal](/docs/reference/containers/portal-refusal) | Enum. Why a portal did not let an entity through, or leave a companion behind (docs/portals.md D17). |
-| [Portals](/docs/reference/containers/portals) | Static class. Lookup for portals (docs/portals.md D1): the Portal components on this process, and, on a client, what the network gateway has told it about the portals near it. |
+| [Portals](/docs/reference/containers/portals) | Static class. Lookup for portals (docs/portals.md D1): the Portal components on this process, on a client what the network gateway has told it about the portals near it, and the link poses between scopes (Map, Turn). |
 
 ## World partition
 
