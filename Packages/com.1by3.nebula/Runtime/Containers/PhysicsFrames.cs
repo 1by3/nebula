@@ -1372,8 +1372,8 @@ namespace Nebula
             bool withCameras = cameras != null && cameras.Count > 0;
             if (withCameras) SceneRenderOrigin.Begin(cameras, Frames, _simulating);
             if (ShiftChildrenWhileDrawing) ShiftChildren();
-            // A turned instance and the world around its door, each drawn standing as the other sees it (scope-frames D12).
-            InstanceViews.Begin(cameras, SceneRenderOrigin.Offset);
+            // Every drawn scope that is not the anchor posed against it, and the cameras when the view is not the anchor (portals D41).
+            DrawnScopes.Begin(cameras, SceneRenderOrigin.Offset);
             if (withCameras) SceneRenderOrigin.RaiseDrawing();
         }
 
@@ -1406,7 +1406,7 @@ namespace Nebula
         {
             if (!_drawing) return;
             _drawing = false;
-            InstanceViews.End();
+            DrawnScopes.End();
             for (int i = _drawn.Count - 1; i >= 0; i--)
                 if (_drawn[i].Transform != null) _drawn[i].Transform.localPosition = _drawn[i].Local;
             _drawn.Clear();

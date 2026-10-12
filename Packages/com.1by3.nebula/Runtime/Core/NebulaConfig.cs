@@ -244,6 +244,8 @@ namespace Nebula
         [Header("Portals")]
         [Tooltip("The physics layer Nebula puts a portal's proxies and aperture colliders on (docs/portals.md D26 to D28). Keep it free of your own objects and out of the layer masks of your own raycasts, and let it collide with whatever bodies collide with in the layer collision matrix. 31 by default.")]
         [Range(0, 31)] public int PortalProxyLayer = 31;
+        [Tooltip("Rendering-layer bits (a mask) a client reserves for drawn scopes, one per scope drawn at once (docs/portals.md D42): the view, the scopes it looks through, the public world and every scope kept drawn. Nebula stamps a scope's bit, and only that bit, on its static content, its chunks' content and its entities' renderers; the game uses the bits in its light and portal masks. 0 turns slots off; eight bits allow eight drawn scopes. Read the bit with Portals.RenderingLayerOf.")]
+        public uint ScopeRenderingLayers = 0;
 
         [Header("Persistence")]
         [Tooltip("Where entities carrying a PersistentEntity are stored: 'auto' (the orchestrator uses its database, a worker asks the orchestrator, a single-process run uses a local file), 'database', 'remote', 'local' (a file next to the process), 'memory' or 'off'. -nebula-persistence-mode overrides.")]

@@ -28,7 +28,7 @@ only link to the world is `InstanceBoundary` (`Runtime/Containers/InstanceBounda
   that continues into another scope. `ContainerRegistry.Link` refuses neighbours in different scopes, so the ghost band
   never offers anything across (`docs/scoped-chunk-grids.md` D11).
 - **One turned view.** `InstanceViews.Begin` turns either each turned instance about its door, or, from inside one,
-  every other scene root back about that door. Only one view scope is handled, and only by moving the world.
+  every other scene root back about that door. Only one view scope is handled, and only by moving the world. *(Removed by NEB-435.)*
 
 The docs state the goal as a non-goal: "continuous coordinates across scopes, seamless scope-to-scope travel"
 (`docs/scope-frames.md` §7), "entities do not ghost, interact or see across scopes" (`docs/scoped-chunk-grids.md` §7).
@@ -798,6 +798,16 @@ one Open link away of which the client is an observer, the public world, and `Ke
 first walked in from. It is the composition, in double, of the link poses along the portals from the anchor to the
 scope. This replaces the one-view limit of `InstanceViews` and its two cases (outside a turned instance; inside one).
 
+> **As built (NEB-435).** `DrawnScopes` (`Runtime/Containers/DrawnScopes.cs`) works the set out again whenever the view changes (`InstanceScenes.SetView`), a `KeepDrawn` request starts or ends, a portal or link record arrives or goes, or an
+> instance pose is learned; `Portals.DrawnScopeIds` lists it (the view first, then the public world, the scopes looked through, then the kept ones) and `Portals.Anchor` names the anchor. A scope is *looked through* when a
+> known link is `Open` or `Closing`, carries `Observer` or `ObserverAnyone` for this client, and has the view on one of its two sides: the scope on the other side is in the set. **A scope looked through is drawn without a `KeepDrawn`
+> request**: `InstanceScenes.Drawn` (and so `IsDrawn` and `NebulaChunks`' hiding) includes it, and its content is shown when the link opens and hidden when it closes or the client stops being an observer. `KeepDrawn` stays for the rest.
+> `Portals.PoseOf(scope)` returns a public `ScopePose` (`FromOrigin`, `ToOrigin`, `Turn`: a point of the scope is `ToOrigin + Turn (p − FromOrigin)` in the anchor, the pivot form of D37). It is a breadth-first walk from the anchor over the
+> known link records (each a map between the near and far faces, a template's from the near face and the identity far face, a fixed far side's from both), each step composed in double by `PortalMap`; a scope the walk does not reach
+> falls back to `Portals.TryMap` (the instance pose a lease row carried), and a scope nothing relates to has the identity. Because every scope may live in a frame of its own on a client, a pose is applied as `to − ToFrame(ToOrigin, anchor)` and
+> `from − ToFrame(FromOrigin, scope)` pivots, so an instance with a pinned frame of its own draws where it belongs against the world. The public world is in the set but, being usually the anchor, is not posed; when the anchor is a scoped grid
+> the public world's baked containers are not either (only runtime containers are, see D41).
+
 **D41 Drawing poses the drawn scopes that are not the anchor, and the cameras, never the anchor.** While cameras draw
 (`SceneRenderOrigin.Drawing`, as `InstanceViews.Begin` is called now), Nebula poses each drawn non-anchor scope's root
 containers by its pose and, when the view is not the anchor, the cameras by the view's pose; at the end it puts them back
@@ -807,7 +817,17 @@ by PhysX at the next step though it ends where it started; and the sky stays upr
 world. Moving the view's scope and its cameras gives the same image for everything posed, moves a handful of
 instance roots instead of the world, and leaves the sky, height fog and the sun as they are outside. Root sets are cached
 per scope and invalidated when the registry changes. Still drawing only: simulation, prediction and every pose a game
-reads stay in each scope's upright space.
+reads stay in each scope's upright space. A game that draws matrices of its own (`Graphics.RenderMeshInstanced`) multiplies them by
+`Portals.RenderMatrixOf(scope)`, which is the same pose as a matrix in drawing space.
+
+> **As built (NEB-435).** `DrawnScopes.Begin` is called where `InstanceViews.Begin` was (`PhysicsFrames.BeginDrawing`, after `SceneRenderOrigin.Begin` and the frames' children), before `SceneRenderOrigin.Drawing` is raised, so a game
+> reading transforms in `Drawing` reads posed ones. A root set is the scope's runtime containers whose `FixedParent` is null and whose transform is not under another such container's (so a carrier's box under its ship is not posed twice), dropped on
+> `RuntimeRegistered`/`Unregistering`, `DynamicRegistered`/`Unregistering` and `Rebuilt`; reparenting a container's transform is not an event. A camera is posed unless it is under a transform already posed. The pose of a root is
+> `to + R (p − from)` in double with both pivots taken in drawing space (the frame position minus `SceneRenderOrigin.Offset`), so it is right whatever the render offset; the roots are put back by their saved local pose, exactly.
+> **`Portals.RenderMatrixOf(scope)`** is `TRS(to − R from, R, 1)` for the same pivots, in float (about a millimetre where the pivots are some kilometres out); it takes a point of the scope's upright space *in drawing space* (a scene position
+> minus `SceneRenderOrigin.Offset`, which the matrices a game builds in `Drawing` already are once it subtracts it) to where it is drawn. A matrix taken from a transform read inside `Drawing` already has the pose, and must not be multiplied again.
+> **Deviations.** The scene-root turn is removed, with no compatibility (as decided). Roots of the *public world's baked containers* are never posed (they are not runtime containers); a game whose anchor is a scoped grid and which draws a
+> turned public room is not served, and none exists. The spec's `Portals.PoseOf` returns a `ScopePose` and not a `PortalPose`, because the pose is a map and not a point.
 
 **D42 Each drawn scope gets a rendering-layer slot; the game does the rest.** `NebulaConfig.ScopeRenderingLayers` reserves
 a mask of rendering-layer bits (0, the default, turns this off; eight bits allows eight drawn scopes). Nebula gives each
@@ -817,6 +837,14 @@ content under `ChunkContext.Root`, and entities' renderers when they spawn or ch
 `Portals.RenderingLayerOf(scope)` and `SlotChanged` tell the game. The game owns lights and their masks, how the
 look blends between scopes (it has `PoseOf` and the faces to measure the camera against), and any offset-portal mask:
 an offset portal (D4) needs the far scope clipped to the aperture, which is a renderer feature of the game's, not Nebula's.
+
+> **As built (NEB-435).** `NebulaConfig.ScopeRenderingLayers` is a `uint` mask, 0 by default; slots are for clients only. `ScopeLayers` keeps scope to bit: every scope of the drawn set (the view first, then the public world, then the rest in set order) takes the
+> lowest free bit of the mask, one that leaves the set gives it back, and a scope that finds none draws with none (a warning, once). Changing the reserved mask at run time frees every slot and allocates again. The view's slot is stable in
+> the sense that it keeps its bit for as long as it is drawn, including when it stops being the view; it is not "the first bit" (the first scope allocated is the first view). **Stamping** sets `(mask & ~reserved) | bit` on a renderer, so every
+> other bit is untouched and a scope with no slot clears the reserved bits. It is done on: `InstanceScenes.AdoptContent` (an instance's static content), `NebulaChunks` after `Loaded` returns (everything under `ChunkContext.Root`), and a
+> `NetworkIdentity` when it spawns and in `SetContainer` when it has none cached or its scope changed (the renderers under it are found once, at the first stamp or at spawn, and kept: a renderer added to an entity later is stamped with
+> `Portals.StampRenderingLayer(root, scope)`); and again on every slot change for that scope's static content, chunk roots and entities. `Portals.SlotChanged(scope, bit)` is raised after the restamp. The public world has a slot like any other
+> scope; its baked chunk content, which Nebula does not manage, is the game's to stamp with `RenderingLayerOf(0)`. Nothing is stamped on a server.
 
 ## 11. Lifetime and persistence
 
@@ -942,7 +970,7 @@ How the design keeps them, and what a test pins:
 6. **No adjacency across scopes.** `ContainerRegistry.Link` refuses it, by design, and stays so; portal adjacency is a
    second relation with its own band test (D30), so the ghost band changes only where it consults it.
 7. **The world is turned to draw.** `InstanceViews.Begin` turns every scene root from inside a turned instance; D41 poses
-   the view and its cameras instead.
+   the view and its cameras instead. *Done in NEB-435.*
 8. **Host observation lives on the connection.** `ClientConn.HostViews` and `HostCarriers` are per-connection history;
    link records replace them (D24). *Done in NEB-431.*
 9. **History is left behind.** `StateHistory` entries hold a world pose and their container (`docs/state-history.md` D4)
@@ -1071,7 +1099,7 @@ colliders need no change for a translation.
   network gateways keep the old worker's records for a second after a handoff (D44). **Seams left:** a split link still has no static throat and contact across it is one-sided (D27, D31); a rider's
   history on a ghost holder is not rewritten (D18); a row that appears after a link opened is entered only after the link prepares again; offset portals (NEB-437) change none of it, because every row is
   found in the far face's own axes.
-- **NEB-435 Several drawn scopes.** §10: `PoseOf`, posing non-anchor roots and cameras, rendering-layer slots. Removes
+- **NEB-435 Several drawn scopes** (*built: `DrawnScopes`, `ScopeLayers`, `ScopePose`, `Portals.Draw.cs`; EditMode `ConformanceDrawnScopesTests`, scenarios 74 and 75; see the notes under D40 to D42*). §10: `PoseOf`, posing non-anchor roots and cameras, rendering-layer slots. Removes
   `InstanceViews`' scene-root turn (§14, item 7). Tests: extend `ConformanceFarInstanceClientFrameTests` with two turned
   scopes drawn at once and from inside a turned scope; the anchor's roots are never moved; slot bits are stamped and nothing else of the mask changes.
 - **NEB-436 Cleanup.** Fold in NEB-405, NEB-308, NEB-408 and the HVR-674 leftovers; update the instancing, scopes and
@@ -1157,7 +1185,7 @@ except Q5 and Q11, which he answered.
 6. **Far-leg queries on a split link.** D33 truncates a cast that leaves the band on another worker. Acceptable, given D34
    keeps links co-located, or does it need an asynchronous `WorkerQuery` leg?
 7. **Rendering layers.** Should Nebula stamp renderers (D42), or only assign slots and let the game stamp? Is eight slots
-   enough?
+   enough? *Built as D42 proposes: Nebula stamps the renderers it manages, the width is the game's (the size of the reserved mask).*
 8. **Lag compensation.** Nebula rewinds the far leg by default and the near leg only on request (D33). Should it own both?
 9. **Client throat.** D27 has the client build the static throat for prediction. That is content work on the client at
    preparation; is it worth it, or should prediction at the face accept the worker's correction?

@@ -121,7 +121,7 @@ Your game is responsible for the rest:
 - **Keep the entrance chunk leased and the near scope active while the instance is occupied.** A scoped grid leases chunks around the players standing in it, and players inside the instance are not standing in it. Pin the entrance chunk on the grid's allocator (`RuntimeGridAllocator.AddPin`) while anyone is inside, and keep the scope from retiring.
 - **Open and close the portal on the worker that owns its container.** A link lives on that worker, and so does the crossing test; the instance is leased first by the worker that prepared it.
 - **Let occupants look out.** A client inside sees the grid's chunks and entities around the door through the portal's window, from the link records, with no option to set. Make the players who should look out members of the link, or mark the door `ObserveAnyone`; see [Look through a portal](#look-through-a-portal).
-- **Looking through the doorway.** On the client an instance entered from the scope the player stands in shares that scope's origin frame, so its content is drawn exactly behind the door and the host's scenery exactly outside it; keep the content drawn with `InstanceScenes.KeepDrawn` while the door is open. Build the interior in the portal's own axes (its forward is the way in): an instance is prepared with the portal's rotation (`Portal.PoseRotation`, off with `TurnWithFace`), so on a curved surface it stands behind the door the way the door stands, crossings carry the player's facing and velocity through it, and each side is drawn turned for the other.
+- **Looking through the doorway.** On the client an instance entered from the scope the player stands in shares that scope's origin frame, so its content is drawn exactly behind the door and the host's scenery exactly outside it; the content of a scope the client may look through is drawn while the link is open. Build the interior in the portal's own axes (its forward is the way in): an instance is prepared with the portal's rotation (`Portal.PoseRotation`, off with `TurnWithFace`), so on a curved surface it stands behind the door the way the door stands, crossings carry the player's facing and velocity through it, and each drawn scope is posed against the anchor (see [Draw what is through a portal](#draw-what-is-through-a-portal)).
 
 ## Open and close a portal
 
@@ -450,9 +450,9 @@ If your game builds a chunk's content after `NebulaChunks.Loaded` returns, check
 
 ## Show both sides of an open portal
 
-A client draws only the scope the local player is in, plus the public world. Another scope's content can be loaded on the client and still be hidden: an instance's static content before the player enters, or a scoped grid's chunks while the player is inside an instance. So a player standing at an open door sees only their own side, and the other side appears all at once when they cross.
+A client draws the scope the local player is in, the public world, and every scope it looks through an open link into (see [Draw what is through a portal](#draw-what-is-through-a-portal)), and nothing else. Another scope's content can be loaded on the client and still be hidden: an instance's static content before the player enters, or a scoped grid's chunks while the player is inside an instance. So a player standing at an open door sees only their own side, and the other side appears all at once when they cross.
 
-To draw the other side while the door is open (a link's state is `Open`), call `InstanceScenes.KeepDrawn` on the client with that scope's instance ID. Call `InstanceScenes.StopKeepingDrawn` when the door closes:
+A scope the client may look through an open link into is drawn without any call. To draw a scope that no link the client observes leads to (a camera, a cutscene, a door you manage yourself), call `InstanceScenes.KeepDrawn` on the client with that scope's instance ID. Call `InstanceScenes.StopKeepingDrawn` when the door closes:
 
 ```csharp
 using Nebula;
@@ -487,6 +487,67 @@ While a scope is kept drawn:
 `KeepDrawn` changes rendering only. It loads nothing, so the other side must already be on the client: for example, a member's client holds the far window of an open link, or the player stands in the window of a link they may look through. Physics scenes, interest, ownership and network messages don't change, so the player still can't collide with, target or affect anything on the other side. Workers ignore the call, and the public world is always drawn.
 
 A request outlives the scope's content. If the content is unloaded and loaded again while the request is live, it starts drawn. Call `StopKeepingDrawn` once for each `KeepDrawn`. Use `InstanceScenes.IsDrawn` to check whether a scope is drawn on this client.
+
+## Draw what is through a portal
+
+A client draws several scopes at once, each where it stands. The **drawn set** is the scope the local player is in (the view), every scope one open link away that the client may look through, the public world, and every scope with an `InstanceScenes.KeepDrawn` request. Nebula hides the content of a scope that is not in the set, and shows a scope's content as soon as it enters it, so a door you can look through needs no `KeepDrawn` call: the room behind it is drawn while the link is `Open` or `Closing` and you are an observer.
+
+The **anchor** is the scope whose frame the view's frame resolves to, the world the player first walked in from (`Portals.Anchor`). Every other drawn scope has a pose against it, `Portals.PoseOf(scope)`: a `ScopePose` composed in double, about the faces, through the portals from the anchor. It is the identity for the anchor and for a scope nothing relates to it.
+
+While cameras draw, and only then, Nebula:
+
+- poses the root containers of every drawn scope that is not the anchor by its pose, so a room behind a door turned 55° is drawn behind that door, and a room one link further, behind a door inside the first, is drawn at its own door in the first;
+- poses the cameras by the view's pose when the view is not the anchor (a camera under a posed root is carried by it and not posed twice), so a player looking out of a turned room sees the world around the door upright;
+- puts everything back exactly when drawing ends.
+
+It never moves the anchor's roots. The world's static colliders are not dirtied, and its sky, fog and sun stay upright to the world. Simulation, prediction and every pose your game reads stay in each scope's own upright space: nothing about posing is visible outside the draw.
+
+### Draw meshes you draw yourself
+
+A transform carries its pose; a matrix you keep does not. Instanced scatter drawn with `Graphics.RenderMeshInstanced`, a decal batch, anything you draw from matrices built from a scope's upright positions, is drawn unposed unless you pose it. Multiply by `Portals.RenderMatrixOf(scope)` in `SceneRenderOrigin.Drawing`:
+
+```csharp
+using Nebula;
+using UnityEngine;
+
+public sealed class GroundScatter : MonoBehaviour
+{
+    public ulong Scope;          // the scope this scatter belongs to (Container.InstanceId)
+    public Mesh Mesh;
+    public Material Material;
+    Matrix4x4[] _upright;        // built once, in the scope's own upright space (scene positions)
+    Matrix4x4[] _drawn;
+
+    void OnEnable() => SceneRenderOrigin.Drawing += Draw;
+    void OnDisable() => SceneRenderOrigin.Drawing -= Draw;
+
+    void Draw(Vector3 offset)
+    {
+        // Drawing space is a scene position minus the offset; the pose is applied there.
+        var pose = Portals.RenderMatrixOf(Scope) * Matrix4x4.Translate(-offset);
+        if (_drawn == null || _drawn.Length != _upright.Length) _drawn = new Matrix4x4[_upright.Length];
+        for (int i = 0; i < _drawn.Length; i++) _drawn[i] = pose * _upright[i];
+        Graphics.RenderMeshInstanced(new RenderParams(Material), Mesh, 0, _drawn);
+    }
+}
+```
+
+`RenderMatrixOf` is the identity for the anchor, so the same code draws the world untouched. A matrix built from a transform you read inside `Drawing` already has the pose in it (the roots are posed before `Drawing` is raised): do not multiply it again. The matrix is a float one, good to about a millimetre for what is drawn near the camera. For something that must be exact, take `Portals.PoseOf(scope)` and compose your own in double with `ScopePose.Point`.
+
+### Give each drawn scope a rendering layer
+
+A light that should light only the room it is in, or an effect that treats the view differently from what is seen through a door, needs to tell scopes apart. Set `NebulaConfig.ScopeRenderingLayers` to a mask of rendering-layer bits to reserve (`0xFF000000` for the top eight, say). `0`, the default, turns slots off; eight bits allow eight scopes drawn at once. Then:
+
+- each drawn scope holds one bit while it is drawn. The view's bit is stable while it is the view; any other scope takes the lowest free bit when it is first drawn and gives it back when it leaves the drawn set. A scope with no free bit draws with none, and Nebula logs once;
+- Nebula sets that bit, and only that bit of the reserved mask, on the renderers it already manages: an instance's static content, the content under each scoped grid chunk's `ChunkContext.Root`, and an entity's renderers when it spawns or changes scope (found once per identity). Every bit of a renderer's mask outside the reserved ones is left alone;
+- `Portals.RenderingLayerOf(scope)` returns the bit, and `Portals.SlotChanged(scope, bit)` is raised, after Nebula restamped the renderers, when a scope gains a slot or loses it (the bit is then `0`).
+
+```csharp
+Portals.SlotChanged += (scope, bit) => RebuildLightMasks();   // read RenderingLayerOf for each scope a light should affect
+sun.renderingLayerMask = Portals.RenderingLayerOf(viewScope); // a URP light that affects only that scope's renderers
+```
+
+Nebula does not own lights, how the look blends between scopes, or the mask an offset portal needs to clip the far scope to its aperture; those are the game's. Content you add to a scope after Nebula stamped it (a prop built under a chunk's content root later, a renderer added to an entity) takes the bit with `Portals.StampRenderingLayer(root, scope)`.
 
 ## Keep gameplay in the correct scope
 
@@ -582,7 +643,8 @@ See [Running locally](/docs/getting-started/running-locally) for build paths and
 | Interior surfaces flicker | Remove overlapping visible geometry between the public shell and private prefab. |
 | Hallway players disappear from inside | Check the player is a member of the link or an observer (`Portal.CanObserve`, `ObserveAnyone`), the link is `Open`, and the player stands inside the near face's window (`WindowMargin`, `WindowDepth`). |
 | The area outside pops in again after a player leaves | Keep the player inside the door's window and the link open: the window keeps the rows around the doorway. |
-| The other side of an open door is empty until the player crosses | Call `InstanceScenes.KeepDrawn` for that scope while the door is open. |
+| The other side of an open door is empty until the player crosses | The client must be an observer of the link (a member, `Portal.ObserveAnyone` or `AddObserver`) and hold the far window; a scope you look at some other way needs `InstanceScenes.KeepDrawn`. |
+| Instanced scatter or other matrix-drawn meshes are drawn unturned from just inside a turned doorway | Multiply their matrices by `Portals.RenderMatrixOf(scope)` in `SceneRenderOrigin.Drawing`. |
 | Saved furniture is missing or shared across copies | Check stable template/part/key values, `PersistentEntity`, and instance-specific persistence keys. |
 
 ## API and protocol reference

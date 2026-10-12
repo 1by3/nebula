@@ -109,6 +109,7 @@ autoscaling grow it towards `B`.
 | `GhostBandMargin` | `4` m | Create a ghost copy when an entity comes within this distance of a neighboring container. |
 | `HandoverHysteresis` | `0.35` m | Require an entity to move this far into a new container before transferring authority. |
 | `GhostLingerSeconds` | `2` | Keep a ghost copy for this long after it leaves the ghost band. |
+| `ScopeRenderingLayers` | `0` | A mask of rendering-layer bits a client reserves for drawn scopes, one per scope drawn at once. Nebula stamps a scope's bit, and only that bit, on its static content, its chunks' content and its entities' renderers. `0` turns slots off; eight bits allow eight scopes. See [Draw what is through a portal](/docs/guides/instancing#draw-what-is-through-a-portal). |
 | `PortalProxyLayer` | `31` | The physics layer Nebula puts a portal's proxies and aperture colliders on. Keep it free of your own objects and out of your own layer masks. See [Collide across a portal](/docs/guides/instancing#collide-across-a-portal). |
 | `StateHistoryTicks` | `32` | Ticks of pose and `[SyncHistory]` state each worker keeps per entity, for `NetworkIdentity.StateAt`. About half a second at 60 Hz. `0` turns recording off. See [Lag compensation](/docs/guides/lag-compensation). |
 

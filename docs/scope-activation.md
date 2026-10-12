@@ -504,7 +504,7 @@ others. A withdrawal with no request returns false and changes nothing. `Instanc
 for the public world (always), the pawn's scope, and kept scopes. The requests live in `InstanceScenes`, which already
 owns the view, and `NebulaChunks` reads them: one rule decides both kinds of content.
 
-**D30 The view is the union.** A scope is drawn when it is the public world, the pawn's scope, or kept. `SetView`
+**D30 The view is the union.** A scope is drawn when it is the public world, the pawn's scope, or kept (*since NEB-435, also when the client looks through an open link into it: `docs/portals.md` D40*). `SetView`
 applies that to static content and chunks alike; the first and last request apply it to that scope's content at once.
 Content created while a scope is kept starts drawn, by the same rule, in `Prepare` and in `NebulaChunks` after
 `Loaded`. When the pawn changes scope, the scope it left stays drawn if it is kept, so a doorway looks the same from both

@@ -7,9 +7,9 @@ namespace Nebula
     /// <summary>
     /// Lookup for portals (<c>docs/portals.md</c> D1): the <see cref="Portal"/> components on this process, on a client what the
     /// network gateway has told it about the portals near it, and the link poses between scopes (<see cref="Map(ulong, ulong, PortalPose)"/>,
-    /// <see cref="Turn"/>). Per-scope drawing slots are added by a later milestone of the same design.
+    /// <see cref="Turn"/>). What a client draws and how each drawn scope stands is in the other half of this class (<see cref="PoseOf"/>, <see cref="RenderMatrixOf"/>, <see cref="RenderingLayerOf"/>).
     /// </summary>
-    public static class Portals
+    public static partial class Portals
     {
         private static readonly List<Portal> Registered = new List<Portal>();
         private static int _registryVersion;
@@ -386,6 +386,7 @@ namespace Nebula
         internal static void ApplyRecords(PortalsUpdate update)
         {
             foreach (var record in update.Upserts) KnownPortals[record.PortalId] = record;
+            DrawnScopes.MarkDirty();
             foreach (ulong id in update.Removes)
             {
                 KnownPortals.Remove(id);
@@ -402,6 +403,7 @@ namespace Nebula
             foreach (var record in update.Upserts) KnownLinkRecords[record.LinkId] = record;
             foreach (ulong id in update.Removes) KnownLinkRecords.Remove(id);
             RaiseKnownChanged();
+            DrawnScopes.Recompute();
         }
 
         internal static void ResetForNewSession()
@@ -420,6 +422,7 @@ namespace Nebula
             KnownPortals.Clear();
             KnownLinkRecords.Clear();
             RaiseKnownChanged();
+            DrawnScopes.Recompute();
         }
 
         private static void RaiseKnownChanged()

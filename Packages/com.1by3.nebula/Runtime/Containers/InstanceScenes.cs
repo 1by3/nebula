@@ -198,6 +198,19 @@ namespace Nebula
             Content.Add(container.RuntimeId, content);
             CollectLoaders(container);
             SetVisible(container.RuntimeId, content, !NebulaRuntime.IsClient || Drawn(container.InstanceId));
+            // The scope's rendering-layer slot, when slots are on (docs/portals.md D42).
+            if (NebulaRuntime.IsClient) ScopeLayers.StampTree(content.transform, container.InstanceId);
+        }
+
+        /// <summary>Stamp the static content of every prepared container of a scope with its slot's bit (<see cref="ScopeLayers"/>).</summary>
+        internal static void StampContent(ulong scope, uint bit, uint reserved)
+        {
+            foreach (var pair in Content)
+            {
+                if (pair.Value == null) continue;
+                var container = ContainerRegistry.GetRuntime(pair.Key);
+                if (container != null && container.InstanceId == scope) ScopeLayers.StampTree(pair.Value.transform, bit, reserved);
+            }
         }
 
         /// <summary>
@@ -333,7 +346,7 @@ namespace Nebula
             if (instanceId == 0) return;
             DrawnRequests.TryGetValue(instanceId, out int count);
             DrawnRequests[instanceId] = count + 1;
-            if (count == 0) ApplyScope(instanceId);
+            if (count == 0) { ApplyScope(instanceId); DrawnScopes.Recompute(); }
         }
 
         /// <summary>
@@ -348,6 +361,7 @@ namespace Nebula
             if (count > 1) { DrawnRequests[instanceId] = count - 1; return true; }
             DrawnRequests.Remove(instanceId);
             ApplyScope(instanceId);
+            DrawnScopes.Recompute();
             return true;
         }
 
@@ -360,7 +374,16 @@ namespace Nebula
         public static bool IsDrawn(ulong instanceId) => !NebulaRuntime.IsClient || Drawn(instanceId);
 
         /// <summary>Whether a scope is drawn by the view rules alone: the public world, the pawn's scope, or a kept scope.</summary>
-        internal static bool Drawn(ulong instanceId) => instanceId == 0 || instanceId == _view || IsKeptDrawn(instanceId);
+        internal static bool Drawn(ulong instanceId) => instanceId == 0 || instanceId == _view || IsAlsoDrawn(instanceId);
+
+        /// <summary>
+        /// Whether a scope is drawn besides the view and the public world: it has a <see cref="KeepDrawn"/> request, or this client looks
+        /// through an open link into it (<c>docs/portals.md</c> D40).
+        /// </summary>
+        internal static bool IsAlsoDrawn(ulong instanceId) => IsKeptDrawn(instanceId) || DrawnScopes.IsObserved(instanceId);
+
+        /// <summary>The scopes with a live <see cref="KeepDrawn"/> request.</summary>
+        internal static IEnumerable<ulong> KeptScopes => DrawnRequests.Keys;
 
         /// <summary>Whether a scope has a live <see cref="KeepDrawn"/> request.</summary>
         internal static bool IsKeptDrawn(ulong instanceId) => DrawnRequests.Count > 0 && DrawnRequests.ContainsKey(instanceId);
@@ -375,10 +398,11 @@ namespace Nebula
             }
             // A scoped grid's chunks hold content the game builds, not content prepared here: hidden the same way.
             World.NebulaChunks.SetView(instanceId);
+            DrawnScopes.Recompute();
         }
 
         /// <summary>A scope's requests changed: show or hide its content to match, on a client only.</summary>
-        private static void ApplyScope(ulong instanceId)
+        internal static void ApplyScope(ulong instanceId)
         {
             if (!NebulaRuntime.IsClient) return;
             bool visible = Drawn(instanceId);

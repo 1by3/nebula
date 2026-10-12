@@ -1861,6 +1861,28 @@ namespace Nebula
             foreach (var b in Behaviours) b.OnContainerChanged(previous, container);
             ContainerChanged?.Invoke(previous, container);
             if (IsLocalPlayer) InstanceScenes.SetView(InstanceId);
+            if (ScopeLayers.Enabled && (_layerRenderers == null || (previous != null ? previous.InstanceId : 0UL) != InstanceId)) StampRenderingLayer(refresh: false);
+        }
+
+        // ---- rendering-layer slots (docs/portals.md D42)
+
+        /// <summary>This entity's renderers, found when it spawned (or first stamped) and kept; null before.</summary>
+        private Renderer[] _layerRenderers;
+
+        /// <summary>Stamp the entity's renderers with its scope's slot bit (<see cref="ScopeLayers"/>); <paramref name="refresh"/> finds the renderers again first.</summary>
+        internal void StampRenderingLayer(bool refresh)
+        {
+            uint reserved = ScopeLayers.Mask;
+            if (reserved == 0) return;
+            if (refresh) _layerRenderers = null;
+            StampRenderingLayer(ScopeLayers.BitOf(InstanceId), reserved);
+        }
+
+        /// <summary>Set the renderers' bits of <paramref name="reserved"/> to <paramref name="bit"/>, nothing else.</summary>
+        internal void StampRenderingLayer(uint bit, uint reserved)
+        {
+            if (_layerRenderers == null) _layerRenderers = GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < _layerRenderers.Length; i++) ScopeLayers.Stamp(_layerRenderers[i], bit, reserved);
         }
 
         // ---- portals (docs/portals.md D18): what an entity carries in time goes through the link with it
@@ -1959,6 +1981,7 @@ namespace Nebula
             // The carried box registers once the entity is placed in the container around it (SetContainer runs before
             // the spawn), and before any behaviour hears of the spawn, so a behaviour's OnNetworkSpawn finds it.
             RegisterCarried();
+            if (ScopeLayers.Enabled) StampRenderingLayer(refresh: true);
             foreach (var b in Behaviours) b.OnNetworkSpawn();
         }
 

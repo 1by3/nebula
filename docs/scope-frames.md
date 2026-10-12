@@ -164,11 +164,14 @@ only stand behind the door if its space is turned the way the door is.
   committed in double (`TryCommitTransfer(transfer, null, Double3, rotation)`), so a host scope whose origin is far from the
   door on this worker still lands the entity to the millimetre. `InstancePoses.Turn(from, to)` is the turn a game applies
   to its own heading bookkeeping (a pawn's yaw) when its entity changes scope.
-- *A client draws each side turned for the other, only while cameras draw* (`InstanceViews`, after the scene's render
-  origin and the frames' children are placed): from outside, each drawn turned instance's root containers turn about its
-  door; from inside one, every other scene root (the host world, its frames' pivots, the sun) turns back about the door,
-  except the instance itself and the cameras. Everything is put back exactly when drawing ends, so simulation, prediction
-  and every pose a game reads stay upright.
+- *A client draws each side turned for the other, only while cameras draw* (`DrawnScopes`, after the scene's render
+  origin and the frames' children are placed): each drawn scope that is not the anchor (the scope whose frame the view's
+  frame resolves to) has its root containers posed by its pose against the anchor, and, when the view is not the anchor,
+  the cameras are posed by the view's pose; the anchor's roots are never moved. Everything is put back exactly when
+  drawing ends, so simulation, prediction and every pose a game reads stay upright. *Since NEB-435 (`docs/portals.md`
+  D40, D41) this replaces `InstanceViews`, which turned each turned instance about its door from outside and, from inside
+  one, every other scene root back about it: from inside, the instance and the camera are turned now and the world,
+  its sky and its sun are left as they are. The image is the same.*
 - *Looking out needs the host's ground resident.* A door in a chunk hosted by a framed carrier (a planet) is a row fixed in
   that carrier, held on a client until the carrier is sent (`ContainerRegistry.IsHeldForCarrier`). The host view
   (`ObserveHost`) therefore also queries the frame the pawn stood in where it left the host, and keeps the carriers of
@@ -178,7 +181,7 @@ only stand behind the door if its space is turned the way the door is.
   (`InstanceObserveHostTests.AnOccupantKeepsTheCarrierOfTheHostGroundAtTheDoorAndNothingElseOfIt`.) *Since NEB-431 this is a portal's window onto the ground: `ObserveHost` and `HostCarriers` are gone, the carriers are `ClientConn.WindowCarriers` and the test is `PortalWindowFrameTests`.*
 
 Conformance: `ConformanceFarInstanceFrameTests.ATurnedDoorTurnsItsInstanceAndCrossingsTurnWithIt` and
-`ConformanceFarInstanceClientFrameTests.TheClientDrawsATurnedInstanceTurnedBehindItsDoorAndTheWorldTurnedBackFromInside`.
+`ConformanceFarInstanceClientFrameTests.TheClientDrawsATurnedInstanceTurnedBehindItsDoorAndFromInsideItAndTheCameraAreTurnedNotTheWorld`.
 
 ## 3. Interest: scope-salted region ids
 

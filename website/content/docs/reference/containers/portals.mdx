@@ -6,10 +6,10 @@ description: "Lookup for portals (docs/portals.md D1): the Portal components on 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/Portals.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/Portals.cs)</div>
 
 ```csharp
-public static class Portals
+public static partial class Portals
 ```
 
-Lookup for portals (`docs/portals.md` D1): the [`Portal`](/docs/reference/containers/portal) components on this process, on a client what the network gateway has told it about the portals near it, and the link poses between scopes ([`Map`](#map), [`Turn`](#turn)). Per-scope drawing slots are added by a later milestone of the same design.
+Lookup for portals (`docs/portals.md` D1): the [`Portal`](/docs/reference/containers/portal) components on this process, on a client what the network gateway has told it about the portals near it, and the link poses between scopes ([`Map`](#map), [`Turn`](#turn)). What a client draws and how each drawn scope stands is in the other half of this class ([`PoseOf`](#poseof), [`RenderMatrixOf`](#rendermatrixof), [`RenderingLayerOf`](#renderinglayerof)).
 
 ## Properties
 
@@ -45,6 +45,22 @@ public static IReadOnlyDictionary<ulong, PortalLinkRecord> KnownLinks { get; }
 
 On a client: the state of each link the network gateway has told it about, by link id. A link is sent to the clients that hold the container row of either face, with whether this client is a member and whether it may look through.
 
+### Anchor [#anchor]
+
+```csharp
+public static ulong Anchor { get; }
+```
+
+On a client: the scope the drawing is measured against, the **anchor** (`docs/portals.md` D40): the scope whose frame the local view's frame resolves to, which is the world the player first walked in from. Nothing of it is ever moved to draw.
+
+### DrawnScopeIds [#drawnscopeids]
+
+```csharp
+public static IReadOnlyList<ulong> DrawnScopeIds { get; }
+```
+
+On a client: the scopes drawn right now, the view first (`docs/portals.md` D40): the pawn's scope, every scope one open link away that the client may look through, the public world (0) and the scopes with an [`InstanceScenes.KeepDrawn`](/docs/reference/containers/instance-scenes#keepdrawn) request. Content of a scope the client looks through is shown without a `KeepDrawn` request.
+
 ## Events
 
 ### Crossed [#crossed]
@@ -62,6 +78,14 @@ public static event Action KnownChanged;
 ```
 
 Raised on a client when a portal record or a link record arrived or was withdrawn.
+
+### SlotChanged [#slotchanged]
+
+```csharp
+public static event Action<ulong, uint> SlotChanged;
+```
+
+Raised on a client when a scope gained a rendering-layer slot (arguments: the scope and its single layer bit) or lost it (the bit is 0), after Nebula restamped its renderers. A game re-aims its lights' rendering-layer masks here.
 
 ## Methods
 
@@ -97,3 +121,35 @@ public static Quaternion Turn(ulong from, ulong to);
 ```
 
 What turns a rotation or direction of scope `from`'s axes into scope `to`'s, for an entity crossing between them through a portal: the identity unless the link between them is turned. A game keeping its own heading or velocity bookkeeping (a pawn's yaw) applies it in a [`Portal.Crossed`](/docs/reference/containers/portal#crossed) handler. It replaces [`InstancePoses.Turn`](/docs/reference/containers/instance-poses#turn) for anything that crosses a portal, and answers for a portal with a fixed far side too.
+
+### PoseOf [#poseof]
+
+```csharp
+public static ScopePose PoseOf(ulong scope);
+```
+
+A drawn scope's pose against the [`Anchor`](#anchor), composed in double through the link poses along the portals from the anchor (`docs/portals.md` D40, [`ScopePose`](/docs/reference/containers/scope-pose)). The identity for the anchor and for a scope nothing relates to it. This is where the scope is *drawn*: simulation, prediction and every pose a game reads stay in the scope's own upright space. While cameras draw, Nebula has posed the scope's root containers by it (and the cameras by the view's, when the view is not the anchor).
+
+### RenderMatrixOf [#rendermatrixof]
+
+```csharp
+public static Matrix4x4 RenderMatrixOf(ulong scope);
+```
+
+A matrix that takes a point of `scope`'s own upright space, in drawing space, to where it is drawn (`docs/portals.md` D41). For what a transform cannot carry: meshes a game draws itself with matrices it keeps (`Graphics.RenderMeshInstanced`, a scatter, a decal batch). Multiply the matrix you would draw an unposed instance with by this one (`RenderMatrixOf(scope) * instanceMatrix`), while [`SceneRenderOrigin.Drawing`](/docs/reference/client/scene-render-origin#drawing) runs: "drawing space" is a scene position minus [`SceneRenderOrigin.Offset`](/docs/reference/client/scene-render-origin#offset), which is what the roots Nebula posed are in. A matrix built from a transform read inside `Drawing` already includes the pose and must not be multiplied again. The identity for the anchor and for a scope nothing relates to it.
+
+### RenderingLayerOf [#renderinglayerof]
+
+```csharp
+public static uint RenderingLayerOf(ulong scope);
+```
+
+The rendering-layer bit (a single bit of [`NebulaConfig.ScopeRenderingLayers`](/docs/reference/core/nebula-config#scoperenderinglayers)) a drawn scope holds, or 0 when slots are off, the scope is not drawn, or more scopes are drawn than there are bits (`docs/portals.md` D42). Nebula stamps this bit, and only this bit of the reserved mask, on its static content, its chunks' content and its entities' renderers; use it in a light's rendering-layer mask and a portal's masks.
+
+### StampRenderingLayer [#stamprenderinglayer]
+
+```csharp
+public static void StampRenderingLayer(Transform root, ulong scope);
+```
+
+Stamp the scope's rendering-layer bit on every renderer under `root`: for content a game adds to a scope after Nebula stamped it (a prop built under a chunk's content root later, a renderer added to an entity). Does nothing when slots are off. Nothing outside the reserved bits changes.
