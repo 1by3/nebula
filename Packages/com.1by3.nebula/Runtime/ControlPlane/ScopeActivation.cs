@@ -121,8 +121,12 @@ namespace Nebula
     {
         /// <summary>Non-empty and unique within the definition. It is hashed with the scope key into the container id, so changing it renames the place.</summary>
         public string PartId = "";
-        /// <summary>Box centre, in the same absolute frame as <see cref="LeaseInfo.Bounds"/> (see <c>docs/scope-activation.md</c> D4).</summary>
-        public Vector3 Center;
+        /// <summary>
+        /// Box centre, in the same absolute frame as <see cref="LeaseInfo.Center"/> (see <c>docs/scope-activation.md</c> D4),
+        /// in double, so a part 100,000 km from the absolute origin is placed to the millimetre (NEB-426). A
+        /// <c>Vector3</c> converts implicitly.
+        /// </summary>
+        public Double3 Center;
         /// <summary>Box size; every component must be positive.</summary>
         public Vector3 Size;
         /// <summary>Resources path of this part's static geometry, or empty. Loaded by the worker that owns the lease, through the game's existing instance-content path.</summary>
@@ -302,7 +306,7 @@ namespace Nebula
                     if (part == null) continue;
                     w.BeginObject();
                     w.Prop("partId", part.PartId ?? "");
-                    w.Key("center"); ControlPlaneJson.Vec(w, part.Center);
+                    w.Key("center"); WriteCenter(w, part.Center);
                     w.Key("size"); ControlPlaneJson.Vec(w, part.Size);
                     w.Prop("content", part.ContentResource ?? "");
                     w.EndObject();
@@ -316,6 +320,38 @@ namespace Nebula
             w.Key("observationSize"); ControlPlaneJson.Vec(w, d.ObservationSize);
             w.Prop("payload", d.Payload ?? "");
             w.EndObject();
+        }
+
+        /// <summary>
+        /// A part's centre, written the way a float centre always was when it is one (so a definition stored before
+        /// centres were double compares equal to the same definition now), and at full double precision otherwise.
+        /// </summary>
+        private static void WriteCenter(JsonWriter w, Double3 c)
+        {
+            w.BeginArray();
+            CenterNum(w, c.X); CenterNum(w, c.Y); CenterNum(w, c.Z);
+            w.EndArray();
+        }
+
+        private static void CenterNum(JsonWriter w, double d)
+        {
+            float f = (float)d;
+            if ((double)f == d) ControlPlaneJson.Num(w, f);
+            else ControlPlaneJson.Num(w, d);
+        }
+
+        /// <summary>The inverse of <see cref="WriteCenter"/>: a number written in float form reads back as that float, exactly.</summary>
+        private static Double3 ReadCenter(Dictionary<string, object> o, string key)
+        {
+            var d = ControlPlaneJson.Vec3D(o, key);
+            return new Double3(AsWritten(d.X), AsWritten(d.Y), AsWritten(d.Z));
+        }
+
+        private static double AsWritten(double d)
+        {
+            float f = (float)d;
+            if (float.IsInfinity(f)) return d;
+            return double.Parse(f.ToString("R", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture) == d ? f : d;
         }
 
         /// <summary>Read a definition written by <see cref="WriteDefinition(ScopeDefinition)"/>. An empty or malformed document reads as an empty definition.</summary>
@@ -339,7 +375,7 @@ namespace Nebula
                     d.Parts.Add(new ScopePart
                     {
                         PartId = ControlPlaneJson.Str(p, "partId"),
-                        Center = ControlPlaneJson.Vec(p, "center"),
+                        Center = ReadCenter(p, "center"),
                         Size = ControlPlaneJson.Vec(p, "size"),
                         ContentResource = ControlPlaneJson.Str(p, "content"),
                     });
@@ -518,7 +554,7 @@ namespace Nebula
             {
                 string containerId = ScopeKeys.ContainerId(key, part.PartId);
                 scope.ContainerIds.Add(containerId);
-                EnsureRuntimeContainer(containerId, new Bounds(part.Center, part.Size), request.PreferredWorkerId ?? "", new InstanceContainerInfo
+                EnsureRuntimeContainer(containerId, ContainerPlacement.Root(part.Center, part.Size), request.PreferredWorkerId ?? "", new InstanceContainerInfo
                 {
                     InstanceId = scope.InstanceId,
                     ContentResource = part.ContentResource ?? "",
