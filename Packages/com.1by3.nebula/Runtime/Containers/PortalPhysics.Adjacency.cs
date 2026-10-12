@@ -36,8 +36,10 @@ namespace Nebula
                 rig.ObservationOnly = m.Portal.ObservationOnly;
                 rig.HostsNear = false;
                 rig.NearAperture = null;
-                rig.HostsFar = far.InnerSpace == null && Usable(far.gameObject.scene);
-                if (rig.HostsFar) rig.FarScene = far.gameObject.scene;
+                rig.NearSpace = PortalSpaces.SpaceOf(m.Portal.NearContainer.Resolve());
+                rig.FarSpace = PortalSpaces.SpaceOf(far);
+                rig.HostsFar = HostableSide(far);
+                if (rig.HostsFar) rig.FarScene = PortalSpaces.SceneOf(far);
                 Bind(rig);
                 if (rig.HostsFar) EnsureFarAperture(rig);
                 rig.NearOwner = incoming.From;
@@ -59,8 +61,8 @@ namespace Nebula
 
         /// <summary>
         /// The far worker's half of D10 condition 4: its side's aperture collider stands, built from what the driving worker told it. False when the link is
-        /// not known here or its far container is not ready; true without building anything when the side cannot be built here (a container that simulates in a
-        /// physics frame, said once).
+        /// not known here or its far container is not ready; true without building anything when the side cannot be built here (a container whose physics frame
+        /// has no scene here, said once).
         /// </summary>
         public bool PrepareFarSide(ulong linkId, uint tick)
         {
@@ -72,9 +74,9 @@ namespace Nebula
                 if (incoming.Msg.LinkId != linkId) continue;
                 var far = OwnedFarContainer(incoming.Msg);
                 if (far == null) return false;
-                if (far.InnerSpace != null)
+                if (far.InnerSpace != null && !HostableSide(far))
                 {
-                    WarnOnce("framed-far:" + linkId, $"Link {linkId:x}: its far container {far.ContainerId} simulates in a physics frame; this worker builds no aperture collider for it (docs/portals.md D28, as built)");
+                    WarnOnce("framed-far:" + linkId, $"Link {linkId:x}: its far container {far.ContainerId} simulates in a physics frame that has no scene on this worker; it builds no aperture collider for it (docs/portals.md D28, as built)");
                     return true;
                 }
                 return _rigs.TryGetValue(linkId, out var rig) && rig.HostsFar && rig.FarAperture != null && rig.FarAperture.Go != null;

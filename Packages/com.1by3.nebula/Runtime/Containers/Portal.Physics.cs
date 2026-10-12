@@ -29,21 +29,23 @@ namespace Nebula
             if (Application.isPlaying)
             {
                 var near = NearContainer;
-                if (near != null && near.gameObject.scene.IsValid() && near.gameObject.scene.isLoaded)
+                var nearScene = PortalSpaces.SceneOf(near);
+                if (near != null && PortalSpaces.Usable(nearScene))
                 {
                     var face = NearFace;
-                    var frame = new PortalFaceFrame(ContainerRegistry.ToFrame(face.Origin, face.Scope), face.Rotation);
-                    PortalPhysics.FindBlockers(near.gameObject.scene.GetPhysicsScene(), in frame, Aperture, BandDepth, beyond: true, found);
+                    var frame = PortalSpaces.FaceFrame(face, PortalSpaces.SpaceOf(near));
+                    if (frame.Valid) PortalPhysics.FindBlockers(nearScene.GetPhysicsScene(), in frame, Aperture, BandDepth, beyond: true, found);
                     total += Report("near", found, blockers);
                 }
                 foreach (var link in _links.Values)
                 {
                     var far = link.FarEntry;
-                    if (far == null || link.FarScope == 0 || !far.gameObject.scene.IsValid() || !far.gameObject.scene.isLoaded) continue;
+                    var farScene = PortalSpaces.SceneOf(far);
+                    if (far == null || link.FarScope == 0 || !PortalSpaces.Usable(farScene)) continue;
                     var face = link.FarFace;
-                    var frame = new PortalFaceFrame(ContainerRegistry.ToFrame(face.Origin, face.Scope), face.Rotation);
+                    var frame = PortalSpaces.FaceFrame(face, PortalSpaces.SpaceOf(far));
                     found.Clear();
-                    PortalPhysics.FindBlockers(far.gameObject.scene.GetPhysicsScene(), in frame, Aperture, BandDepth, beyond: false, found);
+                    if (frame.Valid) PortalPhysics.FindBlockers(farScene.GetPhysicsScene(), in frame, Aperture, BandDepth, beyond: false, found);
                     total += Report("far (" + link.Party + ")", found, blockers);
                 }
             }

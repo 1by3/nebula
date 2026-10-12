@@ -480,7 +480,9 @@ the client, drawn through that scope's pose (§10). The client's own scope stays
 > replica's **newest sample** (`RemoteInterpolator.LatestPosition` and `LatestRotation`, the collider carried with the root from where it is drawn to where that sample puts it), never from the interpolated
 > pose it is drawn at (`PortalPhysicsClientPlayTests`). A client does not step instance scenes, so its proxies are placed through their transforms and `Physics.SyncTransforms` runs once per step for the
 > `CharacterController` to see them. The pawn ignores the aperture collider of its side when the link is open and it is a member (`PortalLinkFlags.Member`); a pawn standing in the far scope always
-> passes outward. A client does not run the pair rule (nothing on it is simulated but the pawn), and builds no pool ahead of time. Not built: a pawn or a replica inside a physics frame.
+> passes outward. A client does not run the pair rule (nothing on it is simulated but the pawn), and builds no pool ahead of time. A pawn inside a physics frame is built for as a worker builds for its side (see the
+> physics-frame note under D26): `StepClient` runs inside `PhysicsFrames.BeginSimulation(pawn.Space, pawn.transform)` and `EndSimulation`, so the aperture collider, the throat and the proxies stand in the frame's scene in
+> its simulation space, about the origin the pawn's own prediction step uses (`FramedPortalClientPlayTests`).
 
 ## 6. Physics across the face
 
@@ -520,8 +522,28 @@ through as an infinite mass (§18: mirrored both ways, a dropped crate squeezed 
 >   both scenes; across workers each side is one-sided, as D31 says.
 > - **A crossing swaps the sides on its own tick.** `CommitThrough` drops the members' proxies in the scene they are about to enter before they arrive (`BeforeCommit`: a body arriving on top of its own proxy would
 >   be pushed out of it) and looks at them again at once when they have (`AfterCommit`), so the scene they left holds their proxies on the tick they crossed and no tick has a body without a collider on either side.
-> - **Limit.** A side whose container simulates in a physics frame (a planet that is a carrier) gets no proxies, aperture collider or throat; it is said once. A frame's scene has its own coordinates and floating origin,
->   and the face would have to be carried into them.
+> - **A side that simulates in a physics frame (a planet that is a carrier; `Container.InnerSpace`).** It is built where its bodies simulate: the aperture collider, the throat and the proxies of that side stand in the
+>   **frame's own physics scene**, in the frame's **simulation space** (the frame-local position less the frame's floating origin, `PhysicsFrame.LocalToSimulation`), and a body is tested and posed in that same space.
+>   `PortalSpaces` is the seam (`Runtime/Containers`): `SceneOf` (the container's scene, or its frame's), `FaceFrame`, and `Point`/`Rotation` for a pose between two spaces (a body standing in a frame nested inside
+>   the side's, a ship on the planet, is converted into the side's space with `PhysicsFrames.Convert`; one standing in the side's own frame is read as it is). A side that is not framed is its scope's scene, as before.
+>   - **The face is composed in double and narrowed once.** The link's absolute face (a `Double3` and a rotation) goes into the scope's own coordinates with `ContainerRegistry.ToFramePrecise`, through the carrier's
+>     pose into the frame's local coordinates with `PhysicsFrames.ConvertLocal` (which never passes through a float in the scope: the carrier stands 10⁷ m out, where a float is a metre apart), and on to the
+>     simulation space by adding the frame's root offset, still in double; only that last sum, a small number near the frame's origin, becomes a `float`. After it every offset is face-relative and small.
+>     The turn between the sides is taken between the faces as the two scenes hold them (`TurnNearToFar = FarFrame.Rotation × NearFrame.Rotation⁻¹`), so a planet turned in its scope and a door turned on the
+>     planet do not appear in a proxy's pose twice, and the pose is the pivot form of D37 as before. The carrier's place in its scope drops out: the door is fixed in the planet, so it stands still in the
+>     frame's scene whatever the planet does in the scope (`TheFacesFrameInThePlanetsSceneDoesNotDependOnWhereTheCarrierStandsInItsScope`).
+>   - **Origin shifts and moving frames.** The face is worked out again every step, on a worker after the frame's own origin moved at the end of the last tick. A frame whose floating origin shifts (or whose
+>     door moves in it) moves the scene-level objects with no help: the aperture collider is *moved* when its face moved more than 2 mm or 2 × 10⁻⁵ (not made again; a face is rounded to a millimeter where it
+>     is named, so working it out again after the carrier moved is not exact, and that noise is not a move: `PortalFaceFrame.SameAs`), a side's throat is made again when that side's face moved, and a proxy is
+>     posed at once (a teleport, not a move) when the face its scene is posed about moved, **even if its source sleeps** (a sleeping source is otherwise not looked at again).
+>   - **Both directions** are built from the same code: a body on the framed side is mirrored into the instance's scene, a body in the instance into the planet frame's scene (`FramedPortalPhysicsPlayTests`). The
+>     throat copies the planet's static colliders in its half of the band into the instance and the instance's into the frame's scene; `Portal.Validate` and `BandOccupied` read the side the same way.
+>   - **Across workers** the far worker's rig names the near side's space from the portal record's near container, and poses a ghost of a body that stands in the planet's frame through the same face
+>     (`FramedPortalAcrossWorkersPlayTests`, both directions). A frame that has no scene on the worker (a frame it does not hold) builds nothing for that side.
+>   - **Limits.** One level of frame per side: the side's own frame. A body in a frame nested inside it is mirrored by its converted pose, but that frame's interior statics are not part of the throat (only
+>     the colliders in the side's own frame's scene are, the nested frame's hull copies among them). A client whose pawn is in the **instance** poses a replica standing in a planet's frame from where that replica
+>     is drawn (render space, the precision of a float at its distance from the scene's render origin); a pawn standing in the frame is exact (above). The frame's floating origin on a client follows the pawn by
+>     the prediction step's rule (`BeginSimulation`); if it moves between `StepClient` and the prediction ticks of the same frame, the pieces catch up on the next step.
 
 **D27 The throat: each side's static geometry in the band is mirrored too, and each side must be open there.** A
 coincident far scope is built inside the near side's solid mass. A body straddling the face would have its far half
@@ -907,8 +929,7 @@ band is a proxy on the far worker and nothing outside it is ghosted across, the 
 from the newest sample), `PortalPhysicsLogicTests` (15: band, pair rule, pool, shapes, bodies by extent, adjacency, `Validate` in the Editor, the adjacency message) and `PortalBandOccupiedTests` (2), conformance
 scenarios 58 to 61. The play-mode tests run on `Tests/Shared` (`ConformanceMesh` and `PortalHarness`, moved out of the EditMode assembly so both assemblies reference them). **Deviations from the design**, each
 recorded at its decision: the pair rule is the faster body's scene, not the literal "ignore the proxy of a body whose own proxy it touches" (D26); the throat copies only the other side's own half of the band, and a
-split link has none (D27); a refused body that has colliders is stopped by the aperture collider and `Refused` is raised from contact, the clamp staying for the rest (D17); a side that simulates in a physics frame
-gets no physics objects (D26). **Seams for the issues that follow:** NEB-433's queries skip `PortalProxy` colliders (`PortalProxy.Is`) and hit an aperture collider as the closed plane (`PortalProxy.IsAperture`,
+split link has none (D27); a refused body that has colliders is stopped by the aperture collider and `Refused` is raised from contact, the clamp staying for the rest (D17). A side that simulates in a physics frame (a planet that is a carrier) was a fourth deviation of the first version; it is built now (D26, as built; `FramedPortalPhysicsPlayTests` (9), `FramedPortalAcrossWorkersPlayTests` (2), `FramedPortalClientPlayTests` (2), conformance scenarios 62 and 63). **Seams for the issues that follow:** NEB-433's queries skip `PortalProxy` colliders (`PortalProxy.Is`) and hit an aperture collider as the closed plane (`PortalProxy.IsAperture`,
 `PortalPhysics.NearApertureOf`/`FarApertureOf`); NEB-434 should extend the ghosting here to a body's whole group and give a split link its throat, and is where `PortalHandoff` is built; NEB-435's drawn
 scopes need nothing of the physics, which stays in each scope's upright space; NEB-437's offset portals are already carried by the pivot form (`PortalFaceFrame` and the two turns), the proxies and the aperture
 colliders need no change for a translation.

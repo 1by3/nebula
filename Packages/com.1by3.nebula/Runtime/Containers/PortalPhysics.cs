@@ -72,6 +72,8 @@ namespace Nebula
         public Vector3 LastPosition;
         public Quaternion LastRotation;
         public bool HasLast;
+        /// <summary>Where the proxy's scene had the face it was posed about (a framed side's floating origin moved: the proxy is posed again).</summary>
+        public PortalFaceFrame PosedAbout;
     }
 
     /// <summary>A pair of bodies, one native to each side, that both have proxies and touch: where it collides, and the pairs the other side ignores (<see cref="PortalPairRule"/>).</summary>
@@ -100,6 +102,8 @@ namespace Nebula
         /// <summary>This process builds the near side's physics: it holds the near container and its scene.</summary>
         public bool HostsNear, HostsFar;
         public Scene NearScene, FarScene;
+        /// <summary>The physics frame each side simulates in (a planet that is a carrier), or null when it is its scope's own space (<c>docs/portals.md</c> D26).</summary>
+        public Container NearSpace, FarSpace;
         public PortalFaceFrame NearFrame, FarFrame;
         public Quaternion TurnNearToFar = Quaternion.identity, TurnFarToNear = Quaternion.identity;
         public PortalBand Band;
@@ -114,8 +118,8 @@ namespace Nebula
         /// <summary>On a client: the pawn is a member of the link, so its own body is admitted once the link is open.</summary>
         public bool ClientMember;
         public int LiveProxies;
-        /// <summary>Where the faces stood, in the scenes, when the throat was copied.</summary>
-        public Vector3 ThroatNearOrigin, ThroatFarOrigin;
+        /// <summary>Where the faces stood, in the scenes, when each side's throat was copied.</summary>
+        public PortalFaceFrame ThroatNearFrame, ThroatFarFrame;
         /// <summary>The worker that drives the link (owns the near container), and the workers that own the far containers its band touches (<c>docs/portals.md</c> D30).</summary>
         public string NearOwner = "";
         public readonly List<string> FarOwners = new List<string>(2);
@@ -153,7 +157,6 @@ namespace Nebula
         private readonly List<ulong> _apertureGone = new List<ulong>();
         private readonly HashSet<ulong> _apertureSeen = new HashSet<ulong>();
         private readonly HashSet<string> _warned = new HashSet<string>();
-        private readonly HashSet<ulong> _framedWarned = new HashSet<ulong>();
         private uint _tick;
 
         /// <summary>What a process knows about the bodies near its faces.</summary>
@@ -202,24 +205,21 @@ namespace Nebula
         private bool Bind(LinkRig rig)
         {
             rig.Band = new PortalBand(rig.Aperture, rig.BandMargin, rig.BandDepth);
-            if (rig.HostsNear)
+            // A body of one side is posed on the other by the same offset in face axes; the frames of both sides are needed for a body to be tested on its
+            // own side and posed on the other's, so a side this process does not host is framed anyway. A side that simulates in a physics frame has its face
+            // in that frame's coordinates, composed in double (PortalSpaces.FaceFrame), and the turn between the sides is between the faces as the scenes
+            // hold them: a planet's frame is turned in its scope, and its door is turned by that as well.
+            rig.NearFrame = PortalSpaces.FaceFrame(rig.NearFace, rig.NearSpace);
+            rig.FarFrame = PortalSpaces.FaceFrame(rig.FarFace, rig.FarSpace);
+            if (rig.NearFrame.Valid && rig.FarFrame.Valid)
             {
-                rig.NearFrame = new PortalFaceFrame(ContainerRegistry.ToFrame(rig.NearFace.Origin, rig.NearScope), rig.NearFace.Rotation);
+                rig.TurnNearToFar = rig.FarFrame.Rotation * Quaternion.Inverse(rig.NearFrame.Rotation);
+                rig.TurnFarToNear = Quaternion.Inverse(rig.TurnNearToFar);
             }
-            if (rig.HostsFar)
-            {
-                rig.FarFrame = new PortalFaceFrame(ContainerRegistry.ToFrame(rig.FarFace.Origin, rig.FarScope), rig.FarFace.Rotation);
-            }
-            // A body of one side is posed on the other by the same offset in face axes; the frames of both sides are needed for a body to be
-            // tested on its own side and posed on the other's, so a side this process does not host is framed anyway.
-            if (!rig.HostsNear) rig.NearFrame = new PortalFaceFrame(ContainerRegistry.ToFrame(rig.NearFace.Origin, rig.NearScope), rig.NearFace.Rotation);
-            if (!rig.HostsFar) rig.FarFrame = new PortalFaceFrame(ContainerRegistry.ToFrame(rig.FarFace.Origin, rig.FarScope), rig.FarFace.Rotation);
-            rig.TurnNearToFar = rig.FarFace.Rotation * Quaternion.Inverse(rig.NearFace.Rotation);
-            rig.TurnFarToNear = Quaternion.Inverse(rig.TurnNearToFar);
             return rig.HostsNear || rig.HostsFar;
         }
 
-        private static bool Usable(Scene scene) => scene.IsValid() && scene.isLoaded;
+        private static bool Usable(Scene scene) => PortalSpaces.Usable(scene);
 
         private static ulong Raw(Scene scene) => scene.handle.GetRawData();
 

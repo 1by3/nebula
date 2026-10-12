@@ -29,20 +29,30 @@ namespace Nebula
         }
 
         private static bool Matches(ProxyBody aperture, in PortalShapeKey key, Scene scene, in PortalFaceFrame frame) =>
-            aperture != null && aperture.Go != null && aperture.Key.Equals(key) && aperture.Scene == scene &&
-            aperture.T.position == frame.Origin && aperture.T.rotation == frame.Rotation;
+            aperture != null && aperture.Go != null && aperture.Key.Equals(key) && aperture.Scene == scene;
+
+        /// <summary>Put an aperture collider that stands in the right scene where the face is now: a framed side's floating origin shifted, or its frame moved (<c>docs/portals.md</c> D26).</summary>
+        private static void Follow(ProxyBody aperture, in PortalFaceFrame frame)
+        {
+            var t = aperture.T;
+            var same = new PortalFaceFrame(t.position, t.rotation);
+            if (frame.SameAs(same)) return;
+            t.SetPositionAndRotation(frame.Origin, frame.Rotation);
+            Physics.SyncTransforms();
+        }
 
         /// <summary>The thin box over a portal's cross-section in its near scene, solid until a body is admitted through an open link (<c>docs/portals.md</c> D28). It stands whether or not the portal has a link.</summary>
         private void EnsureNearAperture(Portal portal, Container near, PortalFace face) =>
-            EnsureNearAperture(portal.PortalId, portal.Aperture, near.gameObject.scene, face);
+            EnsureNearAperture(portal.PortalId, portal.Aperture, PortalSpaces.SceneOf(near), PortalSpaces.SpaceOf(near), face);
 
-        private void EnsureNearAperture(ulong portalId, PortalAperture aperture, Scene scene, PortalFace face)
+        private void EnsureNearAperture(ulong portalId, PortalAperture aperture, Scene scene, Container space, PortalFace face)
         {
-            var frame = new PortalFaceFrame(ContainerRegistry.ToFrame(face.Origin, face.Scope), face.Rotation);
+            var frame = PortalSpaces.FaceFrame(face, space);
+            if (!frame.Valid) return;
             var key = ApertureKey(aperture);
             if (_nearApertures.TryGetValue(portalId, out var existing))
             {
-                if (Matches(existing, key, scene, frame)) return;
+                if (Matches(existing, key, scene, frame)) { Follow(existing, in frame); return; }
                 existing.Destroy();
                 _nearApertures.Remove(portalId);
             }
@@ -51,8 +61,9 @@ namespace Nebula
 
         private void EnsureFarAperture(LinkRig rig)
         {
+            if (!rig.FarFrame.Valid) return;
             var key = ApertureKey(rig.Aperture);
-            if (Matches(rig.FarAperture, key, rig.FarScene, rig.FarFrame)) return;
+            if (Matches(rig.FarAperture, key, rig.FarScene, rig.FarFrame)) { Follow(rig.FarAperture, in rig.FarFrame); return; }
             rig.FarAperture?.Destroy();
             rig.FarAperture = BuildAperture(rig.FarScene, key, rig.FarFrame, rig.LinkId);
         }
@@ -125,8 +136,8 @@ namespace Nebula
         /// <summary>Copy the other side's static colliders in the half of the band that is its own into this side's scene, switched off until the link opens.</summary>
         private void BuildThroat(LinkRig rig)
         {
-            rig.ThroatNearOrigin = rig.NearFrame.Origin;
-            rig.ThroatFarOrigin = rig.FarFrame.Origin;
+            rig.ThroatNearFrame = rig.NearFrame;
+            rig.ThroatFarFrame = rig.FarFrame;
             // Each hosted side takes the other side's statics, when the other side's scene is here to copy from (a worker that does not hold it builds nothing for it).
             if (rig.HostsNear && Usable(rig.FarScene))
                 CopyStatics(rig, rig.FarScene, rig.FarFrame, rig.TurnFarToNear, rig.NearFrame, rig.NearScene, beyond: true, rig.NearThroat);
@@ -204,8 +215,9 @@ namespace Nebula
                 if (!entityNear && e.InstanceId != rig.FarScope) continue;
                 if (entityNear ? !rig.HostsFar : !rig.HostsNear) continue;
                 var frame = entityNear ? rig.NearFrame : rig.FarFrame;
+                if (!frame.Valid) continue;
                 var info = Bodies.Get(e, _tick);
-                var local = frame.ToLocal(e.ToScope(e.transform.position));
+                var local = frame.ToLocal(PortalSpaces.Point(e.transform.position, e.Space, entityNear ? rig.NearSpace : rig.FarSpace));
                 if (!rig.Band.Contains(local, info.Radius + reach)) continue;
                 var scene = entityNear ? rig.FarScene : rig.NearScene;
                 for (int k = 0; k < info.Count; k++)

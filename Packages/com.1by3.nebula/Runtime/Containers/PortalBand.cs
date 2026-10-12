@@ -12,13 +12,26 @@ namespace Nebula
         public readonly Vector3 Origin;
         public readonly Quaternion Rotation;
         public readonly Quaternion Inverse;
+        /// <summary>The frame was worked out. A default one is not: the side's physics frame does not exist on this process (<c>docs/portals.md</c> D26).</summary>
+        public readonly bool Valid;
 
         public PortalFaceFrame(Vector3 origin, Quaternion rotation)
         {
             Origin = origin;
             Rotation = rotation;
             Inverse = Quaternion.Inverse(rotation);
+            Valid = true;
         }
+
+        /// <summary>
+        /// Whether another frame stands in the same place, to 2 mm and 2 × 10⁻⁵ of a rotation: a face is rounded to a millimeter where it is named
+        /// (<c>docs/portals.md</c> D37), so working one out again after its carrier moved is not exact, and that is not a move.
+        /// </summary>
+        public bool SameAs(in PortalFaceFrame other) =>
+            Valid == other.Valid &&
+            Mathf.Abs(Origin.x - other.Origin.x) < 2e-3f && Mathf.Abs(Origin.y - other.Origin.y) < 2e-3f && Mathf.Abs(Origin.z - other.Origin.z) < 2e-3f &&
+            Mathf.Abs(Rotation.x - other.Rotation.x) < 2e-5f && Mathf.Abs(Rotation.y - other.Rotation.y) < 2e-5f &&
+            Mathf.Abs(Rotation.z - other.Rotation.z) < 2e-5f && Mathf.Abs(Rotation.w - other.Rotation.w) < 2e-5f;
 
         /// <summary>A point of the scene in the face's axes.</summary>
         public Vector3 ToLocal(Vector3 scenePoint) => Inverse * (scenePoint - Origin);

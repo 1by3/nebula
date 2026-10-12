@@ -27,31 +27,44 @@ namespace Nebula
         private void StepClientCore(NetworkIdentity pawn, IEnumerable<NetworkIdentity> replicas, uint tick)
         {
             _tick = tick;
-            if (pawn == null || !pawn.IsSpawned || pawn.Container == null || pawn.Space != null || (Portals.Known.Count == 0 && _rigs.Count == 0 && _nearApertures.Count == 0))
+            if (pawn == null || !pawn.IsSpawned || pawn.Container == null || (Portals.Known.Count == 0 && _rigs.Count == 0 && _nearApertures.Count == 0))
             {
                 if (_rigs.Count > 0 || _nearApertures.Count > 0) Clear();
                 return;
             }
-            ulong scope = pawn.InstanceId;
-            SyncClientRigs(scope, pawn);
-            if (_rigs.Count > 0)
+            // A pawn inside a physics frame predicts in the frame's simulation space (docs/container-tree.md D11): the aperture collider, the throat and the proxies
+            // of its side stand in the frame's scene in those coordinates, so the frame goes to its simulation pose, about an origin near the pawn, while they are
+            // worked out, exactly as it does for the pawn's own prediction step. The replicas of the other scope are drawn, so they are read in render space.
+            var space = pawn.Space;
+            bool simulating = space != null && PhysicsFrames.RendersFrames && space.Frame != null;
+            if (simulating) PhysicsFrames.BeginSimulation(space, pawn.transform);
+            try
             {
-                BuildScopeIndex();
-                UpdateSource(pawn);
-                foreach (var e in replicas)
+                ulong scope = pawn.InstanceId;
+                SyncClientRigs(scope, pawn);
+                if (_rigs.Count > 0)
                 {
-                    if (e == null || e == pawn || !e.IsSpawned || e.Container == null || e.InstanceId == scope || e.Space != null) continue;
-                    UpdateSource(e);
+                    BuildScopeIndex();
+                    UpdateSource(pawn);
+                    foreach (var e in replicas)
+                    {
+                        if (e == null || e == pawn || !e.IsSpawned || e.Container == null || e.InstanceId == scope) continue;
+                        UpdateSource(e);
+                    }
+                    foreach (var rig in _rigs.Values) SweepRig(rig);
+                    if (tick % 120 == 0) Bodies.Prune(tick, 600);
                 }
-                foreach (var rig in _rigs.Values) SweepRig(rig);
-                if (tick % 120 == 0) Bodies.Prune(tick, 600);
+                if (_posedThisStep)
+                {
+                    _posedThisStep = false;
+                    Physics.SyncTransforms();
+                }
+                NebulaDiagnostics.PortalProxies = LiveProxies;
             }
-            if (_posedThisStep)
+            finally
             {
-                _posedThisStep = false;
-                Physics.SyncTransforms();
+                if (simulating) PhysicsFrames.EndSimulation();
             }
-            NebulaDiagnostics.PortalProxies = LiveProxies;
         }
 
         private bool _posedThisStep;
@@ -71,12 +84,15 @@ namespace Nebula
         {
             _apertureSeen.Clear();
             var pawnScene = pawn.gameObject.scene;
-            // A face the pawn is on the near side of is solid whether or not anything has opened it.
+            var pawnSpace = pawn.Space;
+            // A face the pawn is on the near side of is solid whether or not anything has opened it. Only the faces fixed in the container space the pawn simulates
+            // in: a door of the street is not in the scene of the ship the pawn rides in.
             foreach (var portal in Portals.Known.Values)
             {
                 if (portal.NearScope != scope || !Usable(pawnScene)) continue;
+                if (PortalSpaces.SpaceOf(portal.NearContainer.Resolve()) != pawnSpace) continue;
                 var face = new PortalFace(portal.NearScope, portal.NearContainerId, portal.NearOrigin, portal.NearRotation);
-                EnsureNearAperture(portal.PortalId, PortalAperture.Box(portal.HalfWidth, portal.HalfHeight), pawnScene, face);
+                EnsureNearAperture(portal.PortalId, PortalAperture.Box(portal.HalfWidth, portal.HalfHeight), pawnScene, pawnSpace, face);
                 _apertureSeen.Add(portal.PortalId);
             }
             foreach (var kv in Portals.KnownLinks)
@@ -86,6 +102,10 @@ namespace Nebula
                 ulong near = portal.NearScope;
                 ulong far = link.FarScope != 0 ? link.FarScope : portal.FarScope;
                 if (near == far || (near != scope && far != scope)) continue;
+                bool pawnNear = near == scope;
+                var pawnSide = pawnNear ? portal.NearContainer.Resolve() : link.FarEntry.Resolve();
+                if (PortalSpaces.SpaceOf(pawnSide) != pawnSpace) continue;
+                var other = pawnNear ? link.FarEntry.Resolve() : portal.NearContainer.Resolve();
                 var rig = RigFor(link.LinkId);
                 rig.Stamp = _tick;
                 rig.Portal = null;
@@ -102,15 +122,16 @@ namespace Nebula
                 rig.State = link.State;
                 rig.ObservationOnly = portal.ObservationOnly;
                 rig.ClientMember = (link.Flags & PortalLinkFlags.Member) != 0;
-                bool pawnNear = near == scope;
                 rig.HostsNear = pawnNear && Usable(pawnScene);
                 rig.HostsFar = !pawnNear && Usable(pawnScene);
-                // The pawn's side is the pawn's own scene; the other side's is the scene of the container the record names, once its content is here.
+                // The pawn's side is the pawn's own scene; the other side's is the scene its container simulates in (a frame's, when it has one), once its content is here.
                 if (pawnNear) rig.NearScene = pawnScene; else rig.FarScene = pawnScene;
-                var other = pawnNear ? link.FarEntry.Resolve() : portal.NearContainer.Resolve();
-                if (other != null && other.InnerSpace == null)
+                rig.NearSpace = pawnNear ? pawnSpace : PortalSpaces.SpaceOf(other);
+                rig.FarSpace = pawnNear ? PortalSpaces.SpaceOf(other) : pawnSpace;
+                var otherScene = PortalSpaces.SceneOf(other);
+                if (other != null && Usable(otherScene))
                 {
-                    if (pawnNear) rig.FarScene = other.gameObject.scene; else rig.NearScene = other.gameObject.scene;
+                    if (pawnNear) rig.FarScene = otherScene; else rig.NearScene = otherScene;
                 }
                 else if (pawnNear) rig.FarScene = default; else rig.NearScene = default;
                 Bind(rig);

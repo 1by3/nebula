@@ -136,17 +136,20 @@ namespace Nebula
         {
             var near = NearFace;
             var far = link.FarFace;
-            var nearFrame = new PortalFaceFrame(ContainerRegistry.ToFrame(near.Origin, near.Scope), near.Rotation);
-            var farFrame = new PortalFaceFrame(ContainerRegistry.ToFrame(far.Origin, far.Scope), far.Rotation);
+            // A side that simulates in a physics frame (a planet that is a carrier) has its face, and its bodies' poses, in that frame's coordinates (D26).
+            var nearSpace = PortalSpaces.SpaceOf(NearContainer);
+            var farSpace = PortalSpaces.SpaceOf(link.FarEntry);
+            var nearFrame = PortalSpaces.FaceFrame(near, nearSpace);
+            var farFrame = PortalSpaces.FaceFrame(far, farSpace);
             var band = new PortalBand(Aperture, BandMargin, BandDepth);
             var bodies = worker.PortalPhysics.Bodies;
             uint tick = worker.CurrentTick;
-            return Occupies(bodies, worker.AuthoritativeEntities, near.Scope, link.FarScope, nearFrame, farFrame, band, tick) ||
-                   Occupies(bodies, worker.PortalGhostEntities, near.Scope, link.FarScope, nearFrame, farFrame, band, tick);
+            return Occupies(bodies, worker.AuthoritativeEntities, near.Scope, link.FarScope, nearFrame, farFrame, nearSpace, farSpace, band, tick) ||
+                   Occupies(bodies, worker.PortalGhostEntities, near.Scope, link.FarScope, nearFrame, farFrame, nearSpace, farSpace, band, tick);
         }
 
         private static bool Occupies(PortalBodies bodies, IReadOnlyList<NetworkIdentity> entities, ulong nearScope, ulong farScope,
-            in PortalFaceFrame nearFrame, in PortalFaceFrame farFrame, in PortalBand band, uint tick)
+            in PortalFaceFrame nearFrame, in PortalFaceFrame farFrame, Container nearSpace, Container farSpace, in PortalBand band, uint tick)
         {
             for (int i = 0; i < entities.Count; i++)
             {
@@ -154,8 +157,10 @@ namespace Nebula
                 if (entity == null || !entity.IsSpawned) continue;
                 ulong scope = entity.InstanceId;
                 if (scope != nearScope && scope != farScope) continue;
+                var frame = scope == nearScope ? nearFrame : farFrame;
+                if (!frame.Valid) continue;
                 var info = bodies.Get(entity, tick);
-                if (bodies.Touches(entity, info, tick, scope == nearScope ? nearFrame : farFrame, band, 0f)) return true;
+                if (bodies.Touches(entity, info, tick, frame, band, 0f, null, 0f, scope == nearScope ? nearSpace : farSpace)) return true;
             }
             return false;
         }

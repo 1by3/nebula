@@ -890,6 +890,16 @@ namespace Nebula
             return new Vector3((float)(absolute.X + origin.X), (float)(absolute.Y + origin.Y), (float)(absolute.Z + origin.Z));
         }
 
+        /// <summary>
+        /// <see cref="ToFrame(Double3, ulong)"/> kept in double: an absolute position as a position of the scope's own space, which a physics frame's
+        /// <see cref="PhysicsFrames.ConvertLocal(Double3, Container, Container)"/> takes without narrowing it to float first.
+        /// </summary>
+        internal static Double3 ToFramePrecise(Double3 absolute, ulong instanceId)
+        {
+            var origin = OriginOf(instanceId);
+            return new Double3(absolute.X + origin.X, absolute.Y + origin.Y, absolute.Z + origin.Z);
+        }
+
         /// <summary>The inverse of <see cref="ToFrame(Double3, ulong)"/>: a frame position as an absolute one, in double.</summary>
         public static Double3 ToAbsolutePrecise(Vector3 frame, ulong instanceId)
         {

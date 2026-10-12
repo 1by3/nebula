@@ -357,5 +357,34 @@ namespace Nebula.Tests
             var gone = PortalAdjacencyMsg.Read(r);
             Assert.That((gone.Removed, gone.LinkId), Is.EqualTo((true, 77UL)));
         }
+
+        // ------------------------------------------------------------------------------------------ a side in a physics frame
+
+        [Test]
+        public void AFaceFrameIsTheSameWhenItMovedByLessThanTheNoiseOfWorkingItOutAgain()
+        {
+            var a = new PortalFaceFrame(new Vector3(100f, 2.5f, -40f), Quaternion.Euler(0f, 90f, 0f));
+            Assert.That(a.Valid, Is.True);
+            Assert.That(a.SameAs(new PortalFaceFrame(new Vector3(100.001f, 2.4995f, -40f), Quaternion.Euler(0f, 90f, 0f))), Is.True, "a millimeter is rounding, not a move");
+            Assert.That(a.SameAs(new PortalFaceFrame(new Vector3(101f, 2.5f, -40f), Quaternion.Euler(0f, 90f, 0f))), Is.False, "a metre is a move (a frame's origin shifted)");
+            Assert.That(a.SameAs(new PortalFaceFrame(new Vector3(100f, 2.5f, -40f), Quaternion.Euler(0f, 90.1f, 0f))), Is.False, "and so is a turn");
+            Assert.That(a.SameAs(default), Is.False, "a face that could not be worked out is not the same as one that could");
+            Assert.That(default(PortalFaceFrame).Valid, Is.False);
+        }
+
+        [Test]
+        public void ASideThatIsNotInAFrameHasItsFaceInTheScopesOwnSceneAndBodiesPoseThroughUnchanged()
+        {
+            var face = new PortalFace(0UL, "", new Double3(20.0, 2.5, 20.0), Quaternion.Euler(0f, 30f, 0f));
+            var frame = PortalSpaces.FaceFrame(face, null);
+            Assert.That(frame.Valid, Is.True);
+            Assert.That(frame.Origin, Is.EqualTo(ContainerRegistry.ToFrame(face.Origin, 0UL)));
+            Assert.That(frame.Rotation, Is.EqualTo(face.Rotation));
+            var point = new Vector3(1f, 2f, 3f);
+            Assert.That(PortalSpaces.Point(point, null, null), Is.EqualTo(point));
+            Assert.That(PortalSpaces.Rotation(Quaternion.identity, null, null), Is.EqualTo(Quaternion.identity));
+            Assert.That(PortalSpaces.SpaceOf(null), Is.Null);
+            Assert.That(PortalSpaces.SceneOf(null).IsValid(), Is.False);
+        }
     }
 }

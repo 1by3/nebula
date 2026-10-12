@@ -163,6 +163,17 @@ namespace Nebula.Tests
 
         public Scene HallScene => H.Hall.gameObject.scene;
 
+        /// <summary>Whether a scene Nebula made (an instance's, a frame's) is still loaded: an unload takes frames.</summary>
+        public static bool NebulaScenesLoaded()
+        {
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var scene = SceneManager.GetSceneAt(i);
+                if (scene.name.StartsWith("Nebula instance") || scene.name.StartsWith("Nebula frame")) return true;
+            }
+            return false;
+        }
+
         public void Dispose()
         {
             H.Dispose();

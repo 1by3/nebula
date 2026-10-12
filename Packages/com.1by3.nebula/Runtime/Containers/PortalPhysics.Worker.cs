@@ -64,7 +64,7 @@ namespace Nebula
                 var near = portal.NearContainer;
                 if (near == null || near.OwnerWorkerId != _worker.WorkerId) continue;
                 var nearFace = portal.NearFaceOf(_worker);
-                if (HostableSide(near, portal, "near") && Usable(near.gameObject.scene))
+                if (HostableSide(near))
                 {
                     EnsureNearAperture(portal, near, nearFace);
                     _apertureSeen.Add(portal.PortalId);
@@ -95,7 +95,7 @@ namespace Nebula
         private void SyncLinkRig(Portal portal, PortalLink link, Container near, PortalFace nearFace)
         {
             if (link.FarScope == 0) return;
-            bool nearUsable = HostableSide(near, portal, "near") && Usable(near.gameObject.scene);
+            bool nearUsable = HostableSide(near);
             if (nearUsable) { EnsureNearAperture(portal, near, nearFace); _apertureSeen.Add(portal.PortalId); }
             var rig = RigFor(link.Id);
             rig.Stamp = _tick;
@@ -114,9 +114,11 @@ namespace Nebula
             rig.ObservationOnly = portal.ObservationOnly;
             rig.HostsNear = nearUsable;
             var far = link.FarEntry;
-            rig.HostsFar = far != null && far.OwnerWorkerId == _worker.WorkerId && HostableSide(far, portal, "far") && Usable(far.gameObject.scene);
-            if (rig.HostsNear) rig.NearScene = near.gameObject.scene;
-            if (rig.HostsFar) rig.FarScene = far.gameObject.scene;
+            rig.HostsFar = far != null && far.OwnerWorkerId == _worker.WorkerId && HostableSide(far);
+            rig.NearSpace = PortalSpaces.SpaceOf(near);
+            rig.FarSpace = PortalSpaces.SpaceOf(far);
+            if (rig.HostsNear) rig.NearScene = PortalSpaces.SceneOf(near);
+            if (rig.HostsFar) rig.FarScene = PortalSpaces.SceneOf(far);
             rig.NearAperture = nearUsable && _nearApertures.TryGetValue(portal.PortalId, out var aperture) ? aperture : null;
             Bind(rig);
             if (rig.HostsFar) EnsureFarAperture(rig);
@@ -136,14 +138,11 @@ namespace Nebula
             }
         }
 
-        /// <summary>Whether a side's physics can be built here: its container simulates in the scope's own space, not inside a physics frame (a limit; said once).</summary>
-        private bool HostableSide(Container container, Portal portal, string side)
-        {
-            if (container.InnerSpace == null) return true;
-            if (!_framedWarned.Add(portal.PortalId ^ (side == "near" ? 0UL : 0x9E3779B97F4A7C15UL))) return false;
-            WarnOnce("framed:" + portal.PortalId + side, $"Portal '{portal.AuthoredId}': its {side} container {container.ContainerId} simulates in a physics frame; the portal gets no proxies or aperture collider on that side (docs/portals.md D26, as built)");
-            return false;
-        }
+        /// <summary>
+        /// Whether a side's physics can be built here: the scene its bodies simulate in is loaded. That is the container's own scene, or the scene of the physics frame
+        /// it simulates in (a planet that is a carrier), which a process that does not hold the frame does not have (<c>docs/portals.md</c> D26).
+        /// </summary>
+        private static bool HostableSide(Container container) => container != null && Usable(PortalSpaces.SceneOf(container));
 
         private void BuildScopeIndex()
         {
@@ -186,12 +185,14 @@ namespace Nebula
             // Only a body already in the band finishes while a link is closing (docs/portals.md D9); new ones wait for the link to open.
             if (!existing && rig.State != PortalState.Open) return;
             var frame = entityNear ? rig.NearFrame : rig.FarFrame;
+            var sideSpace = entityNear ? rig.NearSpace : rig.FarSpace;
+            if (!frame.Valid) return; // the side's physics frame is not here (yet)
             // Most of what a scope holds is nowhere near a face: it is not even described.
-            if (!existing && !Bodies.MayTouch(e, in frame, in rig.Band, 1f)) return;
+            if (!existing && !Bodies.MayTouch(e, in frame, in rig.Band, 1f, sideSpace)) return;
             var info = Bodies.Get(e, _tick);
             float travel = info.Body != null ? info.Body.linearVelocity.magnitude * NetworkTime.TickInterval : 0f;
             float grow = (existing ? BandHysteresis : 0f) + travel;
-            bool touches = Bodies.Touches(e, info, _tick, in frame, in rig.Band, grow, _eligible, grow);
+            bool touches = Bodies.Touches(e, info, _tick, in frame, in rig.Band, grow, _eligible, grow, sideSpace);
             if (!touches)
             {
                 if (existing) { ReleaseTracked(rig, tracked); rig.Tracked.Remove(e.NetId); }
@@ -228,10 +229,12 @@ namespace Nebula
                 return;
             }
             SetThroatActive(rig, true);
-            if (rig.BuiltGeneration == rig.Generation && (rig.NearThroat.Count > 0 || rig.FarThroat.Count > 0) &&
-                (rig.NearFrame.Origin != rig.ThroatNearOrigin || rig.FarFrame.Origin != rig.ThroatFarOrigin))
+            // Each side's copies stand in that side's scene, about its own face: only a move of that face matters to them.
+            if (rig.BuiltGeneration == rig.Generation &&
+                ((rig.NearThroat.Count > 0 && !rig.NearFrame.SameAs(rig.ThroatNearFrame)) || (rig.FarThroat.Count > 0 && !rig.FarFrame.SameAs(rig.ThroatFarFrame))))
             {
-                // A scope's origin moved under the copies (docs/scope-frames.md): they are where the old frame had them, so they are made again.
+                // A scope's origin moved under the copies (docs/scope-frames.md), or a physics frame's floating origin did (docs/portals.md D26): they are where
+                // the old frame had them, so they are made again.
                 DropThroat(rig);
                 Physics.SyncTransforms();
                 BuildThroat(rig);
@@ -297,19 +300,25 @@ namespace Nebula
             var turn = tracked.EntityNear ? rig.TurnNearToFar : rig.TurnFarToNear;
             var from = tracked.EntityNear ? rig.NearFrame : rig.FarFrame;
             var to = tracked.EntityNear ? rig.FarFrame : rig.NearFrame;
+            var sideSpace = tracked.EntityNear ? rig.NearSpace : rig.FarSpace;
+            if (!from.Valid || !to.Valid) return;
             bool asleep = info.Body != null && info.Body.IsSleeping();
             for (int p = 0; p < tracked.Parts.Count; p++)
             {
                 var part = tracked.Parts[p];
-                if (asleep && part.HasLast) continue;
+                if (asleep && part.HasLast && part.PosedAbout.SameAs(to)) continue; // a sleeping body is not looked at again, unless the face its proxy stands about moved
                 int index = Array.IndexOf(info.Colliders, part.Source, 0, info.Count);
                 if (index < 0) continue;
-                PortalBodies.PoseOf(e, part.Source, info.Centers[index], info.Upright[index], _isClient && !e.IsLocalPlayer, out var position, out var rotation);
+                PortalBodies.PoseOf(e, part.Source, info.Centers[index], info.Upright[index], _isClient && !e.IsLocalPlayer, sideSpace, out var position, out var rotation);
                 _posedThisStep = true;
-                if (part.HasLast && Near(part.LastPosition, position) && Near(part.LastRotation, rotation)) continue;
+                // The face the proxy's scene is posed about moved (a framed side's floating origin shifted, or its frame moved): the proxy goes there at once, not by a move.
+                bool aboutMoved = part.HasLast && !part.PosedAbout.SameAs(to);
+                if (part.HasLast && !aboutMoved && Near(part.LastPosition, position) && Near(part.LastRotation, rotation)) continue;
                 part.LastPosition = position;
                 part.LastRotation = rotation;
                 part.HasLast = true;
+                part.PosedAbout = to;
+                if (aboutMoved) part.Proxy.Posed = false;
                 part.Proxy.Place(to.Origin + turn * (position - from.Origin), turn * rotation, Stepped);
             }
         }
