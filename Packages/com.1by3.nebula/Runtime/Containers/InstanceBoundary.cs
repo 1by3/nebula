@@ -415,8 +415,6 @@ namespace Nebula
             return PhysicsFrames.InSimulationPose(space) ? PhysicsFrames.Convert(entity.transform.rotation, space, null) : entity.transform.rotation;
         }
 
-        private float _diagNext; // HVR-674 TEMP
-
         private static Double3 AbsoluteOf(NetworkIdentity entity) =>
             ContainerRegistry.ToAbsolutePrecise(entity.ScopePositionPrecise, entity.InstanceId);
 
@@ -509,11 +507,6 @@ namespace Nebula
                         crossing.Transfer = worker.PrepareTransfer(entity, destination);
                 }
             }
-            if (privateSide && requested && Time.unscaledTime >= _diagNext) // HVR-674 TEMP
-            {
-                _diagNext = Time.unscaledTime + 1f;
-                InstanceFrameDiagnostics.Log("worker", $"boundary '{name}' leaving-prep blocked={crossing.Blocked} transfer={(crossing.Transfer == null ? "none" : crossing.Transfer.Ready ? "ready" : crossing.Transfer.Error ?? "pending")} there={there} hostAbs={absolute}", entity, this);
-            }
             if (crossing.Blocked == InstanceCrossingStatus.None && crossing.Transfer != null) PrepareCompanions(worker, entity, crossing, key);
             else ReleaseCompanions(crossing);
             if (OwnStatusOf(crossing) != InstanceCrossingStatus.Ready) crossing.ReadySince = -1;
@@ -526,7 +519,6 @@ namespace Nebula
             }
             if (inside != privateSide)
             {
-                InstanceFrameDiagnostics.Log("worker", $"boundary '{name}' {(privateSide ? "leave" : "enter")} inside={inside} ready={crossing.Transfer != null && crossing.Transfer.Ready} blocked={crossing.Blocked}", entity, this); // HVR-674 TEMP
                 var velocity = entity.Motion.Velocity;
                 if (!IsIdentity(turnAcross)) entity.Motion.Velocity = turnAcross * velocity;
                 bool committed = allowed && Commit(worker, entity, crossing, there, therePrecise, thereRotation);

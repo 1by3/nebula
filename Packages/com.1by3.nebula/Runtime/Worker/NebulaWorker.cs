@@ -1315,7 +1315,6 @@ namespace Nebula
                 ts = System.Diagnostics.Stopwatch.GetTimestamp();
                 _gameMode?.PrepareSpatialFrame(e);
                 InstanceBoundary.Tick(this, e);
-                if (e.OwnerClientId != 0) InstanceFrameDiagnostics.Tick("worker", e); // HVR-674 TEMP
                 tBoundary += System.Diagnostics.Stopwatch.GetTimestamp() - ts;
                 // A carrier never resolves into a container it carries: its own box (its origin is inside it), nor
                 // the box of another carrier riding inside it, which is how two overlapping ships would each end up
