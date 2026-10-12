@@ -32,7 +32,8 @@ Every conformance test is an NUnit test tagged with the category `Conformance`. 
 | Tier | Where the tests are | How the script runs them |
 | --- | --- | --- |
 | Pure C# | `Packages/com.1by3.nebula/Services~/Nebula.Services.Tests` | `dotnet test --filter "TestCategory=Conformance"` |
-| Unity | `Packages/com.1by3.nebula/Tests/EditMode` | the Editor in batch mode with `-testCategory Conformance` |
+| Unity, EditMode | `Packages/com.1by3.nebula/Tests/EditMode` | the Editor in batch mode with `-testCategory Conformance` |
+| Unity, PlayMode | `Packages/com.1by3.nebula/Tests/PlayMode` | the same, with `-testPlatform PlayMode`: the scenarios that need physics scenes, which only exist in play mode |
 
 The Unity tier stands up two real workers (the `NebulaWorker` component) in one Editor process. Each worker writes to a recording transport instead of a socket, and the test delivers the recorded bytes into the other worker's message handler. A handover in this tier is built, serialized, parsed, and applied by the same code a live mesh runs. What this tier does not include: a gateway, the orchestrator, leases, and the fixed-tick loop. A test either triggers a handover directly or runs one whole worker tick when it needs one. In that tick, the worker places each entity in a container itself and hands it over when the container belongs to another worker.
 
@@ -95,7 +96,7 @@ Scenario 8 is covered by `ConformanceHandoverStateTests` (Unity tier) and `Confo
 
 ## Read a failure
 
-A failed row names the test. Open the test file under `Packages/com.1by3.nebula/Tests/EditMode/` to read the assertion; each assertion message says which field or step it checks. For the Unity tier, `Logs/conformance/unity.log` holds the Editor log and `Logs/conformance/editmode.xml` the full result, including the messages Nebula logged during the test. For the pure C# tier, the TRX file under `Logs/conformance/dotnet/` holds the same for `dotnet test`.
+A failed row names the test. Open the test file under `Packages/com.1by3.nebula/Tests/EditMode/` to read the assertion; each assertion message says which field or step it checks. For the Unity tier, `Logs/conformance/unity.log` holds the Editor log and `Logs/conformance/editmode.xml` the full result (`playmode.log` and `playmode.xml` for the PlayMode run), including the messages Nebula logged during the test. For the pure C# tier, the TRX file under `Logs/conformance/dotnet/` holds the same for `dotnet test`.
 
 If the Unity tier reports `not run`, the summary says why: the Editor was not found, the project is open in an Editor, or the Editor produced no result file. The last case usually means a compile error; the Editor log names it.
 

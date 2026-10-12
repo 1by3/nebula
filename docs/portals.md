@@ -189,9 +189,14 @@ always says why, and `PortalLink.Progress` (0..1) gives a door's UI something to
 > prepares it again at once and, as every condition still holds, opens it on the next tick without asking the clients again. A member added to an
 > open link leaves the state `Open` and sets the *wait* to `ClientWarming` with `WaitClient`; every state but Open carries a wait, and Open carries
 > one only for that case. An open link costs a lease-epoch check, a member check and, once a second, a lookup of its far scope; it does not poll content.
-> `BandOccupied` is decided from the roots of the entities the worker simulates in either face's band, because there are no proxies yet (NEB-432). A
+> `BandOccupied` was decided from the roots of the entities the worker simulates in either face's band until NEB-432, which tests bodies by extent (below). A
 > link to a template with an empty party cannot open (`Error` says so) and a link whose far content failed stays in `Preparing` with
 > `FarWorkerContent` and an `Error`: there is no wait reason for a failure.
+
+> **As built (NEB-432).** `BandOccupied` is true while any body touches the band of either face (`PortalBodies.Touches`): by its **extent** when it has one (`docs/entity-extents.md`), by the
+> **shapes of its colliders** when it has not, by its root when it has neither, for the bodies the worker simulates and for the ghosts it holds across a portal (D29). A ship whose hull is in
+> the doorway holds a closing link open although its root is 10 m back (`PortalBandOccupiedTests`). A cached description of a body is trusted for `PortalBodies.RefreshTicks` (30) ticks and
+> made again at once when its extent is set, changed or cleared.
 
 **D10 Opening is readiness, and readiness is standing, not per entity.** A link turns Open when all of these hold:
 
@@ -216,6 +221,14 @@ property of the link, held for as long as the link is open. It is what lets a co
 > and by the worker. When the far container belongs to another worker, readiness includes that worker's answer to an `InstancePrepare` carrying the
 > link id (`FarWorkerHandshake`); the commit then relies on the ordinary handover, as D35 describes. The scope lifecycle treats a live link as interest
 > in its far entry container (D43).
+
+> **As built (NEB-432), condition 4.** It is real now. When conditions 1 to 3 hold, `Portal.Evaluate` asks `PortalPhysics.PrepareLink` (once per opening of the link), which builds, on
+> this worker, the aperture collider of each side whose scene it holds (D28), the throat when it holds both (D27: the static colliders of each side's half of the band, copied into the other's scene,
+> switched off until the link opens), a pool of proxies for the bodies near the face (D26), and runs `Portal.Validate`. Building takes a few milliseconds in one tick, so a failure is not a wait: the
+> condition only fails while no scene can be built in, and then the link reports `FarWorkerContent`. When another worker holds the far container, its half is part of its answer to the
+> `InstancePrepare` that carries the link id: it replies `Success` only after it has been told of the link (`MsgId.PortalAdjacency`, sent ahead of the preparation on the same ordered stream, D30) and its
+> far aperture collider stands (`NebulaWorker.BuildFarSideOf`), otherwise the near worker asks again. Neither worker builds a static throat for a split link (see D27). Without play mode (EditMode
+> tier B tests) there are no scenes and the condition holds trivially, as before.
 
 **D11 Three hooks, on the near worker, keyed by party.** `PartyOf(entity)` says which party an entity belongs to (default:
 the owner's identity when it has an owner, as `InstanceBoundary.Personal`; null for a server-owned entity).
@@ -328,6 +341,12 @@ it. Nothing holds an entity where it last stood.
 > null when the entity has no link here (`LinkNotOpen`, or `AmbiguousParty` when its party named none and more than one link is open), the link itself for `LinkNotOpen` on a closed
 > or preparing link, `NotAdmitted`, and `NoDestination`. A body that keeps pushing is refused on every tick it reaches the plane, and `NebulaDiagnostics.PortalRefusals` counts each.
 > An occupant that a closed link keeps in is stopped `CrossDepth` short of the plane on the inside. `PortalRefusal` gained no member: `AmbiguousParty` was there from NEB-428.
+
+> **As built (NEB-432).** A refused body that has colliders now meets the aperture collider (D28) before it reaches the plane: a rigidbody bounces off the 10 cm box, a `CharacterController` is
+> stopped by it, and neither is clamped, because neither gets to the plane. `Refused(entity, link, reason)` is raised from `Portal.RefuseOnContact` instead, on every tick a collider of the body touches
+> the solid aperture collider (grown 12 cm each way, a character controller stops a skin width short) and the body is not admitted (`link` is null when it has no link here: `LinkNotOpen` or `AmbiguousParty`; `NotAdmitted` for an open link that refuses it, and for
+> every body at an observation-only portal). **The clamp stays** for what has no collider (a script-moved projectile), for a body that reaches the plane anyway (it tunnelled, or it was admitted by the
+> aperture collider's pair and then refused by the commit: `NoDestination`) and for the predictive test, exactly as NEB-429 built them.
 
 **D18 Everything an entity carries in time goes through the link pose with it.** At the commit: the position in double
 (D37) and rotation; `Motion.Velocity`; a `Rigidbody`'s linear and angular velocity; and the `StateHistory` ring, whose
@@ -455,6 +474,14 @@ no client proxy and 29 times with one posed from interpolated state). Replicas l
 the client, drawn through that scope's pose (§10). The client's own scope stays its pawn's (`docs/scope-activation.md` D16), as do routing, frames
 (D6 of `docs/scope-frames.md`) and the view.
 
+> **As built (NEB-432).** A client builds the same things a worker does for its pawn's scope only (`PortalPhysics.StepClient`, called by `NebulaClient.FixedUpdate` before the pawn predicts a tick): the
+> aperture collider of every face the pawn is on the near side of (solid with or without a link, as on a worker), the far aperture of a link the pawn stands in the far scope of, the static throat of an open
+> link, and a kinematic proxy in the pawn's scene for each collider of each replica of the other scope that touches the band. The proxy is posed, in the scene's space and through the link, from the
+> replica's **newest sample** (`RemoteInterpolator.LatestPosition` and `LatestRotation`, the collider carried with the root from where it is drawn to where that sample puts it), never from the interpolated
+> pose it is drawn at (`PortalPhysicsClientPlayTests`). A client does not step instance scenes, so its proxies are placed through their transforms and `Physics.SyncTransforms` runs once per step for the
+> `CharacterController` to see them. The pawn ignores the aperture collider of its side when the link is open and it is a member (`PortalLinkFlags.Member`); a pawn standing in the far scope always
+> passes outward. A client does not run the pair rule (nothing on it is simulated but the pawn), and builds no pool ahead of time. Not built: a pawn or a replica inside a physics frame.
+
 ## 6. Physics across the face
 
 **D26 A body in the band is mirrored into the other scope's physics scene as a kinematic proxy.** Membership of the band
@@ -471,6 +498,31 @@ jittering at 0.8 to 1 m/s). When two bodies on opposite sides both have proxies,
 each body ignores the proxy of a body whose own proxy it is already in contact with, so a dropped body does not push
 through as an infinite mass (§18: mirrored both ways, a dropped crate squeezed the one under it 0.9 m out).
 
+> **As built (NEB-432).** The engine is `PortalPhysics` (`Runtime/Containers`, one instance per `NebulaWorker` and one per `NebulaClient`; never process-wide state, because the in-process mesh holds several
+> workers), with `PortalBodies` (what a body touches), `PortalBand` and `PortalFaceFrame` (the geometry), `PortalShapes` and `PortalShapePool` (shapes and the pool) and `PortalPairRule`.
+> `NebulaWorker.Tick` runs `PortalPhysics.Step` after the entities' own simulation and immediately before `InstanceScenes.Simulate`; the street's default scene is stepped by Unity after `FixedUpdate`, so it sees the same poses.
+> - **Membership** is `PortalBodies.Touches` (see D10). A body is tracked from the tick it touches the band of its own side until it is `PortalPhysics.BandHysteresis` (25 cm) plus the distance it travels in
+>   a step outside it. New bodies are tracked only while the link is **Open**; a Closing link keeps the bodies it has (D9).
+> - **Shapes.** Box, sphere, capsule and mesh colliders, and a `CharacterController` as an upright capsule; scale is folded into the dimensions (a mesh keeps its scale on the proxy's transform). Triggers, disabled
+>   colliders, terrain and colliders that belong to another identity are never copied. One kinematic `Rigidbody` and collider for each of the body's colliders that touches the band, posed at the centre of the
+>   collider's shape. They stand on `NebulaConfig.PortalProxyLayer` (31; `Portals.ProxyLayer`) with a `PortalProxy` naming the authority.
+> - **Posing** is the pivot form in float about the two faces (`to.Origin + turn * (p - from.Origin)`, D37; a scene is anchored near what it holds, so the offsets are small). The first pose is a teleport; after
+>   that a worker uses `MovePosition` and `MoveRotation`, a client the transform. A proxy is re-posed only when its source moved by more than 0.1 mm or 2×10⁻⁵ since it was last posed, and a **sleeping** body is not
+>   looked at again once its proxies are posed: a body resting on a proxy sleeps (`ABodyRestingOnAnotherBodysProxySleeps`).
+> - **Pooling.** `PortalShapePool` keeps free proxies by (scene, shape). `PrepareLink` builds, while the link prepares, one for each collider of each body within 16 m of the face, so a body entering the band takes
+>   a pooled proxy and builds nothing (`PortalPhysics.ProxiesBuilt` does not move). A shape nobody foresaw is built on demand.
+> - **Bound.** `Portal.MaxProxiesPerPortal` (64, a field) bounds the body proxies a portal has standing over all its links. A body past the bound gets none (the bodies that came first keep theirs), a warning is
+>   logged once and `NebulaDiagnostics.PortalProxiesDropped` counts it. `NebulaDiagnostics.PortalProxies` is the number of proxies and throat copies standing on this process.
+> - **The pair rule, as built.** The spike's rule ("each body ignores the proxy of a body whose own proxy it already touches") cannot be applied to two bodies at once, since each would ignore the other's. What is built
+>   is its sound form (`PortalPairRule`): when a body native to each side, both with proxies, touch, the pair **collides in one scene, the faster body's** (equal speeds: the lower net id's), and the other scene's
+>   colliders of the pair ignore each other with `Physics.IgnoreCollision`. The choice is kept for as long as the two touch, so a body that lands on another and comes to rest does not hand the pair over. The falling
+>   crate is stopped by the copy of the crate below it; the crate below is not moved by a copy of the one above (it was driven 0.78 m out without the rule; the test pins 2 cm). It applies when one worker holds
+>   both scenes; across workers each side is one-sided, as D31 says.
+> - **A crossing swaps the sides on its own tick.** `CommitThrough` drops the members' proxies in the scene they are about to enter before they arrive (`BeforeCommit`: a body arriving on top of its own proxy would
+>   be pushed out of it) and looks at them again at once when they have (`AfterCommit`), so the scene they left holds their proxies on the tick they crossed and no tick has a body without a collider on either side.
+> - **Limit.** A side whose container simulates in a physics frame (a planet that is a carrier) gets no proxies, aperture collider or throat; it is said once. A frame's scene has its own coordinates and floating origin,
+>   and the face would have to be carried into them.
+
 **D27 The throat: each side's static geometry in the band is mirrored too, and each side must be open there.** A
 coincident far scope is built inside the near side's solid mass. A body straddling the face would have its far half
 inside the near side's hill, and PhysX would push it out. Two rules make the doorway a doorway in both scenes:
@@ -483,11 +535,30 @@ inside the near side's hill, and PhysX would push it out. Two rules make the doo
   clear: a tunnel mouth at least `BandDepth` deep. `Portal.Validate` overlap-tests this in the Editor and when a
   link starts preparing, and logs what is in the way.
 
+> **As built (NEB-432).** The throat is `PortalPhysics.BuildThroat`. It copies, into each side's scene, the colliders of the other scene (found with `OverlapBox`) that overlap the half of the band that is the other
+> side's own side of the plane: the far room's colliders in `0 ≤ z ≤ BandDepth` into the street's scene, the street's in `-BandDepth ≤ z ≤ 0` into the room's (the other halves are the solid mass behind each
+> face, which is not what a body straddling the face needs). A collider counts when it is not a trigger, not terrain, not one of ours, has no `Rigidbody` and no `NetworkIdentity` above it, and is a shape D26
+> can copy; a kinematic door in the content is a `Rigidbody` and is left out. Copies are inactive until the link opens (`SweepRig` enables them) and destroyed at Closed; `PortalPhysics.MaxThroatColliders`
+> (128 a side) bounds them and says so once. A client builds the one its pawn's scene needs. **A split link has no static throat:** each worker holds the scene of its own side only, and nothing carries the
+> other side's geometry between workers, so a body straddling the face on a split link rests on its own side's statics alone (D31). Co-location (D34) keeps links off that path.
+> `Portal.Validate(blockers)` is public: in play it checks the near side and, for each link whose far container this process holds, the far side; in the Editor, the near side in the open scene. It tests
+> the volume of the cross-section, drawn in 5 cm from its edges so a floor that meets them does not count, from the face to `BandDepth` beyond it, for static colliders (not triggers, not bodies, not
+> ours), logs what it finds (up to six names) and returns whether it is clear. It runs when a link starts preparing and, in the Editor, shortly after a portal is edited (`OnValidate`).
+
 **D28 A closed portal is a solid plane.** Each scene has a thin box collider over the cross-section. It is solid while
 the link is not Open. While it is Open, the collider is ignored, pair by pair (`Physics.IgnoreCollision`), for the
 colliders of each admitted entity entering the band, and solid for everything else, which is how a refused entity meets
 it (D17). With several parties' links open on one face, an entity passes only if its own party's link is open (D12).
 An observation-only portal (§17) keeps it solid for everyone.
+
+> **As built (NEB-432).** The aperture collider is a `BoxCollider` of the cross-section's size and `PortalPhysics.ApertureThickness` (10 cm, twice `CrossDepth`) deep, centred on the face's plane, on the proxy layer
+> with a `PortalProxy` (`IsAperture`). The **near** one is one for each portal, in its near scene, and stands whether or not the portal has a link (a portal nobody opened is solid); the **far** one is one for each link,
+> in its far scene, and stays after the link closes (an occupant it closed under is stopped). A body that touches a band is looked at when it enters and every `PortalPhysics.AdmitCheckTicks` (6) ticks after:
+> on the near side it is let through when `Portal.AdmitsThrough` says so (its party's link, D12, is open and `CanEnter` or the default admits it); on the far side anything leaving is let through while the link is
+> open. For a body that is let through, each of its colliders that touches the band ignores the aperture collider (`Physics.IgnoreCollision`); for every other body the collider stays solid, so a refused body, a
+> body of another party, a body at a link that is not open and every body at an `ObservationOnly` portal meet it. A Closing link keeps the pairs of the bodies it had and makes no new ones; the pairs go when
+> the link closes and what straddles is pushed out by PhysX. `Portal.ObservationOnly` is the §17 flag: a portal that admits nothing (`TryCross` refuses with `NotAdmitted`), carried to the gateways and
+> clients in `PortalRecord.Flags`.
 
 **D29 Across workers, the proxy's source is the ordinary ghost.** When the other side is simulated by another worker,
 the entity reaches it through the ghost band (D30), as a kinematic copy driven by the received stream
@@ -496,6 +567,14 @@ scene, with no body in the entity's scope's scene there (that worker may not hav
 one-sided, as for every ghost (`docs/architecture.md`, "Pre-warm, never transfer-at-crossing"), and the proxy is one
 tick behind its authority.
 
+> **As built (NEB-432).** A body that `PortalPhysics.Step` finds in the band of a face (it is tracked, D26) is ghosted to the workers that own the other side: for a body on the near side, the owners of the far
+> containers the far band touches; for one on the far side, the owner of the near container (`PortalPhysics.GhostTargets`, called from `UpdateGhostBand`). The ghost spawn carries the new
+> `EntityFlags.PortalGhost`; the receiver (`NebulaWorker.HoldAsPortalProxy`) switches the ghost's colliders off, so it is **no body** in its scope's scene on that worker, lists it in `PortalGhostEntities` and poses
+> proxies of it, from its transform (one tick behind its authority, as stated), into the scene it holds. A ghost that becomes this worker's own by a handover gets its colliders back. `PortalBodies` reads a
+> portal ghost's disabled colliders. **Limits:** a ghost that is wanted for an ordinary seam as well as for a portal is a portal ghost if the portal asked first (the flag is set at the spawn); a portal ghost of a
+> body in an instance scope makes the receiving worker prepare that container's content, as any ghost into an instance container does; a split link has no static throat (D27) and no pair rule (D26), so the
+> contact is one-sided on both sides.
+
 **D30 NEB-232 is decided: scopes are adjacent at portals only, and only within a band.** `ContainerRegistry.Link` stays
 scope-qualified (`docs/scoped-chunk-grids.md` D11): two containers of different scopes are never neighbours, however their
 boxes overlap. A link that is not Closed adds a separate relation, portal adjacency, between the near face's container
@@ -503,11 +582,21 @@ and the far containers its band touches, and the ghost band consults it with the
 entity is ghosted across a portal when its extent or root is inside the band, never because two scopes' boxes overlap.
 There is no free ghosting, interaction or sight between scopes anywhere else.
 
+> **As built (NEB-432).** The relation is `PortalAdjacency` (`Runtime/Worker`): an edge for each link that is not closed from the container the near face is fixed in to the containers of the far scope the far band
+> touches (`ContainerRegistry.Overlapping` over the band's box, the far entry first). The driving worker keeps it and tells the workers that own those containers with `MsgId.PortalAdjacency` (51,
+> `PortalAdjacencyMsg`: the portal record with the link's far face, the link's state and generation, the near container and the far ones), whenever the link's state, its opening or a lease changes and at least every
+> half second; a link that goes away, or a worker that no longer holds any of the far containers, is sent a removal. `ContainerRegistry.Link` is untouched: scenario 59 pins that the containers of the two scopes are not
+> neighbours while their adjacency edge exists, and `PortalPhysicsLogicTests` that two runtime containers with exactly the same box in two scopes are not either. Worker-to-worker messages require protocol 28
+> exactly (`HelloMsg`), and this one is new in it.
+
 **D31 The contact model has a stated limit.** Each side resolves its contacts against the other side's proxies, which
 are kinematic. A body resting across the face rests on its own side's statics and throat proxies and is stable. Two
 dynamic bodies pushing each other across the face each see the other as immovable, so a shove through a doorway is
 one-sided per side, and a pile that spans the face can jitter. That is the price of keeping one physics scene per scope;
 shared physics scenes were rejected (Seamless Instances, "Proxies, not shared physics scenes").
+
+> **As built (NEB-432).** Pinned by the tests: a crate resting across the face rests on its own side and sleeps; a body on another body's proxy sleeps; and the pair rule of D26 keeps a shove from one side of
+> the face from becoming an infinite mass on the other. A pile that spans the face on a split link is one-sided on both sides.
 
 ## 7. Queries
 
@@ -745,6 +834,10 @@ How the design keeps them, and what a test pins:
 13. **Physics scenes do not exist in EditMode.** `InstanceScenes.Prepare` keeps containers in the active scene when not
     playing, so tier-B EditMode tests cannot test proxies or cross-scene contacts. NEB-432's tests need a play-mode
     fixture or a seam that creates local physics scenes, as `AdoptContent` is a seam for content.
+
+    *Done in NEB-432 with a play-mode fixture:* `Tests/Shared` is a new test assembly (`Nebula.Tests.Shared`) holding `ConformanceMesh` and `PortalHarness`, which both the EditMode and the PlayMode
+    assemblies reference, so a PlayMode test runs real `NebulaWorker`s on the in-process mesh with real scenes and real PhysX (`Tests/PlayMode/PortalPhysicsRig.cs`: a street with a hill and a tunnel, a hall,
+    physics stepped by the test once to each worker tick). The rules that need no scene are EditMode.
 14. **Link state has no home on a reassignment.** A container's lease moves without any state of its own; D44 adds the
     handoff.
 
@@ -804,6 +897,21 @@ planet's ground: the frame box, the rows of that ground and the planet only, the
 `Portal.AddObserver`) and `ClientHoldsUnresolvedContainerTests` (conformance scenarios 55 to 57). For the issues that follow: NEB-432's proxies are in the band, which is inside both windows, and read the window records the same way;
 NEB-435 draws the windows' scopes and finds them by `Portals.Known` and the links a client holds (`Observer` is on its link record); NEB-437 needs nothing in observation, because each window is measured in its own face's axes. **Not built:** the
 deepest far container as a crossing's destination (D16, above); a window whose frame is nested in another frame; `Closing` links are windows both ways like `Open` ones, as D9 says, but a client is not told the difference.
+
+**NEB-432 as built, and the seams it leaves.** The engine is `Runtime/Containers/PortalPhysics*.cs` (the worker's `Step`, the throat and the aperture colliders, the pair rule, the adjacency rigs, the client's
+`StepClient`) with `PortalBodies`, `PortalBand`, `PortalShape`, `PortalPairRule`, `PortalProxy`, `Portal.Physics.cs` (`Validate`, `RefuseOnContact`) and, on the worker, `Worker/PortalAdjacency.cs` and
+`NebulaWorker.PortalAdjacency.cs`. Tests: `Tests/PlayMode/PortalPhysicsPlayTests` (14: resting across the face and sleeping, a proxy re-posed only when its source moved, pushed through with no jolt and the proxy
+swapping sides on the commit tick, a closed portal, a refused rigidbody bouncing, a refused `CharacterController` stopped while a member walks through, a body resting on another's proxy, a dropped body not squeezing
+the one below, the throat and apertures built before Open and dropped at Closed, `Validate`, pooling, the bound, an observation-only portal, leaving back out), `PortalPhysicsAcrossWorkersPlayTests` (4: a body in the
+band is a proxy on the far worker and nothing outside it is ghosted across, the same the other way, adjacency is a separate relation, a crate pushed through a split link arrives as a body again), `PortalPhysicsClientPlayTests` (3: the client's proxy, throat and aperture, posed
+from the newest sample), `PortalPhysicsLogicTests` (15: band, pair rule, pool, shapes, bodies by extent, adjacency, `Validate` in the Editor, the adjacency message) and `PortalBandOccupiedTests` (2), conformance
+scenarios 58 to 61. The play-mode tests run on `Tests/Shared` (`ConformanceMesh` and `PortalHarness`, moved out of the EditMode assembly so both assemblies reference them). **Deviations from the design**, each
+recorded at its decision: the pair rule is the faster body's scene, not the literal "ignore the proxy of a body whose own proxy it touches" (D26); the throat copies only the other side's own half of the band, and a
+split link has none (D27); a refused body that has colliders is stopped by the aperture collider and `Refused` is raised from contact, the clamp staying for the rest (D17); a side that simulates in a physics frame
+gets no physics objects (D26). **Seams for the issues that follow:** NEB-433's queries skip `PortalProxy` colliders (`PortalProxy.Is`) and hit an aperture collider as the closed plane (`PortalProxy.IsAperture`,
+`PortalPhysics.NearApertureOf`/`FarApertureOf`); NEB-434 should extend the ghosting here to a body's whole group and give a split link its throat, and is where `PortalHandoff` is built; NEB-435's drawn
+scopes need nothing of the physics, which stays in each scope's upright space; NEB-437's offset portals are already carried by the pivot form (`PortalFaceFrame` and the two turns), the proxies and the aperture
+colliders need no change for a translation.
 
 **Milestone 2, seeing and acting across.** The three issues are independent.
 

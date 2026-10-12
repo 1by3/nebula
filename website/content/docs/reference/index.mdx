@@ -97,6 +97,7 @@ Define container volumes and look up their current worker assignments.
 | [PortalFace](/docs/reference/containers/portal-face) | Struct. One side of a Portal (docs/portals.md D2): a scope, the container the face is fixed in, and a pose, an absolute Double3 position in that scope and a rotation. |
 | [PortalLink](/docs/reference/containers/portal-link) | Class. One party's link through a Portal (docs/portals.md D8, D9): the far scope, the state the link is in and, when it is not open, what it waits for. |
 | [PortalPose](/docs/reference/containers/portal-pose) | Struct. A pose in a scope: an absolute Double3 position and a rotation in the scope's own axes. |
+| [PortalProxy](/docs/reference/containers/portal-proxy) | Class. Marks a collider Nebula made to carry one side of a portal into the other (docs/portals.md §6): a kinematic copy of a body that touches an open link's band (D26), a static copy of the other side's geometry in the throat (D27), or ghost h... |
 | [PortalRefusal](/docs/reference/containers/portal-refusal) | Enum. Why a portal did not let an entity through, or leave a companion behind (docs/portals.md D17). |
 | [Portals](/docs/reference/containers/portals) | Static class. Lookup for portals (docs/portals.md D1): the Portal components on this process, on a client what the network gateway has told it about the portals near it, and the link poses between scopes (Map, Turn). |
 
@@ -405,6 +406,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [PlayerClaims](/docs/reference/protocol/player-claims) | Static class. Claims from a player's verified sign-in token that the gateway forwards to workers (NebulaConfig.ForwardedClaims): the claim names the game listed, with their values as strings. |
 | [PlayerSessions](/docs/reference/protocol/player-sessions) | Class. A worker's view of which gateway currently speaks for each player session, and how new that claim is. |
 | [PongMsg](/docs/reference/protocol/pong-msg) | Struct. Carries the pong protocol message. |
+| [PortalAdjacencyMsg](/docs/reference/protocol/portal-adjacency-msg) | Struct. MsgId.PortalAdjacency (docs/portals.md D30, D45): a link the sender drives, as a worker that holds the other side of its band needs it. |
 | [PortalApertureKind](/docs/reference/protocol/portal-aperture-kind) | Enum. The shape of a Portal's aperture, the opening on its face's z = 0 plane (docs/portals.md D3). |
 | [PortalFarKind](/docs/reference/protocol/portal-far-kind) | Enum. How a portal names its far side (docs/portals.md D5). |
 | [PortalIds](/docs/reference/protocol/portal-ids) | Static class. The ids portals and their links are named by (docs/portals.md D6): derived, so every process computes the same one. |

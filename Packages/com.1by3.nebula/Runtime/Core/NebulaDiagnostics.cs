@@ -35,8 +35,19 @@ namespace Nebula
         /// <summary>How many of this worker's open portal links lead into a container another worker owns (<c>docs/portals.md</c> D36).</summary>
         public static int SplitPortalLinks { get; internal set; }
 
+        /// <summary>
+        /// How many portal proxies stand in physics scenes on this process right now (<c>docs/portals.md</c> D26, D27, D36): kinematic copies of bodies in
+        /// a band and static copies in a throat, not counting aperture colliders. A worker holds at most <see cref="Portal.MaxProxiesPerPortal"/> body copies per portal.
+        /// </summary>
+        public static int PortalProxies { get; internal set; }
+
+        /// <summary>How many body proxies a portal did not build because it was at <see cref="Portal.MaxProxiesPerPortal"/> (<c>docs/portals.md</c> D26).</summary>
+        public static int PortalProxiesDropped { get; internal set; }
+
         internal static void ResetForNewSession()
         {
+            PortalProxies = 0;
+            PortalProxiesDropped = 0;
             PortalCloseOverruns = 0;
             PortalRefusals = 0;
             OpenPortalLinks = 0;

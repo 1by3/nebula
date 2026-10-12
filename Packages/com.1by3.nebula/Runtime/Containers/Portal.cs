@@ -104,6 +104,22 @@ namespace Nebula
         public bool ObserveAnyone;
 
         /// <summary>
+        /// A window in a wall rather than a way through (<c>docs/portals.md</c> §17): links are observed as usual, but nothing is admitted. The aperture
+        /// collider stays solid for everyone (D28), a body or a mover that reaches the face is refused with <see cref="PortalRefusal.NotAdmitted"/>.
+        /// </summary>
+        public bool ObservationOnly;
+
+        /// <summary>
+        /// The most body proxies this portal builds in physics scenes at once, over all its links (<c>docs/portals.md</c> D26). A body in a band past the bound
+        /// gets none (the bodies that came first keep theirs) and <see cref="NebulaDiagnostics.PortalProxiesDropped"/> counts it.
+        /// </summary>
+        [Min(0)] public int MaxProxiesPerPortal = 64;
+
+        /// <summary>How many body proxies this portal has standing right now, over all its links (<see cref="MaxProxiesPerPortal"/>).</summary>
+        public int ProxyCount => ProxyTotal;
+        internal int ProxyTotal;
+
+        /// <summary>
         /// Server-side: the party an entity belongs to (<c>docs/portals.md</c> D11), an opaque string of the game's choosing, or
         /// null for none. When unset: the owner's identity (<see cref="NetworkIdentity.OwnerIdentity"/>) for an entity with an
         /// owner, null for a server-owned entity. An entity crosses through the link of its party; with no party it uses the face's
@@ -336,6 +352,9 @@ namespace Nebula
 
         /// <summary>The links this portal has, one per party that ever opened it, whatever their state.</summary>
         public IEnumerable<PortalLink> Links => _links.Values;
+
+        /// <summary>The links, enumerated without allocating (the worker walks them every tick).</summary>
+        internal Dictionary<string, PortalLink>.ValueCollection LinkValues => _links.Values;
 
         /// <summary>How many parties have a link here.</summary>
         public int LinkCount => _links.Count;

@@ -21,6 +21,14 @@ public static IReadOnlyList<Portal> All { get; }
 
 Every enabled portal component on this process.
 
+### ProxyLayer [#proxylayer]
+
+```csharp
+public static int ProxyLayer { get; }
+```
+
+The physics layer a portal's proxies and aperture colliders are on ([`NebulaConfig.PortalProxyLayer`](/docs/reference/core/nebula-config#portalproxylayer), 31 unless the process was configured otherwise). A game keeps it free of its own objects and out of its own layer masks (`docs/portals.md` D26).
+
 ### Known [#known]
 
 ```csharp

@@ -125,7 +125,9 @@ was made for the next bump.
 `Portals`, 28 `PortalLinks` and 29 `PortalWarm`, which a gateway sends a client and a client sends back, and a trailing `link_id`
 on `InstancePrepare` and `InstanceReady`, which workers exchange), but the meaning is not: a 27 client would be sent replicas
 of scopes it believes hidden and never draw them posed, and would predict its pawn into an aperture it does not know is solid.
-NEB-431 (windows) changes bytes inside protocol 28 before it ships: an instance row on the client wire loses the `ObservePublic` flag and the two observation vectors (25 bytes) and a stored lease row's
+NEB-432 (proxies) adds, inside protocol 28 before it ships, one worker-to-worker message (`PortalAdjacency` 51: a link the sender drives and the far containers its band touches, `docs/portals.md` D30),
+a bit of `EntityFlags` (`PortalGhost` 8, on a ghost spawn only) and a bit of `PortalRecord.Flags` (`ObservationOnly` 1); worker-to-worker connections require 28 exactly, and a client never sees any of it
+but the record flag. NEB-431 (windows) changes bytes inside protocol 28 before it ships: an instance row on the client wire loses the `ObservePublic` flag and the two observation vectors (25 bytes) and a stored lease row's
 flags byte keeps only the pose bit. No recording or frozen decoder holds an instance row, so the fixtures are unchanged.
 
 There is no N-1 replay in a closed window, so the replay test now replays `protocol-28-handshake.json` through a frozen

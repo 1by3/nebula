@@ -17,6 +17,12 @@ namespace Nebula
         /// <summary>Every enabled portal component on this process.</summary>
         public static IReadOnlyList<Portal> All => Registered;
 
+        /// <summary>
+        /// The physics layer a portal's proxies and aperture colliders are on (<see cref="NebulaConfig.PortalProxyLayer"/>, 31 unless the
+        /// process was configured otherwise). A game keeps it free of its own objects and out of its own layer masks (<c>docs/portals.md</c> D26).
+        /// </summary>
+        public static int ProxyLayer => NebulaRuntime.Config != null ? Mathf.Clamp(NebulaRuntime.Config.PortalProxyLayer, 0, 31) : 31;
+
         internal static void Register(Portal portal)
         {
             if (!Registered.Contains(portal)) { Registered.Add(portal); _registryVersion++; }

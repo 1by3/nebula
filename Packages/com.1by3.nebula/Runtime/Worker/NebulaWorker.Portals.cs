@@ -32,6 +32,16 @@ namespace Nebula
         /// <summary>The entities this worker simulates, for the portals' band test.</summary>
         internal IReadOnlyList<NetworkIdentity> AuthoritativeEntities => _authoritative;
 
+        private PortalPhysics _portalPhysics;
+
+        /// <summary>This worker's portal physics: the aperture colliders, the throat and the proxies it builds in its scenes (<c>docs/portals.md</c> §6).</summary>
+        internal PortalPhysics PortalPhysics => _portalPhysics ??= new PortalPhysics(this);
+        internal PortalPhysics PortalPhysicsIfAny => _portalPhysics;
+
+        /// <summary>Ghosts this worker holds only to pose a proxy of them through a portal, never as bodies in their own scope (<c>docs/portals.md</c> D29).</summary>
+        internal IReadOnlyList<NetworkIdentity> PortalGhostEntities => _portalGhosts;
+        private readonly List<NetworkIdentity> _portalGhosts = new List<NetworkIdentity>();
+
         /// <summary>
         /// Once a tick, after the preparations: drive every link of the portals this worker owns, and tell the network gateways what
         /// changed. A portal whose container this worker no longer owns, or that is gone, is withdrawn.
@@ -101,6 +111,7 @@ namespace Nebula
             }
             _portalGone.Clear();
             _portalScratch.Clear();
+            PublishAdjacency();
             NebulaDiagnostics.OpenPortalLinks = open;
             NebulaDiagnostics.SplitPortalLinks = split;
             if (_portalUpserts.Count + _portalRemoves.Count + _linkUpserts.Count + _linkRemoves.Count == 0 || _gateways.Count == 0)
@@ -228,6 +239,8 @@ namespace Nebula
             foreach (var member in members)
                 if (member == null || !member.IsSpawned || !member.HasAuthority || member.IsSceneEntity || !group.Add(member)) return false;
             if (!InstanceScenes.Complete(destination)) return false;
+            // Their proxies in the scene they are about to enter go before they arrive in it; the ones in the scene they leave are built on the same tick, below.
+            _portalPhysics?.BeforeCommit(members);
             // Everything is read in the scope being left before anything moves: a rider's frame, and so its velocity, changes when its carrier does.
             var carries = new NetworkIdentity.PortalCarry[members.Count];
             var seated = new bool[members.Count];
@@ -240,6 +253,7 @@ namespace Nebula
             // (docs/scope-activation.md D19).
             for (int i = 0; i < members.Count; i++) if (!seated[i]) members[i].MoveThroughPortal(destination, in map, in carries[i]);
             for (int i = 0; i < members.Count; i++) members[i].FinishThroughPortal(in map, in carries[i]);
+            _portalPhysics?.AfterCommit(members);
             return true;
         }
     }

@@ -122,6 +122,23 @@ public bool ObserveAnyone;
 
 Whether anyone may look through this portal's links, not only their observers (`docs/portals.md` D11).
 
+### ObservationOnly [#observationonly]
+
+```csharp
+public bool ObservationOnly;
+```
+
+A window in a wall rather than a way through (`docs/portals.md` §17): links are observed as usual, but nothing is admitted. The aperture collider stays solid for everyone (D28), a body or a mover that reaches the face is refused with [`PortalRefusal.NotAdmitted`](/docs/reference/containers/portal-refusal#notadmitted).
+
+### MaxProxiesPerPortal [#maxproxiesperportal]
+
+```csharp
+[Min(0)]
+public int MaxProxiesPerPortal = 64;
+```
+
+The most body proxies this portal builds in physics scenes at once, over all its links (`docs/portals.md` D26). A body in a band past the bound gets none (the bodies that came first keep theirs) and [`NebulaDiagnostics.PortalProxiesDropped`](/docs/reference/core/nebula-diagnostics#portalproxiesdropped) counts it.
+
 ### PartyOf [#partyof]
 
 ```csharp
@@ -155,6 +172,14 @@ public Action<NetworkIdentity, List<NetworkIdentity>> ResolveCompanions;
 Server-side: fill the list with the entities that must cross together with the one crossing, its companions: an item it holds, a pet, a cart it tows, an escort (`docs/portals.md` D14). Called on the worker that simulates the crossing entity, once a tick while it is near the face, with an empty list. A companion moves with its leader and does not cross on its own while it is one. The group commits in one step on the tick the leader crosses, each member keeping its identity and arriving at its own pose mapped through the link. A companion that cannot cross is left behind ([`CompanionLeftBehind`](#companionleftbehind)); with the far side warm, a companion never waits for a preparation of its own.
 
 ## Properties
+
+### ProxyCount [#proxycount]
+
+```csharp
+public int ProxyCount { get; }
+```
+
+How many body proxies this portal has standing right now, over all its links ([`MaxProxiesPerPortal`](#maxproxiesperportal)).
 
 ### FixedFarScopeKey [#fixedfarscopekey]
 
@@ -360,3 +385,17 @@ public bool RemoveMember(string party, ulong clientId);
 ```
 
 Remove a client from a link's members; it no longer holds the link back and no longer looks through it.
+
+### Validate [#validate]
+
+```csharp
+public bool Validate(List<Collider> blockers = null);
+```
+
+Check that this side's own static colliders leave the cross-section clear for [`BandDepth`](#banddepth) beyond the face (`docs/portals.md` D27): the tunnel mouth a game builds so that a body straddling the face is not pushed out of the doorway by the mass behind it. Run it in the Editor (a portal validates itself when it is edited) and by hand; a link also checks both of its sides when it starts preparing. Whatever is in the way is logged. In play mode it checks the near side and, for each link whose far container this process holds, the far side; in the Editor, the near side in the open scene.
+
+| Parameter | Description |
+| --- | --- |
+| `blockers` | When given, filled with the colliders in the way. |
+
+**Returns:** True when the cross-section is clear.

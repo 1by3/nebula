@@ -135,9 +135,25 @@ The window, per side: the cross-section grown by [`WindowMargin`](#windowmargin)
 public byte Flags;
 ```
 
-Reserved flags (observation-only portals, `docs/portals.md` §17). 0 today.
+Flags: [`ObservationOnlyFlag`](#observationonlyflag) (`docs/portals.md` §17).
+
+### ObservationOnlyFlag [#observationonlyflag]
+
+```csharp
+public const byte ObservationOnlyFlag = 1;
+```
+
+The portal is a window in a wall: it admits nothing and its aperture collider is solid for everyone (`docs/portals.md` D28).
 
 ## Properties
+
+### ObservationOnly [#observationonly]
+
+```csharp
+public bool ObservationOnly { get; }
+```
+
+Whether the portal admits nothing ([`ObservationOnlyFlag`](#observationonlyflag)).
 
 ### NearWindow [#nearwindow]
 

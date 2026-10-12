@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   Runs the Nebula conformance suite: every test tagged [Category("Conformance")], in the .NET service tests and in
-  the Unity EditMode tests, and prints one PASS/FAIL summary. Exit code 0 when everything passed, 1 otherwise.
+  the Unity EditMode and PlayMode tests, and prints one PASS/FAIL summary. Exit code 0 when everything passed, 1 otherwise.
 
 .DESCRIPTION
   The conformance suite is the exit criterion for the scopes and interaction contracts (docs/conformance-suite.md):
@@ -10,6 +10,7 @@
   Two places hold conformance tests:
     - Packages/com.1by3.nebula/Services~/Nebula.Services.Tests   pure C# (dotnet test --filter TestCategory=Conformance)
     - Packages/com.1by3.nebula/Tests/EditMode                     Unity (Editor in batchmode, -testCategory Conformance)
+    - Packages/com.1by3.nebula/Tests/PlayMode                     Unity, scenarios that need physics scenes (play mode)
 
   The Unity run needs the Editor closed for this project: batchmode cannot open a project another Editor holds.
   The Unity result file is NUnit 3 XML; the script reads it for the counts and names the failures.
@@ -71,34 +72,38 @@ if ($trx) {
     Add-Tier 'dotnet (Nebula.Services.Tests)' $false 0 0 0 @() "no TRX result produced (dotnet test exit $dotnetExit)"
 }
 
-# ---------------------------------------------------------------------------------------------- unity tier
-if ($DotnetOnly) {
-    Add-Tier 'unity (Nebula.Tests.EditMode)' $false 0 0 0 @() 'skipped (-DotnetOnly)'
-} else {
+# ---------------------------------------------------------------------------------------------- unity tiers
+# EditMode holds the tiers A to C scenarios; PlayMode holds the ones that need physics scenes, which only exist in play mode
+# (docs/portals.md, section 14 item 13). Both run the tests tagged Conformance, in the same batchmode Editor.
+function Invoke-UnityTier($name, $platform, $assembly, $file) {
     $unity = if ($UnityPath) { $UnityPath } else { "C:\Program Files\Unity\Hub\Editor\$UnityVersion\Editor\Unity.exe" }
     $lock  = Join-Path $repo 'Temp\UnityLockfile'
-    if (-not (Test-Path $unity)) {
-        Add-Tier 'unity (Nebula.Tests.EditMode)' $false 0 0 0 @() "Unity not found at $unity"
+    if ($DotnetOnly) {
+        Add-Tier $name $false 0 0 0 @() 'skipped (-DotnetOnly)'
+    } elseif (-not (Test-Path $unity)) {
+        Add-Tier $name $false 0 0 0 @() "Unity not found at $unity"
     } elseif (Test-Path $lock) {
-        Add-Tier 'unity (Nebula.Tests.EditMode)' $false 0 0 0 @() "the project is open in an Editor ($lock exists); close it or use -DotnetOnly"
+        Add-Tier $name $false 0 0 0 @() "the project is open in an Editor ($lock exists); close it or use -DotnetOnly"
     } else {
-        Write-Host "[conformance] unity: Nebula.Tests.EditMode, -testCategory Conformance (batchmode; this takes a few minutes)" -ForegroundColor Cyan
-        $results = Join-Path $out 'editmode.xml'
-        $log     = Join-Path $out 'unity.log'
-        $unityArgs = @('-batchmode', '-nographics', '-projectPath', $repo, '-runTests', '-testPlatform', 'EditMode',
-                       '-assemblyNames', 'Nebula.Tests.EditMode', '-testCategory', 'Conformance',
+        Write-Host "[conformance] unity: $assembly, -testCategory Conformance (batchmode; this takes a few minutes)" -ForegroundColor Cyan
+        $results = Join-Path $out $file
+        $log     = Join-Path $out ($file -replace '\.xml$', '.log')
+        $unityArgs = @('-batchmode', '-nographics', '-projectPath', $repo, '-runTests', '-testPlatform', $platform,
+                       '-assemblyNames', $assembly, '-testCategory', 'Conformance',
                        '-testResults', $results, '-logFile', $log)
         $proc = Start-Process -Wait -PassThru -FilePath $unity -ArgumentList $unityArgs
         if (Test-Path $results) {
             [xml]$doc = Get-Content $results -Raw
             $run = $doc.'test-run'
             $failedNames = @($doc.SelectNodes("//test-case[@result='Failed']") | ForEach-Object { $_.fullname })
-            Add-Tier 'unity (Nebula.Tests.EditMode)' $true ([int]$run.passed) ([int]$run.failed) ([int]$run.skipped + [int]$run.inconclusive) $failedNames ''
+            Add-Tier $name $true ([int]$run.passed) ([int]$run.failed) ([int]$run.skipped + [int]$run.inconclusive) $failedNames ''
         } else {
-            Add-Tier 'unity (Nebula.Tests.EditMode)' $false 0 0 0 @() "no result file; Unity exit $($proc.ExitCode), see $log"
+            Add-Tier $name $false 0 0 0 @() "no result file; Unity exit $($proc.ExitCode), see $log"
         }
     }
 }
+Invoke-UnityTier 'unity (Nebula.Tests.EditMode)' 'EditMode' 'Nebula.Tests.EditMode' 'editmode.xml'
+Invoke-UnityTier 'unity (Nebula.Tests.PlayMode)' 'PlayMode' 'Nebula.Tests.PlayMode' 'playmode.xml'
 
 # ---------------------------------------------------------------------------------------------- summary
 Write-Host "`n[conformance] ===== summary =====" -ForegroundColor Cyan

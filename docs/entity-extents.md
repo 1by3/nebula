@@ -188,3 +188,4 @@ the entity's container, the collider computation per shape and its exclusions, t
 - The moving-runtime scan (§5) is linear in the chunks of a frame.
 - An extent that leaves its own container is also ghosted to the owner of any container enclosing it (D4), even when
   the sibling containers there cover all of it.
+- A portal's band (`docs/portals.md` D26) is tested on the extent the same way: a body whose extent touches the band of an open link has proxies in the other scope's scene, holds a closing link open, and is ghosted to the worker that owns the other side (D30). The band test reads the extent at most `PortalBodies.RefreshTicks` (30) ticks late, and at once after `SetExtent` or `ClearExtent`.

@@ -204,6 +204,14 @@ public bool IsSceneEntity { get; }
 
 Authored into a scene rather than spawned from a prefab: the object belongs to its scene and is bound, never instantiated or destroyed, by the network (see [`SceneEntities`](/docs/reference/core/scene-entities)).
 
+### IsPortalGhost [#isportalghost]
+
+```csharp
+public bool IsPortalGhost { get; }
+```
+
+A worker holds this ghost only to pose a proxy of it through a portal (`docs/portals.md` D29): its colliders are off, so it is no body in its scope's physics scene on this worker, and [`PortalProxy`](/docs/reference/containers/portal-proxy)s of it stand in the scene of the side the worker holds.
+
 ### NetId [#netid]
 
 ```csharp

@@ -127,23 +127,35 @@ namespace Nebula
             FinishClose(link, PortalWait.None);
         }
 
-        /// <summary>Whether an entity's root stands in the band of either face of the link (<c>docs/portals.md</c> D3): <c>|z| ≤ BandDepth</c> and in the aperture grown by <see cref="BandMargin"/>.</summary>
+        /// <summary>
+        /// Whether a body stands in the band of either face of the link (<c>docs/portals.md</c> D3, D26): tested on its extent when it has one, on its
+        /// colliders' shapes otherwise and on its root when it has neither, so a ship whose hull is in the doorway holds the link open although its root is far
+        /// away. Bodies this worker simulates and bodies it holds only as proxies across the portal count.
+        /// </summary>
         private bool BandOccupied(NebulaWorker worker, PortalLink link)
         {
             var near = NearFace;
             var far = link.FarFace;
-            var entities = worker.AuthoritativeEntities;
+            var nearFrame = new PortalFaceFrame(ContainerRegistry.ToFrame(near.Origin, near.Scope), near.Rotation);
+            var farFrame = new PortalFaceFrame(ContainerRegistry.ToFrame(far.Origin, far.Scope), far.Rotation);
+            var band = new PortalBand(Aperture, BandMargin, BandDepth);
+            var bodies = worker.PortalPhysics.Bodies;
+            uint tick = worker.CurrentTick;
+            return Occupies(bodies, worker.AuthoritativeEntities, near.Scope, link.FarScope, nearFrame, farFrame, band, tick) ||
+                   Occupies(bodies, worker.PortalGhostEntities, near.Scope, link.FarScope, nearFrame, farFrame, band, tick);
+        }
+
+        private static bool Occupies(PortalBodies bodies, IReadOnlyList<NetworkIdentity> entities, ulong nearScope, ulong farScope,
+            in PortalFaceFrame nearFrame, in PortalFaceFrame farFrame, in PortalBand band, uint tick)
+        {
             for (int i = 0; i < entities.Count; i++)
             {
                 var entity = entities[i];
                 if (entity == null || !entity.IsSpawned) continue;
                 ulong scope = entity.InstanceId;
-                PortalFace face;
-                if (scope == near.Scope) face = near;
-                else if (scope == link.FarScope) face = far;
-                else continue;
-                var local = face.ToLocal(AbsoluteOf(entity));
-                if (Math.Abs(local.Z) <= BandDepth && Aperture.Contains(local.X, local.Y, BandMargin)) return true;
+                if (scope != nearScope && scope != farScope) continue;
+                var info = bodies.Get(entity, tick);
+                if (bodies.Touches(entity, info, tick, scope == nearScope ? nearFrame : farFrame, band, 0f)) return true;
             }
             return false;
         }
@@ -185,6 +197,7 @@ namespace Nebula
             {
                 if (!link.HandshakeDone)
                 {
+                    worker.PublishAdjacencyNow(this, link);
                     worker.AskFarWorker(link, entry);
                     progress = done / Stages;
                     return PortalWait.FarWorkerHandshake;
@@ -225,7 +238,9 @@ namespace Nebula
             if (scope.State == ScopeState.Restoring) { progress = done / Stages; return PortalWait.FarEntitiesRestoring; }
             done += 1f;
 
-            // 4. Both workers have built the band's throat proxies and aperture colliders: nothing is built yet (NEB-432).
+            // 4. Both workers have built the band's throat proxies and aperture colliders (D27, D28): this worker's sides here, and the far worker's
+            // in its answer to the handshake above.
+            if (!worker.PortalPhysics.PrepareLink(this, link, worker.CurrentTick)) { progress = done / Stages; return PortalWait.FarWorkerContent; }
             done += 1f;
 
             // 5. Every member's client is warm: it holds the far window and its content is ready.
@@ -336,6 +351,7 @@ namespace Nebula
                 BandDepth = BandDepth,
                 WindowMargin = WindowMargin,
                 WindowDepth = WindowDepth,
+                Flags = ObservationOnly ? PortalRecord.ObservationOnlyFlag : (byte)0,
             };
             return record;
         }

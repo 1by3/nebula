@@ -123,8 +123,14 @@ namespace Nebula
         public float BandMargin, BandDepth;
         /// <summary>The window, per side: the cross-section grown by <see cref="WindowMargin"/>, extruded <see cref="WindowDepth"/> into that side.</summary>
         public float WindowMargin, WindowDepth;
-        /// <summary>Reserved flags (observation-only portals, <c>docs/portals.md</c> §17). 0 today.</summary>
+        /// <summary>Flags: <see cref="ObservationOnlyFlag"/> (<c>docs/portals.md</c> §17).</summary>
         public byte Flags;
+
+        /// <summary>The portal is a window in a wall: it admits nothing and its aperture collider is solid for everyone (<c>docs/portals.md</c> D28).</summary>
+        public const byte ObservationOnlyFlag = 1;
+
+        /// <summary>Whether the portal admits nothing (<see cref="ObservationOnlyFlag"/>).</summary>
+        public bool ObservationOnly => (Flags & ObservationOnlyFlag) != 0;
 
         /// <summary>The near side's window: the aperture grown by <see cref="WindowMargin"/> sideways and <see cref="WindowDepth"/> deep into the near scope (<c>docs/portals.md</c> D3).</summary>
         public PortalWindow NearWindow => new PortalWindow(NearScope, NearOrigin, NearRotation,
@@ -358,5 +364,54 @@ namespace Nebula
         }
 
         public static PortalWarmMsg Read(NetworkReader r) => new PortalWarmMsg { LinkId = r.ReadULong(), Generation = r.ReadUInt(), ClientId = r.ReadULong() };
+    }
+
+    /// <summary>
+    /// <see cref="MsgId.PortalAdjacency"/> (<c>docs/portals.md</c> D30, D45): a link the sender drives, as a worker that holds the other side of its band needs
+    /// it. The portal record carries the near face, the aperture and the band; the far face is the link's, which a template shares with the portal
+    /// but a fixed far side may not. <see cref="FarContainers"/> are the containers of the far scope the far band touches, the relation that makes a body in
+    /// the band of one face a ghost on the worker that owns the other. A removal withdraws it.
+    /// </summary>
+    public struct PortalAdjacencyMsg
+    {
+        public bool Removed;
+        public ulong LinkId;
+        public uint Generation;
+        public PortalState State;
+        public ulong FarScope;
+        public PortalRecord Portal;
+        public ContainerRef NearContainer;
+        public List<ContainerRef> FarContainers;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.PortalAdjacency);
+            w.WriteByte((byte)(Removed ? 1 : 0));
+            w.WriteULong(LinkId);
+            if (Removed) return;
+            w.WriteUInt(Generation);
+            w.WriteByte((byte)State);
+            w.WriteULong(FarScope);
+            Portal.Write(w);
+            NearContainer.Write(w);
+            w.WriteUShort((ushort)(FarContainers?.Count ?? 0));
+            if (FarContainers != null) for (int i = 0; i < FarContainers.Count; i++) FarContainers[i].Write(w);
+        }
+
+        /// <summary>Read the body after the id byte.</summary>
+        public static PortalAdjacencyMsg Read(NetworkReader r)
+        {
+            var m = new PortalAdjacencyMsg { Removed = r.ReadByte() != 0, LinkId = r.ReadULong() };
+            if (m.Removed) return m;
+            m.Generation = r.ReadUInt();
+            m.State = (PortalState)r.ReadByte();
+            m.FarScope = r.ReadULong();
+            m.Portal = PortalRecord.Read(r);
+            m.NearContainer = ContainerRef.Read(r);
+            int n = r.ReadUShort();
+            m.FarContainers = new List<ContainerRef>(n);
+            for (int i = 0; i < n; i++) m.FarContainers.Add(ContainerRef.Read(r));
+            return m;
+        }
     }
 }

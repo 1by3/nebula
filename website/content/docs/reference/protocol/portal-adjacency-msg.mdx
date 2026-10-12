@@ -1,0 +1,78 @@
+---
+title: "PortalAdjacencyMsg"
+description: "MsgId.PortalAdjacency (docs/portals.md D30, D45): a link the sender drives, as a worker that holds the other side of its band needs it."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs)</div>
+
+```csharp
+public struct PortalAdjacencyMsg
+```
+
+[`MsgId.PortalAdjacency`](/docs/reference/protocol/msg-id#portaladjacency) (`docs/portals.md` D30, D45): a link the sender drives, as a worker that holds the other side of its band needs it. The portal record carries the near face, the aperture and the band; the far face is the link's, which a template shares with the portal but a fixed far side may not. [`FarContainers`](#farcontainers) are the containers of the far scope the far band touches, the relation that makes a body in the band of one face a ghost on the worker that owns the other. A removal withdraws it.
+
+## Fields
+
+### Removed [#removed]
+
+```csharp
+public bool Removed;
+```
+
+### LinkId [#linkid]
+
+```csharp
+public ulong LinkId;
+```
+
+### Generation [#generation]
+
+```csharp
+public uint Generation;
+```
+
+### State [#state]
+
+```csharp
+public PortalState State;
+```
+
+### FarScope [#farscope]
+
+```csharp
+public ulong FarScope;
+```
+
+### Portal [#portal]
+
+```csharp
+public PortalRecord Portal;
+```
+
+### NearContainer [#nearcontainer]
+
+```csharp
+public ContainerRef NearContainer;
+```
+
+### FarContainers [#farcontainers]
+
+```csharp
+public List<ContainerRef> FarContainers;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static PortalAdjacencyMsg Read(NetworkReader r);
+```
+
+Read the body after the id byte.

@@ -754,6 +754,7 @@ namespace Nebula
             ContainerRegistry.DynamicRegistered -= OnLateContainerRegistered;
             ContainerRegistry.RuntimeRegistered -= OnLateContainerRegistered;
             ContainerRegistry.Rebuilt -= ReleaseResolvedHolds;
+            _portalPhysics.Dispose();
             _transport?.Dispose();
             _transport = null;
         }
@@ -1095,6 +1096,8 @@ namespace Nebula
             // not seen that yet (transforms reach it at the physics step, after this): bring it up to date, as the
             // worker does between a carrier's tick and its contents', or the deck is a frame behind under the pawn.
             if (ContainerRegistry.Dynamic.Count > 0) Physics.SyncTransforms();
+            // The pawn predicts against what the worker has: the throat, the aperture colliders and proxies of the replicas in the band (docs/portals.md D25).
+            if (pawn && (Portals.Known.Count > 0 || _portalPhysics.HasRigs)) _portalPhysics.StepClient(LocalPlayer, _entities.Values, first);
 
             for (int i = 0; i < steps; i++)
             {
@@ -2161,8 +2164,11 @@ namespace Nebula
             _farGone.Clear();
         }
 
+        private readonly PortalPhysics _portalPhysics = new PortalPhysics(null);
+
         private void ClearWorld()
         {
+            _portalPhysics.Clear();
             foreach (var e in _entities.Values)
             {
                 if (e == null) continue;

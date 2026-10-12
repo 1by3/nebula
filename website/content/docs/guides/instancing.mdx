@@ -211,6 +211,28 @@ Everything the entity carries in time goes through the link with it, in double a
 
 A vehicle crosses with everything aboard it that the worker simulates, each rider keeping its seat. If anyone aboard is not admitted, the vehicle is refused as a whole.
 
+## Collide across a portal
+
+An open portal is a doorway you can walk, push and throw things through, and things rest against it from both sides. Each side keeps its own physics scene, so Nebula mirrors what touches the face into the other: this is what the **band** is for. The band is the opening grown `BandMargin` (0.5 m) sideways and `Portal.BandDepth` (2 m) to each side of the face.
+
+- **A body in the band has a proxy in the other scope's scene.** The proxy is a kinematic copy of the body's colliders (boxes, spheres, capsules and meshes, and a `CharacterController` as a capsule; never terrain or triggers), posed through the link before the scene steps, so a crate resting half in the street and half in the room is felt from both sides. Membership is tested on the body's `Extent` when it has one, so a ship whose root is far from the door but whose hull is in the doorway counts, and on its colliders' shapes otherwise. A proxy carries a `PortalProxy` that names the entity it stands for.
+- **Each side's floor and walls stand in the other as the throat.** While a link prepares, Nebula copies the static colliders of each side that lie in the other side's half of the band into this side's scene, switched on when the link opens and removed when it closes. Build each side so that its own static colliders leave the opening clear for `BandDepth` beyond the face: a tunnel mouth at least that deep. `Portal.Validate()` checks this, logs what is in the way, and runs in the Editor when you edit a portal and when a link starts preparing.
+- **A thin collider over the opening is solid for everything the link does not admit.** It is ignored, pair by pair, for the colliders of a body that is let through (`CanEnter`, the party rules above), so a crate you push through an open door goes through, and a crate that is refused, or that meets a door nobody opened, or a link at an `ObservationOnly` portal, bounces off it. `Portal.Refused` is raised for every tick a refused body touches it. A body with no colliders, or one that tunnels through, is stopped by the clamp as before.
+
+A game has four things to do:
+
+1. **Keep the proxy layer free.** Nebula puts proxies and apertures on `NebulaConfig.PortalProxyLayer` (31 by default; `Portals.ProxyLayer` at run time). Leave it out of the layer masks of your own raycasts, so a shot does not hit the copy of a crate on the other side of a wall, skip colliders with `PortalProxy.Is(collider)` in your own overlap queries, and set the layer collision matrix so the layer collides with whatever bodies collide with.
+2. **Keep the opening clear.** Run `Portal.Validate()` on your doors in the Editor.
+3. **Leave `MaxProxiesPerPortal` (64) alone unless a crowd stands in a doorway.** A body past the bound gets no proxy and `NebulaDiagnostics.PortalProxiesDropped` counts it. `NebulaDiagnostics.PortalProxies` is the number standing.
+4. **Do not put bodies of your own in the throat.** A kinematic door (it has a `Rigidbody`) in a side's static content is not copied.
+
+Some things to know:
+
+- **The contact model is one-sided.** Each side resolves its contacts against the other side's copies, which are kinematic. A crate resting across the face rests on its own side's floor, and a pile that spans the face can jitter. When a crate that belongs to the street and one that belongs to the room, each with a proxy, touch, they collide in the scene of the faster of the two, so a crate dropped on another stops against its copy and does not push the one below it out of its place.
+- **A client builds the same** for its pawn's scope, so prediction at the face sees what the worker sees: the throat, the aperture collider, and a proxy of each replica of the other scope in the band, posed from the replica's latest authoritative state and not from where it is drawn.
+- **Across workers** a body in the band is ghosted to the worker that owns the other side and held there as a proxy only: it is not a body in its own scope's scene on that worker. Nothing outside a band is ghosted across a portal. A link whose two sides are on different workers has no throat, so keep them on one (the cohesion hints do) when something rests across the face.
+- **Not yet:** a side that simulates in a physics frame, such as a door in the ground of a planet that is a carrier, gets no proxies, throat or aperture collider (Nebula says so once), and queries through the face are a separate feature.
+
 ## Cross with companions
 
 Every entity crosses on its own, so an item a player holds out in front of them reaches the face first and would cross alone. To take such entities along with the player (an item they carry, a pet, a cart they tow or an escort), set `ResolveCompanions` on every worker that can simulate the portal, and add the entities that must cross with the player to the list it's given:
@@ -356,7 +378,7 @@ A few rules to design around:
 - **Closing takes it away at once.** A link that is `Open` or `Closing` shows both sides; when it closes, the far side's entities are despawned for the client, and its container rows follow after the usual linger.
 - **A thrown crate stays with its thrower.** An entity that crosses changes scope, and a client that may look through the link it went through, from inside the near window, keeps it: no despawn, no new spawn, no blink. An onlooker who may not look through loses it at once and is never told the other scope exists.
 - **A reconnect inside sees out again.** The link records live on the gateway, so nothing about where a player came from is remembered.
-- **Nothing is simulated across.** A client holds what it is sent as replicas in their own scope. It does not collide with them, target them or hit them; proxies in the doorway, queries and drawing the other scope posed at the door are separate features. A client that is sent an entity naming a container it has no row for holds the update, whatever the container's kind, until the row arrives.
+- **Nothing is simulated across except at the face.** A client holds what it is sent as replicas in their own scope. It does not target them or hit them, and it collides with them only through the proxies it builds in the band for its pawn (see [Collide across a portal](#collide-across-a-portal)); queries and drawing the other scope posed at the door are separate features. A client that is sent an entity naming a container it has no row for holds the update, whatever the container's kind, until the row arrives.
 
 `ObservePublic`, `PublicView` and `ObserveHost` of the instance template, and their counterparts on `ScopeDefinition`, no longer exist: what a room looks out at is its portals' windows, and what a street looks into is the same windows. A window onto ground that is a planet carrying its own frame is authorized and its rows are kept, and the ground's entities are found through the planet's own regions.
 
@@ -504,6 +526,7 @@ See [Running locally](/docs/getting-started/running-locally) for build paths and
 - [InstanceTemplate](/docs/reference/containers/instance-template) defines content and bounds.
 - [Portal](/docs/reference/containers/portal) opens a way between two scopes for a party.
 - [PortalLink](/docs/reference/containers/portal-link) reports a party's link: its state, wait and progress.
+- [PortalProxy](/docs/reference/containers/portal-proxy) marks the colliders Nebula builds to carry a body, a doorstep or an aperture across a face.
 - [Portals](/docs/reference/containers/portals) finds portals and, on a client, lists what the network gateway told it.
 - [NebulaWorker](/docs/reference/worker/nebula-worker) creates instances and prepares or commits transfers.
 - [InstanceTransfer](/docs/reference/worker/instance-transfer) reports preparation state.

@@ -497,6 +497,12 @@ namespace Nebula
         /// <summary>Authored into a scene rather than spawned from a prefab: the object belongs to its scene and is bound, never instantiated or destroyed, by the network (see <see cref="SceneEntities"/>).</summary>
         public bool IsSceneEntity => SceneId != 0;
 
+        /// <summary>
+        /// A worker holds this ghost only to pose a proxy of it through a portal (<c>docs/portals.md</c> D29): its colliders are off, so it is no body in its
+        /// scope's physics scene on this worker, and <see cref="PortalProxy"/>s of it stand in the scene of the side the worker holds.
+        /// </summary>
+        public bool IsPortalGhost { get; internal set; }
+
         public ulong NetId { get; internal set; }
         public ulong OwnerClientId { get; internal set; }
         /// <summary>

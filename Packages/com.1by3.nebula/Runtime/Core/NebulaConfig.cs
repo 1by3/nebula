@@ -241,6 +241,10 @@ namespace Nebula
         [Tooltip("How many times an AuthorityRpc may be forwarded after the target entity changes worker before it is rejected with RejectedHopLimit. Also the number of authority changes a call's epoch may lag behind the entity before it is rejected as stale. -nebula-authority-call-hops overrides.")]
         public int AuthorityCallMaxHops = 3;
 
+        [Header("Portals")]
+        [Tooltip("The physics layer Nebula puts a portal's proxies and aperture colliders on (docs/portals.md D26 to D28). Keep it free of your own objects and out of the layer masks of your own raycasts, and let it collide with whatever bodies collide with in the layer collision matrix. 31 by default.")]
+        [Range(0, 31)] public int PortalProxyLayer = 31;
+
         [Header("Persistence")]
         [Tooltip("Where entities carrying a PersistentEntity are stored: 'auto' (the orchestrator uses its database, a worker asks the orchestrator, a single-process run uses a local file), 'database', 'remote', 'local' (a file next to the process), 'memory' or 'off'. -nebula-persistence-mode overrides.")]
         public string PersistenceMode = "auto";

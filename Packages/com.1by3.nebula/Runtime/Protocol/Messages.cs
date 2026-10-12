@@ -173,6 +173,12 @@ namespace Nebula
         AuthorityRpcReply = 49,
         /// <summary>Worker -> worker: <see cref="EntityMaps"/> for a ghost (<see cref="EntityMapsMsg"/>).</summary>
         GhostMaps = 50,
+        /// <summary>
+        /// Worker -> worker: a portal link the sender drives and the containers of the far scope its band touches, sent to the workers that own them
+        /// (<see cref="PortalAdjacencyMsg"/>, <c>docs/portals.md</c> D30, D45). It is how a worker learns that a body in the band of a face it does not
+        /// own is to be ghosted across, and how the far worker builds its side of the aperture before the link opens.
+        /// </summary>
+        PortalAdjacency = 51,
     }
 
     public enum PeerRole : byte
@@ -206,6 +212,11 @@ namespace Nebula
         /// and handover.
         /// </summary>
         OwnerDisconnected = 4,
+        /// <summary>
+        /// A ghost spawn only: the sender ghosts the entity because its extent is in the band of a portal face this receiver holds the other side of
+        /// (<c>docs/portals.md</c> D29). The receiver holds it as a proxy only, posed through the link in its own scene, with no body in the entity's scope's scene.
+        /// </summary>
+        PortalGhost = 8,
     }
 
     /// <summary>Per-prefab interest hints that travel with a spawn (the standalone gateway has no prefabs to read them from).</summary>

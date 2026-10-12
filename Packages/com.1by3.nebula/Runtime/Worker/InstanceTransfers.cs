@@ -432,7 +432,7 @@ namespace Nebula
                     _pendingContentAcks.RemoveAt(i);
                     continue;
                 }
-                message.Success = state == InstanceContentState.Ready;
+                message.Success = state == InstanceContentState.Ready && (message.LinkId == 0 || BuildFarSideOf(message.LinkId));
                 _writer.Reset(); message.Write(_writer, MsgId.InstanceReady);
                 _transport.Send(peer.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
                 _pendingContentAcks.RemoveAt(i);
@@ -457,7 +457,8 @@ namespace Nebula
                     _pendingContentAcks.Add(new PendingContentAck { Peer = peer, Message = message, GiveUpAt = Time.unscaledTime + InstanceScenes.ContentWaitLimitSeconds });
                     return;
                 }
-                message.Success = state == InstanceContentState.Ready;
+                // A link's preparation (docs/portals.md D10 condition 4) is answered once this side's aperture collider stands as well.
+                message.Success = state == InstanceContentState.Ready && (message.LinkId == 0 || BuildFarSideOf(message.LinkId));
             }
             _writer.Reset(); message.Write(_writer, MsgId.InstanceReady);
             _transport.Send(peer.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());

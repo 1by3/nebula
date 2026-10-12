@@ -40,7 +40,7 @@ namespace Nebula
         private uint _faceCacheTick = uint.MaxValue;
         private NebulaWorker _faceCacheWorker;
 
-        private PortalFace NearFaceOf(NebulaWorker worker)
+        internal PortalFace NearFaceOf(NebulaWorker worker)
         {
             if (_faceCacheWorker != worker || _faceCacheTick != worker.CurrentTick)
             {
@@ -110,6 +110,22 @@ namespace Nebula
             if (open == 1) return only;
             refusal = open > 1 ? PortalRefusal.AmbiguousParty : PortalRefusal.LinkNotOpen;
             return null;
+        }
+
+        /// <summary>
+        /// Whether a body at this portal's near face would be let through <paramref name="link"/> (<c>docs/portals.md</c> D12, D28): its party's link is that
+        /// one, the link is open, the portal lets anything through and <see cref="CanEnter"/> (or the default) admits it. The reason when it would not.
+        /// </summary>
+        internal bool AdmitsThrough(NetworkIdentity entity, PortalLink link, out PortalRefusal why)
+        {
+            why = PortalRefusal.None;
+            if (ObservationOnly) { why = PortalRefusal.NotAdmitted; return false; }
+            var resolved = ResolveLink(entity, out why);
+            if (resolved == null) return false;
+            if (resolved != link) { why = PortalRefusal.NotAdmitted; return false; }
+            if (link.State != PortalState.Open) { why = PortalRefusal.LinkNotOpen; return false; }
+            if (!Admits(entity, link)) { why = PortalRefusal.NotAdmitted; return false; }
+            return true;
         }
 
         private bool Admits(NetworkIdentity entity, PortalLink link)
@@ -199,6 +215,8 @@ namespace Nebula
             if (!passed && !predicted)
             {
                 Remember(crossing, absolute, scope, tick);
+                // A body that meets the solid aperture collider never reaches the plane; the refusal is raised when it touches (docs/portals.md D17, D28).
+                RefuseOnContact(worker, entity, leaving ? link : null, leaving);
                 return;
             }
 
@@ -251,6 +269,7 @@ namespace Nebula
             PortalRefusal refusal, out PortalRefusal why)
         {
             why = PortalRefusal.None;
+            if (ObservationOnly) { why = PortalRefusal.NotAdmitted; return false; }
             if (link == null) { why = refusal == PortalRefusal.None ? PortalRefusal.LinkNotOpen : refusal; return false; }
             if (link.State != PortalState.Open) { why = PortalRefusal.LinkNotOpen; return false; }
             if (!leaving && !Admits(entity, link)) { why = PortalRefusal.NotAdmitted; return false; }

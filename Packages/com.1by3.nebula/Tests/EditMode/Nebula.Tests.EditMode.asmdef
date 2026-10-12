@@ -5,6 +5,7 @@
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "Nebula.Runtime",
+        "Nebula.Tests.Shared",
         "Nebula.World",
         "Nebula.Editor",
         "LiteNetLib"
