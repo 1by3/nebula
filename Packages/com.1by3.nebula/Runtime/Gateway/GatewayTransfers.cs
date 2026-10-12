@@ -346,6 +346,9 @@ namespace Nebula
         {
             public ulong Scope;
             public double X, Y, Z;
+            /// <summary>The frame with regions of its own the pawn stood in (a planet that is a carrier), 0 for none, and where in it.</summary>
+            public ulong FrameKey;
+            public double FX, FY, FZ;
         }
 
         /// <summary>
@@ -354,7 +357,7 @@ namespace Nebula
         /// on to from there, so the views always read as the path back the way it came. Runs on every collection,
         /// whatever any scope's options, and sends nothing.
         /// </summary>
-        private static void TrackHostViews(ClientConn client, ulong scope, double x, double y, double z)
+        private static void TrackHostViews(ClientConn client, ulong scope, double x, double y, double z, ulong frameKey = 0, double fx = 0, double fy = 0, double fz = 0)
         {
             if (client.HasPlaced && client.Placed.Scope != scope)
             {
@@ -370,7 +373,7 @@ namespace Nebula
                 }
             }
             client.HasPlaced = true;
-            client.Placed = new HostView { Scope = scope, X = x, Y = y, Z = z };
+            client.Placed = new HostView { Scope = scope, X = x, Y = y, Z = z, FrameKey = frameKey, FX = fx, FY = fy, FZ = fz };
         }
 
         /// <summary>
@@ -384,6 +387,30 @@ namespace Nebula
             if (scope == null || scope.Instance == null || !scope.Instance.ObserveHost || client.HostViews.Count == 0) return false;
             host = client.HostViews[client.HostViews.Count - 1];
             return host.Scope != scope.InstanceId;
+        }
+
+        /// <summary>
+        /// The carrier a host row is fixed in (its parent chain ends in a carried container's box), and that carrier's
+        /// own carriers out to the root, into <see cref="ClientConn.HostCarriers"/> (NEB-426). A root row has none.
+        /// </summary>
+        private void CollectHostCarriers(ClientConn client, string rowId)
+        {
+            string id = rowId;
+            for (int up = 0; up <= _ownershipById.Count && _ownershipById.TryGetValue(id, out var row); up++)
+            {
+                if (!row.HasPlacement || row.Placement.IsRoot) return;
+                if (ContainerRegistry.IsDynamicId(row.Placement.ParentId))
+                {
+                    ulong carrier = ContainerRegistry.CarrierNetIdOf(row.Placement.ParentId);
+                    for (int hops = 0; carrier != 0 && hops <= _entities.Count && client.HostCarriers.Add(carrier); hops++)
+                    {
+                        if (!_entities.TryGetValue(carrier, out var rec) || !TryCarrierOf(rec.Container, out ulong next, out _)) return;
+                        carrier = next;
+                    }
+                    return;
+                }
+                id = row.Placement.ParentId;
+            }
         }
 
         private readonly List<ClientConn> _scopeRevokeScratch = new List<ClientConn>();

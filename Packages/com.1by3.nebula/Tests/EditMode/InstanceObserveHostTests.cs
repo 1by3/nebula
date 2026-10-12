@@ -336,6 +336,59 @@ namespace Nebula.Tests
             Assert.AreEqual(0, Of<IList>(_client, "HostViews").Count);
         }
 
+        /// <summary>
+        /// NEB-426: the door stands on ground fixed in a carrier (a planet's hosted chunk, a row whose parent is the
+        /// carrier's box). From inside, the host view keeps that row and the carrier it cannot be built without, and
+        /// only that: another chunk of the same planet away from the door, and anything else on the planet, stay out.
+        /// </summary>
+        [Test]
+        public void AnOccupantKeepsTheCarrierOfTheHostGroundAtTheDoorAndNothingElseOfIt()
+        {
+            const ulong PlanetNetId = 77, RockNetId = 78;
+            string planetBox = "planet#" + PlanetNetId;
+            var here = HostChunk(Vector3Int.zero);
+            var door = CenterOf(Vector3Int.zero);
+            var vault = Instance("a", door, observeHost: true);
+            StartGateway(here, door);
+            var rows = (IDictionary)Field("_ownershipById");
+            ulong frameKey = RegionKeys.FrameKeyOf(ContainerRef.Dynamic(PlanetNetId));
+            // The planet's box and two chunks of ground fixed in it: one under the door (frame-local 10, 0, 10), one 5 km away.
+            rows[planetBox] = new ContainerOwnershipEntry { ContainerId = planetBox, ContainerIndex = ContainerRef.RuntimeIndex, Epoch = 1, State = LeaseState.Active,
+                Instance = here.Instance };
+            string ground = "rt_" + 9_000_001UL, farGround = "rt_" + 9_000_002UL;
+            rows[ground] = new ContainerOwnershipEntry { ContainerId = ground, ContainerIndex = ContainerRef.RuntimeIndex, Epoch = 1, State = LeaseState.Active, Instance = here.Instance,
+                HasPlacement = true, Placement = new ContainerPlacement { ParentId = planetBox, Center = new Double3(10, 0, 10), Size = new Vector3(64, 64, 64) } };
+            rows[farGround] = new ContainerOwnershipEntry { ContainerId = farGround, ContainerIndex = ContainerRef.RuntimeIndex, Epoch = 1, State = LeaseState.Active, Instance = here.Instance,
+                HasPlacement = true, Placement = new ContainerPlacement { ParentId = planetBox, Center = new Double3(5000, 0, 10), Size = new Vector3(64, 64, 64) } };
+            var recordType = GatewayType.GetNestedType("EntityRecord", BindingFlags.NonPublic);
+            object Record(ulong netId)
+            {
+                var r = Activator.CreateInstance(recordType, true);
+                Set(r, "NetId", netId);
+                Set(r, "Container", ContainerRef.Runtime(here.RuntimeId));
+                Set(r, "OwnerWorkerIndex", (ushort)1);
+                ((IDictionary)Field("_entities")).Add(netId, r);
+                return r;
+            }
+            var planet = Record(PlanetNetId);
+            var rock = Record(RockNetId);
+            // The pawn stands on the planet's ground at the door: in the planet's frame.
+            Set(_pawn, "FrameKey", frameKey);
+            MoveTo(here, new Vector3(10, 0, 10));
+            Set(_pawn, "FrameKey", 0UL);
+
+            MoveTo(vault, door);
+            var carriers = Of<HashSet<ulong>>(_client, "HostCarriers");
+            CollectionAssert.Contains(Known, ground, "the ground at the door is kept");
+            CollectionAssert.DoesNotContain(Known, farGround, "the rest of the planet's ground is not");
+            CollectionAssert.AreEquivalent(new[] { PlanetNetId }, carriers, "and the carrier that ground is fixed in, alone");
+            Assert.IsTrue((bool)Call("CanObserve", _client, planet), "the occupant may hold the planet");
+            Assert.IsFalse((bool)Call("CanObserve", _client, rock), "but nothing else of the host");
+
+            MoveTo(here, door);
+            CollectionAssert.IsEmpty(carriers, "back in the host, nothing is kept by name");
+        }
+
         private List<string> HostRows()
         {
             var rows = new List<string>();

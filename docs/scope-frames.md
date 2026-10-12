@@ -168,10 +168,13 @@ only stand behind the door if its space is turned the way the door is.
   door; from inside one, every other scene root (the host world, its frames' pivots, the sun) turns back about the door,
   except the instance itself and the cameras. Everything is put back exactly when drawing ends, so simulation, prediction
   and every pose a game reads stay upright.
-- *Known gap.* Looking out from inside needs the host's ground at the door resident on the client. A door in a chunk hosted
-  by a framed carrier (a planet) is held until the carrier is sent (`ContainerRegistry.IsHeldForCarrier`), and a host view
-  (`ObserveHost`) sends rows, not the carrier, so from inside such a door a client sees only the sky. Sending the carrier
-  of a held host chunk with the host view closes it.
+- *Looking out needs the host's ground resident.* A door in a chunk hosted by a framed carrier (a planet) is a row fixed in
+  that carrier, held on a client until the carrier is sent (`ContainerRegistry.IsHeldForCarrier`). The host view
+  (`ObserveHost`) therefore also queries the frame the pawn stood in where it left the host, and keeps the carriers of
+  exactly the host rows it keeps, out to the root of their chain, in the client's set (`ClientConn.HostCarriers`: always
+  relevant, authorized by `CanObserve`, followed by name on their workers). Nothing those carriers hold comes with them,
+  and the rest of the planet's ground stays out. No protocol change: the carrier arrives as any spawn does.
+  (`InstanceObserveHostTests.AnOccupantKeepsTheCarrierOfTheHostGroundAtTheDoorAndNothingElseOfIt`.)
 
 Conformance: `ConformanceFarInstanceFrameTests.ATurnedDoorTurnsItsInstanceAndCrossingsTurnWithIt` and
 `ConformanceFarInstanceClientFrameTests.TheClientDrawsATurnedInstanceTurnedBehindItsDoorAndTheWorldTurnedBackFromInside`.
