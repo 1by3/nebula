@@ -226,7 +226,10 @@ entries are rewritten into the destination's space and container, as `docs/scope
 origin shift, so a lag-compensated read across the crossing tick finds poses in one space and the read path keeps no
 branch. A ghost holder rewrites its copy's ring when the crossing reaches it. On a client the replica's
 `RemoteInterpolator` buffer and, for the local pawn, the prediction history replayed on reconciliation are rewritten the
-same way when the container change arrives, so a replica glides on and the pawn is not corrected. A game's own heading
+same way when the container change arrives, so a replica glides on and the pawn is not corrected. The container change
+and the pose composed through the link pose arrive in one message and are applied in the same step: a replica must
+never be read for a frame in its new scope with its old pose (§18: at a door turned 54.7° that frame drew the crate 0.34
+to 0.9 m off). A game's own heading
 bookkeeping turns with `Portals.Turn(from, to)` (today's `InstancePoses.Turn`) in a `Crossed(entity, portal,
 from, to)` handler raised on the worker and on clients.
 
@@ -260,7 +263,10 @@ the cost per client at the windows of the links it stands in, at most `MaxPortal
 **D23 A client's subscriptions span scopes.** Region ids are salted with their scope (`docs/scope-frames.md` D7), and a
 client's set is today salted with one scope (`ClientInterest.ScopeSalt`, `UpdateClientRegions`). The far window's
 regions are subscribed with the far scope's salt beside the client's own; the subscription message already carries
-opaque 64-bit ids, so nothing on the worker side changes. Window rows count against `MaxContainerRows` after the client's
+opaque 64-bit ids, so nothing on the worker side changes. An entity's record survives its scope change: when a window
+still authorises it (D19), the network gateway re-files the record under its new region key in place, never evicting it
+and fetching it again (§18: with only `CanObserve` passing, a crossing crate blinked out for 0.3 s in 2 of 6 crossings).
+Window rows count against `MaxContainerRows` after the client's
 own windows and foci, as `docs/scope-activation.md` D23 rows do, so a full budget withholds window ground, never the rows
 the client stands in.
 
@@ -272,9 +278,12 @@ survive a reconnect. The shim (D7) maps a template's `ObservePublic` and `Public
 link, and `ObserveHost` onto the same window; NEB-436 removes the old paths once nothing reads them. NEB-370's sibling
 observation (one instance seeing another's entities) is the general case of D20.
 
-**D25 Observed entities are replicas in their own scope.** A client never simulates them and never predicts against
-them except through the throat (D27); they live in their own scope's containers on the client, drawn through that
-scope's pose (§10). The client's own scope stays its pawn's (`docs/scope-activation.md` D16), as do routing, frames
+**D25 Observed entities are replicas in their own scope.** A client never simulates them; it predicts against them only
+through proxies in the band (D26, D27), which it builds for its pawn's scope as the worker does. A client's dynamic
+proxies are posed from the replica's latest authoritative state, the same tick the worker posed its proxy from, never
+from the interpolated draw pose (§18: a pawn pushing against a crate across the face was corrected 52 times in 2.5 s with
+no client proxy and 29 times with one posed from interpolated state). Replicas live in their own scope's containers on
+the client, drawn through that scope's pose (§10). The client's own scope stays its pawn's (`docs/scope-activation.md` D16), as do routing, frames
 (D6 of `docs/scope-frames.md`) and the view.
 
 ## 6. Physics across the face
@@ -287,7 +296,11 @@ capsule; terrain never), only the ones that overlap the band, put in the other s
 default scene for the public world) on `PortalProxyLayer`, and posed through the link before that scene steps with
 `MovePosition`/`MoveRotation`, so contacts get its velocity. Proxies are pooled by shape signature and built while a
 link is Preparing, so entering the band allocates nothing. A `PortalProxy` component names the authority, for hit
-attribution, and lets queries and the game's triggers skip proxies.
+attribution, and lets queries and the game's triggers skip proxies. A proxy is re-posed only when its source moved since
+the last step, so a body resting on a resting proxy can sleep (§18: a proxy re-posed every tick kept the crate on it
+jittering at 0.8 to 1 m/s). When two bodies on opposite sides both have proxies, the pair collides in one scene only:
+each body ignores the proxy of a body whose own proxy it is already in contact with, so a dropped body does not push
+through as an infinite mass (§18: mirrored both ways, a dropped crate squeezed the one under it 0.9 m out).
 
 **D27 The throat: each side's static geometry in the band is mirrored too, and each side must be open there.** A
 coincident far scope is built inside the near side's solid mass. A body straddling the face would have its far half
@@ -607,10 +620,35 @@ None of these is built here; each must stay possible without redoing what is.
 - **A door on a moving carrier.** A face is fixed in a container (D2), so a door in a vehicle's hull moves with it; a
   face on a frame that turns is open question 10.
 
-## 18. Open questions
+## 18. What the HVR-683 spike measured
+
+A throwaway prototype (not on a branch meant to merge) threw a server-owned crate through a coincident portal into an
+instance and back, on one worker, at a door turned 54.7° against its host's frame, with kinematic proxies in a 2 m
+band. What it changed in this design:
+
+| Finding | Number | Where it lands |
+|---|---|---|
+| An unowned entity crosses by itself, keeping its id, persistence key and game data | both directions | D14, D16 |
+| A standing preparation makes a commit load nothing; a late one holds at the face | ready in 1 to 2 ticks; a late request held 0.33 s | D10, D16 |
+| Moving a body between physics scenes is cheap | `SetContainer` 0.15 to 0.35 ms, scene move 0.04 to 0.09 ms (worker); 0.2 to 0.9 ms (client) | no change |
+| A rigidbody's velocity was not turned through a turned door | the crate dove into the floor | D18 (already required) |
+| Container and pose must change in the same step on the client | one frame 0.34 to 0.9 m off | D18 |
+| Observing across needs subscription, and the record must survive the scope change | despawned without; blinked 0.3 s in 2 of 6 with a policy hack | D19, D23 |
+| A crossing into a host scope held as rows only lands in the wrong frame | replica about 1.2 km off | D20 (carriers come with the window) |
+| Proxies are cheap and accurate | create about 0.4 ms (pooled), keep 0.02 ms a tick, 1 cm pose error | D26 |
+| The client must predict against proxies posed from the authoritative tick | 52 corrections in 2.5 s without, 29 with interpolated poses, 0 control | D25 |
+| A body on a proxy re-posed every tick never sleeps; mirrored pairs push through | 0.8 to 1 m/s jitter; 0.9 m squeeze | D26 |
+| The volume containment's 1.2 m exit margin strands slow bodies in the far scope | a slow crate stopped outside still in the instance | D15 (plane, 5 cm), D7 (shim only) |
+| First spawn and first replica instantiate dominate, not the crossing | 34 ms worker, 64 to 74 ms client, once | §13: prewarm what crosses with the far content |
+
+The hitch budget could not be judged on an Editor-hosted worker, which peaks at 16 to 21 ms with nothing crossing; the
+crossing step added at most 1.9 ms. R2 is measured on a built worker (milestone 8). A 1.6 km pawn correction was seen
+once leaving the instance and was not isolated; NEB-431's window tests include a pawn leaving while observing the host.
+
+## 19. Open questions
 
 1. **Sizes.** `BandDepth` 2 m, `CrossDepth` 5 cm, `WindowMargin` and `WindowDepth` (proposed 8 m and 48 m),
-   `MaxPortalWindows` 4, `CloseTimeoutSeconds` 5. The HVR-683 spike should measure them.
+   `MaxPortalWindows` 4, `CloseTimeoutSeconds` 5. The HVR-683 spike used a 2 m band and found it enough for a door-sized crate (§18); the window sizes were not measured.
 2. **Default observers.** Members only (D11). Should a door shared by several parties let bystanders look into an open
    party's room by default, or only when the game says `Anyone`?
 3. **Party of an unowned entity.** D12 refuses an unowned entity at a face with more than one open link unless `PartyOf`
