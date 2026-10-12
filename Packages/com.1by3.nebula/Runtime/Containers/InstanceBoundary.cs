@@ -362,6 +362,61 @@ namespace Nebula
         }
 
         /// <summary>An entity's position in absolute coordinates, read in its scope's own space (out of any physics frame).</summary>
+        /// <summary>
+        /// The rotation the instance is prepared with (<c>docs/scope-frames.md</c> D12): this boundary's rotation in its host
+        /// scope's own space (<see cref="ScopeRotation"/>), so an interior built upright in its own space stands behind the
+        /// door the way the door stands. Rounded, so the same door always prepares the same definition; the identity for a
+        /// door that is upright and unturned in its host, which is every instance before D12.
+        /// </summary>
+        public Quaternion PoseRotation
+        {
+            get
+            {
+                if (!TurnWithDoor) return Quaternion.identity;
+                var q = ScopeRotation;
+                if (q.w < 0f) q = new Quaternion(-q.x, -q.y, -q.z, -q.w);
+                q = new Quaternion(RoundQ(q.x), RoundQ(q.y), RoundQ(q.z), RoundQ(q.w));
+                return Quaternion.Angle(Quaternion.identity, q) <= NebulaWorker.PoseAngleEpsilon ? Quaternion.identity : q;
+            }
+        }
+
+        /// <summary>
+        /// Whether the instance turns with this door (<see cref="PoseRotation"/>). On by default: the template's interior is
+        /// built in the door's own axes (its forward is the way in), so it stands behind the door however the door is turned.
+        /// Off keeps the instance in its host's axes, as before NEB-426.
+        /// </summary>
+        [Tooltip("Turn the instance with this door: its interior is built in the door's own axes. Off keeps the host scope's axes.")]
+        public bool TurnWithDoor = true;
+
+        private static float RoundQ(float v) => (float)(Math.Round(v * 1e6) / 1e6);
+
+        private static bool IsIdentity(Quaternion q) => Quaternion.Angle(Quaternion.identity, q) <= NebulaWorker.PoseAngleEpsilon;
+
+        /// <summary>A point of the instance's own space in the host's, through rotation <paramref name="turn"/> about <see cref="InstanceOrigin"/>.</summary>
+        private Double3 ToHost(Double3 point, Quaternion turn)
+        {
+            if (IsIdentity(turn)) return point;
+            var o = InstanceOrigin;
+            return o + PhysicsFrames.Rotate(turn, point - o);
+        }
+
+        /// <summary>The inverse of <see cref="ToHost"/>.</summary>
+        private Double3 FromHost(Double3 point, Quaternion turn)
+        {
+            if (IsIdentity(turn)) return point;
+            var o = InstanceOrigin;
+            return o + PhysicsFrames.Rotate(Quaternion.Inverse(turn), point - o);
+        }
+
+        /// <summary>An entity's rotation in its scope's own space (out of a physics frame it simulates in).</summary>
+        private static Quaternion ScopeRotationOf(NetworkIdentity entity)
+        {
+            var space = entity.Space;
+            return PhysicsFrames.InSimulationPose(space) ? PhysicsFrames.Convert(entity.transform.rotation, space, null) : entity.transform.rotation;
+        }
+
+        private float _diagNext; // HVR-674 TEMP
+
         private static Double3 AbsoluteOf(NetworkIdentity entity) =>
             ContainerRegistry.ToAbsolutePrecise(entity.ScopePositionPrecise, entity.InstanceId);
 
@@ -400,7 +455,11 @@ namespace Nebula
             // someone standing at the same numbers on another.
             if (entity.InstanceId != host && entity.InstanceId != scope) return;
             bool privateSide = entity.InstanceId == scope;
+            // Compared in the host's space: an occupant's position is in the instance's own, turned back first when the
+            // instance is turned against its host (docs/scope-frames.md D12).
+            var turn = InstancePoses.TryGet(scope, out _, out _) ? InstancePoses.RotationOf(scope) : PoseRotation;
             var absolute = AbsoluteOf(entity);
+            if (privateSide) absolute = ToHost(absolute, turn);
             var local = (absolute - InstanceOrigin).ToVector3();
             var rotation = ScopeRotation;
             bool inside = InteriorContains(local, rotation, 0f);
@@ -420,7 +479,15 @@ namespace Nebula
             crossing.Leaving = privateSide;
             bool allowed = privateSide || CanEnter == null || CanEnter(entity, key);
             // Where the entity stands on the other side, in that scope's own frame.
-            var there = ContainerRegistry.ToFrame(absolute, privateSide ? host : scope);
+            var thereAbsolute = privateSide ? absolute : FromHost(absolute, turn);
+            ulong thereScope = privateSide ? host : scope;
+            var there = ContainerRegistry.ToFrame(thereAbsolute, thereScope);
+            // The same point in the destination scope's own space, in double: committed through it, so a scope whose
+            // origin is far from the door on this worker still lands the entity to the millimetre.
+            var therePrecise = thereAbsolute - ContainerRegistry.ToAbsolutePrecise(Double3.Zero, thereScope);
+            // The rotation and velocity turn with the space: into the instance by the inverse of its pose, out by it.
+            var turnAcross = privateSide ? turn : Quaternion.Inverse(turn);
+            var thereRotation = turnAcross * ScopeRotationOf(entity);
             if (RequireRequest && !requested)
             {
                 // Nothing is prepared without a request, and a crossing prepared under an expired one is dropped.
@@ -442,6 +509,11 @@ namespace Nebula
                         crossing.Transfer = worker.PrepareTransfer(entity, destination);
                 }
             }
+            if (privateSide && requested && Time.unscaledTime >= _diagNext) // HVR-674 TEMP
+            {
+                _diagNext = Time.unscaledTime + 1f;
+                InstanceFrameDiagnostics.Log("worker", $"boundary '{name}' leaving-prep blocked={crossing.Blocked} transfer={(crossing.Transfer == null ? "none" : crossing.Transfer.Ready ? "ready" : crossing.Transfer.Error ?? "pending")} there={there} hostAbs={absolute}", entity, this);
+            }
             if (crossing.Blocked == InstanceCrossingStatus.None && crossing.Transfer != null) PrepareCompanions(worker, entity, crossing, key);
             else ReleaseCompanions(crossing);
             if (OwnStatusOf(crossing) != InstanceCrossingStatus.Ready) crossing.ReadySince = -1;
@@ -455,7 +527,11 @@ namespace Nebula
             if (inside != privateSide)
             {
                 InstanceFrameDiagnostics.Log("worker", $"boundary '{name}' {(privateSide ? "leave" : "enter")} inside={inside} ready={crossing.Transfer != null && crossing.Transfer.Ready} blocked={crossing.Blocked}", entity, this); // HVR-674 TEMP
-                if (allowed && Commit(worker, entity, crossing, there))
+                var velocity = entity.Motion.Velocity;
+                if (!IsIdentity(turnAcross)) entity.Motion.Velocity = turnAcross * velocity;
+                bool committed = allowed && Commit(worker, entity, crossing, there, therePrecise, thereRotation);
+                if (!committed) entity.Motion.Velocity = velocity;
+                if (committed)
                 {
                     crossing.Transfer = null;
                     crossing.ReadyRaised = false;
@@ -591,9 +667,9 @@ namespace Nebula
         /// Commit the crossing entity with every companion that is ready, as one group, and report the ones left
         /// behind. With no companions it is the single commit the boundary has always made.
         /// </summary>
-        private bool Commit(NebulaWorker worker, NetworkIdentity entity, Crossing crossing, Vector3 there)
+        private bool Commit(NebulaWorker worker, NetworkIdentity entity, Crossing crossing, Vector3 there, Double3 therePrecise, Quaternion rotation)
         {
-            if (crossing.Companions.Count == 0) return worker.TryCommitTransfer(crossing.Transfer, there, entity.transform.rotation);
+            if (crossing.Companions.Count == 0) return worker.TryCommitTransfer(crossing.Transfer, null, therePrecise, rotation);
             if (StatusOf(crossing) != InstanceCrossingStatus.Ready) return false; // waiting for a companion
             Group.Clear();
             LeftBehind.Clear();
@@ -604,9 +680,9 @@ namespace Nebula
                 else LeftBehind.Add(companion);
             }
             bool committed = Group.Count == 1
-                ? worker.TryCommitTransfer(crossing.Transfer, there, entity.transform.rotation)
+                ? worker.TryCommitTransfer(crossing.Transfer, null, therePrecise, rotation)
                 // One displacement for the whole group, from the source scope's space to the destination's: the leader's.
-                : worker.TryCommitTransfers(Group, Double3.From(there) - entity.ScopePositionPrecise);
+                : worker.TryCommitTransfers(Group, therePrecise - entity.ScopePositionPrecise);
             Group.Clear();
             if (!committed) { LeftBehind.Clear(); return false; }
             var handler = CompanionLeftBehind;
@@ -639,7 +715,7 @@ namespace Nebula
             }
             try
             {
-                return worker.PrepareInstance(Template, key, InstanceOrigin)[0].Resolve();
+                return worker.PrepareInstance(Template, key, InstanceOrigin, PoseRotation)[0].Resolve();
             }
             catch (Exception e) when (e is ArgumentException || e is InvalidOperationException)
             {

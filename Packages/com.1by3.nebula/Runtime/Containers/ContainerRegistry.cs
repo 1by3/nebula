@@ -182,6 +182,7 @@ namespace Nebula
             RuntimeUnregistering = null;
             RuntimeBoundsInFrame = null;
             RuntimeClaims = null;
+            InstancePoses.Clear();
             WorkerIdByIndex = index => NebulaRuntime.IsServer && index == NebulaRuntime.LocalWorkerIndex ? NebulaRuntime.LocalWorkerId : "";
         }
 
@@ -583,6 +584,8 @@ namespace Nebula
         {
             if (placement.IsRoot)
             {
+                // A turned instance (D12): every process learns its pose from the rows, before it is drawn or crossed.
+                if (instance != null && instance.InstanceId != 0 && instance.HasPose) InstancePoses.Learn(instance);
                 // An instance scope's first root container here pins the scope's own origin frame near it, so the
                 // instance is simulated near Unity's origin however far out it is (docs/scope-frames.md D11). A scope
                 // that already has a frame (a scoped grid's, or the pin of an earlier part) keeps it.
@@ -850,6 +853,9 @@ namespace Nebula
         private static void UnpinIfLast(ulong instanceId)
         {
             if (instanceId == 0) return;
+            bool last = true;
+            foreach (var other in RuntimeList) if (other != null && other.InstanceId == instanceId) { last = false; break; }
+            if (last) InstancePoses.Forget(instanceId);
             bool shared = ScopeFrames.IsShared(instanceId);
             if (!shared && (!ScopeFrames.HasFrame(instanceId) || !ScopeFrames.Of(instanceId).IsPinned)) return;
             foreach (var other in RuntimeList) if (other != null && other.InstanceId == instanceId) return;

@@ -162,6 +162,16 @@ namespace Nebula
         public bool ObserveHost;
         /// <summary>An opaque blob the game or a later milestone attaches to the definition. Never parsed by Nebula.</summary>
         public string Payload = "";
+        /// <summary>
+        /// Whether the scope's own space is turned against the host it is entered from (<see cref="InstanceContainerInfo.HasPose"/>,
+        /// <c>docs/scope-frames.md</c> D12). Copied to every part's lease row. Written only when set, so a definition without
+        /// it compares equal to one written before it existed.
+        /// </summary>
+        public bool HasPose;
+        /// <summary>The point the scope's space and its host's share, absolute.</summary>
+        public Double3 PoseOrigin;
+        /// <summary>The scope's axes in its host's.</summary>
+        public Quaternion PoseRotation = Quaternion.identity;
 
         /// <summary>The reason this definition cannot be activated, or null when it is well formed.</summary>
         public string Validate()
@@ -319,6 +329,15 @@ namespace Nebula
             w.Key("observationCenter"); ControlPlaneJson.Vec(w, d.ObservationCenter);
             w.Key("observationSize"); ControlPlaneJson.Vec(w, d.ObservationSize);
             w.Prop("payload", d.Payload ?? "");
+            if (d.HasPose)
+            {
+                w.Key("poseOrigin"); ControlPlaneJson.Vec(w, d.PoseOrigin);
+                w.Key("poseRotation");
+                w.BeginArray();
+                ControlPlaneJson.Num(w, d.PoseRotation.x); ControlPlaneJson.Num(w, d.PoseRotation.y);
+                ControlPlaneJson.Num(w, d.PoseRotation.z); ControlPlaneJson.Num(w, d.PoseRotation.w);
+                w.EndArray();
+            }
             w.EndObject();
         }
 
@@ -386,6 +405,12 @@ namespace Nebula
             d.ObservationCenter = ControlPlaneJson.Vec(o, "observationCenter");
             d.ObservationSize = ControlPlaneJson.Vec(o, "observationSize");
             d.Payload = ControlPlaneJson.Str(o, "payload");
+            if (o.TryGetValue("poseRotation", out var q) && PersistenceJson.TryNumbers(q, 4, out var n))
+            {
+                d.HasPose = true;
+                d.PoseOrigin = ControlPlaneJson.Vec3D(o, "poseOrigin");
+                d.PoseRotation = new Quaternion((float)n[0], (float)n[1], (float)n[2], (float)n[3]);
+            }
             return d;
         }
 
@@ -564,6 +589,9 @@ namespace Nebula
                     ObservationCenter = definition.ObservationCenter,
                     ObservationSize = definition.ObservationSize,
                     ObserveHost = definition.ObserveHost,
+                    HasPose = definition.HasPose,
+                    PoseOrigin = definition.PoseOrigin,
+                    PoseRotation = definition.PoseRotation,
                 });
             }
             if (created) NebulaLog.Info($"control plane: scope '{key}' activated with {scope.ContainerIds.Count} container(s)");

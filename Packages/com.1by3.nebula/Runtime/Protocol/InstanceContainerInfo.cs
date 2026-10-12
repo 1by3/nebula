@@ -66,8 +66,36 @@ namespace Nebula
         /// </summary>
         public bool ObserveHost;
 
+        /// <summary>
+        /// Whether the instance's own space is turned against its host scope's (NEB-426, <c>docs/scope-frames.md</c> D12):
+        /// an instance entered through a door that is not upright in its host (a door on a sphere) is built upright in its
+        /// own space and posed at the door. A point p of the instance's space is <see cref="PoseOrigin"/> +
+        /// <see cref="PoseRotation"/> × (p − <see cref="PoseOrigin"/>) in the host's. False for an instance whose axes are
+        /// its host's, which is every instance prepared without a rotation.
+        /// </summary>
+        public bool HasPose;
+        /// <summary>The point both spaces share, absolute (the door): the instance's origin.</summary>
+        public Double3 PoseOrigin;
+        /// <summary>The instance's axes in its host scope's.</summary>
+        public Quaternion PoseRotation = Quaternion.identity;
+
         /// <summary>Bit of the trailing flags byte a stored lease row carries when any flag is set.</summary>
         private const byte FlagObserveHost = 1;
+        private const byte FlagPose = 2;
+
+        /// <summary>The pose, after the flags byte of a stored row or in a message's trailing section.</summary>
+        internal void WritePose(NetworkWriter writer)
+        {
+            writer.WriteDouble(PoseOrigin.X); writer.WriteDouble(PoseOrigin.Y); writer.WriteDouble(PoseOrigin.Z);
+            writer.WriteFloat(PoseRotation.x); writer.WriteFloat(PoseRotation.y); writer.WriteFloat(PoseRotation.z); writer.WriteFloat(PoseRotation.w);
+        }
+
+        internal void ReadPose(NetworkReader reader)
+        {
+            HasPose = true;
+            PoseOrigin = new Double3(reader.ReadDouble(), reader.ReadDouble(), reader.ReadDouble());
+            PoseRotation = new Quaternion(reader.ReadFloat(), reader.ReadFloat(), reader.ReadFloat(), reader.ReadFloat());
+        }
 
         public void Write(NetworkWriter writer)
         {
@@ -96,7 +124,9 @@ namespace Nebula
             var writer = new NetworkWriter();
             info.Write(writer);
             // A trailing flags byte, written only when a flag is set, so a row without one is the bytes it always was.
-            if (info.ObserveHost) writer.WriteByte(FlagObserveHost);
+            byte flags = (byte)((info.ObserveHost ? FlagObserveHost : 0) | (info.HasPose ? FlagPose : 0));
+            if (flags != 0) writer.WriteByte(flags);
+            if (info.HasPose) info.WritePose(writer);
             return Convert.ToBase64String(writer.ToArray());
         }
 
@@ -105,7 +135,12 @@ namespace Nebula
             if (string.IsNullOrEmpty(value)) return null;
             var reader = new NetworkReader(Convert.FromBase64String(value));
             var info = Read(reader);
-            if (reader.Remaining > 0) info.ObserveHost = (reader.ReadByte() & FlagObserveHost) != 0;
+            if (reader.Remaining > 0)
+            {
+                byte flags = reader.ReadByte();
+                info.ObserveHost = (flags & FlagObserveHost) != 0;
+                if ((flags & FlagPose) != 0) info.ReadPose(reader);
+            }
             return info;
         }
 

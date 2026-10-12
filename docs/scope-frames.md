@@ -136,15 +136,45 @@ crossing lands to the millimetre however far out the instance is. The decisions 
   public frame before. The interior is then drawn exactly behind the door, the crossing does not move the pawn in Unity,
   and the world outside stays where it was. Inside, the client keeps that frame's origin near its pawn
   (`NebulaChunkedWorld.OriginGridOf` follows the host's root grid), so both stay near Unity's origin. Without a pawn, or
-  for the pawn's own scope, the instance is pinned. Known gap: frames carry no rotation, so a door whose axes differ from
-  the instance's (a door on a sphere, tilted by its latitude) still shows the interior turned; that needs the instance
-  posed with the door's rotation (NEB-426 follow-up).
+  for the pawn's own scope, the instance is pinned. A door turned against its host is D12.
 - *A grid wins.* If a scope that was pinned turns out to have a scoped grid here, `ScopeFrames.Ensure` replaces the pin
   with the grid's frame and D5's zero-delta shift re-places its containers.
 
 Conformance: `Tests/EditMode/ConformanceFarInstanceFrameTests.cs` (an instance 5×10^7 m out: a player crosses in, is
 simulated within 10 km of Unity's origin at the absolute point it walked through to the millimetre, and walks back out
 as precisely).
+
+**D12 An instance entered through a turned door is built upright in its own space and posed at the door (NEB-426,
+protocol 27).** A door on a sphere stands along the local up, not the scope's: Station Nine's on Mass is turned 55°
+about x and 180° about y. Its interior is authored in the door's own axes (forward is the way in, up is up), so it can
+only stand behind the door if its space is turned the way the door is.
+
+- *The pose.* `InstanceBoundary.PoseRotation` is the door's rotation in its host scope's space (`ScopeRotation`, rounded
+  to 1e-6, identity within 0.01°; `TurnWithDoor = false` keeps the host's axes). `PrepareInstance(template, key, origin,
+  rotation)` records it on the scope definition (`HasPose`, `PoseOrigin`, `PoseRotation`, JSON written only when set) and
+  every part's lease row (`InstanceContainerInfo.HasPose`, stored after the row's flags byte). A point p of the instance's
+  space is `origin + rotation × (p − origin)` in the host's. The parts' boxes stay upright about the origin, so a worker
+  simulates the interior upright, with gravity down, exactly as before.
+- *Every process learns it from the rows* (`InstancePoses`, filled by `ContainerRegistry.RegisterRuntime`, forgotten with
+  the scope's last container). A client gets it in a trailing section of `ContainerOwnership`: protocol 27, additive,
+  window 26..27.
+- *Crossings turn.* The boundary compares an occupant in the host's space (`ToHost`), and commits into the instance at
+  `FromHost(point)`, with its rotation and `Motion.Velocity` turned by the inverse; leaving, by the pose. The pose is
+  committed in double (`TryCommitTransfer(transfer, null, Double3, rotation)`), so a host scope whose origin is far from the
+  door on this worker still lands the entity to the millimetre. `InstancePoses.Turn(from, to)` is the turn a game applies
+  to its own heading bookkeeping (a pawn's yaw) when its entity changes scope.
+- *A client draws each side turned for the other, only while cameras draw* (`InstanceViews`, after the scene's render
+  origin and the frames' children are placed): from outside, each drawn turned instance's root containers turn about its
+  door; from inside one, every other scene root (the host world, its frames' pivots, the sun) turns back about the door,
+  except the instance itself and the cameras. Everything is put back exactly when drawing ends, so simulation, prediction
+  and every pose a game reads stay upright.
+- *Known gap.* Looking out from inside needs the host's ground at the door resident on the client. A door in a chunk hosted
+  by a framed carrier (a planet) is held until the carrier is sent (`ContainerRegistry.IsHeldForCarrier`), and a host view
+  (`ObserveHost`) sends rows, not the carrier, so from inside such a door a client sees only the sky. Sending the carrier
+  of a held host chunk with the host view closes it.
+
+Conformance: `ConformanceFarInstanceFrameTests.ATurnedDoorTurnsItsInstanceAndCrossingsTurnWithIt` and
+`ConformanceFarInstanceClientFrameTests.TheClientDrawsATurnedInstanceTurnedBehindItsDoorAndTheWorldTurnedBackFromInside`.
 
 ## 3. Interest: scope-salted region ids
 

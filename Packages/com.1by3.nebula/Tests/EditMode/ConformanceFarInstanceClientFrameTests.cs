@@ -147,5 +147,86 @@ namespace Nebula.Tests
             Assert.IsTrue(ContainerRegistry.UnregisterRuntime(hall.RuntimeId));
             Assert.IsFalse(ScopeFrames.HasFrame(hall.InstanceId));
         }
+
+        private static readonly Quaternion Turned = Quaternion.Euler(0f, 180f, 0f) * Quaternion.Euler(55f, 0f, 0f);
+
+        /// <summary>The turned instance's row, as a container-ownership update brings it: its pose included.</summary>
+        private Container TurnedHall()
+        {
+            var info = new InstanceContainerInfo
+            {
+                InstanceId = ScopeKeys.Hash(InstanceScope), ScopeKey = InstanceScope, PartId = "hall",
+                HasPose = true, PoseOrigin = Door, PoseRotation = Turned,
+            };
+            // Through the wire, as a client receives it.
+            var writer = new NetworkWriter();
+            ContainerOwnershipMsg.Write(writer, new List<ContainerOwnershipEntry>
+            {
+                new ContainerOwnershipEntry { ContainerId = "rt_" + ScopeKeys.Hash(InstanceScope + "/hall"), Instance = info, HasBounds = true, BoundsSize = HallSize,
+                    HasPlacement = true, Placement = ContainerPlacement.Root(Door + new Double3(0, 2, 0), HallSize) },
+            });
+            var reader = new NetworkReader(new ArraySegment<byte>(writer.ToArray(), 1, writer.ToArray().Length - 1));
+            var received = ContainerOwnershipMsg.Read(reader).Upserts[0];
+            Assert.IsTrue(received.Instance.HasPose, "the pose crosses the wire");
+            Assert.Less(Quaternion.Angle(Turned, received.Instance.PoseRotation), 0.001f);
+            _client.ShareInstanceFrame(received.Instance);
+            return ContainerRegistry.RegisterRuntime(ScopeKeys.Hash(InstanceScope + "/hall"), received.PlacementOrRoot, received.Instance);
+        }
+
+        [Test]
+        public void TheClientDrawsATurnedInstanceTurnedBehindItsDoorAndTheWorldTurnedBackFromInside()
+        {
+            var pawn = PawnAtTheDoor(out var chunk);
+            var hall = TurnedHall();
+            Assert.IsTrue(InstancePoses.TryGet(hall.InstanceId, out _, out _), "the client learned the pose");
+            var door = ContainerRegistry.ToFrame(Door, _space.InstanceId);
+            var hallAt = hall.transform.position;
+            InstanceScenes.KeepDrawn(hall.InstanceId);
+            try
+            {
+                // From outside: the interior is drawn turned about the door, the way the door stands.
+                PhysicsFramesDraw(() =>
+                {
+                    var expected = door + Turned * (hallAt - door);
+                    Assert.Less((hall.transform.position - expected).magnitude, 1e-3f, "the hall is drawn behind the turned door");
+                    Assert.Less(Quaternion.Angle(Turned, hall.transform.rotation), 0.01f, "turned with it");
+                    Assert.AreEqual(Vector3.zero, chunk.transform.position - chunk.transform.position, "the world around the door is not");
+                });
+                Assert.AreEqual(hallAt, hall.transform.position, "put back after drawing");
+                Assert.AreEqual(Quaternion.identity, hall.transform.rotation);
+
+                // From inside: the view is the instance; the world outside is drawn turned back about the door.
+                pawn.SetContainer(hall, reparent: false);
+                InstanceScenes.SetView(hall.InstanceId);
+                var outsidePoint = new GameObject("outside marker");
+                outsidePoint.transform.SetParent(chunk.transform, false);
+                outsidePoint.transform.position = door + Turned * new Vector3(0f, 0f, 5f); // 5 m out of the door, in the door's axes
+                try
+                {
+                    var chunkAt = chunk.transform.position;
+                    PhysicsFramesDraw(() =>
+                    {
+                        Assert.Less((outsidePoint.transform.position - (door + new Vector3(0f, 0f, 5f))).magnitude, 2e-3f,
+                            "5 m out of the door is drawn 5 m along the instance's own +z from it");
+                        Assert.AreEqual(hallAt, hall.transform.position, "the instance itself is drawn as it is");
+                    });
+                    Assert.AreEqual(chunkAt, chunk.transform.position, "put back after drawing");
+                }
+                finally { Object.DestroyImmediate(outsidePoint); }
+            }
+            finally
+            {
+                InstanceScenes.StopKeepingDrawn(hall.InstanceId);
+                InstanceScenes.SetView(0);
+            }
+        }
+
+        /// <summary>The client's drawing pass around <paramref name="check"/>, as cameras drawing run it.</summary>
+        private static void PhysicsFramesDraw(Action check)
+        {
+            InstanceViews.Begin(null, Vector3.zero);
+            try { check(); }
+            finally { InstanceViews.End(); }
+        }
     }
 }

@@ -205,9 +205,11 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 26;
+        public const ushort ProtocolVersion = 27;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 25, one below <see cref="ProtocolVersion"/>. Protocol 26
+        /// The oldest client protocol the gateway accepts: 26, one below <see cref="ProtocolVersion"/>. Protocol 27 (an
+        /// instance's pose against its host, <c>docs/scope-frames.md</c> D12) is additive: a trailing section of
+        /// <see cref="MsgId.ContainerOwnership"/> an older client stops before, and then draws a turned instance unturned. Protocol 26
         /// (the far relevance tier, <c>docs/interest-management.md</c> §16) is additive for clients: a new message
         /// (<see cref="MsgId.FarEntities"/>) a gateway sends only to clients that negotiated 26. Protocol 25 (driven
         /// vehicles, <c>docs/driven-vehicles.md</c>) added a message a client sends only while it drives something
@@ -215,7 +217,7 @@ namespace Nebula
         /// refused with <see cref="JoinRejectReason.ProtocolUnsupported"/> and must be rebuilt. Gateway-to-worker and
         /// worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
         /// </summary>
-        public const ushort MinProtocolVersion = 25;
+        public const ushort MinProtocolVersion = 26;
         /// <summary>The first protocol whose clients are sent <see cref="MsgId.FarEntities"/>.</summary>
         public const ushort FarEntitiesVersion = 26;
         public PeerRole Role;
@@ -1473,9 +1475,9 @@ namespace Nebula
             if (removes != null) foreach (var id in removes) w.WriteString(id ?? "");
             // Trailing placement section (docs/container-tree.md §6): parent, centre in double, authority and frame of
             // each runtime entry that has more to say than its float box. A reader that predates it stops before it.
-            int placed = 0;
-            if (entries != null) foreach (var e in entries) if (e.HasPlacement) placed++;
-            if (placed == 0) return;
+            int placed = 0, posed = 0;
+            if (entries != null) foreach (var e in entries) { if (e.HasPlacement) placed++; if (e.Instance != null && e.Instance.HasPose) posed++; }
+            if (placed == 0 && posed == 0) return;
             w.WriteUShort((ushort)placed);
             for (int i = 0; entries != null && i < entries.Count; i++)
             {
@@ -1488,6 +1490,17 @@ namespace Nebula
                 w.WriteDouble(e.Placement.Center.Z);
                 w.WriteByte((byte)e.Placement.Authority);
                 w.WriteByte((byte)((e.Placement.OwnPhysicsFrame ? FlagFrame : 0) | (e.Placement.FrameInterest == FrameInterestMode.OwnRegions ? FlagOwnRegions : 0)));
+            }
+            // Trailing instance-pose section (protocol 27, docs/scope-frames.md D12): an instance turned against its host
+            // scope. A reader that predates it stops before it.
+            if (posed == 0) return;
+            w.WriteUShort((ushort)posed);
+            for (int i = 0; entries != null && i < entries.Count; i++)
+            {
+                var e = entries[i];
+                if (e.Instance == null || !e.Instance.HasPose) continue;
+                w.WriteUShort((ushort)i);
+                e.Instance.WritePose(w);
             }
         }
 
@@ -1545,6 +1558,21 @@ namespace Nebula
                     e.HasPlacement = true;
                     e.Placement = placement;
                     list[index] = e;
+                }
+            }
+            if (r.Remaining >= 2)
+            {
+                int posed = r.ReadUShort();
+                for (int p = 0; p < posed; p++)
+                {
+                    int index = r.ReadUShort();
+                    var pose = new InstanceContainerInfo();
+                    pose.ReadPose(r);
+                    if (index >= list.Count || list[index].Instance == null) continue;
+                    var info = list[index].Instance;
+                    info.HasPose = true;
+                    info.PoseOrigin = pose.PoseOrigin;
+                    info.PoseRotation = pose.PoseRotation;
                 }
             }
             return update;

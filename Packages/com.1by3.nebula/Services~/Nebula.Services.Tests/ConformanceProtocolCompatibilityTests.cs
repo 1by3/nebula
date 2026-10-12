@@ -12,7 +12,7 @@ namespace Nebula.ServiceTests;
 /// real <see cref="NebulaGateway"/> on a real socket over an in-process <see cref="LocalControlPlane"/>, with a
 /// <see cref="FakeWorker"/> to be spawned into.
 /// <para>
-/// The replay half is the part that cannot be faked: <c>Fixtures/protocol-25-handshake.json</c> holds the exact
+/// The replay half is the part that cannot be faked: <c>Fixtures/protocol-26-handshake.json</c> holds the exact
 /// bytes a client sent and a gateway answered, recorded from these fixtures, and the test pushes those bytes at a
 /// gateway built from today's source. The window is 25..26: protocol 26 (the far relevance tier) is additive for clients,
 /// so a gateway of this build still admits a client of 25 and answers it in a layout it reads. Replaying the protocol-25
@@ -186,7 +186,7 @@ public class ConformanceProtocolCompatibilityTests
     [Test]
     public void ARecordedClientStreamIsAdmittedAndAnsweredByAGatewayOfThisBuild()
     {
-        var fixture = ProtocolFixture.Load(ProtocolFixture.PathFor(25));
+        var fixture = ProtocolFixture.Load(ProtocolFixture.PathFor(26));
         Assert.That(ProtocolCompatibility.ClientProtocolAccepted(fixture.ProtocolVersion), Is.True,
             $"the checked-in recording is protocol {fixture.ProtocolVersion}, outside this build's window " +
             $"{ProtocolCompatibility.WindowText()}; record a fresh one with RecordTheHandshakeFixture");
@@ -209,26 +209,26 @@ public class ConformanceProtocolCompatibilityTests
         fleet.OnPump = () => fleet.Worker.PublishStates();
         Assert.That(fleet.Run(() => replayed.StatesReceived > 0, seconds: 10), Is.True);
 
-        void AssertHandshake(Protocol25GatewayDecoder decoded)
+        void AssertHandshake(Protocol26GatewayDecoder decoded)
         {
             Assert.That(decoded.Welcomes, Is.EqualTo(1));
             Assert.That(decoded.Joined, Is.True);
-            Assert.That(decoded.NegotiatedVersion, Is.EqualTo(25));
+            Assert.That(decoded.NegotiatedVersion, Is.EqualTo(26));
             Assert.That(decoded.Containers, Does.Contain("c0"));
             Assert.That(decoded.Spawns, Contains.Key(1000ul));
             Assert.That(decoded.Spawns[1000], Is.EqualTo((decoded.ClientId, decoded.Identity)),
                 "the frozen reader must recover the pawn's owner and identity, not merely consume its bytes");
         }
 
-        var recorded = new Protocol25GatewayDecoder();
+        var recorded = new Protocol26GatewayDecoder();
         foreach (var frame in fixture.GatewayFrames()) recorded.Read(frame);
         AssertHandshake(recorded);
 
-        var current = new Protocol25GatewayDecoder();
+        var current = new Protocol26GatewayDecoder();
         foreach (var (outbound, bytes) in replayed.Record)
             if (!outbound) current.Read(bytes);
         AssertHandshake(current);
-        Assert.That(current.StateEntities, Does.Contain(1000ul), "new gateway transforms must decode with the frozen protocol-25 layout");
+        Assert.That(current.StateEntities, Does.Contain(1000ul), "new gateway transforms must decode with the frozen protocol-26 layout");
         Assert.That(current.Positions[1000], Is.EqualTo((1.25f, 2.5f, 3.75f)),
             "the frozen reader must recover distinct position axes from the new gateway's snapshot");
     }

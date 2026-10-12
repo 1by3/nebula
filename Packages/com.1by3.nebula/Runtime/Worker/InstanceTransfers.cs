@@ -75,7 +75,21 @@ namespace Nebula
         /// <param name="template">Layout with a stable ID, unique part IDs, and positive-size bounds.</param>
         /// <param name="key">Game-selected home, party, or run key. The same template ID and key select the same scope.</param>
         /// <param name="absoluteOrigin">Instance origin in absolute coordinates (<see cref="ContainerRegistry.ToAbsolutePrecise"/>). Existing keys must retain their bounds and content resource, so pass the same numbers every time (round them if they come from a transform).</param>
-        public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Double3 absoluteOrigin)
+        public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Double3 absoluteOrigin) =>
+            PrepareInstance(template, key, absoluteOrigin, Quaternion.identity);
+
+        /// <summary>
+        /// <see cref="PrepareInstance(InstanceTemplate, string, Double3)"/> for an instance whose own space is turned against
+        /// its host's by <paramref name="rotation"/> (<c>docs/scope-frames.md</c> D12): a door that is not upright in its
+        /// host scope (on a sphere) opens on an interior built upright in its own space. The template's boxes and content
+        /// stay upright about <paramref name="absoluteOrigin"/>; a point p of the instance is
+        /// <c>absoluteOrigin + rotation × (p − absoluteOrigin)</c> in the host. Every process that registers the instance
+        /// learns the pose from its lease rows (<see cref="InstanceContainerInfo.HasPose"/>): crossings through an
+        /// <see cref="InstanceBoundary"/> map position, rotation and velocity through it, and a client draws the instance
+        /// turned behind its door, and the host world turned outside it from inside. Pass the same rotation every time
+        /// (round it, as <see cref="InstanceBoundary"/> does): a different one is a different definition, and refused.
+        /// </summary>
+        public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Double3 absoluteOrigin, Quaternion rotation)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentException("An instance key is required", nameof(key));
             if (template == null || string.IsNullOrEmpty(template.TemplateId) || template.Parts == null || template.Parts.Length == 0) throw new ArgumentException("An instance template needs an ID and containers");
@@ -101,6 +115,12 @@ namespace Nebula
                 ObservationCenter = (absoluteOrigin + template.PublicView.center).ToVector3(),
                 ObservationSize = template.PublicView.size,
             };
+            if (Quaternion.Angle(Quaternion.identity, rotation) > PoseAngleEpsilon)
+            {
+                definition.HasPose = true;
+                definition.PoseOrigin = absoluteOrigin;
+                definition.PoseRotation = rotation;
+            }
             for (int i = 0; i < template.Parts.Length; i++)
             {
                 var part = template.Parts[i];
@@ -124,6 +144,9 @@ namespace Nebula
             { ScopeKey = prefix, Definition = definition, PreferredWorkerId = WorkerId, Requester = WorkerId });
             return references;
         }
+
+        /// <summary>Degrees below which an instance's rotation counts as none: it shares its host's axes.</summary>
+        public const float PoseAngleEpsilon = 0.01f;
 
         /// <summary>
         /// Whether a stored part centre is the one being asked for. A row written before part centres were double

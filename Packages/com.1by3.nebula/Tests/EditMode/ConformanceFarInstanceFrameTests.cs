@@ -130,7 +130,9 @@ namespace Nebula.Tests
         /// The scope with its origin moved to the planet's chunk (as a worker that leases it keeps it), the planet in that
         /// chunk, its hosted ground with the door's chunk leased, and the boundary built at the door.
         /// </summary>
-        private Container Build(out NetworkIdentity planet, out RuntimeGrid space)
+        private Container Build(out NetworkIdentity planet, out RuntimeGrid space) => Build(out planet, out space, Quaternion.identity);
+
+        private Container Build(out NetworkIdentity planet, out RuntimeGrid space, Quaternion doorRotation)
         {
             space = new RuntimeGrid(SpaceCell, planar: false, scopeKey: Scope);
             NebulaChunks.Activate(space, NebulaRoles.Worker, true, null);
@@ -172,6 +174,7 @@ namespace Nebula.Tests
             var go = new GameObject("vault door");
             go.transform.SetParent(root.transform, false);
             go.transform.position = planet.Carried.Frame.LocalToSimulation(Door);
+            go.transform.rotation = doorRotation;
             _boundary = go.AddComponent<InstanceBoundary>();
             _boundary.Template = _template;
             _boundary.Interior = new Bounds(new Vector3(0f, 2f, 0f), new Vector3(8f, 4f, 8f));
@@ -276,6 +279,58 @@ namespace Nebula.Tests
             ScopeFrames.Pin("far/instance", scope, origin.X, origin.Y, origin.Z);
             Assert.IsTrue(ContainerRegistry.UnregisterRuntime(c.RuntimeId));
             Assert.IsFalse(ScopeFrames.HasFrame(scope), "the pinned frame goes with the instance's last container");
+        }
+
+        /// <summary>A door turned 55° about x and 180° about y (a bunker on a sphere), as Station Nine's on Mass.</summary>
+        private static readonly Quaternion Turned = Quaternion.Euler(0f, 180f, 0f) * Quaternion.Euler(55f, 0f, 0f);
+
+        /// <summary>A point <paramref name="doorLocal"/> in the door's own axes, planet-local.</summary>
+        private static Vector3 AtDoor(Vector3 doorLocal) => Door + Turned * doorLocal;
+
+        [Test]
+        public void ATurnedDoorTurnsItsInstanceAndCrossingsTurnWithIt()
+        {
+            var chunk = Build(out var planet, out _, Turned);
+            var player = Player(chunk, planet, AtDoor(new Vector3(0f, 1f, -8f)));
+            Tick();
+            Tick();
+            var hall = ContainerRegistry.GetRuntime(NebulaWorker.InstanceKey("vault/" + Owner + "/hall"));
+            Assert.That(hall, Is.Not.Null, "the instance is prepared at the turned door");
+            var row = _plane.FindLease(hall.ContainerId).Instance;
+            Assert.IsTrue(row.HasPose, "its lease row carries its pose");
+            Assert.Less(Quaternion.Angle(Turned, row.PoseRotation), 0.01f, "turned as the door is");
+            Assert.IsTrue(InstancePoses.TryGet(hall.InstanceId, out var origin, out var rotation), "the worker learned the pose from the row");
+            Assert.Less(Distance(origin, _boundary.InstanceOrigin), Millimetre);
+            // The interior is upright in its own space: the part's box stands at the origin plus its own offset.
+            Assert.Less(Distance(_boundary.InstanceOrigin + new Double3(0, 2, 0), ContainerRegistry.ToAbsolutePrecise(hall.WorldBounds.center, hall.InstanceId)), Millimetre);
+
+            AcknowledgeClients();
+            var inside = AtDoor(new Vector3(0f, 1f, 1f));
+            player.transform.position = planet.Carried.Frame.LocalToSimulation(inside);
+            var facing = Turned * Quaternion.Euler(0f, 10f, 0f); // walking in, looking a little right
+            player.transform.rotation = facing;
+            player.Velocity = Turned * new Vector3(0f, 0f, 2f);
+            Tick();
+
+            Assert.AreSame(hall, player.Container, "the player crossed into the turned instance");
+            var local = ContainerRegistry.ToAbsolutePrecise(player.ScopePositionPrecise, player.InstanceId) - _boundary.InstanceOrigin;
+            TestContext.WriteLine($"enter local {local}");
+            Assert.Less(Distance(local, new Double3(0, 1, 1)), Millimetre, "upright in the instance: the door's own offsets");
+            Assert.Less(Quaternion.Angle(Quaternion.Euler(0f, 10f, 0f), player.transform.rotation), 0.05f, "facing the same way, in the instance's axes");
+            Assert.Less((player.Velocity - new Vector3(0f, 0f, 2f)).magnitude, 1e-4f, "and moving the same way");
+            Assert.Less(Quaternion.Angle(Quaternion.Inverse(Turned), InstancePoses.Turn(chunk.InstanceId, hall.InstanceId)), 0.01f, "the turn a game reads");
+
+            // Out again: back past the threshold in the instance's own axes, onto the planet at the door's turned offsets.
+            player.transform.position += new Vector3(0f, 0f, -7f);
+            Tick();
+            AcknowledgeClients();
+            player.transform.position += new Vector3(0f, 0f, -7f);
+            Tick();
+            Assert.AreSame(chunk, player.Container, "back in the planet's chunk");
+            var outside = planet.Carried.Frame.SimulationToLocal(player.transform.position);
+            TestContext.WriteLine($"leave at {outside} expected {AtDoor(new Vector3(0f, 1f, -6f))}");
+            Assert.Less((outside - AtDoor(new Vector3(0f, 1f, -6f))).magnitude, 2e-3f, "where it walked out, turned back");
+            Assert.Less(Quaternion.Angle(facing, player.transform.rotation), 0.05f, "facing as it went in");
         }
     }
 }
