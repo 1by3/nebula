@@ -1061,6 +1061,7 @@ namespace Nebula
 
         private void FixedUpdate()
         {
+            if (LocalPlayer != null) InstanceFrameDiagnostics.Tick("client", LocalPlayer); // HVR-674 TEMP
             _fixedThisFrame++;
             if (_transport == null) return; // torn down (see OnDestroy); Unity can still call FixedUpdate this frame
             bool pawn = LocalPlayer != null && LocalPlayer.Predicted != null;

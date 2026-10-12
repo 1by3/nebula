@@ -454,6 +454,7 @@ namespace Nebula
             }
             if (inside != privateSide)
             {
+                InstanceFrameDiagnostics.Log("worker", $"boundary '{name}' {(privateSide ? "leave" : "enter")} inside={inside} ready={crossing.Transfer != null && crossing.Transfer.Ready} blocked={crossing.Blocked}", entity, this); // HVR-674 TEMP
                 if (allowed && Commit(worker, entity, crossing, there))
                 {
                     crossing.Transfer = null;
