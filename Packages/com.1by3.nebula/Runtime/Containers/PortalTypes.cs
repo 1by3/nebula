@@ -140,6 +140,18 @@ namespace Nebula
         public override string ToString() => $"{Kind} {HalfWidth * 2:0.##} x {HalfHeight * 2:0.##} m";
     }
 
+    /// <summary>One container a link's far window touches (<see cref="PortalLink.Rows"/>) and what the link has learned of it.</summary>
+    internal sealed class FarRow
+    {
+        public Container Container;
+        /// <summary>The container's lease epoch when the link became ready; a lease that moved since makes the commit refuse and the link prepare again (<c>docs/portals.md</c> D16).</summary>
+        public ulong ReadyEpoch;
+        /// <summary>Another worker owns the container: its answer to the preparation that carries the link's id (<c>docs/portals.md</c> D35).</summary>
+        public bool AskSent, AskDone;
+        public uint Request;
+        public float AskedAt;
+    }
+
     /// <summary>
     /// One party's link through a <see cref="Portal"/> (<c>docs/portals.md</c> D8, D9): the far scope, the state the link
     /// is in and, when it is not open, what it waits for. Created by <see cref="Portal.Open"/>; the worker that owns the
@@ -189,10 +201,29 @@ namespace Nebula
         // Worker bookkeeping (Portal.Links.cs).
         internal bool NeedsActivation = true;
         internal bool Dirty = true;
-        internal ulong ReadyEpoch;
-        internal bool HandshakeSent, HandshakeDone;
-        internal uint HandshakeRequest;
-        internal float HandshakeAt;
+        /// <summary>
+        /// The containers of the far scope the far window touches that are leased on their own, the entry first (<c>docs/portals.md</c> D10, D16): each is
+        /// leased in an owning state, loaded on the worker that owns it, and held and prepared by every member's client before the link opens, so a crossing
+        /// can commit into the deepest of them that holds the mapped point and load nothing. Worked out while the link prepares and frozen while it is open.
+        /// </summary>
+        internal readonly List<FarRow> Rows = new List<FarRow>(2);
+
+        internal FarRow RowOf(Container container)
+        {
+            for (int i = 0; i < Rows.Count; i++) if (Rows[i].Container == container) return Rows[i];
+            return null;
+        }
+
+        /// <summary>Whether the far container a crossing enters, or any other row of the far window, is owned by a worker other than <paramref name="workerId"/>: the link is split across workers (<c>docs/portals.md</c> D35).</summary>
+        internal bool IsSplit(string workerId)
+        {
+            for (int i = 0; i < Rows.Count; i++)
+            {
+                var owner = Rows[i].Container != null ? Rows[i].Container.OwnerWorkerId : "";
+                if (!string.IsNullOrEmpty(owner) && owner != workerId) return true;
+            }
+            return false;
+        }
         internal float ClosingSince;
         internal float NextStandingCheck;
         internal int PublishedHash;

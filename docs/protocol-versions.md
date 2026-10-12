@@ -129,6 +129,7 @@ NEB-432 (proxies) adds, inside protocol 28 before it ships, one worker-to-worker
 a bit of `EntityFlags` (`PortalGhost` 8, on a ghost spawn only) and a bit of `PortalRecord.Flags` (`ObservationOnly` 1); worker-to-worker connections require 28 exactly, and a client never sees any of it
 but the record flag. NEB-431 (windows) changes bytes inside protocol 28 before it ships: an instance row on the client wire loses the `ObservePublic` flag and the two observation vectors (25 bytes) and a stored lease row's
 flags byte keeps only the pose bit. No recording or frozen decoder holds an instance row, so the fixtures are unchanged.
+NEB-434 (cross-worker links) adds, inside protocol 28 before it ships, one worker-to-worker message (`PortalHandoff` 52: a portal's links on a planned reassignment of its near container, `docs/portals.md` D44), a trailing list of containers on `PortalLinkRecord` (the rows of the far window a member must hold, D16) and on `PortalAdjacencyMsg` (a reader of an older body reads none). Neither recording nor frozen decoder holds a portal link, so the fixtures are unchanged.
 
 There is no N-1 replay in a closed window, so the replay test now replays `protocol-28-handshake.json` through a frozen
 protocol-28 decoder (`Fixtures/Protocol28GatewayDecoder.cs`, the protocol-20 reader with its literals raised: nothing from 21 to

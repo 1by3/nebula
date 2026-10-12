@@ -98,9 +98,13 @@ For something permanent, use a container hint instead: `dedicated` gives a conta
 
 The worker reports how many seconds a hold still has to run; the orchestrator turns that into a deadline on its own clock the moment the report arrives. The two processes need no common time base and no clock synchronisation — only monotonic clocks that run at about the same rate. The cost is the telemetry hop: a hold reaches the orchestrator up to a second after you asked for it, and is that much shorter as the planner sees it.
 
+## Portal links
+
+A [portal](/docs/guides/instancing) that is open binds scopes the same way a group binds entities, without the game saying anything. Every link that is not closed is reported in the same telemetry block (as `portalLinks`), naming the container the portal stands in and the containers of the far scope its far window touches, and the planner deals them as one item: a street and the hall behind its door, and a vault behind the hall's own door, stay on one worker through a re-deal. Holds and the oversize report apply to them too, under a name such as `portal front-door 1f2e`. The binding goes the moment the link closes. See [Link scopes that live on different workers](/docs/guides/instancing#link-scopes-that-live-on-different-workers).
+
 ## On the dashboard
 
-The **Cohesion** card of the [orchestrator dashboard](/docs/guides/orchestrator-and-dashboard) lists every live hold (container, worker, seconds left) and every cohesion group (id, members, the containers it spans, the workers holding it). A group on more than one worker is flagged, and a group that does not fit one worker is shown as a warning above the table. The card hides itself when there is nothing to show.
+The **Cohesion** card of the [orchestrator dashboard](/docs/guides/orchestrator-and-dashboard) lists every live hold (container, worker, seconds left), every cohesion group (id, members, the containers it spans, the workers holding it) and every portal link that is not closed (the portal, the containers it binds, its state and what it waits for). A group or link on more than one worker is flagged, and a group that does not fit one worker is shown as a warning above the table. The card hides itself when there is nothing to show.
 
 ## Related
 

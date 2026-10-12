@@ -3810,6 +3810,7 @@ namespace Nebula
                 case MsgId.InstanceReady: OnInstanceReady(peer, InstancePreparationMsg.Read(r)); break;
                 case MsgId.PortalWarm: OnPortalWarm(peer, PortalWarmMsg.Read(r)); break;
                 case MsgId.PortalAdjacency: OnPortalAdjacency(peer, PortalAdjacencyMsg.Read(r)); break;
+                case MsgId.PortalHandoff: OnPortalHandoff(peer, PortalHandoffMsg.Read(r)); break;
                 case MsgId.DespawnPlayer: OnDespawnPlayer(peer, DespawnPlayerMsg.Read(r)); break;
                 case MsgId.ClientInput:
                 case MsgId.ForwardInput: OnClientInput(peer, ClientInputMsg.Read(r)); break;

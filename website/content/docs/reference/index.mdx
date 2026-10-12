@@ -415,6 +415,8 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [PortalAdjacencyMsg](/docs/reference/protocol/portal-adjacency-msg) | Struct. MsgId.PortalAdjacency (docs/portals.md D30, D45): a link the sender drives, as a worker that holds the other side of its band needs it. |
 | [PortalApertureKind](/docs/reference/protocol/portal-aperture-kind) | Enum. The shape of a Portal's aperture, the opening on its face's z = 0 plane (docs/portals.md D3). |
 | [PortalFarKind](/docs/reference/protocol/portal-far-kind) | Enum. How a portal names its far side (docs/portals.md D5). |
+| [PortalHandoffLink](/docs/reference/protocol/portal-handoff-link) | Struct. One party's link as the worker that releases a portal's near container hands it to the new owner (PortalHandoffMsg). |
+| [PortalHandoffMsg](/docs/reference/protocol/portal-handoff-msg) | Struct. MsgId.PortalHandoff (docs/portals.md D44, D45): the links of one portal, sent by the worker that is releasing the portal's near container to the worker that is taking it, together with the release. |
 | [PortalIds](/docs/reference/protocol/portal-ids) | Static class. The ids portals and their links are named by (docs/portals.md D6): derived, so every process computes the same one. |
 | [PortalLinkFlags](/docs/reference/protocol/portal-link-flags) | Enum. Bit flags of a PortalLinkRecord. |
 | [PortalLinkRecord](/docs/reference/protocol/portal-link-record) | Struct. One party's link through a portal, as the network gateway and a client learn it (MsgId.PortalLinks). |

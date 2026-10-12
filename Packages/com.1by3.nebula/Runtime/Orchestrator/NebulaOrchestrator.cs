@@ -1879,6 +1879,8 @@ namespace Nebula
                 w.BeginObject();
                 w.Prop("group", (long)group.Group);
                 w.Prop("members", group.Members);
+                // A portal link that is not closed (docs/portals.md D34, D36): named by its label, with its state and what it waits for.
+                if (group.Label != null) { w.Prop("label", group.Label); w.Prop("detail", group.Detail ?? ""); }
                 w.Key("containers");
                 w.BeginArray();
                 for (int c = 0; c < group.Containers.Count; c++) w.Value(group.Containers[c]);
@@ -1888,7 +1890,7 @@ namespace Nebula
                 for (int c = 0; c < group.Workers.Count; c++) w.Value(group.Workers[c]);
                 w.EndArray();
                 // More than one worker right now: a handover is in flight, or the group could not be moved as a unit.
-                w.Prop("split", group.Workers.Count > 1);
+                w.Prop("split", group.Workers.Count > 1 || group.IsSplitLink);
                 w.EndObject();
             }
             w.EndArray();

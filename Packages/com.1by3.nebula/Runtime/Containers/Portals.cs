@@ -58,7 +58,7 @@ namespace Nebula
 
         /// <summary>
         /// Whether a link that is not closed leads into this container (<c>docs/portals.md</c> D43): a preparing, open or closing link keeps
-        /// its far scope from being judged idle, as an occupant does, so a door left open onto an empty room does not lose the room.
+        /// its far scope from being judged idle (every container of its far window, not only the entry), as an occupant does, so a door left open onto an empty room does not lose the room.
         /// </summary>
         internal static bool HoldsFarContainer(Container container)
         {
@@ -67,7 +67,7 @@ namespace Nebula
                 var portal = Registered[i];
                 if (portal == null || portal.IsIgnored || portal.LinkCount == 0) continue;
                 foreach (var link in portal.Links)
-                    if (link.State != PortalState.Closed && link.FarEntry != null && link.FarEntry == container) return true;
+                    if (link.State != PortalState.Closed && ((link.FarEntry != null && link.FarEntry == container) || link.RowOf(container) != null)) return true;
             }
             return false;
         }

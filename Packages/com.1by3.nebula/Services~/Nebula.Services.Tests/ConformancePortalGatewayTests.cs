@@ -194,6 +194,44 @@ public class ConformancePortalGatewayTests
     }
 
     [Test]
+    public void AMemberIsSentEveryContainerOfTheFarWindowTheLinkNamesAheadOfTheLink()
+    {
+        const string Wings = "interior/portal-wings";
+        using var fleet = StartFleet();
+        fleet.Plane.ActivateScope(new ScopeActivationRequest
+        {
+            ScopeKey = Wings,
+            Definition = new ScopeDefinition
+            {
+                Kind = ScopeKind.Parts,
+                Parts =
+                {
+                    new ScopePart { PartId = "room", Center = new(700, 0, 0), Size = new(40, 40, 40) },
+                    new ScopePart { PartId = "wing", Center = new(700, 0, 40), Size = new(40, 40, 40) },
+                },
+            },
+            PreferredWorkerId = fleet.Worker.WorkerId,
+            Requester = "test",
+        });
+        var member = fleet.Connect(0, "member");
+        Assert.That(fleet.Run(() => Holds(member, "c0"), seconds: 20), Is.True);
+        string wingId = ContainerRegistry.RuntimeContainerId(ScopeKeys.Hash(Wings + "/wing"));
+        var link = Link(PortalState.Preparing, PortalWait.ClientWarming, new[] { IdOf(member) }, new[] { IdOf(member) });
+        link.FarScope = ScopeKeys.Hash(Wings);
+        link.FarEntryId = RoomId(Wings);
+        link.FarEntry = RoomRef(Wings);
+        link.FarRowIds = new List<string> { RoomId(Wings), wingId };
+        link.FarRows = new List<ContainerRef> { RoomRef(Wings), ContainerRef.Runtime(ScopeKeys.Hash(Wings + "/wing")) };
+
+        fleet.Worker.PublishPortals(new[] { Door() });
+        fleet.Worker.PublishPortalLinks(new[] { link });
+        Assert.That(fleet.Run(() => member.Containers.Contains(RoomId(Wings)) && member.Containers.Contains(wingId), seconds: 10), Is.True,
+            "the member holds the entry and the other container of the far window: it prepares both before it says it is warm (docs/portals.md D16)");
+        Assert.That(member.UnresolvableNames, Is.Empty);
+        Assert.That(member.Links[link.LinkId].FarRows.Count, Is.EqualTo(2), "and the link it is told of names them");
+    }
+
+    [Test]
     public void ALinkThatClosesIsStillDeliveredAfterItsMemberLosesThePin()
     {
         using var fleet = StartFleet();

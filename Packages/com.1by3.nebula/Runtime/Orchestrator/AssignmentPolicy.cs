@@ -85,8 +85,18 @@ namespace Nebula
         /// <summary>The workers that reported members. More than one means the group is split right now.</summary>
         public readonly List<string> Workers = new List<string>(1);
 
+        /// <summary>
+        /// Set for a row that is not an entity group: a portal link that is not closed (<c>docs/portals.md</c> D34), named "portal door 1f2e". The planner deals its
+        /// containers as one item exactly as it does a group's, and a report names it by this label. Null for an entity cohesion group.
+        /// </summary>
+        public string Label;
+        /// <summary>For a portal link, its state and what it waits for, as the dashboard shows them (<c>docs/portals.md</c> D36).</summary>
+        public string Detail = "";
+        /// <summary>For a portal link, some of its containers belong to another worker right now (<c>docs/portals.md</c> D35).</summary>
+        public bool IsSplitLink;
+
         /// <summary>The group as it is named in a log line, a telemetry row and on the dashboard.</summary>
-        public override string ToString() => "cohesion " + Group.ToString();
+        public override string ToString() => Label ?? "cohesion " + Group.ToString();
     }
 
     /// <summary>

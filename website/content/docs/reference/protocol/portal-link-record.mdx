@@ -95,6 +95,20 @@ Counts the link's openings, so a client's [`MsgId.PortalWarm`](/docs/reference/p
 public PortalLinkFlags Flags;
 ```
 
+### FarRowIds [#farrowids]
+
+```csharp
+public List<string> FarRowIds;
+```
+
+The containers of the far scope the far window touches that a member must hold and prepare before the link opens, the entry first (`docs/portals.md` D10, D16), by id (how the network gateway pins their rows) and by reference (how a client resolves them). Empty before the far scope's rows are known.
+
+### FarRows [#farrows]
+
+```csharp
+public List<ContainerRef> FarRows;
+```
+
 ### Members [#members]
 
 ```csharp

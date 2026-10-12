@@ -61,6 +61,14 @@ public ContainerRef NearContainer;
 public List<ContainerRef> FarContainers;
 ```
 
+### FarRows [#farrows]
+
+```csharp
+public List<ContainerRef> FarRows;
+```
+
+The other containers of the far scope the link's far window touches (`docs/portals.md` D16, D35), beyond the ones the band touches. A worker that owns only these is asked to prepare them but ghosts nothing for the link. A trailing field: an older body ends before it.
+
 ## Methods
 
 ### Write [#write]

@@ -23,3 +23,4 @@ Why a portal did not let an entity through, or leave a companion behind (`docs/p
 | <span id="pinned"></span>`Pinned` |  | It is a scene entity, which cannot leave its authored scene, or it is pinned to its container. |
 | <span id="otherscope"></span>`OtherScope` |  | It is in another scope than its leader. |
 | <span id="nodestination"></span>`NoDestination` |  | The container it would arrive in is not here yet, or no worker holds an active lease on it. |
+| <span id="splitaboard"></span>`SplitAboard` |  | It carries riders that this worker does not simulate (a crew whose interior another worker leases, or a rider still handing over), so carrying it through would leave them behind: it is refused whole and never half-moved (`docs/portals.md` D35). |

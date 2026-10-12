@@ -110,6 +110,59 @@ namespace Nebula
         }
 
         /// <summary>
+        /// One portal link that is not closed, as the worker reports it in the cohesion block of its telemetry (<c>docs/portals.md</c> D34, D36): the near face's
+        /// container and the far containers its window touches, which the planner deals as one item, and the link's state and wait for the dashboard.
+        /// </summary>
+        public struct PortalBinding
+        {
+            /// <summary>The link's id (<see cref="PortalLink.Id"/>).</summary>
+            public ulong LinkId;
+            /// <summary>The portal's authored id, for the dashboard. Never the party: a party can be a player's identity.</summary>
+            public string Portal;
+            public PortalState State;
+            public PortalWait Wait;
+            /// <summary>Some of the link's containers belong to another worker right now (<c>docs/portals.md</c> D35).</summary>
+            public bool Split;
+            /// <summary>The near face's container, then the far ones.</summary>
+            public List<string> Containers;
+        }
+
+        /// <summary>
+        /// Fill <paramref name="result"/> (cleared first) with one row for each link that is not closed on a portal whose container this worker owns. The rows go
+        /// to the orchestrator beside the cohesion groups: the planner deals the containers of a row as one item, so a door and the room behind it, and a chain of
+        /// them, are not dealt to different workers. A link that closes takes its binding with it, so a town with forty doors binds only the ones in use. Called
+        /// once per telemetry document.
+        /// </summary>
+        internal void CopyPortalBindings(List<PortalBinding> result)
+        {
+            result.Clear();
+            var all = Portals.All;
+            for (int i = 0; i < all.Count; i++)
+            {
+                var portal = all[i];
+                if (portal == null || portal.IsIgnored || portal.LinkCount == 0) continue;
+                var near = portal.NearContainer;
+                if (near == null || near.OwnerWorkerId != WorkerId) continue;
+                foreach (var link in portal.LinkValues)
+                {
+                    if (link.State == PortalState.Closed) continue;
+                    var row = new PortalBinding
+                    {
+                        LinkId = link.Id, Portal = portal.AuthoredId, State = link.State, Wait = link.Wait,
+                        Split = link.IsSplit(WorkerId), Containers = new List<string>(1 + link.Rows.Count),
+                    };
+                    row.Containers.Add(near.ContainerId);
+                    for (int r = 0; r < link.Rows.Count; r++)
+                    {
+                        string id = link.Rows[r].Container != null ? link.Rows[r].Container.ContainerId : "";
+                        if (id != "" && !row.Containers.Contains(id)) row.Containers.Add(id);
+                    }
+                    result.Add(row);
+                }
+            }
+        }
+
+        /// <summary>
         /// What one cohesion group costs this worker: which of its containers hold members of the group, and how
         /// many members it owns. The orchestrator unions the spans of every worker into the group the planner keeps
         /// on one worker (<c>docs/cohesion-hints.md</c>, D7).

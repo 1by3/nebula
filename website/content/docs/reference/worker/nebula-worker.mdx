@@ -819,6 +819,60 @@ public readonly float SecondsRemaining;
 
 Seconds still to run when the hold was read. Always greater than zero.
 
+### PortalBinding [#portalbinding]
+
+```csharp
+public struct PortalBinding
+```
+
+One portal link that is not closed, as the worker reports it in the cohesion block of its telemetry (`docs/portals.md` D34, D36): the near face's container and the far containers its window touches, which the planner deals as one item, and the link's state and wait for the dashboard.
+
+#### Fields
+
+##### LinkId [#linkid]
+
+```csharp
+public ulong LinkId;
+```
+
+The link's id ([`PortalLink.Id`](/docs/reference/containers/portal-link#id)).
+
+##### Portal [#portal]
+
+```csharp
+public string Portal;
+```
+
+The portal's authored id, for the dashboard. Never the party: a party can be a player's identity.
+
+##### State [#state]
+
+```csharp
+public PortalState State;
+```
+
+##### Wait [#wait]
+
+```csharp
+public PortalWait Wait;
+```
+
+##### Split [#split]
+
+```csharp
+public bool Split;
+```
+
+Some of the link's containers belong to another worker right now (`docs/portals.md` D35).
+
+##### Containers [#containers]
+
+```csharp
+public List<string> Containers;
+```
+
+The near face's container, then the far ones.
+
 ### CohesionSpan [#cohesionspan]
 
 ```csharp

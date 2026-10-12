@@ -1,0 +1,56 @@
+---
+title: "PortalHandoffMsg"
+description: "MsgId.PortalHandoff (docs/portals.md D44, D45): the links of one portal, sent by the worker that is releasing the portal's near container to the worker that is taking it, together with the release."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs)</div>
+
+```csharp
+public struct PortalHandoffMsg
+```
+
+[`MsgId.PortalHandoff`](/docs/reference/protocol/msg-id#portalhandoff) (`docs/portals.md` D44, D45): the links of one portal, sent by the worker that is releasing the portal's near container to the worker that is taking it, together with the release. Nothing else about a link needs to travel: its far scope and its readiness are worked out again from the portal's own content and the leases.
+
+## Fields
+
+### PortalId [#portalid]
+
+```csharp
+public ulong PortalId;
+```
+
+The portal's derived id ([`PortalIds.Of`](/docs/reference/protocol/portal-ids#of)).
+
+### NearContainerId [#nearcontainerid]
+
+```csharp
+public string NearContainerId;
+```
+
+The container the near face is fixed in, by id, for the log line when the receiver never holds the portal.
+
+### Links [#links]
+
+```csharp
+public List<PortalHandoffLink> Links;
+```
+
+One entry for each party that ever opened the portal, whatever state its link is in.
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+Write the message, id byte first.
+
+### Read [#read]
+
+```csharp
+public static PortalHandoffMsg Read(NetworkReader r);
+```
+
+Read the body after the id byte.

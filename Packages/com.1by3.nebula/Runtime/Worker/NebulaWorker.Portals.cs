@@ -57,16 +57,17 @@ namespace Nebula
         private void UpdatePortals()
         {
             var all = Portals.All;
-            if (all.Count == 0 && _publishedPortals.Count == 0)
+            if (_pendingHandoffs.Count > 0) ApplyPendingHandoffs();
+            if (all.Count == 0 && _publishedPortals.Count == 0 && _deferredRemovals.Count == 0)
             {
-                NebulaDiagnostics.OpenPortalLinks = NebulaDiagnostics.SplitPortalLinks = 0;
+                NebulaDiagnostics.OpenPortalLinks = NebulaDiagnostics.SplitPortalLinks = NebulaDiagnostics.BoundPortalLinks = 0;
                 return;
             }
             _portalsSeen.Clear();
             _portalUpserts.Clear(); _portalRemoves.Clear(); _linkUpserts.Clear(); _linkRemoves.Clear();
             _portalScratch.Clear();
             for (int i = 0; i < all.Count; i++) _portalScratch.Add(all[i]);
-            int open = 0, split = 0;
+            int open = 0, split = 0, bound = 0;
             for (int i = 0; i < _portalScratch.Count; i++)
             {
                 var portal = _portalScratch[i];
@@ -74,8 +75,9 @@ namespace Nebula
                 var near = portal.NearContainer;
                 if (near == null || near.OwnerWorkerId != WorkerId)
                 {
-                    // The container moved to another worker (or is not known): the links this worker held read Closed (D44).
-                    if (portal.LinkCount > 0 && _publishedPortals.ContainsKey(portal.PortalId)) portal.CloseForReassignment();
+                    // The container moved to another worker (or is not known). On a planned reassignment the links go to the new owner with the
+                    // release; if nobody can take them they read Closed (D44).
+                    if (portal.LinkCount > 0 && _publishedPortals.ContainsKey(portal.PortalId) && !HandOffLinks(portal, near)) portal.CloseForReassignment();
                     continue;
                 }
                 ulong id = portal.PortalId;
@@ -95,10 +97,11 @@ namespace Nebula
                 }
                 foreach (var link in portal.Links)
                 {
+                    if (link.State != PortalState.Closed && link.Rows.Count > 0 && (link.Rows.Count > 1 || link.Rows[0].Container != near)) bound++;
                     if (link.State == PortalState.Open)
                     {
                         open++;
-                        if (link.FarEntry != null && !string.IsNullOrEmpty(link.FarEntry.OwnerWorkerId) && link.FarEntry.OwnerWorkerId != WorkerId) split++;
+                        if (link.IsSplit(WorkerId)) split++;
                     }
                     if (!link.Dirty && link.Published) continue;
                     link.Dirty = false;
@@ -119,9 +122,11 @@ namespace Nebula
             }
             _portalGone.Clear();
             _portalScratch.Clear();
+            if (_deferredRemovals.Count > 0) CollectDeferredRemovals();
             PublishAdjacency();
             NebulaDiagnostics.OpenPortalLinks = open;
             NebulaDiagnostics.SplitPortalLinks = split;
+            NebulaDiagnostics.BoundPortalLinks = bound;
             if (_portalUpserts.Count + _portalRemoves.Count + _linkUpserts.Count + _linkRemoves.Count == 0 || _gateways.Count == 0)
             {
                 // Nothing to say, or nobody to say it to: a gateway that connects later is sent everything (PublishPortalsTo).
@@ -195,41 +200,47 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Ask the worker that owns a link's far container to prepare it (<c>docs/portals.md</c> D35): the exchange that readies one entity's
-        /// crossing, carrying the link's id instead of an entity's. Asked again when it goes unanswered for a while.
+        /// Ask the worker that owns one of a link's far containers to prepare it (<c>docs/portals.md</c> D35): the exchange that readies one entity's
+        /// crossing, carrying the link's id instead of an entity's. One is asked for each far row another worker owns, and it is asked again when it goes
+        /// unanswered for a while.
         /// </summary>
-        internal void AskFarWorker(PortalLink link, Container entry)
+        internal void AskFarWorker(PortalLink link, FarRow row)
         {
             float now = Time.unscaledTime;
-            if (link.HandshakeSent && now - link.HandshakeAt < 5f) return;
-            if (!_workerPeersById.TryGetValue(entry.OwnerWorkerId, out var peer) || !peer.HelloReceived) return;
-            link.HandshakeSent = true;
-            link.HandshakeAt = now;
+            if (row.AskSent && now - row.AskedAt < 5f) return;
+            var container = row.Container;
+            if (!_workerPeersById.TryGetValue(container.OwnerWorkerId, out var peer) || !peer.HelloReceived) return;
+            row.AskSent = true;
+            row.AskedAt = now;
             var message = new InstancePreparationMsg
             {
-                RequestId = ++_nextInstanceRequest, EntityId = 0, Destination = entry.Ref,
-                SourceWorker = WorkerIndex, LeaseEpoch = entry.LeaseEpoch, LinkId = link.Id,
+                RequestId = ++_nextInstanceRequest, EntityId = 0, Destination = container.Ref,
+                SourceWorker = WorkerIndex, LeaseEpoch = container.LeaseEpoch, LinkId = link.Id,
             };
-            link.HandshakeRequest = message.RequestId;
+            row.Request = message.RequestId;
             _writer.Reset();
             message.Write(_writer, MsgId.InstancePrepare);
             _transport.Send(peer.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
         }
 
-        /// <summary>The far worker answered a link's preparation (<see cref="AskFarWorker"/>).</summary>
+        /// <summary>The far worker answered the preparation of one of a link's far containers (<see cref="AskFarWorker"/>).</summary>
         private void OnLinkReady(Peer peer, InstancePreparationMsg message)
         {
             if (peer.Role != PeerRole.Worker) return;
             var link = Portals.FindLink(message.LinkId);
-            if (link == null || link.HandshakeRequest != message.RequestId || link.FarEntry == null || link.FarEntry.OwnerWorkerId != peer.Id) return;
-            if (message.LeaseEpoch != link.FarEntry.LeaseEpoch) return;
+            if (link == null) return;
+            FarRow row = null;
+            for (int i = 0; i < link.Rows.Count; i++)
+                if (link.Rows[i].AskSent && link.Rows[i].Request == message.RequestId) { row = link.Rows[i]; break; }
+            if (row == null || row.Container == null || row.Container.OwnerWorkerId != peer.Id) return;
+            if (message.LeaseEpoch != row.Container.LeaseEpoch) return;
             if (!message.Success)
             {
                 link.Error = "The far worker could not prepare the far container";
-                link.HandshakeSent = false;
+                row.AskSent = false;
                 return;
             }
-            link.HandshakeDone = true;
+            row.AskDone = true;
             link.Dirty = true;
         }
 

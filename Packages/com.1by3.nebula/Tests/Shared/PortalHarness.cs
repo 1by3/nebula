@@ -40,6 +40,27 @@ namespace Nebula.Tests
         public static string HallId => ContainerRegistry.RuntimeContainerId(NebulaWorker.InstanceKey("vault/" + Owner + "/hall"));
         public Container Hall => ContainerRegistry.GetRuntime(NebulaWorker.InstanceKey("vault/" + Owner + "/hall"));
 
+        /// <summary>A template of boxes given relative to the door's origin, kept and destroyed with the harness.</summary>
+        public InstanceTemplate MakeTemplate(string id, params (string part, Vector3 center, Vector3 size)[] parts)
+        {
+            var template = ScriptableObject.CreateInstance<InstanceTemplate>();
+            template.TemplateId = id;
+            template.Parts = new InstanceTemplate.Part[parts.Length];
+            for (int i = 0; i < parts.Length; i++) template.Parts[i] = new InstanceTemplate.Part { Id = parts[i].part, Bounds = new Bounds(parts[i].center, parts[i].size) };
+            _templates.Add(template);
+            return template;
+        }
+
+        /// <summary>The runtime container of a part of <paramref name="template"/> for <paramref name="party"/>, or null while the scope has not registered it.</summary>
+        public static Container RuntimePart(string template, string party, string part) =>
+            ContainerRegistry.GetRuntime(NebulaWorker.InstanceKey(template + "/" + party + "/" + part));
+
+        private readonly List<InstanceTemplate> _templates = new List<InstanceTemplate>();
+        private readonly List<(string template, string party, string part)> _onSecondWorker = new List<(string, string, string)>();
+
+        /// <summary>Lease one part of a template's scope to the second worker (from the next lease pass), the rest staying with the first.</summary>
+        public void LeaseToSecondWorker(string template, string party, string part) => _onSecondWorker.Add((template, party, part));
+
         public PortalHarness(int workers = 1)
         {
             Mesh = new ConformanceMesh(workers);
@@ -69,15 +90,19 @@ namespace Nebula.Tests
             Player.OwnerIdentity = Owner;
         }
 
-        /// <summary>A portal in the street, facing +z, with the hall as its far side.</summary>
-        public Portal NewPortal(string name, Vector3 at)
+        /// <summary>
+        /// A portal facing +z at <paramref name="at"/>, with <paramref name="template"/> (the hall's by default) as its far side. In the street unless
+        /// <paramref name="parent"/> names the container it is fixed in (a portal inside the hall, for a chain of scopes).
+        /// </summary>
+        public Portal NewPortal(string name, Vector3 at, Transform parent = null, InstanceTemplate template = null)
         {
             var go = new GameObject(name);
             Objects.Add(go);
+            if (parent != null) go.transform.SetParent(parent, false);
             go.transform.position = at;
             var portal = go.AddComponent<Portal>();
             portal.Id = name;
-            portal.FarTemplate = Template;
+            portal.FarTemplate = template != null ? template : Template;
             portal.Aperture = PortalAperture.Box(2f, 2.5f);
             portal.ClockForTests = () => Now;
             Enable(portal);
@@ -107,6 +132,22 @@ namespace Nebula.Tests
 
         public void Ticks(int n) { for (int i = 0; i < n; i++) Tick(); }
 
+        /// <summary>
+        /// One tick of every worker, the second one's first and then the first's (the order the physics rigs use), with the leases applied and the messages
+        /// delivered after each: what a mesh with two workers does between two frames.
+        /// </summary>
+        public void TickAll()
+        {
+            if (Mesh.Workers.Count > 1)
+            {
+                Other.Tick(TickNumber + 1);
+                Mesh.Pump();
+            }
+            Tick();
+        }
+
+        public void TickAll(int n) { for (int i = 0; i < n; i++) TickAll(); }
+
         public void ApplyLeases()
         {
             ContainerRegistry.SyncRuntime(Plane.Leases);
@@ -114,6 +155,11 @@ namespace Nebula.Tests
                 if (lease.WorkerId == W.Id) ContainerRegistry.ApplyLease(lease.ContainerId, W.Id, W.Index, lease.Epoch);
             var hall = Hall;
             if (HallOnSecondWorker && hall != null) ContainerRegistry.ApplyLease(hall.ContainerId, Other.Id, Other.Index, 7);
+            foreach (var (template, party, part) in _onSecondWorker)
+            {
+                var container = RuntimePart(template, party, part);
+                if (container != null) ContainerRegistry.ApplyLease(container.ContainerId, Other.Id, Other.Index, 7);
+            }
         }
 
         /// <summary>Stand in for client <paramref name="clientId"/>'s <see cref="MsgId.PortalWarm"/>, forwarded by the network gateway.</summary>
@@ -147,6 +193,8 @@ namespace Nebula.Tests
             foreach (var go in Objects) if (go != null) Object.DestroyImmediate(go);
             Objects.Clear();
             Object.DestroyImmediate(Template);
+            foreach (var template in _templates) if (template != null) Object.DestroyImmediate(template);
+            _templates.Clear();
             InstanceScenes.Reset();
             Portals.ResetForNewSession();
         }

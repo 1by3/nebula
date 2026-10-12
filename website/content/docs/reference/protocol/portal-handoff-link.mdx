@@ -1,0 +1,62 @@
+---
+title: "PortalHandoffLink"
+description: "One party's link as the worker that releases a portal's near container hands it to the new owner (PortalHandoffMsg)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs)</div>
+
+```csharp
+public struct PortalHandoffLink
+```
+
+One party's link as the worker that releases a portal's near container hands it to the new owner ([`PortalHandoffMsg`](/docs/reference/protocol/portal-handoff-msg)).
+
+## Fields
+
+### Party [#party]
+
+```csharp
+public string Party;
+```
+
+The party the link is for (`docs/portals.md` D8): sent worker to worker only, never to a client.
+
+### Generation [#generation]
+
+```csharp
+public uint Generation;
+```
+
+The link's opening count, so the clients' warm acknowledgements and the network gateway's records stay valid across the handoff.
+
+### State [#state]
+
+```csharp
+public PortalState State;
+```
+
+The state the link was in; the new owner prepares an open, preparing or closing link again from here.
+
+### Members [#members]
+
+```csharp
+public List<ulong> Members;
+```
+
+The clients that must be warm ([`PortalLink.Members`](/docs/reference/containers/portal-link#members)).
+
+### Warm [#warm]
+
+```csharp
+public List<ulong> Warm;
+```
+
+The members that had said they hold the far window: the new owner does not ask them again.
+
+### Observers [#observers]
+
+```csharp
+public List<ulong> Observers;
+```
+
+The clients that may look through the link ([`PortalLink.Observers`](/docs/reference/containers/portal-link#observers)).

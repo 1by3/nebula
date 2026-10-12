@@ -37,6 +37,7 @@ namespace Nebula
         private readonly HashSet<ulong> _adjacencySeen = new HashSet<ulong>();
         private readonly List<Container> _adjacencyContainers = new List<Container>();
         private readonly List<ContainerRef> _adjacencyFar = new List<ContainerRef>();
+        private readonly List<ContainerRef> _adjacencyRows = new List<ContainerRef>();
         private readonly HashSet<string> _adjacencyRecipients = new HashSet<string>();
         private readonly List<ulong> _adjacencyGone = new List<ulong>();
         private readonly NetworkWriter _adjacencyWriter = new NetworkWriter();
@@ -101,6 +102,13 @@ namespace Nebula
             sent.Ownership = ownership;
             FarContainersOf(portal, link);
             PortalAdjacencyTable.Set(link.Id, ContainerRef.Of(near), _adjacencyFar);
+            // The other containers of the far window: their workers are asked to prepare them and ghost nothing for them (D16, D35).
+            _adjacencyRows.Clear();
+            for (int i = 0; i < link.Rows.Count; i++)
+            {
+                var rowRef = ContainerRef.Of(link.Rows[i].Container);
+                if (!_adjacencyFar.Contains(rowRef)) _adjacencyRows.Add(rowRef);
+            }
             var message = new PortalAdjacencyMsg
             {
                 LinkId = link.Id,
@@ -110,6 +118,7 @@ namespace Nebula
                 Portal = portal.ToRecord(),
                 NearContainer = ContainerRef.Of(near),
                 FarContainers = new List<ContainerRef>(_adjacencyFar),
+                FarRows = new List<ContainerRef>(_adjacencyRows),
             };
             // The link's far face is what the far worker poses by: a fixed far side's own, a template's the near face's origin in the instance's own space.
             message.Portal.FarScope = link.FarScope;
@@ -122,6 +131,12 @@ namespace Nebula
             for (int i = 0; i < _adjacencyFar.Count; i++)
             {
                 var container = ContainerRegistry.Resolve(_adjacencyFar[i]);
+                string owner = container != null ? container.OwnerWorkerId : "";
+                if (!string.IsNullOrEmpty(owner) && owner != WorkerId) _adjacencyRecipients.Add(owner);
+            }
+            for (int i = 0; i < _adjacencyRows.Count; i++)
+            {
+                var container = ContainerRegistry.Resolve(_adjacencyRows[i]);
                 string owner = container != null ? container.OwnerWorkerId : "";
                 if (!string.IsNullOrEmpty(owner) && owner != WorkerId) _adjacencyRecipients.Add(owner);
             }

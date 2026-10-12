@@ -170,6 +170,7 @@ An entity stops at the face when the link is not open, when it is not admitted, 
 | `NotAdmitted` | `CanEnter` refused it, or its client is not a warm member of the link, or someone aboard it is not admitted. |
 | `AmbiguousParty` | `PartyOf` named no party and more than one link is open on this face. |
 | `NoDestination` | The container it would arrive in is not here yet, or its lease moved. |
+| `SplitAboard` | A carrier has riders this worker does not simulate (a rider held only as a ghost, an interior leased to another worker), so carrying it through would leave them behind. It is refused whole. |
 
 A physical body is meant to meet a collider across the aperture; until that is built, a refused `Rigidbody` is stopped like any other mover.
 
@@ -186,7 +187,7 @@ To find out why a door is not open, read the link on the worker. `Portal.TryGetL
 | `ClientWarming` | A member's client has not said it holds the far window. `WaitClient` is that client. |
 | `BandOccupied` | The link is closing and a body still stands in the band. |
 | `FarScopeRetired` | The far scope is retiring or retired, so the link reads closed. |
-| `NearContainerMoving` | The portal's container is being reassigned to another worker. |
+| `NearContainerMoving` | The portal's container is being reassigned to another worker: on the new owner, until it has looked at everything again; on the old one, and on a crash, the link reads closed. |
 
 To react when a link changes, for example to open a door only once the other side is ready, subscribe to `LinkChanged`. The worker raises it during its tick whenever a link's state, wait, members or observers change:
 
@@ -210,6 +211,18 @@ A body that moves further than `CrossDepth` in a step, such as a projectile, is 
 Everything the entity carries in time goes through the link with it, in double and about the faces: its position and rotation, its velocity, a `Rigidbody`'s linear and angular velocity, and its recorded `StateHistory`, which `StateAt` answers from in the destination's space. On a client, a replica's container change and its link-composed pose apply in the same step, its interpolation buffer and, for the local pawn, its prediction history are rewritten into the destination, so nothing pops and the pawn is not corrected at a crossing. A door turned against the far scope turns a crate's momentum with it. Raise your own bookkeeping in `Portal.Crossed(entity, portal, from, to)`, on the worker and on clients, and turn headings with `Portals.Turn(from, to)`.
 
 A vehicle crosses with everything aboard it that the worker simulates, each rider keeping its seat. If anyone aboard is not admitted, the vehicle is refused as a whole.
+
+## Link scopes that live on different workers
+
+A game declares nothing for this: opening a portal is the declaration. Nebula keeps the scopes a link joins on one worker, and when they are on two anyway, a crossing still works.
+
+**Co-location.** Every link that is not `Closed` (preparing, open or closing) is reported in the cohesion block of its worker's telemetry as a binding of the container the portal stands in with the containers of the far window, and the planner deals them as one item, exactly as it does an entity cohesion group. A hold on any of them holds all of them, a chain of linked scopes (a street, a hall, a vault behind the hall) is one item, and a link too big for one worker is reported by name and still kept whole. The binding goes when the link closes, so a town with forty hangar doors binds only the doors in use; close a door you are done with.
+
+**When they are split anyway.** Capacity, a failover or an operator can put the far scope on another worker. Then the link also waits for the far worker's answer (`FarWorkerHandshake`), the worker that owns the far side is shown every body in the band as a ghost, and a crossing is the ordinary handover on the tick it commits: the near worker puts the entity into the far container and hands authority to the worker that owns it, with the entity's cohesion group and everything it carries, and nothing is held at the face. The cost is a handover's latency, and a split link has no static throat (each worker has only its own side's geometry) and contact across the face is one-sided. A carrier whose riders the near worker does not simulate is refused with `PortalRefusal.SplitAboard`, never half-moved. `NebulaDiagnostics.SplitPortalLinks` counts the open links that are split right now and `CrossWorkerPortalCrossings` the crossings that were handovers.
+
+**The whole far window.** A link is ready only when every container of the far scope that its far window touches and that has a lease of its own is leased, loaded and held by every member's client, not only the entry. A crossing then commits into the deepest of them that holds the point the entity arrives at (a corridor, not the lobby), and into the nearest enclosing one when that is not ready, so it never enters a container no client was warmed for. A container that appears in the far scope after a link opened is not entered until the link prepares again.
+
+**When the container is reassigned.** If the planner moves the container a portal stands in, the worker that releases it sends the links to the worker that takes it. The new owner holds them in `Preparing` waiting on `NearContainerMoving`, checks the far scope and its own sides again and opens them without asking the warm clients a second time, so a door that was open stays open across the move. If nobody can take them (the container has no owner, its owner is not reachable, or a worker crashed) they read `Closed`, which is the safe state, and the game opens the door again. Your `LinkChanged` handlers run on the new owner too; read the link again with `TryGetLink` rather than keeping the object `Open` returned.
 
 ## Collide across a portal
 

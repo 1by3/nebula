@@ -109,6 +109,86 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void ALinkRecordCarriesTheContainersOfTheFarWindowTheMembersMustHold()
+        {
+            var record = new PortalLinkRecord
+            {
+                LinkId = 11, PortalId = 12, FarScope = 13, FarEntryId = "rt_14", FarEntry = ContainerRef.Runtime(14),
+                FarRowIds = new List<string> { "rt_14", "rt_15" }, FarRows = new List<ContainerRef> { ContainerRef.Runtime(14), ContainerRef.Runtime(15) },
+                Members = new List<ulong>(), Observers = new List<ulong>(),
+            };
+            var w = new NetworkWriter();
+            PortalLinksMsg.Write(w, new[] { record }, null);
+            var read = PortalLinksMsg.Read(ReaderAfterId(w, MsgId.PortalLinks)).Upserts[0];
+            CollectionAssert.AreEqual(new[] { "rt_14", "rt_15" }, read.FarRowIds, "the network gateway pins both rows for a member (docs/portals.md D16)");
+            CollectionAssert.AreEqual(new[] { ContainerRef.Runtime(14), ContainerRef.Runtime(15) }, read.FarRows, "and a client prepares both before it says it is warm");
+
+            record.FarRows = null;
+            record.FarRowIds = null;
+            var none = new NetworkWriter();
+            PortalLinksMsg.Write(none, new[] { record }, null);
+            Assert.AreEqual(0, PortalLinksMsg.Read(ReaderAfterId(none, MsgId.PortalLinks)).Upserts[0].FarRows.Count, "a link whose far scope is not known yet names no rows");
+        }
+
+        [Test]
+        public void AHandoffCarriesEveryPartysLinkWithItsGenerationAndWhoWasWarm()
+        {
+            Assert.AreEqual(52, (int)MsgId.PortalHandoff);
+            var message = new PortalHandoffMsg
+            {
+                PortalId = 77, NearContainerId = "street",
+                Links = new List<PortalHandoffLink>
+                {
+                    new PortalHandoffLink { Party = "crew-91", Generation = 5, State = PortalState.Open, Members = new List<ulong> { 1, 2 }, Warm = new List<ulong> { 1 }, Observers = new List<ulong> { 1, 2, 3 } },
+                    new PortalHandoffLink { Party = "", Generation = 2, State = PortalState.Closed, Members = new List<ulong>(), Warm = new List<ulong>(), Observers = new List<ulong>() },
+                },
+            };
+            var w = new NetworkWriter();
+            message.Write(w);
+            var read = PortalHandoffMsg.Read(ReaderAfterId(w, MsgId.PortalHandoff));
+            Assert.AreEqual(77UL, read.PortalId);
+            Assert.AreEqual("street", read.NearContainerId);
+            Assert.AreEqual(2, read.Links.Count);
+            Assert.AreEqual("crew-91", read.Links[0].Party);
+            Assert.AreEqual(5u, read.Links[0].Generation);
+            Assert.AreEqual(PortalState.Open, read.Links[0].State);
+            CollectionAssert.AreEqual(new ulong[] { 1, 2 }, read.Links[0].Members);
+            CollectionAssert.AreEqual(new ulong[] { 1 }, read.Links[0].Warm);
+            CollectionAssert.AreEqual(new ulong[] { 1, 2, 3 }, read.Links[0].Observers);
+            Assert.AreEqual("", read.Links[1].Party);
+            Assert.AreEqual(PortalState.Closed, read.Links[1].State);
+        }
+
+        [Test]
+        public void AnAdjacencyCarriesTheFarWindowRowsBeyondTheBandAndAnOlderBodyReadsNone()
+        {
+            var message = new PortalAdjacencyMsg
+            {
+                LinkId = 5, Generation = 2, State = PortalState.Open, FarScope = 6,
+                Portal = new PortalRecord { PortalId = 1, Id = "door", NearContainerId = "street", TemplateId = "", NearRotation = Quaternion.identity, FarRotation = Quaternion.identity },
+                NearContainer = ContainerRef.Runtime(3),
+                FarContainers = new List<ContainerRef> { ContainerRef.Runtime(7) },
+                FarRows = new List<ContainerRef> { ContainerRef.Runtime(8), ContainerRef.Runtime(9) },
+            };
+            var w = new NetworkWriter();
+            message.Write(w);
+            var read = PortalAdjacencyMsg.Read(ReaderAfterId(w, MsgId.PortalAdjacency));
+            CollectionAssert.AreEqual(new[] { ContainerRef.Runtime(7) }, read.FarContainers);
+            CollectionAssert.AreEqual(new[] { ContainerRef.Runtime(8), ContainerRef.Runtime(9) }, read.FarRows);
+
+            // A body that ends after the containers of the band (the NEB-432 shape) reads no rows.
+            var older = new NetworkWriter();
+            message.FarRows = null;
+            message.Write(older);
+            var bytes = older.ToArray();
+            var trimmed = new byte[bytes.Length - 2];
+            System.Array.Copy(bytes, trimmed, trimmed.Length);
+            var reader = new NetworkReader(trimmed);
+            reader.ReadByte();
+            Assert.AreEqual(0, PortalAdjacencyMsg.Read(reader).FarRows.Count);
+        }
+
+        [Test]
         public void AWarmCarriesTheLinkTheGenerationAndTheClientTheGatewayStamped()
         {
             var w = new NetworkWriter();

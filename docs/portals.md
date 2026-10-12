@@ -230,6 +230,18 @@ property of the link, held for as long as the link is open. It is what lets a co
 > far aperture collider stands (`NebulaWorker.BuildFarSideOf`), otherwise the near worker asks again. Neither worker builds a static throat for a split link (see D27). Without play mode (EditMode
 > tier B tests) there are no scenes and the condition holds trivially, as before.
 
+> **As built (NEB-434), conditions 1, 2 and 5.** The "far window" of the conditions is real now. A link keeps **rows** (`PortalLink.Rows`): the entry, and then the
+> nearest containers of the far scope that the far window overlaps (`ContainerRegistry.Overlapping` over the window's box in the far face's axes) that have a lease of
+> their own (`Container.IsLeased`; a box inherited from its carrier is not a row), at most 16. They are worked out while the link prepares and **frozen while it is
+> open**: a container that appears in the far scope later is not warm on any client, so it is not entered until the link prepares again, and when preparing again adds a
+> row the opening counts anew (`Generation` goes up and the warm set is cleared, so the members hold it before the link opens). Condition 1 is every row leased in an
+> owning state; condition 2 is every row loaded on the worker that owns it, which for a row another worker owns is that worker's own answer to an `InstancePrepare`
+> carrying the link id (one for each such row; `FarWorkerHandshake` until all have answered); condition 5 is every member's client holding and preparing every row
+> before it says `PortalWarm` (`PortalLinkRecord.FarRows`/`FarRowIds`, which the network gateway pins for a member). The lease epoch of every row is kept from the tick the
+> link became ready: a lease that moved under any row makes the link prepare again. A worker that owns only window ground (not the band) is told of the link in the new
+> trailing list of `PortalAdjacencyMsg` (`FarRows`) so it can answer, and ghosts nothing for it. A scope that is one container, which is every template of one part, has
+> one row, the entry, and behaves exactly as it did.
+
 **D11 Three hooks, on the near worker, keyed by party.** `PartyOf(entity)` says which party an entity belongs to (default:
 the owner's identity when it has an owner, as `InstanceBoundary.Personal`; null for a server-owned entity).
 `CanEnter(entity, link)` decides admission (default: admit while the link is Open when the entity is server-owned or its
@@ -319,10 +331,18 @@ and tested again on the next.
 > container's lease moved, the commit is refused for that tick and the link prepares again. **Kept:** a crossing enters the template's entry part, or the container that holds
 > the point 25 cm inside a fixed far face, because a member's client is warm only for that container; the deepest container holding the mapped point waits for NEB-431's window.
 >
-> **As built (NEB-431): the entry-container rule stays.** A window gives a member client the far window's *rows*, but it does not make the client warm for them: `PortalWarm` is sent
+> **As built (NEB-431): the entry-container rule stays (superseded by NEB-434, above).** A window gives a member client the far window's *rows*, but it does not make the client warm for them: `PortalWarm` is sent
 > for the entry container alone, and a deeper container's content would be built on the client at the commit, which is the hitch D10 exists to remove. Making the deepest container
 > the destination needs the warm handshake to cover every container the far window touches, and the lease check of D16 to cover each of them; both belong with NEB-434's cross-worker
 > commits. Nothing in the window code depends on it.
+> **As built (NEB-434): the deepest far container is the destination.** Superseded: the note of NEB-431 below said the entry rule stayed because a member was warm
+> for the entry alone. A member is now warm for every row (D10, as built), so `Portal.FarDestination` finds the deepest container of the far scope that holds the point
+> the entity is mapped to (`FindDestination`, descending into physics frames), climbs `Container.Parent` to the first that is a row, and falls back to the entry. A
+> container the link did not ready is never entered; the commit is also refused (`NoDestination`) when the lease epoch of that row moved since the link was ready. A
+> template of two parts whose first part is behind the doorway and whose second holds it commits into the second (`PortalDeepestFarContainerTests`); before, the
+> container pass of the same tick moved the entity there after a commit into the first. What "deepest" cannot be: a container that is not leased on its own (a ship's
+> box, an inherited chunk), which the climb passes through to its leased ancestor.
+>
 > Leaving looks for the container of the near scope that holds the mapped point, descending into physics frames. A server-owned entity needs no client warmth:
 > `Admits` is true for it (`ClientReady` was always true for unowned entities).
 
@@ -702,6 +722,33 @@ any seam. Nothing holds at the face; the handover's latency is the only cost.
 `NebulaDiagnostics` counts open links, links split across workers (`SplitPortalLinks`), refusals and close overruns,
 and the dashboard lists each open link with its state and wait.
 
+> **As built (NEB-434), D34.** `NebulaWorker.CopyPortalBindings` (`Runtime/Worker/WorkerCohesion.cs`) lists, for each portal whose near container this worker owns,
+> each link that is not Closed with the near container's id, the ids of its rows, its state and wait, and whether any row is another worker's. `WorkerTelemetry` writes them
+> as `"portalLinks"` beside `"cohesion"` (the containers under `"in"` again, never `"containers"`), `MeshTelemetry` reads them (`PortalLinkSpan`, `ParsePortalLinks`) and
+> `CopyCohesion` hands each to the planner as a `CohesionGroupInfo` whose `Label` is `portal <authored id> <link id in hex>` (never the party: a party can be a player's
+> identity), `Detail` its state and wait and `IsSplitLink` its split flag. `CostBalancedAssignmentPolicy.Bindings` takes them unchanged, so the union-find, holds and the
+> D9 oversize report are the planner's own (`ConformancePortalCohesionTests`: a chain of three, a hold on one member, an oversize link reported by its label). A link binds from the
+> moment it prepares (its rows are known once the far scope's first row is) and until it closes. Expiry is the reader's: rows from a worker that stopped reporting are dropped
+> after `MeshTelemetry.ExpireSeconds`. **A game declares nothing:** `Open` is the declaration. The dashboard's Cohesion card lists the rows with their detail; there is no separate
+> card.
+>
+> **As built (NEB-434), D35.** The exchange was already there (NEB-432): the near worker asks for each row another worker owns, the far worker answers once its container is ready
+> and, for a row in the band, its side's aperture collider stands, and portal adjacency gives it a ghost of anything in the band. What this issue adds: the ask is per row; the
+> commit goes into the deepest row (D16, above), and `Portals.Tick` runs before the container pass of the same tick, so the ordinary handover (`TransferAuthority`, with the
+> cohesion group and the carried subtree) leaves in the tick of the commit; and **a carrier with riders this worker does not simulate is refused whole**:
+> `Portal.AboardIsWhole` looks at everything in the carrier's box at any depth (`Container.CollectContents`) and at whether the box is pinned to another worker, and
+> `PortalRefusal.SplitAboard` is raised with `NebulaDiagnostics.PortalSplitRefusals` (and `PortalRefusals`); a companion with such a crew is left behind with the same reason.
+> A rider that crossed with its carrier on a ghost holder, whose recorded history is not rewritten (D18), is still not. **Not built, and why:** the static throat of a split link (each
+> worker holds the scene of its own side only, nothing carries the other side's geometry; D27 stands: co-location keeps links off that path) and ghosting of a body's whole
+> cohesion group across a portal (the group is carried by the handover itself, D4 of `docs/cohesion-hints.md`; a group member in the band is ghosted as any body in the band is).
+> **Measured:** a pawn and a thrown crate through a split link are one handover each on the tick of the commit and are never put back or corrected by more than 0.1 m
+> (`PortalSplitCommitPlayTests`). A rigidbody keeps its momentum across the handover only if the prop has a `NetworkRigidbody`, as for any handover.
+>
+> **As built (NEB-434), D36.** Waits: each `PortalWait` has a situation that reaches it (`PortalWaitReasonTests`), the link and its telemetry row report the same one, and a
+> crossing refused for a link that is not open raises `Refused(entity, link, LinkNotOpen)` whose link's `Wait` is the reason. `NebulaDiagnostics`: `OpenPortalLinks`,
+> `SplitPortalLinks` (an open link with any row another worker's), `BoundPortalLinks`, `PortalCrossings`, `CrossWorkerPortalCrossings`, `PortalRefusals`, `PortalSplitRefusals`,
+> `PortalCloseOverruns`, `PortalHandoffs`. The dashboard lists each link that is not closed in its Cohesion card with its state and wait (D34).
+
 ## 9. Frames and precision
 
 **D37 Every portal quantity is a `Double3` and a rotation, applied about the faces, never as a bare translation.** A
@@ -779,6 +826,18 @@ an offset portal (D4) needs the far scope clipped to the aperture, which is a re
 > Closed with `NearContainerMoving` and the portal is withdrawn from the network gateways; the `PortalHandoff` message that carries them to the new
 > owner is NEB-434's.
 
+> **As built (NEB-434), D44.** `MsgId.PortalHandoff` (52, `PortalHandoffMsg`: the portal's id and near container, and for each party its link's generation, state, members, the members
+> that were warm and the observers) is built. In the tick `UpdatePortals` finds a portal's near container owned by another worker, the releasing worker sends it to that worker (when its
+> worker link is connected), describes every link of the portal in it (a closed one too, so the generation goes on), lets its own copies go (they read `Closed` waiting on
+> `NearContainerMoving` for whoever holds one) and keeps no record of the portal. The network gateways are **not** told it is gone for a second (`DeferredRemovalSeconds`): the
+> new owner's upsert replaces the record (a record belongs to the worker that last published it) and a late removal from the old one is ignored, so a client never sees the link
+> vanish. The new owner (`OnPortalHandoff`) installs the links as soon as it holds the portal's content and owns the container's lease, waiting up to 15 s for either
+> (`PendingHandoffSeconds`): an open, preparing or closing link comes back **Preparing waiting on `NearContainerMoving`**, with its members, warm set, observers and generation, and
+> opens on its first look if the far scope, the leases, its own side of the aperture and the content are as the link needs them; the warm members are not asked again. A closing link
+> keeps closing; a closed one keeps only its generation. With no owner, a new owner whose worker link is not connected, or a crash, nothing is sent and the links read `Closed` waiting on
+> `NearContainerMoving`. Two workers in the in-process test mesh share the portal component (the static registry), so the tests see the new owner's links on the same object: what
+> they pin is what each worker does with the links it is given. A game's handlers on the old worker's link object see it close; read the link again with `Portal.TryGetLink`.
+
 **D43 Scope lifecycle is unchanged, and an open link counts as interest.** A link that is Preparing, Open or Closing keeps
 its far scope from being judged idle, as an occupant does (`docs/scope-lifecycle.md`). A far scope that is retiring or
 retired makes its links read Closed with `FarScopeRetired`, which makes the aperture solid. A portal goes with its near
@@ -811,7 +870,7 @@ state entries and container rows are unchanged.
 > byte. `PortalLinkRecord` carries the link, portal and party hash, the far scope, the entry container (by id and reference), the state, wait, the member
 > the link waits for, progress as a byte, the generation of the opening, a flags byte (`Member`, `Observer`, `ObserverAnyone`), and, toward the network
 > gateway only, the members and the observers. `PortalWarm` carries the link id, the generation and, forwarded by the gateway, the client id it stamps.
-> `PortalAdjacency` and `PortalHandoff` are not built (NEB-434). The network gateway keeps the records and sends them per client as D45 describes, a
+> `PortalAdjacency` (NEB-432) and `PortalHandoff` (NEB-434) are built; `PortalAdjacencyMsg` gained a trailing list of the other far-window rows (NEB-434) and `PortalLinkRecord` the rows of the link (`FarRows`, `FarRowIds`). The network gateway keeps the records and sends them per client as D45 describes, a
 > link to a member only once it holds the far row; a worker publishes to every gateway on connect (`AddGatewayLink`) and on change.
 
 **D46 Protocol 28, and older clients are refused.** `HelloMsg.ProtocolVersion` becomes 28 and `MinProtocolVersion` 28: the
@@ -1002,6 +1061,16 @@ colliders need no change for a translation.
 - **NEB-434 Co-location and cross-worker commits.** D34 to D36. Tests (tier B, two workers): a link that is not Closed
   binds its containers into one item; with the far scope forced onto the other worker, a crossing commits through one
   handover with no hold and a correction ≤ 0.1 m; every wait reason is reported in its situation.
+  *As built:* the cohesion bindings, the planner and the dashboard (D34, D36: `Runtime/Worker/WorkerCohesion.cs`, `WorkerTelemetry.cs`, `MeshTelemetry.cs`, `NebulaOrchestrator.cs`,
+  `NebulaDashboard.html`), the per-row readiness and the deepest-container commit (D10, D16: `Runtime/Worker/PortalLinks.cs`, `PortalCrossing.cs`, `NebulaWorker.Portals.cs`,
+  `NebulaClient.Portals.cs`, `GatewayInterest.cs`), the refusal of a split crew (D35: `Portal.AboardIsWhole`, `PortalRefusal.SplitAboard`) and `PortalHandoff` (D44: `Runtime/Worker/NebulaWorker.PortalHandoff.cs`).
+  Tests: EditMode `PortalCoLocationTests` (5), `PortalSplitCommitTests` (5), `PortalDeepestFarContainerTests` (6), `PortalHandoffTests` (5), `PortalWaitReasonTests` (2),
+  `ConformancePortalCohesionTests` (8, also in `Nebula.Services.Tests`), `PortalWireTests` (3 more), and the member's pin of every row in `ConformancePortalGatewayTests`; PlayMode `PortalSplitCommitPlayTests` (2);
+  conformance scenarios 68 to 73. **Deviations from the design as written**, each recorded at its decision: the far window's rows are the leased containers its box overlaps, at most 16 and frozen while the link
+  is open (D10); the binding is reported from the moment a link prepares, in the Cohesion card, not a card of its own (D34, D36); `SplitPortalLinks` counts a link split by any row, not the entry only (D36); the
+  network gateways keep the old worker's records for a second after a handoff (D44). **Seams left:** a split link still has no static throat and contact across it is one-sided (D27, D31); a rider's
+  history on a ghost holder is not rewritten (D18); a row that appears after a link opened is entered only after the link prepares again; offset portals (NEB-437) change none of it, because every row is
+  found in the far face's own axes.
 - **NEB-435 Several drawn scopes.** §10: `PoseOf`, posing non-anchor roots and cameras, rendering-layer slots. Removes
   `InstanceViews`' scene-root turn (§14, item 7). Tests: extend `ConformanceFarInstanceClientFrameTests` with two turned
   scopes drawn at once and from inside a turned scope; the anchor's roots are never moved; slot bits are stamped and nothing else of the mask changes.

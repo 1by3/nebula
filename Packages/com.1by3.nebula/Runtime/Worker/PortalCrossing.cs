@@ -265,6 +265,22 @@ namespace Nebula
             return Aperture.Contains(x, y);
         }
 
+        /// <summary>
+        /// The far container a crossing commits into (<c>docs/portals.md</c> D16): the deepest container of the far scope that holds the point the entity is
+        /// mapped to, when it is one of the link's rows (every member's client is warm for each of them and the lease of each was checked); otherwise the
+        /// nearest enclosing row, and the entry when nothing else is. A container the link did not warm is never entered, because its content would be built
+        /// on the clients at the commit.
+        /// </summary>
+        private static Container FarDestination(PortalLink link, in PortalMap map, Double3 absolute, NetworkIdentity entity)
+        {
+            if (link.Rows.Count < 2) return link.FarEntry;
+            var found = FindDestination(ContainerRegistry.ToFrame(map.Point(absolute), map.ToScope), map.ToScope, entity);
+            int hops = 0;
+            for (var c = found; c != null && hops <= ContainerRegistry.ChainBound; c = c.Parent, hops++)
+                if (link.RowOf(c) != null) return c;
+            return link.FarEntry;
+        }
+
         private bool TryCross(NebulaWorker worker, NetworkIdentity entity, Crossing crossing, PortalLink link, bool leaving, Double3 absolute,
             PortalRefusal refusal, out PortalRefusal why)
         {
@@ -282,11 +298,17 @@ namespace Nebula
                 // leased here yet.
                 destination = FindDestination(ContainerRegistry.ToFrame(map.Point(absolute), map.ToScope), map.ToScope, entity);
             }
-            else destination = link.FarEntry;
+            else destination = FarDestination(link, in map, absolute, entity);
             if (destination == null || !LeaseState.IsOwning(destination.LeaseState)) { why = PortalRefusal.NoDestination; return false; }
-            if (!leaving && destination.LeaseEpoch != link.ReadyEpoch) { why = PortalRefusal.NoDestination; return false; }
+            if (!leaving)
+            {
+                var row = link.RowOf(destination);
+                if (row == null || destination.LeaseEpoch != row.ReadyEpoch) { why = PortalRefusal.NoDestination; return false; }
+            }
 
-            // The leader with everything aboard it, and the companions that can cross with it, each with theirs (D14).
+            // The leader with everything aboard it, and the companions that can cross with it, each with theirs (D14). A carrier whose riders this
+            // worker does not simulate is refused whole: moving it would leave them in the scope it left (D35).
+            if (!AboardIsWhole(worker, entity)) { why = PortalRefusal.SplitAboard; NebulaDiagnostics.PortalSplitRefusals++; return false; }
             var admit = leaving ? null : link;
             Group.Clear();
             Group.Add(entity);
@@ -294,6 +316,7 @@ namespace Nebula
             foreach (var companion in crossing.Companions)
             {
                 var problem = CompanionProblem(companion, entity);
+                if (problem == PortalRefusal.None && !AboardIsWhole(worker, companion)) problem = PortalRefusal.SplitAboard;
                 if (problem == PortalRefusal.None && admit != null && !Admits(companion, admit)) problem = PortalRefusal.NotAdmitted;
                 if (problem == PortalRefusal.None)
                 {
@@ -311,8 +334,34 @@ namespace Nebula
                 return false;
             }
             ReleaseCompanions(crossing);
+            NebulaDiagnostics.PortalCrossings++;
+            if (!string.IsNullOrEmpty(destination.OwnerWorkerId) && destination.OwnerWorkerId != worker.WorkerId) NebulaDiagnostics.CrossWorkerPortalCrossings++;
             foreach (var member in members) Portals.RaiseCrossed(member, PortalId, map.FromScope, map.ToScope);
             return true;
+        }
+
+        private static readonly List<NetworkIdentity> AboardScratch = new List<NetworkIdentity>();
+
+        /// <summary>
+        /// Whether everything riding in <paramref name="carrier"/>'s box, at any depth, is simulated by this worker (<c>docs/portals.md</c> D35). A rider this
+        /// process holds only as a ghost, or a box leased to another worker, belongs to a worker that cannot be told to follow within the tick, so the carrier
+        /// stays where it is. A carrier with nothing aboard is whole.
+        /// </summary>
+        private static bool AboardIsWhole(NebulaWorker worker, NetworkIdentity carrier)
+        {
+            var box = carrier.Carried;
+            if (box == null || !box.IsDynamic) return true;
+            if (box.IsPinned && box.OwnerWorkerId != worker.WorkerId) return false;
+            AboardScratch.Clear();
+            box.CollectContents(AboardScratch, false);
+            bool whole = true;
+            for (int i = 0; i < AboardScratch.Count && whole; i++)
+            {
+                var rider = AboardScratch[i];
+                if (rider != null && rider != carrier && !rider.HasAuthority) whole = false;
+            }
+            AboardScratch.Clear();
+            return whole;
         }
 
         /// <summary>

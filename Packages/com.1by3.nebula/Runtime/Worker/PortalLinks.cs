@@ -38,11 +38,76 @@ namespace Nebula
             _linkScratch.Clear();
         }
 
-        /// <summary>The near container is no longer this worker's (<c>docs/portals.md</c> D44): every live link reads closed, waiting on <see cref="PortalWait.NearContainerMoving"/>.</summary>
+        /// <summary>The near container is no longer this worker's and nobody could take the links (<c>docs/portals.md</c> D44): every live link reads closed, waiting on <see cref="PortalWait.NearContainerMoving"/>.</summary>
         internal void CloseForReassignment()
         {
             foreach (var link in _links.Values)
                 if (link.State != PortalState.Closed) FinishClose(link, PortalWait.NearContainerMoving);
+        }
+
+        /// <summary>
+        /// The near container is being reassigned and the worker taking it was sent the links (<c>docs/portals.md</c> D44): describe every link for the message, then
+        /// let this worker's copies go. Each reads closed, waiting on <see cref="PortalWait.NearContainerMoving"/>, for whoever still holds a reference; the new owner
+        /// has its own.
+        /// </summary>
+        internal void ReleaseLinks(List<PortalHandoffLink> into)
+        {
+            foreach (var link in _links.Values)
+            {
+                into.Add(new PortalHandoffLink
+                {
+                    Party = link.Party,
+                    Generation = link.Generation,
+                    State = link.State,
+                    Members = new List<ulong>(link.MemberSet),
+                    Warm = new List<ulong>(link.WarmSet),
+                    Observers = new List<ulong>(link.ObserverSet),
+                });
+                if (link.State != PortalState.Closed) FinishClose(link, PortalWait.NearContainerMoving);
+            }
+            _links.Clear();
+            _crossings.Clear();
+            _leaderOf.Clear();
+        }
+
+        /// <summary>
+        /// Take the links another worker handed over with the portal's near container (<c>docs/portals.md</c> D44). An open, preparing or closing link comes back
+        /// preparing, waiting on <see cref="PortalWait.NearContainerMoving"/>: the far scope, the leases, this worker's own sides of the aperture and the
+        /// content are checked again here, but the members that were warm are not asked again, and the generation goes on, so the clients' acknowledgements and the
+        /// network gateways' records stay valid and the link is open again as soon as this worker has looked. A party that already has a live link here keeps it.
+        /// </summary>
+        internal void AcceptHandoff(IReadOnlyList<PortalHandoffLink> links)
+        {
+            for (int i = 0; i < links.Count; i++)
+            {
+                var handed = links[i];
+                string party = handed.Party ?? "";
+                if (_links.TryGetValue(party, out var existing) && existing.State != PortalState.Closed)
+                {
+                    foreach (ulong member in handed.Members) AddMemberTo(existing, member);
+                    continue;
+                }
+                var link = existing ?? new PortalLink(this, party);
+                _links[party] = link;
+                if (handed.Generation > link.Generation) link.Generation = handed.Generation;
+                link.MemberSet.Clear(); link.WarmSet.Clear(); link.ObserverSet.Clear();
+                foreach (ulong member in handed.Members) link.MemberSet.Add(member);
+                foreach (ulong member in handed.Warm) if (link.MemberSet.Contains(member)) link.WarmSet.Add(member);
+                foreach (ulong observer in handed.Observers) link.ObserverSet.Add(observer);
+                link.Rows.Clear();
+                link.NeedsActivation = true;
+                link.Error = null;
+                link.Progress = 0f;
+                link.Dirty = true;
+                if (handed.State == PortalState.Closed) { SetState(link, PortalState.Closed, PortalWait.None); continue; }
+                if (handed.State == PortalState.Closing)
+                {
+                    link.ClosingSince = Now;
+                    SetState(link, PortalState.Closing, PortalWait.BandOccupied);
+                    continue;
+                }
+                SetState(link, PortalState.Preparing, PortalWait.NearContainerMoving);
+            }
         }
 
         private void Step(NebulaWorker worker, PortalLink link)
@@ -63,7 +128,7 @@ namespace Nebula
             if (wait != PortalWait.ClientWarming && link.WaitClient != 0) { link.WaitClient = 0; link.Dirty = true; }
             if (wait == PortalWait.None)
             {
-                link.ReadyEpoch = link.FarEntry != null ? link.FarEntry.LeaseEpoch : 0;
+                for (int i = 0; i < link.Rows.Count; i++) link.Rows[i].ReadyEpoch = link.Rows[i].Container != null ? link.Rows[i].Container.LeaseEpoch : 0;
                 link.NextStandingCheck = Now + StandingCheckSeconds;
                 link.Progress = 1f;
                 link.PublishedProgress = 255;
@@ -83,13 +148,11 @@ namespace Nebula
         /// </summary>
         private void StepOpen(NebulaWorker worker, PortalLink link)
         {
-            var entry = link.FarEntry;
-            if (entry == null || !LeaseState.IsOwning(entry.LeaseState) || entry.LeaseEpoch != link.ReadyEpoch)
+            if (RowsMoved(link))
             {
                 var gone = worker.ControlPlane.FindScope(link.FarScopeKey);
                 if (gone == null || gone.State == ScopeState.Retiring || gone.State == ScopeState.Retired) { FinishClose(link, PortalWait.FarScopeRetired); return; }
-                link.HandshakeDone = false;
-                link.HandshakeSent = false;
+                for (int i = 0; i < link.Rows.Count; i++) { link.Rows[i].AskDone = false; link.Rows[i].AskSent = false; }
                 SetState(link, PortalState.Preparing, PortalWait.FarScopeActivating);
                 return;
             }
@@ -112,6 +175,18 @@ namespace Nebula
                 if (link.WaitClient != 0) { link.WaitClient = 0; link.Dirty = true; }
                 SetState(link, PortalState.Open, PortalWait.None);
             }
+        }
+
+        /// <summary>Whether a container of the link's far window lost its owning lease, or its lease moved since the link became ready (<c>docs/portals.md</c> D16).</summary>
+        private static bool RowsMoved(PortalLink link)
+        {
+            if (link.Rows.Count == 0) return true;
+            for (int i = 0; i < link.Rows.Count; i++)
+            {
+                var c = link.Rows[i].Container;
+                if (c == null || !LeaseState.IsOwning(c.LeaseState) || c.LeaseEpoch != link.Rows[i].ReadyEpoch) return true;
+            }
+            return false;
         }
 
         private void StepClosing(NebulaWorker worker, PortalLink link)
@@ -195,43 +270,50 @@ namespace Nebula
             link.FarEntry = entry;
             if (entry == null || !LeaseState.IsOwning(entry.LeaseState)) { progress = done / Stages; return PortalWait.FarScopeActivating; }
             done += 0.5f;
-            if (link.ReadyEpoch != 0 && entry.LeaseEpoch != link.ReadyEpoch) link.HandshakeDone = false;
-
-            // 2. The far content is loaded on the worker that owns it, and the near content on this one.
-            if (!string.IsNullOrEmpty(entry.OwnerWorkerId) && entry.OwnerWorkerId != worker.WorkerId)
+            // Every container of the far window is leased in an owning state (D10 condition 1): the rows a crossing may commit into (D16).
+            RefreshRows(link, entry);
+            for (int i = 0; i < link.Rows.Count; i++)
             {
-                if (!link.HandshakeDone)
-                {
-                    worker.PublishAdjacencyNow(this, link);
-                    worker.AskFarWorker(link, entry);
-                    progress = done / Stages;
-                    return PortalWait.FarWorkerHandshake;
-                }
-                done += 1f;
+                var row = link.Rows[i];
+                if (!LeaseState.IsOwning(row.Container.LeaseState)) { progress = done / Stages; return PortalWait.FarScopeActivating; }
+                if (row.ReadyEpoch != 0 && row.Container.LeaseEpoch != row.ReadyEpoch) { row.ReadyEpoch = 0; row.AskDone = false; row.AskSent = false; }
             }
-            else
+
+            // 2. The far content is loaded on the worker that owns each row, and the near content on this one.
+            bool handshaking = false, loading = false;
+            float loadProgress = 0f;
+            bool announced = false;
+            for (int i = 0; i < link.Rows.Count; i++)
             {
-                InstanceScenes.Prepare(entry);
-                var content = InstanceScenes.ContentState(entry);
+                var row = link.Rows[i];
+                var rowContainer = row.Container;
+                if (!string.IsNullOrEmpty(rowContainer.OwnerWorkerId) && rowContainer.OwnerWorkerId != worker.WorkerId)
+                {
+                    if (row.AskDone) continue;
+                    if (!announced) { worker.PublishAdjacencyNow(this, link); announced = true; }
+                    worker.AskFarWorker(link, row);
+                    handshaking = true;
+                    continue;
+                }
+                InstanceScenes.Prepare(rowContainer);
+                var content = InstanceScenes.ContentState(rowContainer);
                 if (content == InstanceContentState.Failed)
                 {
                     link.Error = "The far container's content failed to load";
                     if (link.WarnedError != link.Error)
                     {
                         link.WarnedError = link.Error;
-                        NebulaLog.Error($"Portal '{AuthoredId}': the content of {entry.ContainerId} failed to load; the link for '{link.Party}' cannot open");
+                        NebulaLog.Error($"Portal '{AuthoredId}': the content of {rowContainer.ContainerId} failed to load; the link for '{link.Party}' cannot open");
                     }
                     progress = done / Stages;
                     return PortalWait.FarWorkerContent;
                 }
-                link.Error = null;
-                if (content == InstanceContentState.Loading)
-                {
-                    progress = (done + InstanceScenes.ContentProgress(entry)) / Stages;
-                    return PortalWait.FarWorkerContent;
-                }
-                done += 1f;
+                if (content == InstanceContentState.Loading) { loading = true; loadProgress = Mathf.Max(loadProgress, InstanceScenes.ContentProgress(rowContainer)); }
             }
+            if (handshaking) { progress = done / Stages; return PortalWait.FarWorkerHandshake; }
+            link.Error = null;
+            if (loading) { progress = (done + loadProgress) / Stages; return PortalWait.FarWorkerContent; }
+            done += 1f;
             var nearContainer = NearContainer;
             InstanceScenes.Prepare(nearContainer);
             var nearContent = InstanceScenes.ContentState(nearContainer);
@@ -329,6 +411,66 @@ namespace Nebula
             return found;
         }
 
+        /// <summary>The most containers of the far window a link keeps as rows: the entry and the nearest leased ones; a window over more ground than this is not warmed beyond it.</summary>
+        internal const int MaxFarRows = 16;
+
+        private static readonly List<Container> RowScratch = new List<Container>();
+        private static readonly List<Container> OverlapScratch = new List<Container>();
+
+        /// <summary>The smallest box of the scope's frame that holds <paramref name="face"/>'s axis-aligned region <c>|x| ≤ halfWidth, |y| ≤ halfHeight, zMin ≤ z ≤ zMax</c>.</summary>
+        internal static Bounds FaceBounds(PortalFace face, float halfWidth, float halfHeight, float zMin, float zMax)
+        {
+            var first = ContainerRegistry.ToFrame(face.ToAbsolute(new Double3(-halfWidth, -halfHeight, zMin)), face.Scope);
+            var bounds = new Bounds(first, Vector3.zero);
+            for (int i = 1; i < 8; i++)
+            {
+                var corner = new Double3((i & 1) != 0 ? halfWidth : -halfWidth, (i & 2) != 0 ? halfHeight : -halfHeight, (i & 4) != 0 ? zMax : zMin);
+                bounds.Encapsulate(ContainerRegistry.ToFrame(face.ToAbsolute(corner), face.Scope));
+            }
+            return bounds;
+        }
+
+        /// <summary>
+        /// The containers of the far scope the far window touches that are leased on their own, the entry first and then the nearest ones, up to
+        /// <see cref="MaxFarRows"/> (<c>docs/portals.md</c> D10, D16, D34). Worked out while the link prepares; an open link keeps the rows it opened with, because a
+        /// container that appeared since is not warm on any client.
+        /// </summary>
+        private void RefreshRows(PortalLink link, Container entry)
+        {
+            RowScratch.Clear();
+            RowScratch.Add(entry);
+            var face = link.FarFace;
+            float margin = Math.Max(0f, WindowMargin);
+            var bounds = FaceBounds(face, Aperture.HalfWidth + margin, Aperture.HalfHeight + margin, 0f, Math.Max(0f, WindowDepth));
+            ContainerRegistry.Overlapping(bounds, OverlapScratch, link.FarScope);
+            var at = ContainerRegistry.ToFrame(face.Origin, face.Scope);
+            OverlapScratch.Sort((a, b) => (a.WorldBounds.center - at).sqrMagnitude.CompareTo((b.WorldBounds.center - at).sqrMagnitude));
+            for (int i = 0; i < OverlapScratch.Count && RowScratch.Count < MaxFarRows; i++)
+            {
+                var c = OverlapScratch[i];
+                if (c == entry || !c.IsLeased || RowScratch.Contains(c)) continue;
+                RowScratch.Add(c);
+            }
+            OverlapScratch.Clear();
+            bool same = RowScratch.Count == link.Rows.Count;
+            for (int i = 0; same && i < RowScratch.Count; i++) same = link.Rows[i].Container == RowScratch[i];
+            if (same) { RowScratch.Clear(); return; }
+            var kept = new List<FarRow>(RowScratch.Count);
+            bool added = false;
+            for (int i = 0; i < RowScratch.Count; i++)
+            {
+                var existing = link.RowOf(RowScratch[i]);
+                if (existing == null) added = true;
+                kept.Add(existing ?? new FarRow { Container = RowScratch[i] });
+            }
+            // A row no client has been warmed for: the members hold and prepare it before the link opens again, so the opening counts anew.
+            if (added && link.Rows.Count > 0 && link.MemberSet.Count > 0) { link.Generation++; link.WarmSet.Clear(); }
+            link.Rows.Clear();
+            link.Rows.AddRange(kept);
+            link.Dirty = true;
+            RowScratch.Clear();
+        }
+
         // ------------------------------------------------------------------------------------------ what is published
 
         internal PortalRecord ToRecord()
@@ -361,6 +503,20 @@ namespace Nebula
             return record;
         }
 
+        private static List<string> RowIds(PortalLink link)
+        {
+            var ids = new List<string>(link.Rows.Count);
+            for (int i = 0; i < link.Rows.Count; i++) ids.Add(link.Rows[i].Container.ContainerId);
+            return ids;
+        }
+
+        private static List<ContainerRef> RowRefs(PortalLink link)
+        {
+            var refs = new List<ContainerRef>(link.Rows.Count);
+            for (int i = 0; i < link.Rows.Count; i++) refs.Add(ContainerRef.Of(link.Rows[i].Container));
+            return refs;
+        }
+
         internal static PortalLinkRecord ToLinkRecord(PortalLink link)
         {
             var portal = link.Portal;
@@ -380,6 +536,8 @@ namespace Nebula
                 Progress = link.PublishedProgress,
                 Generation = link.Generation,
                 Flags = flags,
+                FarRowIds = RowIds(link),
+                FarRows = RowRefs(link),
                 Members = new List<ulong>(link.MemberSet),
                 Observers = new List<ulong>(link.ObserverSet),
             };

@@ -23,6 +23,11 @@ namespace Nebula
         OtherScope,
         /// <summary>The container it would arrive in is not here yet, or no worker holds an active lease on it.</summary>
         NoDestination,
+        /// <summary>
+        /// It carries riders that this worker does not simulate (a crew whose interior another worker leases, or a rider still handing over), so carrying it
+        /// through would leave them behind: it is refused whole and never half-moved (<c>docs/portals.md</c> D35).
+        /// </summary>
+        SplitAboard,
     }
 
     /// <summary>
@@ -384,9 +389,7 @@ namespace Nebula
                     link.Generation++;
                     link.WarmSet.Clear();
                     link.NeedsActivation = true;
-                    link.ReadyEpoch = 0;
-                    link.HandshakeSent = false;
-                    link.HandshakeDone = false;
+                    link.Rows.Clear();
                     link.Error = null;
                     link.Progress = 0f;
                     SetState(link, PortalState.Preparing, PortalWait.FarScopeActivating);

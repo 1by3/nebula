@@ -59,7 +59,47 @@ How many portal links are open on this worker right now (`docs/portals.md` D36).
 public static int SplitPortalLinks { get; }
 ```
 
-How many of this worker's open portal links lead into a container another worker owns (`docs/portals.md` D36).
+How many of this worker's open portal links lead into a container another worker owns, in the far window's entry or in any other container of it (`docs/portals.md` D35, D36). A split link still works: a crossing through it is one handover.
+
+### BoundPortalLinks [#boundportallinks]
+
+```csharp
+public static int BoundPortalLinks { get; }
+```
+
+How many portal links of this worker are bound into one planner item with the containers behind them (`docs/portals.md` D34): every link that is not closed and joins at least two containers.
+
+### PortalCrossings [#portalcrossings]
+
+```csharp
+public static int PortalCrossings { get; }
+```
+
+How many crossings through portals this worker committed (one for each entity that crossed on its own, however many it took along), in total (`docs/portals.md` D36).
+
+### CrossWorkerPortalCrossings [#crossworkerportalcrossings]
+
+```csharp
+public static int CrossWorkerPortalCrossings { get; }
+```
+
+How many of [`PortalCrossings`](#portalcrossings) committed into a container another worker owns, so the ordinary handover took them on the same tick (`docs/portals.md` D35, D36).
+
+### PortalSplitRefusals [#portalsplitrefusals]
+
+```csharp
+public static int PortalSplitRefusals { get; }
+```
+
+How many crossings a portal refused because a carrier had riders that this worker does not simulate, and moving it would have left them behind (`docs/portals.md` D35, [`PortalRefusal.SplitAboard`](/docs/reference/containers/portal-refusal#splitaboard)). Also counted in [`PortalRefusals`](#portalrefusals).
+
+### PortalHandoffs [#portalhandoffs]
+
+```csharp
+public static int PortalHandoffs { get; }
+```
+
+How many times this worker handed a portal's links to the worker taking its near container (`docs/portals.md` D44).
 
 ### PortalProxies [#portalproxies]
 

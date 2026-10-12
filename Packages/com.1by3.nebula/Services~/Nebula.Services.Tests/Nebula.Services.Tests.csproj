@@ -42,6 +42,8 @@
     <Compile Include="../../Tests/EditMode/ConformanceScopeLifecycleTests.cs" />
     <!-- The cohesion hints (docs/cohesion-hints.md): the planner and the telemetry parsing are pure C#. -->
     <Compile Include="../../Tests/EditMode/ConformanceCohesionTests.cs" />
+    <!-- Portal links bind the containers they join (docs/portals.md D34): the telemetry rows and the planner are pure C#. -->
+    <Compile Include="../../Tests/EditMode/ConformancePortalCohesionTests.cs" />
     <Compile Include="../../Tests/EditMode/ConformanceRebalanceTests.cs" />
     <!-- Per-scope origin frames (docs/scope-frames.md): the scaler's dry run and the scope-salted region ids are pure C#. -->
     <Compile Include="../../Tests/EditMode/ConformanceScopeFrameTests.cs" />

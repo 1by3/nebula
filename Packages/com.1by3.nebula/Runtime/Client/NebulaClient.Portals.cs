@@ -17,6 +17,7 @@ namespace Nebula
             public ulong LinkId;
             public uint Generation;
             public ContainerRef FarEntry;
+            public System.Collections.Generic.List<ContainerRef> Rows;
             public int Peer;
             public bool Sent;
             public bool Warned;
@@ -47,9 +48,10 @@ namespace Nebula
                 if (_warming.TryGetValue(record.LinkId, out var current) && current.Generation == record.Generation && current.Peer == _gatewayPeer)
                 {
                     current.FarEntry = record.FarEntry;
+                    current.Rows = record.FarRows;
                     continue;
                 }
-                _warming[record.LinkId] = new WarmingLink { LinkId = record.LinkId, Generation = record.Generation, FarEntry = record.FarEntry, Peer = _gatewayPeer };
+                _warming[record.LinkId] = new WarmingLink { LinkId = record.LinkId, Generation = record.Generation, FarEntry = record.FarEntry, Rows = record.FarRows, Peer = _gatewayPeer };
             }
             foreach (ulong id in update.Removes) _warming.Remove(id);
         }
@@ -68,20 +70,29 @@ namespace Nebula
                 var link = _warming[_warmScratch[i]];
                 if (link.Peer != _gatewayPeer || _gatewayPeer < 0) { _warming.Remove(link.LinkId); continue; }
                 if (link.Sent) continue;
-                var destination = link.FarEntry.Resolve();
-                if (destination == null) continue; // its row is on its way: the gateway sends it ahead of the link
-                if (!InstanceScenes.Prepare(destination))
+                // Every container of the far window the worker named (the entry alone for a link that has not named them), each prepared and its content ready (D10, D16).
+                bool ready = true;
+                int rows = link.Rows != null && link.Rows.Count > 0 ? link.Rows.Count : 1;
+                for (int r = 0; r < rows && ready; r++)
                 {
-                    if (!link.Warned) { link.Warned = true; NebulaLog.Warn($"portal link {link.LinkId:x}: the content of {destination.ContainerId} cannot be prepared"); }
-                    continue;
+                    var destination = (link.Rows != null && link.Rows.Count > 0 ? link.Rows[r] : link.FarEntry).Resolve();
+                    if (destination == null) { ready = false; break; } // its row is on its way: the gateway sends it ahead of the link
+                    if (!InstanceScenes.Prepare(destination))
+                    {
+                        if (!link.Warned) { link.Warned = true; NebulaLog.Warn($"portal link {link.LinkId:x}: the content of {destination.ContainerId} cannot be prepared"); }
+                        ready = false;
+                        break;
+                    }
+                    var content = InstanceScenes.ContentState(destination);
+                    if (content == InstanceContentState.Loading) { ready = false; break; }
+                    if (content == InstanceContentState.Failed)
+                    {
+                        if (!link.Warned) { link.Warned = true; NebulaLog.Warn($"portal link {link.LinkId:x}: the content of {destination.ContainerId} failed to load"); }
+                        ready = false;
+                        break;
+                    }
                 }
-                var content = InstanceScenes.ContentState(destination);
-                if (content == InstanceContentState.Loading) continue;
-                if (content == InstanceContentState.Failed)
-                {
-                    if (!link.Warned) { link.Warned = true; NebulaLog.Warn($"portal link {link.LinkId:x}: the content of {destination.ContainerId} failed to load"); }
-                    continue;
-                }
+                if (!ready) continue;
                 link.Sent = true;
                 _writer.Reset();
                 new PortalWarmMsg { LinkId = link.LinkId, Generation = link.Generation }.Write(_writer);

@@ -1871,7 +1871,13 @@ namespace Nebula
             // The far rows of the links this client is a member of (docs/portals.md D10): it prepares the far window before the link opens.
             if (_memberLinks.Count > 0 && _memberLinks.TryGetValue(client.ClientId, out var memberLinks))
                 foreach (ulong linkId in memberLinks)
-                    if (_portalLinks.TryGetValue(linkId, out var memberLink)) Add(memberLink.Record.FarEntryId);
+                    if (_portalLinks.TryGetValue(linkId, out var memberLink))
+                    {
+                        Add(memberLink.Record.FarEntryId);
+                        // Every container of the far window a member must hold before the link opens (docs/portals.md D16).
+                        var rowIds = memberLink.Record.FarRowIds;
+                        if (rowIds != null) for (int r = 0; r < rowIds.Count; r++) Add(rowIds[r]);
+                    }
             if (truncated)
             {
                 _containerBudgetHits++;

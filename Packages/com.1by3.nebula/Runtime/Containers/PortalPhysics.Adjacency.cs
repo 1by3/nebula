@@ -48,6 +48,17 @@ namespace Nebula
             }
         }
 
+        private bool OwnsWindowRow(PortalAdjacencyMsg m)
+        {
+            if (m.FarRows == null) return false;
+            for (int i = 0; i < m.FarRows.Count; i++)
+            {
+                var c = m.FarRows[i].Resolve();
+                if (c != null && c.OwnerWorkerId == _worker.WorkerId) return true;
+            }
+            return false;
+        }
+
         /// <summary>The far container this worker owns among those a link's band touches, or null.</summary>
         private Container OwnedFarContainer(PortalAdjacencyMsg m)
         {
@@ -73,7 +84,8 @@ namespace Nebula
             {
                 if (incoming.Msg.LinkId != linkId) continue;
                 var far = OwnedFarContainer(incoming.Msg);
-                if (far == null) return false;
+                // A worker that owns only ground of the far window (not the band) has nothing to build: it answers once its container is ready.
+                if (far == null) return OwnsWindowRow(incoming.Msg);
                 if (far.InnerSpace != null && !HostableSide(far))
                 {
                     WarnOnce("framed-far:" + linkId, $"Link {linkId:x}: its far container {far.ContainerId} simulates in a physics frame that has no scene on this worker; it builds no aperture collider for it (docs/portals.md D28, as built)");

@@ -250,6 +250,13 @@ namespace Nebula
         /// <summary>Counts the link's openings, so a client's <see cref="MsgId.PortalWarm"/> for an earlier opening is recognised as stale.</summary>
         public uint Generation;
         public PortalLinkFlags Flags;
+        /// <summary>
+        /// The containers of the far scope the far window touches that a member must hold and prepare before the link opens, the entry first
+        /// (<c>docs/portals.md</c> D10, D16), by id (how the network gateway pins their rows) and by reference (how a client resolves them).
+        /// Empty before the far scope's rows are known.
+        /// </summary>
+        public List<string> FarRowIds;
+        public List<ContainerRef> FarRows;
         /// <summary>Toward the network gateway only: the clients that must be warm.</summary>
         public List<ulong> Members;
         /// <summary>Toward the network gateway only: the clients that may look through (empty with <see cref="PortalLinkFlags.ObserverAnyone"/>).</summary>
@@ -271,6 +278,13 @@ namespace Nebula
             w.WriteByte((byte)Flags);
             WriteList(w, Members);
             WriteList(w, Observers);
+            int rows = FarRows?.Count ?? 0;
+            w.WriteUShort((ushort)rows);
+            for (int i = 0; i < rows; i++)
+            {
+                w.WriteString(FarRowIds != null && i < FarRowIds.Count ? FarRowIds[i] ?? "" : "");
+                FarRows[i].Write(w);
+            }
         }
 
         internal static PortalLinkRecord Read(NetworkReader r)
@@ -292,6 +306,14 @@ namespace Nebula
             };
             l.Members = ReadList(r);
             l.Observers = ReadList(r);
+            int rows = r.ReadUShort();
+            l.FarRowIds = new List<string>(rows);
+            l.FarRows = new List<ContainerRef>(rows);
+            for (int i = 0; i < rows; i++)
+            {
+                l.FarRowIds.Add(r.ReadString() ?? "");
+                l.FarRows.Add(ContainerRef.Read(r));
+            }
             return l;
         }
 
@@ -382,6 +404,11 @@ namespace Nebula
         public PortalRecord Portal;
         public ContainerRef NearContainer;
         public List<ContainerRef> FarContainers;
+        /// <summary>
+        /// The other containers of the far scope the link's far window touches (<c>docs/portals.md</c> D16, D35), beyond the ones the band touches. A worker that owns only these
+        /// is asked to prepare them but ghosts nothing for the link. A trailing field: an older body ends before it.
+        /// </summary>
+        public List<ContainerRef> FarRows;
 
         public void Write(NetworkWriter w)
         {
@@ -396,6 +423,8 @@ namespace Nebula
             NearContainer.Write(w);
             w.WriteUShort((ushort)(FarContainers?.Count ?? 0));
             if (FarContainers != null) for (int i = 0; i < FarContainers.Count; i++) FarContainers[i].Write(w);
+            w.WriteUShort((ushort)(FarRows?.Count ?? 0));
+            if (FarRows != null) for (int i = 0; i < FarRows.Count; i++) FarRows[i].Write(w);
         }
 
         /// <summary>Read the body after the id byte.</summary>
@@ -411,7 +440,93 @@ namespace Nebula
             int n = r.ReadUShort();
             m.FarContainers = new List<ContainerRef>(n);
             for (int i = 0; i < n; i++) m.FarContainers.Add(ContainerRef.Read(r));
+            int rows = r.Remaining >= 2 ? r.ReadUShort() : 0;
+            m.FarRows = new List<ContainerRef>(rows);
+            for (int i = 0; i < rows; i++) m.FarRows.Add(ContainerRef.Read(r));
             return m;
+        }
+    }
+
+    /// <summary>One party's link as the worker that releases a portal's near container hands it to the new owner (<see cref="PortalHandoffMsg"/>).</summary>
+    public struct PortalHandoffLink
+    {
+        /// <summary>The party the link is for (<c>docs/portals.md</c> D8): sent worker to worker only, never to a client.</summary>
+        public string Party;
+        /// <summary>The link's opening count, so the clients' warm acknowledgements and the network gateway's records stay valid across the handoff.</summary>
+        public uint Generation;
+        /// <summary>The state the link was in; the new owner prepares an open, preparing or closing link again from here.</summary>
+        public PortalState State;
+        /// <summary>The clients that must be warm (<see cref="PortalLink.Members"/>).</summary>
+        public List<ulong> Members;
+        /// <summary>The members that had said they hold the far window: the new owner does not ask them again.</summary>
+        public List<ulong> Warm;
+        /// <summary>The clients that may look through the link (<see cref="PortalLink.Observers"/>).</summary>
+        public List<ulong> Observers;
+    }
+
+    /// <summary>
+    /// <see cref="MsgId.PortalHandoff"/> (<c>docs/portals.md</c> D44, D45): the links of one portal, sent by the worker that is releasing the portal's near
+    /// container to the worker that is taking it, together with the release. Nothing else about a link needs to travel: its far scope and its readiness
+    /// are worked out again from the portal's own content and the leases.
+    /// </summary>
+    public struct PortalHandoffMsg
+    {
+        /// <summary>The portal's derived id (<see cref="PortalIds.Of"/>).</summary>
+        public ulong PortalId;
+        /// <summary>The container the near face is fixed in, by id, for the log line when the receiver never holds the portal.</summary>
+        public string NearContainerId;
+        /// <summary>One entry for each party that ever opened the portal, whatever state its link is in.</summary>
+        public List<PortalHandoffLink> Links;
+
+        /// <summary>Write the message, id byte first.</summary>
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.PortalHandoff);
+            w.WriteULong(PortalId);
+            w.WriteString(NearContainerId ?? "");
+            w.WriteUShort((ushort)(Links?.Count ?? 0));
+            if (Links == null) return;
+            for (int i = 0; i < Links.Count; i++)
+            {
+                var link = Links[i];
+                w.WriteString(link.Party ?? "");
+                w.WriteUInt(link.Generation);
+                w.WriteByte((byte)link.State);
+                WriteList(w, link.Members);
+                WriteList(w, link.Warm);
+                WriteList(w, link.Observers);
+            }
+        }
+
+        /// <summary>Read the body after the id byte.</summary>
+        public static PortalHandoffMsg Read(NetworkReader r)
+        {
+            var m = new PortalHandoffMsg { PortalId = r.ReadULong(), NearContainerId = r.ReadString() ?? "" };
+            int n = r.ReadUShort();
+            m.Links = new List<PortalHandoffLink>(n);
+            for (int i = 0; i < n; i++)
+            {
+                var link = new PortalHandoffLink { Party = r.ReadString() ?? "", Generation = r.ReadUInt(), State = (PortalState)r.ReadByte() };
+                link.Members = ReadList(r);
+                link.Warm = ReadList(r);
+                link.Observers = ReadList(r);
+                m.Links.Add(link);
+            }
+            return m;
+        }
+
+        private static void WriteList(NetworkWriter w, List<ulong> list)
+        {
+            w.WriteUShort((ushort)(list?.Count ?? 0));
+            if (list != null) for (int i = 0; i < list.Count; i++) w.WriteULong(list[i]);
+        }
+
+        private static List<ulong> ReadList(NetworkReader r)
+        {
+            int n = r.ReadUShort();
+            var list = new List<ulong>(n);
+            for (int i = 0; i < n; i++) list.Add(r.ReadULong());
+            return list;
         }
     }
 }

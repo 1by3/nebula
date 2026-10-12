@@ -179,6 +179,11 @@ namespace Nebula
         /// own is to be ghosted across, and how the far worker builds its side of the aperture before the link opens.
         /// </summary>
         PortalAdjacency = 51,
+        /// <summary>
+        /// Worker -> worker: the links of a portal whose near container the sender is releasing to the receiver on a planned reassignment
+        /// (<see cref="PortalHandoffMsg"/>, <c>docs/portals.md</c> D44, D45). On a crash nothing is sent and the links read closed.
+        /// </summary>
+        PortalHandoff = 52,
     }
 
     public enum PeerRole : byte
