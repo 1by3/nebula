@@ -1,0 +1,24 @@
+---
+title: "PortalHitFlags"
+description: "What a PortalHit is besides a collider (docs/portals.md D32, D33)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PortalQueryTypes.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PortalQueryTypes.cs)</div>
+
+```csharp
+[Flags]
+public enum PortalHitFlags
+```
+
+What a [`PortalHit`](/docs/reference/containers/portal-hit) is besides a collider (`docs/portals.md` D32, D33).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` | `0` | An ordinary hit on a collider of the scope in [`PortalHit.Scope`](/docs/reference/containers/portal-hit#scope). |
+| <span id="aperture"></span>`Aperture` | `1` | The cast reached a portal's aperture and stopped there: the hit is on the plane of the cross-section, and [`PortalHit.Collider`](/docs/reference/containers/portal-hit#collider) is the aperture collider. The aperture was closed for the asker (not open, or not the asker's party's link, or an observation-only portal), or, with `DepthLimit`, open but a second portal deep. |
+| <span id="truncated"></span>`Truncated` | `2` | The cast left what this process knows: the far scope is on another worker and only its band is here (ghost proxies of its bodies), and the cast went past the band without hitting anything there. It is not a miss: nothing is known beyond [`PortalHit.PointInScope`](/docs/reference/containers/portal-hit#pointinscope). [`PortalHit.Collider`](/docs/reference/containers/portal-hit#collider) and [`PortalHit.Entity`](/docs/reference/containers/portal-hit#entity) are null. |
+| <span id="throughportal"></span>`ThroughPortal` | `4` | The hit is in the far scope of a link the cast went through (it is in [`PortalHit.Scope`](/docs/reference/containers/portal-hit#scope), not the scope the cast started in). |
+| <span id="rewound"></span>`Rewound` | `8` | The hit is against the pose the entity had at the query's tick, not the one it has now. |
+| <span id="depthlimit"></span>`DepthLimit` | `16` | An `Aperture` hit at an open link: queries continue through one portal only (`docs/portals.md` D22). |

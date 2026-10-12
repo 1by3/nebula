@@ -232,7 +232,57 @@ Some things to know:
 - **A client builds the same** for its pawn's scope, so prediction at the face sees what the worker sees: the throat, the aperture collider, and a proxy of each replica of the other scope in the band, posed from the replica's latest authoritative state and not from where it is drawn.
 - **Across workers** a body in the band is ghosted to the worker that owns the other side and held there as a proxy only: it is not a body in its own scope's scene on that worker. Nothing outside a band is ghosted across a portal. A link whose two sides are on different workers has no throat, so keep them on one (the cohesion hints do) when something rests across the face.
 - **A door on a planet that is a carrier works the same way.** Its side simulates in the planet's physics frame, so the aperture collider, the throat and the proxies of that side stand in the frame's own physics scene, in the frame's coordinates, and a body of the room is mirrored into that scene. A crate resting across such a door sleeps, a closed door stops a body and a refused body bounces, as on flat ground, wherever the planet is in its scope and however it is turned. A pawn on the planet predicts against the same pieces on a client. Only one level of frame is supported for each side: a body in a frame nested inside the planet's (a ship parked at the door) is mirrored, but that ship's interior is not part of the throat.
-- **Not yet:** queries through the face are a separate feature.
+- **Queries go through the face too.** A shot, a line of sight and an explosion's reach continue through an open link: see [Cast through a portal](#cast-through-a-portal).
+
+## Cast through a portal
+
+A raycast, a sweep or an overlap in one scope does not see the room behind its door: each scope is its own physics scene. `PortalQueries` runs the query in the scope you start in and, when the cast meets the opening of a link that is open for whoever is asking, carries it on into the far scope from the point where it crossed, for the distance that is left. It stops at the next aperture, so it is one portal deep. Get it from the worker (or the client) that asks:
+
+```csharp
+var queries = worker.PortalQueries;          // or client.PortalQueries for aim and prediction
+var asker = PortalAsker.Of(shooter);         // its colliders are skipped; its party picks the link
+var options = new PortalQueryOptions();      // keep it: a query allocates nothing itself
+
+if (queries.Raycast(asker, shooter.InstanceId, origin, direction, 120f, out PortalHit hit, options))
+{
+    if (hit.IsAperture || hit.IsTruncated) return;       // a closed door, or the edge of what this worker knows
+    Damage(hit.Entity, hit.PointInScope, hit.Normal);   // hit.Scope says which scope the victim is in
+}
+```
+
+The same goes for `RaycastAll` (every hit, in order, into a `PortalHit[]` you provide), `SweepSphere`, `SweepCapsule`, `SweepBox` and `OverlapSphere`, `OverlapCapsule`, `OverlapBox`. Points you pass in are in the coordinates of the scope's physics scene, as `Physics.Raycast` takes them; a cast that starts on ground inside a physics frame (a planet that is a carrier) names the frame in `PortalQueryOptions.Space` and uses its simulation coordinates.
+
+A `PortalHit` says which scope it is in, the collider, the entity, how far along the cast it is (summed over both legs), the point and the normal in the asker's space and in the hit scope's space, the link's id, and flags:
+
+- **`Aperture`** is a hit on a door's plane. The portal was not open for the asker (nobody opened it, it is closing, it is observation-only, or the asker's party has no link there), so a shot against a closed door hits the door. A face with several parties' links casts into the asker's party's: `PortalAsker.Of(entity)` uses the entity's party (`Portal.PartyOf`, the owner's identity by default) and `PortalAsker.OfParty("crew-91")` names one. With two links open and nobody named, the cast does not choose: it is the plane.
+- **`DepthLimit`** marks an `Aperture` hit at an open link: the cast was already one portal deep and goes no further.
+- **`ThroughPortal`** marks a hit in the far scope.
+- **`Truncated`** is not a miss. When the far scope is on another worker, this worker has only the band, 2 m deep (the ghost proxies of the far bodies), so it tests the cast against those and returns a cast that leaves the band as a hit with no collider and no entity, at the band's edge. Keep links on one worker (the cohesion hints do) when shots must reach into the room, or forward the shot to the worker that owns it.
+- **`Rewound`** marks a hit against a past pose.
+
+Proxies and the throat are never hit, whatever layer mask you pass (`NebulaConfig.PortalProxyLayer` is always taken out). The only collider of Nebula's you will see is the aperture collider on an `Aperture` hit. A crate half through the doorway is one entity in one scope; the part of it in the other room is a proxy, so a shot through the doorway at that moment can miss the half in the far room.
+
+### Lag compensation
+
+Set `PortalQueryOptions.Tick` to the server tick the shooter was rendering (`NetworkTime.RenderTick`, which you check against the window you allow) and the worker poses every entity of the far scope at the pose its history keeps for that tick, runs the far leg, and puts them back (`HistoryRewind`). Set `RewindNear = true` to have Nebula do the scope the cast started in as well; leave it off if you already rewind that scope yourself. An entity that crossed a portal after the tick is found in the scope it was in at that tick, because its history was rewritten at the crossing: a crate thrown into the room just after a shot was aimed at it is still hit in the street, and one thrown out is still hit in the room. An entity with no history for the tick is left where it is, and a client keeps no history, so it ignores the tick.
+
+You can use the rewind alone, for a game's own queries, and the scene is exactly as it was when you dispose it:
+
+```csharp
+using (HistoryRewind.Begin(worker, scope, tick, area: new Bounds(origin, Vector3.one * 100f)))
+{
+    // plain Physics queries in that scope's scene see the world at `tick`
+}
+```
+
+Moving a body to a past pose may wake it, so give the rewind an `area` around what the shot can touch.
+
+### What your game does to adopt it
+
+- **Hitscan.** Replace a `Physics.Raycast` (or your own rewinding) with `PortalQueries.Raycast` and a `Tick`; apply damage to `hit.Entity` on whoever has authority, as before; treat `Aperture` and `Truncated` as not-a-victim; drop any filter that compared the victim's scope with the shooter's. The `LagCompensatedHitscan` sample is exactly that.
+- **Perception and sight.** A line of sight is a `Raycast` from the observer's eye toward the target with the observer as the asker: it is seen when `hit.Entity` is the target, blocked when it is anything else, a closed door or `Aperture`, and unknown when it is `Truncated`. Do it per party, not per entity, if the whole party sees what one member sees. The range check a cone does with a distance is the cast's `Distance`, summed over both legs.
+- **Sound.** Who hears an explosion is an `OverlapSphere` from the source: it finds the entities of the source's scope and of the far scope of every open link the sphere reaches through, so a door left open carries the sound and a closed one does not. For occlusion, cast from the source to each listener and count what is in the way (`RaycastAll`). The listeners in the far scope are reported in the far scope's space; use `hit.Scope` and `hit.PointInScope` for their distance and direction there.
+- **Clients.** Aim, prediction and cursor targeting use `NebulaClient.PortalQueries` for the same casts against the replicas it holds. It goes through the link the client is a member of (or the one you name), and stops at the edge of what it holds.
 
 ## Cross with companions
 
@@ -379,7 +429,7 @@ A few rules to design around:
 - **Closing takes it away at once.** A link that is `Open` or `Closing` shows both sides; when it closes, the far side's entities are despawned for the client, and its container rows follow after the usual linger.
 - **A thrown crate stays with its thrower.** An entity that crosses changes scope, and a client that may look through the link it went through, from inside the near window, keeps it: no despawn, no new spawn, no blink. An onlooker who may not look through loses it at once and is never told the other scope exists.
 - **A reconnect inside sees out again.** The link records live on the gateway, so nothing about where a player came from is remembered.
-- **Nothing is simulated across except at the face.** A client holds what it is sent as replicas in their own scope. It does not target them or hit them, and it collides with them only through the proxies it builds in the band for its pawn (see [Collide across a portal](#collide-across-a-portal)); queries and drawing the other scope posed at the door are separate features. A client that is sent an entity naming a container it has no row for holds the update, whatever the container's kind, until the row arrives.
+- **Nothing is simulated across except at the face.** A client holds what it is sent as replicas in their own scope. It collides with them only through the proxies it builds in the band for its pawn (see [Collide across a portal](#collide-across-a-portal)), and it aims at them and hits them with a portal query (see [Cast through a portal](#cast-through-a-portal)); drawing the other scope posed at the door is a separate feature. A client that is sent an entity naming a container it has no row for holds the update, whatever the container's kind, until the row arrives.
 
 `ObservePublic`, `PublicView` and `ObserveHost` of the instance template, and their counterparts on `ScopeDefinition`, no longer exist: what a room looks out at is its portals' windows, and what a street looks into is the same windows. A window onto ground that is a planet carrying its own frame is authorized and its rows are kept, and the ground's entities are found through the planet's own regions.
 

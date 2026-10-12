@@ -17,6 +17,10 @@ namespace Nebula
         public Scene Scene;
         /// <summary>It has been placed since it was last taken from the pool: the next move is a move, not a teleport.</summary>
         public bool Posed;
+        /// <summary>For an aperture collider: the scope and physics frame its face is in, and the opening, which queries read (<c>docs/portals.md</c> D32).</summary>
+        public ulong ApertureScope;
+        public Container ApertureSpace;
+        public PortalAperture ApertureShape;
 
         /// <summary>
         /// Put the proxy at a pose. The first time it is a teleport (no velocity, so nothing it overlaps is pushed by a jump from a stale pose). After that, in a
@@ -89,6 +93,8 @@ namespace Nebula
     internal sealed class LinkRig
     {
         public ulong LinkId, PortalId;
+        /// <summary>The party as <see cref="PortalIds.PartyHash"/> (0 until it is known), which a query's asker is matched with.</summary>
+        public ulong PartyHash;
         public uint Generation;
         /// <summary>The portal and link, on the worker that drives them; null on a client and on a worker that only holds the far side of a link another drives.</summary>
         public Portal Portal;
@@ -307,6 +313,8 @@ namespace Nebula
             _drain.Clear();
             _byScope.Clear();
             Bodies.Clear();
+            _rewinder?.Dispose();
+            _rewinder = null;
             LiveProxies = 0;
         }
 

@@ -96,27 +96,27 @@ private void RpcFire(Vector3 origin, Vector3 direction, uint aimTick)
     uint now = worker.CurrentTick;
     if (aimTick > now || now - aimTick > MaxClaimTicks) return;
 
-    // 2. Rewind the candidates. Anything the worker holds can answer.
-    foreach (var candidate in worker.Entities)
-    {
-        if (!candidate.TryGetStateAt(aimTick, out var state)) continue; // no claim possible
-        ulong scope = state.Container != null ? state.Container.InstanceId : 0UL;
-        if (scope != Identity.InstanceId) continue; // another simulation scope
-        // Test your own hitboxes at state.Position / state.Rotation. Move nothing.
-    }
+    // 2. Cast the ray at that tick. Nebula poses what the worker holds at its recorded pose for the length of the
+    //    cast, puts it back, and carries the cast on through any open portal into the room behind a door.
+    _options.Tick = aimTick;
+    _options.RewindNear = true;
+    if (!worker.PortalQueries.Raycast(PortalAsker.Of(Identity), Identity.InstanceId, origin, direction, Range, out var hit, _options)) return;
+    if (hit.IsAperture || hit.IsTruncated || hit.Entity == null) return; // a closed door, or the edge of what this worker knows
 
     // 3. Apply the result where the victim lives.
-    victim.GetComponent<SampleHealth>().ApplyDamage(10);
+    hit.Entity.GetComponent<SampleHealth>().ApplyDamage(10);
 }
 ```
 
+The cast is a [portal query](/docs/guides/instancing#cast-through-a-portal): it starts in the shooter's scope, so a victim in a separate instance is not a candidate, and it goes on through a door that is open for the shooter into the scope behind it. An entity that crossed a portal after the claimed tick is found in the scope it was in then. If you would rather test your own hitboxes, `HistoryRewind` is the same rewind on its own, and `entity.TryGetStateAt(aimTick, out var state)` is what both are built on.
+
 Send the tick with the input rather than inferring it: on the client, `NetworkTime.RenderTick` is the tick it was rendering. `SampleHealth.ApplyDamage` wraps `AuthorityRpc(RpcApplyDamage, amount)` and marks the receiving method with `[AuthorityRpc]`. Attributes identify receiving methods; the send helpers dispatch calls. This sends damage to a ghost's authoritative worker under the [cross-worker call contract](/docs/guides/rpcs#what-nebula-promises-for-a-cross-worker-call), including its rejection and delivery limits.
 
-A complete version ships as the **Lag-compensated hitscan** sample in the package (`Samples~/LagCompensatedHitscan`): import it from the Package Manager, read it, then replace the capsule with your own hitboxes.
+A complete version ships as the **Lag-compensated hitscan** sample in the package (`Samples~/LagCompensatedHitscan`): import it from the Package Manager and read it.
 
 ## What Nebula does not do
 
-- **It does not move colliders.** Your hitboxes are yours; rewind them from `state.Position` and `state.Rotation` if that is the shape you want, and restore everything before simulation continues.
+- **`StateAt` does not move colliders.** `HistoryRewind` and a portal query with a tick do, for an entity's own colliders and for the scope behind a portal, and put everything back; hitboxes that are not the entity's root (bones, a head sphere) are still yours to pose from `state.Position`, `state.Rotation` and the marked variables.
 - **It does not perform the hit test** and does not decide whether a claimed tick is one the client could plausibly have been rendering. Those are game rules.
 - **It does not keep history on clients.** A client already buffers what it receives for interpolation; history is a worker-side facility.
 - **It does not answer for an entity a worker does not hold.** Ask the worker that does, with an `AuthorityRpc` or a `WorkerQuery`.

@@ -81,6 +81,7 @@ Define container volumes and look up their current worker assignments.
 | [EntityLocation](/docs/reference/containers/entity-location) | Struct. Where an entity durably is, independent of which worker holds it: an opaque scope key, a container id and a pose in that container's local space. |
 | [FrameCrossing](/docs/reference/containers/frame-crossing) | Enum. What a crossing policy says about one entity crossing a frame boundary (docs/container-tree.md D16). |
 | [FrameInterestMode](/docs/reference/containers/frame-interest-mode) | Enum. How the contents of a container with its own physics frame are bucketed for interest management (docs/container-tree.md D18). |
+| [HistoryRewind](/docs/reference/containers/history-rewind) | Struct. A scene put back as it was at a past server tick, for as long as it is held (docs/portals.md D33; the history is docs/state-history.md). |
 | [IFrameCrossingPolicy](/docs/reference/containers/i-frame-crossing-policy) | Interface. The game's say over where entities may cross a physics frame's boundary: anywhere on the hull, or only through portals. |
 | [IInstanceContentLoader](/docs/reference/containers/i-instance-content-loader) | Interface. Content of an instance part that finishes loading after InstanceScenes.Prepare returns: geometry a component builds over several frames, or assets it loads asynchronously. |
 | [InstanceContentState](/docs/reference/containers/instance-content-state) | Enum. Whether an instance part's content is still loading, ready, or failed. |
@@ -94,10 +95,15 @@ Define container volumes and look up their current worker assignments.
 | [PhysicsFrames](/docs/reference/containers/physics-frames) | Static class. The physics frames this process holds, one per container with Container.OwnPhysicsFrame (docs/container-tree.md §3): scene lifetime and pooling, interior colliders, frame state, conversion between spaces, the crossing policy, and — on a ... |
 | [Portal](/docs/reference/containers/portal) | Class. A way between two scopes: an opening in a wall, a hatch, a gate, a door to a room of its own (docs/portals.md). |
 | [PortalAperture](/docs/reference/containers/portal-aperture) | Struct. The opening of a portal, on its face's z = 0 plane (docs/portals.md D3): an oriented box centred on the face's origin. |
+| [PortalAsker](/docs/reference/containers/portal-asker) | Struct. Who is asking a portal query (docs/portals.md D12, D32): the entity whose own colliders the cast skips, and the party whose link it goes through. |
 | [PortalFace](/docs/reference/containers/portal-face) | Struct. One side of a Portal (docs/portals.md D2): a scope, the container the face is fixed in, and a pose, an absolute Double3 position in that scope and a rotation. |
+| [PortalHit](/docs/reference/containers/portal-hit) | Struct. One thing a portal query found (docs/portals.md D32): the scope it is in, the collider and the entity, how far along the cast it is, and its point in both the asker's space and the hit scope's. |
+| [PortalHitFlags](/docs/reference/containers/portal-hit-flags) | Enum. What a PortalHit is besides a collider (docs/portals.md D32, D33). |
 | [PortalLink](/docs/reference/containers/portal-link) | Class. One party's link through a Portal (docs/portals.md D8, D9): the far scope, the state the link is in and, when it is not open, what it waits for. |
 | [PortalPose](/docs/reference/containers/portal-pose) | Struct. A pose in a scope: an absolute Double3 position and a rotation in the scope's own axes. |
 | [PortalProxy](/docs/reference/containers/portal-proxy) | Class. Marks a collider Nebula made to carry one side of a portal into the other (docs/portals.md §6): a kinematic copy of a body that touches an open link's band (D26), a static copy of the other side's geometry in the throat (D27), or ghost h... |
+| [PortalQueries](/docs/reference/containers/portal-queries) | Class. Raycasts, sweeps and overlaps that continue through an open portal (docs/portals.md D32, D33). |
+| [PortalQueryOptions](/docs/reference/containers/portal-query-options) | Class. Settings of a portal query (docs/portals.md D32, D33). |
 | [PortalRefusal](/docs/reference/containers/portal-refusal) | Enum. Why a portal did not let an entity through, or leave a companion behind (docs/portals.md D17). |
 | [Portals](/docs/reference/containers/portals) | Static class. Lookup for portals (docs/portals.md D1): the Portal components on this process, on a client what the network gateway has told it about the portals near it, and the link poses between scopes (Map, Turn). |
 

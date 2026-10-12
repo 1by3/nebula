@@ -1,0 +1,54 @@
+---
+title: "PortalQueryOptions"
+description: "Settings of a portal query (docs/portals.md D32, D33)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PortalQueryTypes.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PortalQueryTypes.cs)</div>
+
+```csharp
+public sealed class PortalQueryOptions
+```
+
+Settings of a portal query (`docs/portals.md` D32, D33). Make one and keep it: a query takes it by reference and allocates nothing itself. The defaults are every layer but [`NebulaConfig.PortalProxyLayer`](/docs/reference/core/nebula-config#portalproxylayer), triggers ignored, the present, and a scope's own scene.
+
+## Fields
+
+### LayerMask [#layermask]
+
+```csharp
+public int LayerMask = ~0;
+```
+
+The layers to hit. [`NebulaConfig.PortalProxyLayer`](/docs/reference/core/nebula-config#portalproxylayer) is always left out: a proxy is never hit.
+
+### Triggers [#triggers]
+
+```csharp
+public QueryTriggerInteraction Triggers = QueryTriggerInteraction.Ignore;
+```
+
+Whether triggers are hit.
+
+### Tick [#tick]
+
+```csharp
+public uint Tick;
+```
+
+The server tick to look at (a lag-compensated query), or 0 for now. The far leg is tested against the pose every entity there had at this tick ([`HistoryRewind`](/docs/reference/containers/history-rewind)); an entity that crossed during the interval is found on the side it was on. Workers only: a client keeps no history.
+
+### RewindNear [#rewindnear]
+
+```csharp
+public bool RewindNear;
+```
+
+Also rewind the scope the cast starts in. Leave it off when the game already rewinds that scope itself (with [`HistoryRewind`](/docs/reference/containers/history-rewind) or its own colliders), and set it to have Nebula do both legs.
+
+### Space [#space]
+
+```csharp
+public Container Space;
+```
+
+The physics frame the cast starts in, when it starts on ground that is a carrier's (`docs/portals.md` D26): the frame's owner container, in whose simulation space the cast's points are. Null for a scope's own scene.

@@ -52,11 +52,20 @@ namespace Nebula
             var key = ApertureKey(aperture);
             if (_nearApertures.TryGetValue(portalId, out var existing))
             {
-                if (Matches(existing, key, scene, frame)) { Follow(existing, in frame); return; }
+                if (Matches(existing, key, scene, frame)) { Follow(existing, in frame); Describe(existing, face.Scope, space, aperture); return; }
                 existing.Destroy();
                 _nearApertures.Remove(portalId);
             }
-            _nearApertures[portalId] = BuildAperture(scene, key, frame, 0UL);
+            var built = BuildAperture(scene, key, frame, 0UL);
+            Describe(built, face.Scope, space, aperture);
+            _nearApertures[portalId] = built;
+        }
+
+        private static void Describe(ProxyBody aperture, ulong scope, Container space, PortalAperture shape)
+        {
+            aperture.ApertureScope = scope;
+            aperture.ApertureSpace = space;
+            aperture.ApertureShape = shape;
         }
 
         private void EnsureFarAperture(LinkRig rig)
@@ -66,6 +75,7 @@ namespace Nebula
             if (Matches(rig.FarAperture, key, rig.FarScene, rig.FarFrame)) { Follow(rig.FarAperture, in rig.FarFrame); return; }
             rig.FarAperture?.Destroy();
             rig.FarAperture = BuildAperture(rig.FarScene, key, rig.FarFrame, rig.LinkId);
+            Describe(rig.FarAperture, rig.FarScope, rig.FarSpace, rig.Aperture);
         }
 
         /// <summary>The near aperture collider of a portal this worker holds, or null.</summary>

@@ -631,6 +631,32 @@ face, mapped into the far scope. A closed aperture is a hit on the plane, flagge
 door hits the door. Each hit reports its scope, collider, entity, and its point in both the asker's and the hit scope's
 spaces. A query through a face with several parties' links picks the asker's party's far scope (D12).
 
+> **As built (NEB-433).** `PortalQueries` (`Runtime/Containers`) is a class with an instance for each process, `NebulaWorker.PortalQueries` and `NebulaClient.PortalQueries`, not a static one: what a query can answer
+> is the scenes and the link rigs of the process asking (the in-process mesh the tests run holds several workers). Its calls: `Raycast`, `RaycastAll`, `SweepSphere`, `SweepCapsule`, `SweepBox` and
+> `OverlapSphere`, `OverlapCapsule`, `OverlapBox`. A query takes the scope to start in, a `PortalAsker` (`Of(entity)`, `OfParty(party, entity)` or `None`), the shape, a caller-owned `PortalHit[]` for the
+> `...All` and `Overlap` forms, and an optional `PortalQueryOptions` (layer mask, trigger interaction, `Tick`, `RewindNear`, and `Space`, the physics frame the cast starts in). Nothing is allocated per call: a
+> cast is a loop of closest-hit casts that advance past a hit that is not one (the asker's own collider), so no scratch buffer can overflow and miss the nearest.
+> - **Where it runs.** In the physics scene of the scope (`InstanceScenes.PhysicsFor`) or, with `Space`, of the frame (`PortalSpaces.SceneOf`), with every layer but `NebulaConfig.PortalProxyLayer` (never in the mask,
+>   whatever the caller asks for; a collider with a `PortalProxy` is skipped as well). Origins and points are in that scene's coordinates, as `PortalPhysics` keeps them: floats about a face, small by construction,
+>   carried between the sides by the pivot form (D37) in each face's axes, and not `Double3`. (A caller that wants the scope's absolute point composes it with `ContainerRegistry.ToAbsolutePrecise`.) A client
+>   queries the scenes it holds in the frame each scope shares (`ScopeFrames.Resolve` is already in the face frames it builds), against its replicas as they stand.
+> - **Faces.** The faces of a scope are the aperture colliders of the process (`PortalPhysics.GatherFaces`): every near face whose portal stands in the scope, linked or not, and the far face of every link
+>   into it. The cast meets a face where the **path of its reference point** (the ray's origin, a sphere's or a box's centre, a capsule's midpoint) passes through the opening on the way through
+>   (+z of a near face, -z of a far one); a sweep that is wider than the doorway is stopped by the jambs in the near scene before it gets there. The cast is made in the scene only as far as the plane, so
+>   the solid mass a coincident far scope lives in is never hit.
+> - **Party.** For a near face the link is the named party's; otherwise the asking entity's `Portal.PartyOf` (by default its owner's identity); on a client the link it is a member of; otherwise the face's one
+>   open link; none is the closed case (D12). Leaving through a far face needs only that its own link is open. Open means `PortalState.Open` and not `ObservationOnly`: a closing link is solid.
+> - **A closed aperture** is a hit on the plane: `PortalHitFlags.Aperture`, the aperture collider as the collider (the one collider a query reports that is a proxy), no entity, the normal facing the ray.
+>   **One portal deep** is a cast that meets a second aperture in the far scope: it stops there, a hit on the plane flagged `Aperture | DepthLimit | ThroughPortal` (closed: without `DepthLimit`). There is no depth
+>   setting; D22 (windows do not chain) is the rule here too.
+> - **A hit** (`PortalHit`) carries the scope, collider, entity (the nearest `NetworkIdentity` above the collider), the distance summed over the legs, the point and the normal in the asker's space and in the hit
+>   scope's, the flags (`Aperture`, `Truncated`, `ThroughPortal`, `Rewound`, `DepthLimit`) and the link's id. Points in the asker's space are the straight continuation of the cast, as if the link were not there.
+> - **Overlaps** test their own scope, then for every open face the shape's bounds reach through (inside the opening, beyond the plane) the shape mapped into the far scope, keeping the colliders whose bounds
+>   reach the prism over the cross-section on the far side. That is an approximation by bounding boxes. A closed face the shape straddles is a hit on the plane. The point of an overlap hit is the closest
+>   point of the collider to the shape's reference point (its bounds' for a concave mesh).
+> - **Limits.** A body straddling the face is in one scope; the part of it beyond the plane is a proxy and proxies are never hit, so a cast that passes through the doorway while a crate is half in it misses the
+>   half in the far room (it is hit by the near leg if it is hit before the plane). A sweep is not clipped to the doorway beyond what the near scene's geometry does.
+
 **D33 Lag compensation reuses state history, and Nebula rewinds the far leg.** Nebula has no rewind query today, only
 `NetworkIdentity.StateAt` (`docs/state-history.md`). A query with a `tick` poses the far window's entities at `StateAt(tick)`
 for the far leg, through a small `HistoryRewind` helper NEB-433 adds; a caller that rewinds its own scope already does
@@ -638,6 +664,23 @@ nothing new for the near leg, and one that wants Nebula to do both passes `Rewin
 the crossing (D18), an entity that crossed during the rewound interval is found in its scope of that tick. When the far
 scope is on another worker, the near worker has only the band (ghost proxies and throat): the far leg is tested there
 and a cast that leaves the band is returned `Truncated`. Open question 6.
+
+> **As built (NEB-433).** `HistoryRewind` (`Runtime/Containers/HistoryRewind.cs`, public) is a disposable that puts one scope's scene back as it stood at a tick for any physics query, `Physics.*` or
+> `PortalQueries`, and puts it back exactly: `using (HistoryRewind.Begin(worker, scope, tick, area)) { ... }`. A query with a `Tick` does it for the far leg (always) and for the near leg with
+> `RewindNear`, around the one leg's casts, with an `area` box around the leg's path so that only what can matter is moved. Entities with no entry in the ring for the tick are left where they are, and a
+> client, which records nothing, ignores the tick. For each entity of the scope that has an entry, its transform is set to the recorded pose and put back after; the colliders keep their own shapes, so a
+> compound entity needs nothing more. **Crossings during the interval.** The ring was rewritten into the scope the entity is in now (D18), so a pose recorded before a crossing is the continuation of its path
+> through the link. The helper reads that as the rule of D15 turned round: an entity of this scope whose pose at the tick lay on the other side of a face, within `Portal.ApproachDistance` of it and its
+> opening, was in the other scope then, and its colliders are switched off for the length of the rewind; an entity of the other scope whose pose at the tick, carried through the link, lies on this side of the
+> face (to the same reach), was here, and a shape of each of its colliders is stood in this scope's scene at that pose (a pooled `RewindShadow`, reported as the entity and the collider it stands for, never as
+> itself). `ConformanceMesh` pins both directions (`PortalQueriesRewindPlayTests`). **Cost:** one ring read for each entity of the scope and of the scopes linked to it (every entity when no `area` is given), a
+> transform set for each one that moved more than a millimeter, one `Physics.SyncTransforms` each way; nothing is allocated once the shapes are pooled (a test pins 200 mixed queries under 2 KB). A pose set on a
+> sleeping body may wake it. A framed side is posed in the frame's simulation space as recorded and assumes the entity still stands in the space it was recorded in (a pose recorded in another space is skipped).
+>
+> **A split link (Q6, built as proposed).** When the other side is on another worker the query does not map into a scene it does not have. The cast arrives at the plane and goes on in its own scene, against
+> the ghost proxies of the far bodies that `PortalPhysics` poses there (D29) and only inside the band (the proxy layer, `Authority` set, this link): a hit is reported as the ghost, in the far scope, with the point
+> mapped through the link. A cast that goes past the band's box without a hit is returned with `Truncated` at the band's edge: a pseudo-hit, with no collider and no entity, so that a caller cannot take it for a
+> miss. A leg in the band is not rewound: the proxies stand one tick behind their authority (D29) and a ghost's history is the far worker's to answer.
 
 ## 8. Workers
 
@@ -949,6 +992,10 @@ colliders need no change for a translation.
 - **NEB-433 Queries across.** §7. Tests: a ray through an open aperture hits a far entity, at its rewound pose with a
   tick; a closed aperture is hit at the plane; proxies are never hit; a face with two parties' links casts into the
   asker's party's scope; a far leg beyond the band on another worker is `Truncated`.
+  *As built:* `Tests/PlayMode/PortalQueriesPlayTests` (12), `PortalQueriesRewindPlayTests` (6), `PortalQueriesWorkersPlayTests` (3, and `FramedPortalQueriesPlayTests` 2), `PortalQueriesClientPlayTests` (2),
+  `Tests/EditMode/PortalQueriesLogicTests` (8), conformance scenarios 64 to 67. The `LagCompensatedHitscan` sample is a `PortalQueries.Raycast` with a tick and keeps no scope filter of its own. Deviations from
+  the design as written, each recorded at its decision: `PortalQueries` is an instance for each process, not a static class (D32); points are scene-space floats about the faces, not `Double3` (D32); a
+  leg in the band of a split link is not rewound (D33). What a game does to adopt it is in the instancing guide, "Cast through a portal".
 
 **Milestone 3, across workers and on the client.**
 

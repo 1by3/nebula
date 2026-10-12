@@ -300,6 +300,8 @@ namespace Nebula
         /// </summary>
         public ContainerCostMeter CostMeter => _costMeter;
         public IEnumerable<NetworkIdentity> Entities => _entities.Values;
+        /// <summary>The entities as the dictionary's own collection, which enumerates without allocating (a query walks them).</summary>
+        internal Dictionary<ulong, NetworkIdentity>.ValueCollection EntityValues => _entities.Values;
         public IReadOnlyList<NetworkIdentity> Authoritative => _authoritative;
 
         public event Action<NetworkIdentity> EntitySpawned;

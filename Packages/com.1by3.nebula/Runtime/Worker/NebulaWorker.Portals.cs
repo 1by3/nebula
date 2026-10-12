@@ -38,6 +38,14 @@ namespace Nebula
         internal PortalPhysics PortalPhysics => _portalPhysics ??= new PortalPhysics(this);
         internal PortalPhysics PortalPhysicsIfAny => _portalPhysics;
 
+        private PortalQueries _portalQueries;
+
+        /// <summary>
+        /// Raycasts, sweeps and overlaps that continue through an open portal, on this worker, with an optional rewind of the history it keeps
+        /// (<c>docs/portals.md</c> D32, D33).
+        /// </summary>
+        public PortalQueries PortalQueries => _portalQueries ??= new PortalQueries(PortalPhysics, this);
+
         /// <summary>Ghosts this worker holds only to pose a proxy of them through a portal, never as bodies in their own scope (<c>docs/portals.md</c> D29).</summary>
         internal IReadOnlyList<NetworkIdentity> PortalGhostEntities => _portalGhosts;
         private readonly List<NetworkIdentity> _portalGhosts = new List<NetworkIdentity>();

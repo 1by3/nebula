@@ -102,6 +102,7 @@ namespace Nebula
             rig.Portal = portal;
             rig.Link = link;
             rig.PortalId = portal.PortalId;
+            if (rig.PartyHash == 0) rig.PartyHash = PortalIds.PartyHash(link.Party);
             rig.Generation = link.Generation;
             rig.NearScope = nearFace.Scope;
             rig.FarScope = link.FarScope;

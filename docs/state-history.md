@@ -156,9 +156,12 @@ one tick as the pose, not tighter.
 
 Stated so a game does not wait for them.
 
-- **No collider rewind.** Nebula does not move colliders back and does not perform the hit test. Poses of hitboxes
-  that are not the entity's root are the game's business; a rewind that moves them is game code, and the sample
-  shows one shape of it.
+- **No collider rewind in `StateAt`.** The history does not move colliders back and does not perform the hit test. Poses
+  of hitboxes that are not the entity's root are the game's business. NEB-433 adds an optional helper on top of the
+  history: `HistoryRewind` poses a scope's entities at a tick for the length of a query and puts them back, and a
+  `PortalQueries` call with a tick does it for the scene behind an open portal too, finding an entity that crossed
+  during the interval in the scope it was in then (`docs/portals.md` D33). A game that does not use them still
+  rewinds its own hitboxes from `StateAt`, as the sample before it did.
 - **No decision about which tick a client may claim.** Nebula does not validate that a claimed tick is one the
   client could plausibly have been rendering. `NewestAvailableTick`, `OldestAvailableTick` and the client's own
   `NetworkTime` are the inputs; the policy is the game's.

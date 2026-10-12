@@ -2165,6 +2165,14 @@ namespace Nebula
         }
 
         private readonly PortalPhysics _portalPhysics = new PortalPhysics(null);
+        private PortalQueries _portalQueries;
+
+        /// <summary>
+        /// Raycasts, sweeps and overlaps that continue through an open portal, for prediction and aim (<c>docs/portals.md</c> D32). A client queries
+        /// the scenes it holds, in the frame each scope shares (<see cref="ScopeFrames.Resolve"/>), against the replicas as they stand; it keeps no
+        /// state history, so a tick in the options has no effect here.
+        /// </summary>
+        public PortalQueries PortalQueries => _portalQueries ??= new PortalQueries(_portalPhysics, null);
 
         private void ClearWorld()
         {

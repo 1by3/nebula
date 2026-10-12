@@ -57,12 +57,6 @@ namespace NebulaSamples.Tests
             return behaviour;
         }
 
-        private Container Container(string name, ulong scope)
-        {
-            var container = NewObject(name).AddComponent<Container>();
-            Set(container, "Instance", new InstanceContainerInfo { InstanceId = scope });
-            return container;
-        }
 
         [Test]
         public void FireFromTheOwningClientSerializesAServerRpc()
@@ -98,68 +92,73 @@ namespace NebulaSamples.Tests
             Assert.AreEqual(90, victim.Health.Value, "the serialized call resolves the attributed damage handler");
         }
 
-        [TestCase(false, false)]
-        [TestCase(true, false)]
-        [TestCase(false, true)]
-        [TestCase(true, true)]
-        public void AShotCanCrossContainersButNotSimulationScopes(bool ghost, bool otherScope)
+        // A shooter at the origin and a victim 5 m along +x, a box 1 m wide and 2 m high. The victim stands at z = 0 at tick 10 and at z = 3 at tick 11, so a shot along the
+        // x axis hits it only if the shot is rewound to tick 10: the sample's cast is a PortalQueries.Raycast with a tick.
+        private (LagCompensatedHitscan shooter, SampleHealth victim) ShotScene(bool ghost)
         {
             var worker = NewObject("worker").AddComponent<NebulaWorker>();
             var shooter = Behaviour<LagCompensatedHitscan>("shooter", true);
             shooter.Worker = worker;
-            Set(shooter.Identity, "Container", Container("west", 0));
             var victim = Behaviour<SampleHealth>("victim", !ghost);
-            Set(victim.Identity, "Container", Container("east", otherScope ? 7UL : 0UL));
+            var box = victim.gameObject.AddComponent<BoxCollider>();
+            box.size = new Vector3(1f, 2f, 1f);
+            box.center = new Vector3(0f, 1f, 0f);
             victim.transform.position = new Vector3(5, 0, 0);
-            typeof(NetworkIdentity).GetMethod("RecordAuthoritativeState", Members).Invoke(victim.Identity, new object[] { 10u });
-            Set(worker, "CurrentTick", 10u);
+            var record = typeof(NetworkIdentity).GetMethod("RecordAuthoritativeState", Members);
+            record.Invoke(victim.Identity, new object[] { 10u });
+            victim.transform.position = new Vector3(5, 0, 3);
+            record.Invoke(victim.Identity, new object[] { 11u });
+            Physics.SyncTransforms();
+            Set(worker, "CurrentTick", 11u);
             var entities = (Dictionary<ulong, NetworkIdentity>)typeof(NebulaWorker).GetField("_entities", Members).GetValue(worker);
             entities[victim.NetId] = victim.Identity;
-
-            typeof(LagCompensatedHitscan).GetMethod("RpcFire", Members).Invoke(shooter,
-                new object[] { new Vector3(0, 0.9f, 0), Vector3.right, 10u });
-
-            Assert.AreEqual(!otherScope && ghost ? 1 : 0, _sink.AuthorityCalls);
-            Assert.AreEqual(!otherScope && !ghost ? 90 : 100, victim.Health.Value);
-            if (!otherScope && ghost) Assert.AreSame(victim.Identity, _sink.Target);
+            return (shooter, victim);
         }
 
-        [TestCase(-10f, 1f, 1f, 0f, true, 9.5f)]
-        [TestCase(-10f, 100f, 1f, 0f, false, 0f)]
-        [TestCase(0f, 100f, 0f, 1f, false, 0f)]
-        [TestCase(0f, 100f, 0f, -1f, true, 97.5f)]
-        [TestCase(-10f, 2.3f, 1f, 0f, true, 9.6f)]
-        [TestCase(-10f, -0.3f, 1f, 0f, true, 9.6f)]
-        [TestCase(0f, 1f, 1f, 0f, true, 0f)]
-        [TestCase(10f, 1f, 1f, 0f, false, 0f)]
-        [TestCase(-10f, 2.5f, 1f, 0f, true, 10f)]
-        public void FiniteCapsuleReturnsTheNearestForwardIntersection(float x, float y, float dx, float dy, bool expected, float expectedDistance)
+        private static void Shoot(LagCompensatedHitscan shooter, uint tick) =>
+            typeof(LagCompensatedHitscan).GetMethod("RpcFire", Members).Invoke(shooter, new object[] { new Vector3(0, 1f, 0), Vector3.right, tick });
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void AShotHitsWhatStoodThereAtTheClaimedTick(bool ghost)
         {
-            var ray = new Ray(new Vector3(x, y, 0), new Vector3(dx, dy, 0));
-            bool hit = Intersects(ray, Vector3.zero, Vector3.up * 2f, 0.5f, out float distance);
-            Assert.AreEqual(expected, hit);
-            if (hit) Assert.AreEqual(expectedDistance, distance, 0.002f);
+            var (shooter, victim) = ShotScene(ghost);
+            Shoot(shooter, 10u);
+            Assert.AreEqual(ghost ? 1 : 0, _sink.AuthorityCalls);
+            Assert.AreEqual(ghost ? 100 : 90, victim.Health.Value);
+            if (ghost) Assert.AreSame(victim.Identity, _sink.Target);
+            Assert.AreEqual(new Vector3(5, 0, 3), victim.transform.position, "and the victim is where it is now again");
         }
 
         [Test]
-        public void AZeroLengthCapsuleIsASphere()
+        public void AShotAtTheCurrentTickMissesWhatMovedAway()
         {
-            Assert.IsTrue(Intersects(new Ray(Vector3.left * 3f, Vector3.right), Vector3.zero, Vector3.zero, 0.5f, out float distance));
-            Assert.AreEqual(2.5f, distance, 0.001f);
+            var (shooter, victim) = ShotScene(false);
+            Shoot(shooter, 11u);
+            Assert.AreEqual(100, victim.Health.Value);
         }
 
         [Test]
-        public void AZeroDirectionCannotHit()
+        public void AClaimOutsideWhatTheGameAllowsIsRefused()
         {
-            Assert.IsFalse(Intersects(new Ray(Vector3.zero, Vector3.zero), Vector3.zero, Vector3.up * 2f, 0.5f, out _));
+            var (shooter, victim) = ShotScene(false);
+            Shoot(shooter, 12u); // in the future
+            Assert.AreEqual(100, victim.Health.Value);
+            shooter.MaxClaimTicks = 0;
+            Shoot(shooter, 10u); // further back than allowed
+            Assert.AreEqual(100, victim.Health.Value);
         }
 
-        private static bool Intersects(Ray ray, Vector3 a, Vector3 b, float radius, out float distance)
+        [Test]
+        public void AShooterDoesNotHitItself()
         {
-            var args = new object[] { ray, a, b, radius, 0f };
-            bool hit = (bool)typeof(LagCompensatedHitscan).GetMethod("IntersectsCapsule", Members).Invoke(null, args);
-            distance = (float)args[4];
-            return hit;
+            var (shooter, victim) = ShotScene(false);
+            var own = shooter.gameObject.AddComponent<BoxCollider>();
+            own.size = new Vector3(1f, 2f, 1f);
+            own.center = new Vector3(0f, 1f, 0f);
+            Physics.SyncTransforms();
+            Shoot(shooter, 10u);
+            Assert.AreEqual(90, victim.Health.Value, "the shot starts inside its own shooter's collider and goes on to the victim");
         }
 
         private sealed class RecordingSink : IRpcSink

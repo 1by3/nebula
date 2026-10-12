@@ -383,6 +383,14 @@ public bool IsLeaving { get; }
 
 True from [`Leave`](#leave) until the gateway has confirmed the goodbye or the timeout has passed; see [`LeaveFinished`](#leavefinished).
 
+### PortalQueries [#portalqueries]
+
+```csharp
+public PortalQueries PortalQueries { get; }
+```
+
+Raycasts, sweeps and overlaps that continue through an open portal, for prediction and aim (`docs/portals.md` D32). A client queries the scenes it holds, in the frame each scope shares ([`ScopeFrames.Resolve`](/docs/reference/world/scope-frames#resolve)), against the replicas as they stand; it keeps no state history, so a tick in the options has no effect here.
+
 ### LinksWarming [#linkswarming]
 
 ```csharp

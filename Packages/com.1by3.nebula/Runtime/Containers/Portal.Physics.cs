@@ -59,6 +59,9 @@ namespace Nebula
             return total == 0;
         }
 
+        /// <summary>The party an entity belongs to at this portal (<see cref="PartyOf"/>, or the owner's identity), for a query's asker (<c>docs/portals.md</c> D12, D32).</summary>
+        internal string PartyForQuery(NetworkIdentity entity) => PartyOfEntity(entity);
+
         private int Report(string side, List<Collider> found, List<Collider> into)
         {
             if (found.Count == 0) return 0;
