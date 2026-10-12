@@ -15,7 +15,7 @@ namespace Nebula.Tests
     /// A player who walks through the door is simulated near Unity's origin inside the instance, to the millimetre of the
     /// absolute point it walked through, and walks back out onto the planet just as precisely. Before, the instance lived
     /// in the public frame, 5×10^7 m from Unity's origin, where a float is 4 m apart.
-    /// <para>Tier B, set up as <see cref="ConformanceFramedInstanceBoundaryTests"/>, with the planet far out.</para>
+    /// <para>Tier B, set up as <see cref="ConformanceFramedPortalTests"/>, with the planet far out. Its door is a <see cref="Portal"/> since NEB-428.</para>
     /// </summary>
     [Category("Conformance")]
     public sealed class ConformanceFarInstanceFrameTests
@@ -40,7 +40,8 @@ namespace Nebula.Tests
         private InstanceTemplate _template;
         private ushort _planetPrefab, _pawnPrefab;
         private uint _tick;
-        private InstanceBoundary _boundary;
+        private Portal _portal;
+        private ConformanceMesh.Gateway _gateway;
 
         private ConformanceMesh.Worker W => _mesh[0];
 
@@ -53,6 +54,8 @@ namespace Nebula.Tests
             _definition.CellSize = GroundCell;
             NebulaWorld.LoadRuntime(_definition); // the public frame, at absolute (0,0,0)
             _mesh = new ConformanceMesh(1);
+            _gateway = _mesh.AddGateway("gw");
+            _mesh.LinkGateway(_gateway);
             _mesh.Config.GhostBandMargin = -1f;
             _plane = new LocalControlPlane();
             _plane.Connect();
@@ -87,8 +90,8 @@ namespace Nebula.Tests
         [TearDown]
         public void TearDown()
         {
-            if (_boundary != null) typeof(InstanceBoundary).GetMethod("OnDisable", Flags).Invoke(_boundary, null);
-            _boundary = null;
+            if (_portal != null) typeof(Portal).GetMethod("OnDisable", Flags).Invoke(_portal, null);
+            _portal = null;
             _mesh.Dispose();
             _plane.Dispose();
             NebulaChunks.ResetForNewSession();
@@ -102,6 +105,7 @@ namespace Nebula.Tests
             PhysicsFrames.SceneDisposer = null;
             Object.DestroyImmediate(_template);
             Object.DestroyImmediate(_definition);
+            Portals.ResetForNewSession();
         }
 
         private void Mirror()
@@ -117,10 +121,16 @@ namespace Nebula.Tests
             Mirror();
         }
 
-        private void AcknowledgeClients()
+        /// <summary>Open the door for the player's party and run the ticks that get it ready: activated, content ready, client warm.</summary>
+        private PortalLink OpenDoor()
         {
-            var field = typeof(NebulaWorker).GetField("_instanceTransfers", Flags);
-            foreach (var transfer in ((Dictionary<uint, InstanceTransfer>)field.GetValue(W.Instance)).Values) transfer.ClientReady = true;
+            var link = _portal.Open(Owner, new ulong[] { 7 });
+            Tick();
+            Tick();
+            _mesh.FromGateway(_gateway, W, w => new PortalWarmMsg { LinkId = link.Id, Generation = link.Generation, ClientId = 7 }.Write(w));
+            Tick();
+            Assert.That(link.State, Is.EqualTo(PortalState.Open), link.ToString());
+            return link;
         }
 
         private static double Distance(Double3 a, Double3 b) =>
@@ -128,7 +138,7 @@ namespace Nebula.Tests
 
         /// <summary>
         /// The scope with its origin moved to the planet's chunk (as a worker that leases it keeps it), the planet in that
-        /// chunk, its hosted ground with the door's chunk leased, and the boundary built at the door.
+        /// chunk, its hosted ground with the door's chunk leased, and the portal built at the door.
         /// </summary>
         private Container Build(out NetworkIdentity planet, out RuntimeGrid space) => Build(out planet, out space, Quaternion.identity);
 
@@ -175,11 +185,11 @@ namespace Nebula.Tests
             go.transform.SetParent(root.transform, false);
             go.transform.position = planet.Carried.Frame.LocalToSimulation(Door);
             go.transform.rotation = doorRotation;
-            _boundary = go.AddComponent<InstanceBoundary>();
-            _boundary.Template = _template;
-            _boundary.Interior = new Bounds(new Vector3(0f, 2f, 0f), new Vector3(8f, 4f, 8f));
-            _boundary.PreparationDistance = 6f;
-            typeof(InstanceBoundary).GetMethod("OnEnable", Flags).Invoke(_boundary, null);
+            _portal = go.AddComponent<Portal>();
+            _portal.Id = "vault-door";
+            _portal.FarTemplate = _template;
+            _portal.Aperture = PortalAperture.Box(2f, 2.5f);
+            typeof(Portal).GetMethod("OnEnable", Flags).Invoke(_portal, null);
             return chunk;
         }
 
@@ -205,8 +215,8 @@ namespace Nebula.Tests
         public void AFarInstanceGetsAFrameOfItsOwnNearUnitysOrigin()
         {
             var chunk = Build(out var planet, out _);
-            var player = Player(chunk, planet, Door + new Vector3(0f, 1f, -8f));
-            Tick(); // near the door: the instance is activated at the door
+            var player = Player(chunk, planet, Door + new Vector3(0f, 1f, -6f));
+            OpenDoor(); // the instance is activated at the door
             var hall = ContainerRegistry.GetRuntime(NebulaWorker.InstanceKey("vault/" + Owner + "/hall"));
             Assert.That(hall, Is.Not.Null, "approaching the door prepares the instance");
             Assert.IsTrue(ScopeFrames.HasFrame(hall.InstanceId), "the instance has a frame of its own");
@@ -214,7 +224,7 @@ namespace Nebula.Tests
             Assert.Less(hall.transform.position.magnitude, NearOrigin, "its container is near Unity's origin");
 
             // The lease row keeps the part's centre in double: the door plus the part's offset, to the millimetre.
-            var expected = _boundary.InstanceOrigin + new Double3(0, 2, 0);
+            var expected = _portal.NearFace.Origin + new Double3(0, 2, 0);
             var row = _plane.FindLease(hall.ContainerId).Center;
             TestContext.WriteLine($"row error {Distance(expected, row):E3} m");
             Assert.Less(Distance(expected, row), Millimetre, "the part's absolute centre is not narrowed to float");
@@ -227,14 +237,12 @@ namespace Nebula.Tests
         public void APlayerCrossesIntoAFarInstanceAndBackOutToTheMillimetre()
         {
             var chunk = Build(out var planet, out _);
-            var player = Player(chunk, planet, Door + new Vector3(0f, 1f, -8f));
-            Tick();
-            Tick();
-            AcknowledgeClients();
+            var player = Player(chunk, planet, Door + new Vector3(0f, 1f, -6f));
+            OpenDoor();
             var inside = Door + new Vector3(0f, 1f, 1f);
             player.transform.position = planet.Carried.Frame.LocalToSimulation(inside);
             var expectedIn = Absolute(planet, inside);
-            Tick(); // inside the volume: committed
+            Tick(); // through the opening: committed
 
             var hall = ContainerRegistry.GetRuntime(NebulaWorker.InstanceKey("vault/" + Owner + "/hall"));
             Assert.AreSame(hall, player.Container, "the player crossed into the instance");
@@ -243,16 +251,12 @@ namespace Nebula.Tests
             var actualIn = ContainerRegistry.ToAbsolutePrecise(player.ScopePositionPrecise, player.InstanceId);
             TestContext.WriteLine($"enter error {Distance(expectedIn, actualIn):E3} m at {player.transform.position}");
             Assert.Less(Distance(expectedIn, actualIn), Millimetre, "at the absolute point it walked through");
-            var interiorLocal = actualIn - _boundary.InstanceOrigin;
+            var interiorLocal = actualIn - _portal.NearFace.Origin;
             Assert.Less(Distance(interiorLocal, Double3.From(inside - Door)), Millimetre, "which is that point relative to the instance's origin");
 
-            // Back out: held until the crossing is ready, then committed into the planet's chunk.
-            // The crossing commits at the pose the player had when it stepped out (as in ConformanceFramedInstanceBoundaryTests).
-            player.transform.position += new Vector3(0f, 0f, -7f);
-            var expectedOut = expectedIn + new Double3(0, 0, -7);
-            Tick();
-            AcknowledgeClients();
-            player.transform.position += new Vector3(0f, 0f, -7f);
+            // Back out, committed into the planet's chunk at the pose the player had when it stepped out.
+            player.transform.position += new Vector3(0f, 0f, -1.5f);
+            var expectedOut = expectedIn + new Double3(0, 0, -1.5);
             Tick();
 
             Assert.AreSame(chunk, player.Container, "back in the planet's chunk");
@@ -291,20 +295,18 @@ namespace Nebula.Tests
         public void ATurnedDoorTurnsItsInstanceAndCrossingsTurnWithIt()
         {
             var chunk = Build(out var planet, out _, Turned);
-            var player = Player(chunk, planet, AtDoor(new Vector3(0f, 1f, -8f)));
-            Tick();
-            Tick();
+            var player = Player(chunk, planet, AtDoor(new Vector3(0f, 1f, -6f)));
+            OpenDoor();
             var hall = ContainerRegistry.GetRuntime(NebulaWorker.InstanceKey("vault/" + Owner + "/hall"));
             Assert.That(hall, Is.Not.Null, "the instance is prepared at the turned door");
             var row = _plane.FindLease(hall.ContainerId).Instance;
             Assert.IsTrue(row.HasPose, "its lease row carries its pose");
             Assert.Less(Quaternion.Angle(Turned, row.PoseRotation), 0.01f, "turned as the door is");
             Assert.IsTrue(InstancePoses.TryGet(hall.InstanceId, out var origin, out var rotation), "the worker learned the pose from the row");
-            Assert.Less(Distance(origin, _boundary.InstanceOrigin), Millimetre);
+            Assert.Less(Distance(origin, _portal.NearFace.Origin), Millimetre);
             // The interior is upright in its own space: the part's box stands at the origin plus its own offset.
-            Assert.Less(Distance(_boundary.InstanceOrigin + new Double3(0, 2, 0), ContainerRegistry.ToAbsolutePrecise(hall.WorldBounds.center, hall.InstanceId)), Millimetre);
+            Assert.Less(Distance(_portal.NearFace.Origin + new Double3(0, 2, 0), ContainerRegistry.ToAbsolutePrecise(hall.WorldBounds.center, hall.InstanceId)), Millimetre);
 
-            AcknowledgeClients();
             var inside = AtDoor(new Vector3(0f, 1f, 1f));
             player.transform.position = planet.Carried.Frame.LocalToSimulation(inside);
             var facing = Turned * Quaternion.Euler(0f, 10f, 0f); // walking in, looking a little right
@@ -313,7 +315,7 @@ namespace Nebula.Tests
             Tick();
 
             Assert.AreSame(hall, player.Container, "the player crossed into the turned instance");
-            var local = ContainerRegistry.ToAbsolutePrecise(player.ScopePositionPrecise, player.InstanceId) - _boundary.InstanceOrigin;
+            var local = ContainerRegistry.ToAbsolutePrecise(player.ScopePositionPrecise, player.InstanceId) - _portal.NearFace.Origin;
             TestContext.WriteLine($"enter local {local}");
             Assert.Less(Distance(local, new Double3(0, 1, 1)), Millimetre, "upright in the instance: the door's own offsets");
             Assert.Less(Quaternion.Angle(Quaternion.Euler(0f, 10f, 0f), player.transform.rotation), 0.05f, "facing the same way, in the instance's axes");
@@ -321,15 +323,12 @@ namespace Nebula.Tests
             Assert.Less(Quaternion.Angle(Quaternion.Inverse(Turned), InstancePoses.Turn(chunk.InstanceId, hall.InstanceId)), 0.01f, "the turn a game reads");
 
             // Out again: back past the threshold in the instance's own axes, onto the planet at the door's turned offsets.
-            player.transform.position += new Vector3(0f, 0f, -7f);
-            Tick();
-            AcknowledgeClients();
-            player.transform.position += new Vector3(0f, 0f, -7f);
+            player.transform.position += new Vector3(0f, 0f, -1.5f);
             Tick();
             Assert.AreSame(chunk, player.Container, "back in the planet's chunk");
             var outside = planet.Carried.Frame.SimulationToLocal(player.transform.position);
-            TestContext.WriteLine($"leave at {outside} expected {AtDoor(new Vector3(0f, 1f, -6f))}");
-            Assert.Less((outside - AtDoor(new Vector3(0f, 1f, -6f))).magnitude, 2e-3f, "where it walked out, turned back");
+            TestContext.WriteLine($"leave at {outside} expected {AtDoor(new Vector3(0f, 1f, -0.5f))}");
+            Assert.Less((outside - AtDoor(new Vector3(0f, 1f, -0.5f))).magnitude, 2e-3f, "where it walked out, turned back");
             Assert.Less(Quaternion.Angle(facing, player.transform.rotation), 0.05f, "facing as it went in");
         }
     }

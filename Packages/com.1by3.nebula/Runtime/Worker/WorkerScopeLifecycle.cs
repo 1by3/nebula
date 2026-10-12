@@ -264,6 +264,8 @@ namespace Nebula
         public static bool IsBusy(Container container)
         {
             if (container == null) return false;
+            // A portal link that is preparing, open or closing is interest in its far scope, as an occupant is (docs/portals.md D43).
+            if (Portals.HoldsFarContainer(container)) return true;
             var entities = BusyScratch;
             entities.Clear();
             container.CollectContents(entities, throughAuthoritativeCarriersOnly: true);

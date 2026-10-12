@@ -15,6 +15,11 @@ namespace Nebula
         public ushort SourceWorker;
         public ulong LeaseEpoch;
         public bool Success;
+        /// <summary>
+        /// The portal link this preparation readies (<c>docs/portals.md</c> D35, D45), or 0 for a preparation of one
+        /// entity's crossing (<see cref="NebulaWorker.PrepareTransfer"/>). A trailing field: an older body ends before it.
+        /// </summary>
+        public ulong LinkId;
 
         public void Write(NetworkWriter w, MsgId id)
         {
@@ -25,12 +30,14 @@ namespace Nebula
             w.WriteUShort(SourceWorker);
             w.WriteULong(LeaseEpoch);
             w.WriteBool(Success);
+            w.WriteULong(LinkId);
         }
 
         public static InstancePreparationMsg Read(NetworkReader r) => new InstancePreparationMsg
         {
             RequestId = r.ReadUInt(), EntityId = r.ReadULong(), Destination = ContainerRef.Read(r),
-            SourceWorker = r.ReadUShort(), LeaseEpoch = r.ReadULong(), Success = r.ReadBool()
+            SourceWorker = r.ReadUShort(), LeaseEpoch = r.ReadULong(), Success = r.ReadBool(),
+            LinkId = r.Remaining >= 8 ? r.ReadULong() : 0UL
         };
     }
 

@@ -2,18 +2,21 @@ using System.Text;
 
 namespace Nebula.ServiceTests;
 
-// Frozen protocol-26 oracle (26 added FarEntities, a gateway message this reader skips): do not replace literals or readers with production protocol types.
-// Protocols 21 to 25 changed no frame layout this replay reads: 21 added a message (EntityMaps, 38), which lands in
+// Frozen protocol-28 oracle: do not replace literals or readers with production protocol types.
+// Protocols 21 to 28 changed no frame layout this replay reads: 21 added a message (EntityMaps, 38), which lands in
 // UninspectedMessageIds, and a trailing maps field in the spawn body, which the spawn reader leaves unread; 22 and 23 added
 // messages and fields the handshake and snapshot stream do not carry; 24 put priority bits in the spawn's interest flags,
 // a byte this reader skips; 25 added a message a client sends (DriveInput) and a trailing driver field in the spawn body,
-// left unread. So this is the protocol-20 oracle with its version literals raised.
+// left unread; 26 added FarEntities, a gateway message this reader skips; 27 added a trailing section of ContainerOwnership
+// this reader stops before; 28 added three messages (Portals, PortalLinks and PortalWarm) a handshake and snapshot stream does
+// not carry, and a trailing link id on the instance preparation messages. So this is the protocol-20 oracle with its version
+// literals raised.
 // Covers the public-container handshake, spawn and transform stream exercised by the replay.
 // Instance containers, game-defined variable/sync payload contents, RPCs and other message IDs
-// are not compatibility claims made by this fixture. Like the protocol-25 client, unknown
+// are not compatibility claims made by this fixture. Like the protocol-28 client, unknown
 // message IDs and optional trailing bytes are ignored inside their bounded frame. Known but
 // uncovered instance-container payloads fail explicitly instead of guessing their framing.
-internal sealed class Protocol26GatewayDecoder
+internal sealed class Protocol28GatewayDecoder
 {
     internal ulong ClientId;
     internal string Identity = "";
@@ -30,7 +33,7 @@ internal sealed class Protocol26GatewayDecoder
 
     private void Read(byte[] frame, int depth)
     {
-        if (depth > 8) throw new InvalidDataException("protocol-26 batch nesting limit");
+        if (depth > 8) throw new InvalidDataException("protocol-28 batch nesting limit");
         using var r = new Cursor(frame);
         byte id = r.Byte();
         switch (id)
@@ -43,8 +46,8 @@ internal sealed class Protocol26GatewayDecoder
                 if (Identity.Length == 0 || r.Text().Length == 0 || r.Text().Length == 0)
                     throw new InvalidDataException("missing handshake identity or tokens");
                 r.Bool();
-                NegotiatedVersion = r.Remaining == 0 ? (ushort)26 : r.U16();
-                if (NegotiatedVersion != 26) throw new InvalidDataException("gateway did not negotiate protocol 26");
+                NegotiatedVersion = r.Remaining == 0 ? (ushort)28 : r.U16();
+                if (NegotiatedVersion != 28) throw new InvalidDataException("gateway did not negotiate protocol 28");
                 Welcomes++;
                 break;
             case 5: // JoinStatus

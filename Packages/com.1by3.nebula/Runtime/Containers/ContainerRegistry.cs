@@ -495,7 +495,7 @@ namespace Nebula
         /// departing box and looking only among the boxes of <paramref name="scope"/>, the departing box's own: the
         /// smallest one holding the entity, or the scope's nearest box when none does. An entity in an instance or a
         /// scoped grid never lands in a public container this way, however close one is; crossing a scope is
-        /// <see cref="InstanceBoundary"/>'s job.
+        /// <see cref="Portal"/>'s job.
         /// </summary>
         private static void EvacuateEntities(Container container, ulong scope)
         {

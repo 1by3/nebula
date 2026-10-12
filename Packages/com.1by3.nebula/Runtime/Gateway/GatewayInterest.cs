@@ -792,6 +792,8 @@ namespace Nebula
             client.Visible.Clear();
             client.ViewSeq.Clear();
             client.KnownContainers.Clear();
+            client.KnownPortals.Clear();
+            client.KnownPortalLinks.Clear();
             client.PreparedRows.Clear();
             client.RowsLeaving.Clear();
             client.HostViews.Clear();
@@ -902,6 +904,7 @@ namespace Nebula
             // over empty terrain changes no entity at all, so the container window is brought in line here and
             // not only when something entered or left the set (design D60).
             SyncOwnershipWindow(client);
+            SyncPortals(client);
 
             double ms = (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
             _evalMsSum += ms;
@@ -1865,6 +1868,10 @@ namespace Nebula
                     if (IsPrepared(client, _preparedScratch[i], now)) Add(_preparedScratch[i]);
                 _preparedScratch.Clear();
             }
+            // The far rows of the links this client is a member of (docs/portals.md D10): it prepares the far window before the link opens.
+            if (_memberLinks.Count > 0 && _memberLinks.TryGetValue(client.ClientId, out var memberLinks))
+                foreach (ulong linkId in memberLinks)
+                    if (_portalLinks.TryGetValue(linkId, out var memberLink)) Add(memberLink.Record.FarEntryId);
             if (truncated)
             {
                 _containerBudgetHits++;
@@ -2095,6 +2102,10 @@ namespace Nebula
             _interestWriter.Reset();
             ContainerOwnershipMsg.Write(_interestWriter, _upsertScratch, true, null);
             AppendReliable(client, _interestWriter.ToSegment());
+            // A new connection knows no portals: they follow the rows it was just sent.
+            client.KnownPortals.Clear();
+            client.KnownPortalLinks.Clear();
+            SyncPortals(client);
         }
 
         /// <summary>A lease changed: re-send the rows the clients that hold them already have.</summary>

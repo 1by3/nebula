@@ -8,20 +8,20 @@ using UnityEngine;
 namespace Nebula.Tests
 {
     /// <summary>
-    /// Conformance scenario 43 (NEB-394, <c>docs/container-tree.md</c> §8): an <see cref="InstanceBoundary"/> built in a
+    /// Conformance scenario 43 (NEB-394, <c>docs/container-tree.md</c> §8; a portal since NEB-428): a <see cref="Portal"/> built in a
     /// chunk of a grid hosted by a framed carrier (a dungeon door on a planet that is a carrier in its system's scope,
-    /// D20 and D22). Its position is read in the scope's own space, out of the planet's frame, as an entity's is, so the
+    /// D20 and D22). Its face is read in the scope's own space, out of the planet's frame, as an entity's is, so the
     /// instance is prepared at the door and a player standing on the planet enters it; leaving puts the player back in the
     /// planet's chunk, in the planet's frame, at the door, not on the carrier's box or nowhere.
     /// <para>
-    /// Tier B: one real <see cref="NebulaWorker"/> on the <see cref="ConformanceMesh"/> running the boundary in its tick, a
+    /// Tier B: one real <see cref="NebulaWorker"/> on the <see cref="ConformanceMesh"/> running the portal in its tick, a
     /// <see cref="LocalControlPlane"/> for the scope, the instance and the lease rows, and preview scenes for the frames.
-    /// The client's half of a crossing is stood in for by marking the preparation client-ready, as in
-    /// <see cref="InstanceBoundaryScopedGridTests"/>.
+    /// The client's half of readiness is stood in for by its <see cref="MsgId.PortalWarm"/>, as in
+    /// <see cref="PortalScopedGridTests"/>.
     /// </para>
     /// </summary>
     [Category("Conformance")]
-    public sealed class ConformanceFramedInstanceBoundaryTests
+    public sealed class ConformanceFramedPortalTests
     {
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
         private const string Scope = "space/vaults";
@@ -41,7 +41,8 @@ namespace Nebula.Tests
         private InstanceTemplate _template;
         private ushort _planetPrefab, _pawnPrefab;
         private uint _tick;
-        private InstanceBoundary _boundary;
+        private Portal _portal;
+        private ConformanceMesh.Gateway _gateway;
 
         private ConformanceMesh.Worker W => _mesh[0];
 
@@ -54,6 +55,8 @@ namespace Nebula.Tests
             _definition.CellSize = GroundCell;
             NebulaWorld.LoadRuntime(_definition); // the public frame, which an instance lives in
             _mesh = new ConformanceMesh(1);
+            _gateway = _mesh.AddGateway("gw");
+            _mesh.LinkGateway(_gateway);
             _mesh.Config.GhostBandMargin = -1f;
             _plane = new LocalControlPlane();
             _plane.Connect();
@@ -88,8 +91,8 @@ namespace Nebula.Tests
         [TearDown]
         public void TearDown()
         {
-            if (_boundary != null) typeof(InstanceBoundary).GetMethod("OnDisable", Flags).Invoke(_boundary, null);
-            _boundary = null;
+            if (_portal != null) typeof(Portal).GetMethod("OnDisable", Flags).Invoke(_portal, null);
+            _portal = null;
             _mesh.Dispose();
             _plane.Dispose();
             NebulaChunks.ResetForNewSession();
@@ -103,6 +106,7 @@ namespace Nebula.Tests
             PhysicsFrames.SceneDisposer = null;
             Object.DestroyImmediate(_template);
             Object.DestroyImmediate(_definition);
+            Portals.ResetForNewSession();
         }
 
         /// <summary>The control plane's rows into the registry, with their owners, as a worker's control-plane pass does it.</summary>
@@ -119,10 +123,16 @@ namespace Nebula.Tests
             Mirror();
         }
 
-        private void AcknowledgeClients()
+        /// <summary>Open the door for the player's party and run the ticks that get it ready: activated, content ready, client warm.</summary>
+        private PortalLink OpenDoor()
         {
-            var field = typeof(NebulaWorker).GetField("_instanceTransfers", Flags);
-            foreach (var transfer in ((Dictionary<uint, InstanceTransfer>)field.GetValue(W.Instance)).Values) transfer.ClientReady = true;
+            var link = _portal.Open(Owner, new ulong[] { 7 });
+            Tick();
+            Tick();
+            _mesh.FromGateway(_gateway, W, w => new PortalWarmMsg { LinkId = link.Id, Generation = link.Generation, ClientId = 7 }.Write(w));
+            Tick();
+            Assert.That(link.State, Is.EqualTo(PortalState.Open), link.ToString());
+            return link;
         }
 
         private static void AreClose(Vector3 expected, Vector3 actual, string message, float tolerance = 1e-2f)
@@ -134,7 +144,7 @@ namespace Nebula.Tests
 
         /// <summary>
         /// The scope (a root grid of 8 km cubes) with the planet standing in its chunk, the planet's ground hosted by the
-        /// planet, the door's chunk leased, and a boundary built in that chunk's content as a game builds it.
+        /// planet, the door's chunk leased, and a portal built in that chunk's content as a game builds it.
         /// </summary>
         private Container Build(out NetworkIdentity planet, out RuntimeGrid ground)
         {
@@ -176,11 +186,11 @@ namespace Nebula.Tests
             var go = new GameObject("vault door");
             go.transform.SetParent(root.transform, false);
             go.transform.position = planet.Carried.Frame.LocalToSimulation(Door);
-            _boundary = go.AddComponent<InstanceBoundary>();
-            _boundary.Template = _template;
-            _boundary.Interior = new Bounds(new Vector3(0f, 2f, 0f), new Vector3(8f, 4f, 8f));
-            _boundary.PreparationDistance = 6f;
-            typeof(InstanceBoundary).GetMethod("OnEnable", Flags).Invoke(_boundary, null);
+            _portal = go.AddComponent<Portal>();
+            _portal.Id = "vault-door";
+            _portal.FarTemplate = _template;
+            _portal.Aperture = PortalAperture.Box(2f, 2.5f);
+            typeof(Portal).GetMethod("OnEnable", Flags).Invoke(_portal, null);
             return chunk;
         }
 
@@ -199,14 +209,14 @@ namespace Nebula.Tests
         }
 
         [Test]
-        public void ABoundaryOnAFramedPlanetStandsWhereThePlanetPutsIt()
+        public void APortalOnAFramedPlanetStandsWhereThePlanetPutsIt()
         {
             var chunk = Build(out var planet, out _);
-            Assert.AreEqual(ScopeKeys.Hash(Scope), _boundary.HostInstanceId, "the boundary stands in the planet's scope");
+            Assert.AreEqual(ScopeKeys.Hash(Scope), _portal.NearScope, "the portal stands in the planet's scope");
+            Assert.AreSame(chunk, _portal.NearContainer, "fixed in the planet's chunk");
             var expected = PlanetAt + Door;
-            var at = _boundary.AbsolutePosition;
-            AreClose(expected, at.ToVector3(), "the boundary's absolute position is the door's in the scope, out of the planet's frame");
-            AreClose(expected, _boundary.InstanceOrigin.ToVector3(), "and the instance is prepared there");
+            var at = _portal.NearFace.Origin;
+            AreClose(expected, at.ToVector3(), "the face's absolute position is the door's in the scope, out of the planet's frame");
             Assert.IsNotNull(chunk);
         }
 
@@ -215,38 +225,33 @@ namespace Nebula.Tests
         {
             var chunk = Build(out var planet, out var ground);
             var door = PlanetAt + Door;
-            var player = Player(chunk, planet, Door + new Vector3(0f, 1f, -8f));
+            var player = Player(chunk, planet, Door + new Vector3(0f, 1f, -6f));
             Assume.That(player.Container, Is.SameAs(chunk));
             Assume.That(player.Space, Is.SameAs(planet.Carried), "the player stands in the planet's frame");
 
-            Tick(); // near the door: the instance is activated at the door
+            OpenDoor(); // the instance is activated at the door, ready, and the client warm
             var scope = _plane.FindScope("vault/" + Owner);
-            Assert.That(scope, Is.Not.Null, "approaching the door prepares the player's instance");
+            Assert.That(scope, Is.Not.Null, "opening the door prepares the player's instance");
             var hall = ContainerRegistry.GetRuntime(NebulaWorker.InstanceKey("vault/" + Owner + "/hall"));
             Assert.That(hall, Is.Not.Null, "its entry part is registered");
             AreClose(door + new Vector3(0f, 2f, 0f), _plane.FindLease(hall.ContainerId).Bounds.center, "the instance stands at the door, in the scope's absolute coordinates");
 
-            Tick(); // the crossing is prepared
-            AcknowledgeClients();
             player.transform.position = planet.Carried.Frame.LocalToSimulation(Door + new Vector3(0f, 1f, 1f));
-            Tick(); // inside the volume: committed
+            Tick(); // through the opening: committed
 
             Assert.AreSame(hall, player.Container, "the player crossed into the instance");
             Assert.AreEqual(NebulaWorker.InstanceKey("vault/" + Owner), player.InstanceId);
             AreClose(door + new Vector3(0f, 1f, 1f), ContainerRegistry.ToAbsolutePrecise(player.transform.position, player.InstanceId).ToVector3(),
                 "at the same absolute position as the door it walked through");
 
-            // Back out: held until the crossing is ready, then committed into the planet's chunk.
-            player.transform.position += new Vector3(0f, 0f, -7f);
-            Tick();
-            AcknowledgeClients();
-            player.transform.position += new Vector3(0f, 0f, -7f);
+            // Back out, onto the planet.
+            player.transform.position += new Vector3(0f, 0f, -1.5f);
             Tick();
 
             Assert.AreSame(chunk, player.Container, "back in the planet's chunk, not the planet's own box or the scope's space");
             Assert.AreSame(planet.Carried, player.Space, "in the planet's frame");
             Assert.AreEqual(ScopeKeys.Hash(Scope), player.InstanceId);
-            AreClose(Door + new Vector3(0f, 1f, -6f), planet.Carried.Frame.SimulationToLocal(player.transform.position),
+            AreClose(Door + new Vector3(0f, 1f, -0.5f), planet.Carried.Frame.SimulationToLocal(player.transform.position),
                 "where it walked out, in the planet's own coordinates");
             Assert.IsTrue(ground.Owns(player.Container));
         }
@@ -254,9 +259,7 @@ namespace Nebula.Tests
         /// <summary>Walk the player from beside the door into the instance; returns the hall it entered.</summary>
         private Container Enter(NetworkIdentity player, NetworkIdentity planet)
         {
-            Tick();
-            Tick();
-            AcknowledgeClients();
+            OpenDoor();
             player.transform.position = planet.Carried.Frame.LocalToSimulation(Door + new Vector3(0f, 1f, 1f));
             Tick();
             var hall = ContainerRegistry.GetRuntime(NebulaWorker.InstanceKey("vault/" + Owner + "/hall"));
@@ -276,14 +279,14 @@ namespace Nebula.Tests
 
         /// <summary>
         /// A floor below the lobby and back (a dungeon's elevator: transfers between two instances of the player's), then
-        /// walking out of the lobby: the boundary still lets the player back onto the planet, into its chunk.
+        /// walking out of the lobby: the portal still lets the player back onto the planet, into its chunk.
         /// </summary>
         [Test]
         public void AfterARoundTripToAnotherInstanceThePlayerStillWalksOutOntoThePlanet()
         {
             var chunk = Build(out var planet, out _);
             var door = PlanetAt + Door;
-            var player = Player(chunk, planet, Door + new Vector3(0f, 1f, -8f));
+            var player = Player(chunk, planet, Door + new Vector3(0f, 1f, -6f));
             var hall = Enter(player, planet);
 
             var below = new Double3(door.x, door.y - 40.0, door.z);
@@ -296,14 +299,13 @@ namespace Nebula.Tests
             Assert.IsTrue(Transfer(player, hall, ContainerRegistry.ToFrame(Double3.From(door + new Vector3(0f, 1f, 1f)), hall.InstanceId)), "and back up");
             Assert.AreSame(hall, player.Container);
 
-            player.transform.position += new Vector3(0f, 0f, -7f);
+            player.transform.position += new Vector3(0f, 0f, -0.5f); // the transfer left it at z = +1 in the instance's own frame
             Tick();
-            AcknowledgeClients();
-            player.transform.position += new Vector3(0f, 0f, -7f);
+            player.transform.position += new Vector3(0f, 0f, -1.0f);
             Tick();
             Assert.AreSame(chunk, player.Container, "out of the lobby into the planet's chunk");
             Assert.AreSame(planet.Carried, player.Space);
-            AreClose(Door + new Vector3(0f, 1f, -6f), planet.Carried.Frame.SimulationToLocal(player.transform.position), "where it walked out");
+            AreClose(Door + new Vector3(0f, 1f, -0.5f), planet.Carried.Frame.SimulationToLocal(player.transform.position), "where it walked out");
         }
 
         /// <summary>
@@ -315,7 +317,7 @@ namespace Nebula.Tests
         public void ATransferFromTheInstanceLandsInAChunkOfThePlanet()
         {
             var chunk = Build(out var planet, out var ground);
-            var player = Player(chunk, planet, Door + new Vector3(0f, 1f, -8f));
+            var player = Player(chunk, planet, Door + new Vector3(0f, 1f, -6f));
             Enter(player, planet);
 
             var town = new Vector3(-200f, 1f, -300f);

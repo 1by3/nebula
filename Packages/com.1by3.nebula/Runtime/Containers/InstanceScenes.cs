@@ -5,10 +5,29 @@ using UnityEngine.SceneManagement;
 
 namespace Nebula
 {
-    /// <summary>Loads instance geometry into separate physics scenes. Query an entity's PhysicsScene for gameplay collision tests.</summary>
+    /// <summary>
+    /// Loads instance geometry into separate physics scenes. Query an entity's PhysicsScene for gameplay collision tests.
+    /// Creating the geometry is asynchronous in play mode (<see cref="Prepare"/>, <see cref="ContentState"/>).
+    /// </summary>
     public static class InstanceScenes
     {
         private static readonly Dictionary<ulong, Scene> Scenes = new Dictionary<ulong, Scene>();
+        /// <summary>
+        /// Content that is being created without blocking a tick, by the runtime ID of the container that holds it
+        /// (<c>docs/portals.md</c> §14, item 3): the prefab is loaded with <see cref="Resources.LoadAsync{T}"/> and
+        /// instantiated with <see cref="UnityEngine.Object.InstantiateAsync{T}(T, Transform)"/>, a step at a time, as
+        /// <see cref="ContentState"/> is asked.
+        /// </summary>
+        private static readonly Dictionary<ulong, PendingContent> Pending = new Dictionary<ulong, PendingContent>();
+        /// <summary>Containers whose content could not be created (a missing resource, or a prefab that holds network identities).</summary>
+        private static readonly HashSet<ulong> FailedContent = new HashSet<ulong>();
+
+        private sealed class PendingContent
+        {
+            public Container Container;
+            public ResourceRequest Load;
+            public AsyncInstantiateOperation<GameObject> Instantiate;
+        }
         private static readonly Dictionary<ulong, GameObject> Content = new Dictionary<ulong, GameObject>();
         /// <summary>The <see cref="IInstanceContentLoader"/>s found under each prepared container, by runtime ID. A container with none has no entry.</summary>
         private static readonly Dictionary<ulong, IInstanceContentLoader[]> Loaders = new Dictionary<ulong, IInstanceContentLoader[]>();
@@ -37,6 +56,8 @@ namespace Nebula
         {
             Scenes.Clear();
             Content.Clear();
+            Pending.Clear();
+            FailedContent.Clear();
             Loaders.Clear();
             HiddenRenderers.Clear(HiddenContent);
             DrawnRequests.Clear();
@@ -44,10 +65,17 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Load this container's geometry. Returns false when its resource is missing or contains network identities.
+        /// Start creating this container's geometry. Returns false when its resource is missing or contains network
+        /// identities, or when an earlier attempt failed.
         /// <para>
-        /// True means the content was created, not that it has finished loading: content with an
-        /// <see cref="IInstanceContentLoader"/> may still be building. <see cref="ContentState"/> reports that.
+        /// True means the content exists or is on its way, not that it has finished loading. In play mode the scope's
+        /// physics scene is created and the container moved into it at once (a quick step, done while a portal
+        /// prepares and not while an entity crosses), but the prefab is loaded and instantiated asynchronously, one
+        /// step each time <see cref="ContentState"/> is asked, so a large interior never costs a tick its budget
+        /// (<c>docs/portals.md</c> §14, item 3). A missing resource is then discovered when the load finishes, and
+        /// <see cref="ContentState"/> reports <see cref="InstanceContentState.Failed"/>. Content with an
+        /// <see cref="IInstanceContentLoader"/> may still be building after that; <see cref="ContentState"/> reports that
+        /// too. Outside play mode the content is not created at all, and the resource is checked at once.
         /// </para>
         /// </summary>
         public static bool Prepare(Container container)
@@ -57,16 +85,62 @@ namespace Nebula
             // A child box lives in its parent's scene, under its parent's transform: preparing the parent is enough.
             if (container.FixedParent != null) return Prepare(container.FixedParent);
             if (Content.ContainsKey(container.RuntimeId)) return true;
+            if (FailedContent.Contains(container.RuntimeId)) return false;
+            if (Pending.ContainsKey(container.RuntimeId)) return true;
             var info = container.Instance;
-            GameObject prefab = string.IsNullOrEmpty(info.ContentResource) ? null : Resources.Load<GameObject>(info.ContentResource);
-            if (!string.IsNullOrEmpty(info.ContentResource) && prefab == null) return false;
-            // Saved entities are spawned through the worker API; static content must not create duplicate scene IDs.
-            if (prefab != null && prefab.GetComponentInChildren<NetworkIdentity>(true) != null) return false;
             // The Editor outside play mode cannot create a runtime scene, and an EditMode test standing a scope's
             // containers up (conformance tier B) does not need one: the container stays in the active scene and
-            // everything this method is really about — the resource check above — has already run. Loaders already
-            // under the container are still collected, so readiness behaves as it does in play mode.
-            if (!Application.isPlaying) { CollectLoaders(container); return true; }
+            // everything this method is really about, the resource check, runs at once. Loaders already under the
+            // container are still collected, so readiness behaves as it does in play mode.
+            if (!Application.isPlaying)
+            {
+                GameObject check = string.IsNullOrEmpty(info.ContentResource) ? null : Resources.Load<GameObject>(info.ContentResource);
+                if (!string.IsNullOrEmpty(info.ContentResource) && check == null) return false;
+                // Saved entities are spawned through the worker API; static content must not create duplicate scene IDs.
+                if (check != null && check.GetComponentInChildren<NetworkIdentity>(true) != null) return false;
+                CollectLoaders(container);
+                return true;
+            }
+            EnsureScene(container, info);
+            if (string.IsNullOrEmpty(info.ContentResource))
+            {
+                var empty = new GameObject("Content");
+                empty.transform.SetParent(container.transform, false);
+                AdoptContent(container, empty);
+                return true;
+            }
+            Pending[container.RuntimeId] = new PendingContent { Container = container, Load = Resources.LoadAsync<GameObject>(info.ContentResource) };
+            return true;
+        }
+
+        /// <summary>
+        /// Finish creating this container's content now, blocking if it has to: the guarantee an entity moved into an
+        /// instance has always had, that the geometry it stands on exists. A portal never needs it, because its far side is
+        /// ready before it opens (<c>docs/portals.md</c> D10); this is the fallback for a placement that was not
+        /// prepared for (a restored entity, a transfer into a container nobody warmed). Returns false when the content
+        /// cannot be created.
+        /// </summary>
+        public static bool Complete(Container container)
+        {
+            var holder = ContentHolder(container);
+            if (holder == null) return true;
+            if (Content.ContainsKey(holder.RuntimeId)) return true;
+            if (!Prepare(holder)) return false;
+            if (!Pending.TryGetValue(holder.RuntimeId, out var pending)) return true;
+            if (pending.Instantiate == null)
+            {
+                // A synchronous load of what is being loaded finishes that load.
+                var prefab = Resources.Load<GameObject>(holder.Instance.ContentResource);
+                if (!StartInstantiate(holder, pending, prefab)) return false;
+            }
+            pending.Instantiate.WaitForCompletion();
+            Advance(holder);
+            return Content.ContainsKey(holder.RuntimeId);
+        }
+
+        /// <summary>The scope's physics scene, created the first time one of its containers is prepared, with the container moved into it.</summary>
+        private static void EnsureScene(Container container, InstanceContainerInfo info)
+        {
             if (!Scenes.TryGetValue(info.InstanceId, out var scene))
             {
                 scene = SceneManager.CreateScene("Nebula instance " + info.InstanceId,
@@ -75,10 +149,44 @@ namespace Nebula
             }
             container.transform.SetParent(null, true);
             SceneManager.MoveGameObjectToScene(container.gameObject, scene);
-            GameObject content = prefab != null ? UnityEngine.Object.Instantiate(prefab, container.transform, false) : new GameObject("Content");
-            if (prefab == null) content.transform.SetParent(container.transform, false);
-            AdoptContent(container, content);
+        }
+
+        /// <summary>Begin instantiating a loaded prefab under its container; false (and the content failed) when the prefab is unusable.</summary>
+        private static bool StartInstantiate(Container holder, PendingContent pending, GameObject prefab)
+        {
+            if (prefab == null || prefab.GetComponentInChildren<NetworkIdentity>(true) != null)
+            {
+                Fail(holder, prefab == null
+                    ? $"the content resource '{holder.Instance.ContentResource}' of {holder.ContainerId} is missing"
+                    : $"the content resource '{holder.Instance.ContentResource}' of {holder.ContainerId} holds network identities");
+                return false;
+            }
+            pending.Instantiate = UnityEngine.Object.InstantiateAsync(prefab, holder.transform);
             return true;
+        }
+
+        private static void Fail(Container holder, string why)
+        {
+            Pending.Remove(holder.RuntimeId);
+            FailedContent.Add(holder.RuntimeId);
+            NebulaLog.Warn("instance content failed: " + why);
+        }
+
+        /// <summary>Take the asynchronous creation of a container's content one step further: the load, then the instantiation, then adoption.</summary>
+        private static void Advance(Container holder)
+        {
+            if (!Pending.TryGetValue(holder.RuntimeId, out var pending)) return;
+            if (pending.Container == null) { Pending.Remove(holder.RuntimeId); return; }
+            if (pending.Instantiate == null)
+            {
+                if (!pending.Load.isDone) return;
+                if (!StartInstantiate(holder, pending, pending.Load.asset as GameObject)) return;
+            }
+            if (!pending.Instantiate.isDone) return;
+            var results = pending.Instantiate.Result;
+            Pending.Remove(holder.RuntimeId);
+            if (results == null || results.Length == 0 || results[0] == null) { FailedContent.Add(holder.RuntimeId); return; }
+            AdoptContent(holder, results[0]);
         }
 
         /// <summary>
@@ -103,6 +211,17 @@ namespace Nebula
         /// <param name="container">A container passed to <see cref="Prepare"/>.</param>
         public static InstanceContentState ContentState(Container container)
         {
+            var holder = ContentHolder(container);
+            if (holder != null)
+            {
+                if (FailedContent.Contains(holder.RuntimeId)) return InstanceContentState.Failed;
+                if (Pending.ContainsKey(holder.RuntimeId))
+                {
+                    Advance(holder);
+                    if (FailedContent.Contains(holder.RuntimeId)) return InstanceContentState.Failed;
+                    if (Pending.ContainsKey(holder.RuntimeId)) return InstanceContentState.Loading;
+                }
+            }
             var loaders = LoadersOf(container);
             if (loaders == null) return InstanceContentState.Ready;
             var state = InstanceContentState.Ready;
@@ -123,6 +242,8 @@ namespace Nebula
         /// <param name="container">A container passed to <see cref="Prepare"/>.</param>
         public static float ContentProgress(Container container)
         {
+            var holder = ContentHolder(container);
+            if (holder != null && Pending.TryGetValue(holder.RuntimeId, out var pending)) return pending.Instantiate != null ? 0.75f : pending.Load.progress * 0.5f;
             var loaders = LoadersOf(container);
             if (loaders == null) return 1f;
             float sum = 0f;
@@ -290,6 +411,18 @@ namespace Nebula
         {
             if (container.InstanceId == 0) return;
             Content.Remove(container.RuntimeId);
+            FailedContent.Remove(container.RuntimeId);
+            if (Pending.TryGetValue(container.RuntimeId, out var pending))
+            {
+                Pending.Remove(container.RuntimeId);
+                // An instantiation cannot be cancelled: whatever it makes is thrown away when it lands.
+                if (pending.Instantiate != null && !pending.Instantiate.isDone)
+                    pending.Instantiate.completed += operation =>
+                    {
+                        var made = pending.Instantiate.Result;
+                        if (made != null) foreach (var go in made) if (go != null) UnityEngine.Object.Destroy(go);
+                    };
+            }
             Loaders.Remove(container.RuntimeId);
             HiddenRenderers.Forget(HiddenContent, container.RuntimeId);
             foreach (var other in ContainerRegistry.Runtime)

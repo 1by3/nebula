@@ -11,10 +11,11 @@ namespace Nebula.Tests
 {
     /// <summary>
     /// NEB-367: instance content that finishes loading after <see cref="InstanceScenes.Prepare"/> returns
-    /// (<see cref="IInstanceContentLoader"/>) holds a crossing's preparation until it is ready, on the destination
-    /// worker (its own and another worker's) and on the owning client, and content with no loaders is ready at once,
-    /// as before. Tier B: real <see cref="NebulaWorker"/>s on the <see cref="ConformanceMesh"/> with a
-    /// <see cref="LocalControlPlane"/>, and a <see cref="NebulaClient"/> over a transport that records what it sends.
+    /// (<see cref="IInstanceContentLoader"/>) holds a crossing's preparation until it is ready, on another worker
+    /// and on the owning client, and content with no loaders is ready at once, as before. (What a portal link does while its
+    /// far content loads is in <see cref="PortalLinkTests"/>.) Tier B: real <see cref="NebulaWorker"/>s on the
+    /// <see cref="ConformanceMesh"/> with a <see cref="LocalControlPlane"/>, and a <see cref="NebulaClient"/> over a transport that
+    /// records what it sends.
     /// </summary>
     public sealed class InstanceContentLoaderTests
     {
@@ -37,7 +38,6 @@ namespace Nebula.Tests
         private ushort _pawnPrefab;
         private uint _tick;
         private readonly List<GameObject> _objects = new List<GameObject>();
-        private readonly List<InstanceBoundary> _boundaries = new List<InstanceBoundary>();
 
         private ConformanceMesh.Worker W => _mesh[0];
 
@@ -67,9 +67,6 @@ namespace Nebula.Tests
         [TearDown]
         public void TearDown()
         {
-            foreach (var b in _boundaries)
-                if (b != null) typeof(InstanceBoundary).GetMethod("OnDisable", Hidden).Invoke(b, null);
-            _boundaries.Clear();
             _mesh.Dispose();
             _plane.Dispose();
             foreach (var c in new List<Container>(ContainerRegistry.Runtime)) if (c != null) Object.DestroyImmediate(c.gameObject);
@@ -119,164 +116,6 @@ namespace Nebula.Tests
             var go = new GameObject(name);
             go.transform.SetParent(container.transform, false);
             return go.AddComponent<SlowContent>();
-        }
-
-        /// <summary>A street the worker owns with an entrance on it, and a player walking up to the door.</summary>
-        private (InstanceBoundary door, NetworkIdentity player, Container street) Entrance()
-        {
-            var street = _mesh.AddStaticContainer("street", Vector3.zero, new Vector3(200f, 50f, 200f));
-            _mesh.SetOwner(street, W);
-            var go = new GameObject("door");
-            _objects.Add(go);
-            go.transform.position = new Vector3(20f, 0f, 20f);
-            var boundary = go.AddComponent<InstanceBoundary>();
-            boundary.Template = _template;
-            boundary.Interior = new Bounds(new Vector3(0f, 2f, 0f), new Vector3(8f, 4f, 8f));
-            typeof(InstanceBoundary).GetMethod("OnEnable", Hidden).Invoke(boundary, null);
-            _boundaries.Add(boundary);
-            var player = W.SpawnServerDriven(_pawnPrefab, street, go.transform.position + new Vector3(0f, 1f, -8f), Quaternion.identity);
-            player.OwnerClientId = 7;
-            player.OwnerIdentity = Owner;
-            return (boundary, player, street);
-        }
-
-        /// <summary>Walk up to the door: the instance is activated and its entry part leased here.</summary>
-        private Container Approach()
-        {
-            Tick();
-            var hall = ContainerRegistry.GetRuntime(NebulaWorker.InstanceKey("vault/" + Owner + "/hall"));
-            Assert.That(hall, Is.Not.Null, "the entry part is registered");
-            return hall;
-        }
-
-        private void StepIn(InstanceBoundary door, NetworkIdentity player) =>
-            player.transform.position = door.transform.position + new Vector3(0f, 1f, 1f);
-
-        private static ulong Private => NebulaWorker.InstanceKey("vault/" + Owner);
-
-        // ------------------------------------------------------------------------------------------------- worker
-
-        [Test]
-        public void ContentWithNoLoadersIsReadyAtOnceAsBefore()
-        {
-            var (door, player, _) = Entrance();
-            var hall = Approach();
-            Assert.That(InstanceScenes.ContentState(hall), Is.EqualTo(InstanceContentState.Ready));
-            Assert.That(InstanceScenes.ContentProgress(hall), Is.EqualTo(1f));
-
-            Tick(); // prepared
-            Assert.That(OnlyTransfer().WorkerReady, Is.True, "the destination worker is ready in the tick it prepares, as before");
-            AcknowledgeClients();
-            StepIn(door, player);
-            Tick();
-            Assert.That(player.InstanceId, Is.EqualTo(Private), "committed on the first tick inside");
-        }
-
-        [Test]
-        public void ASlowLoaderHoldsTheCrossingUntilItIsReady()
-        {
-            var (door, player, street) = Entrance();
-            var hall = Approach();
-            var loader = Loader(hall);
-
-            Tick(); // prepared, but the content is still building
-            var transfer = OnlyTransfer();
-            Assert.That(transfer.WorkerReady, Is.False);
-            Assert.That(InstanceScenes.ContentState(hall), Is.EqualTo(InstanceContentState.Loading));
-            AcknowledgeClients();
-            StepIn(door, player);
-            for (int frame = 0; frame < 5; frame++)
-            {
-                StepIn(door, player);
-                Tick();
-                Assert.That(transfer.Ready, Is.False, $"not ready after {frame + 1} ticks of loading");
-                Assert.That(player.Container, Is.SameAs(street), "no commit while the content loads");
-                Assert.That(player.InstanceId, Is.EqualTo(0UL));
-            }
-            int reads = loader.Reads;
-            Assert.That(reads, Is.GreaterThanOrEqualTo(5), "polled once a tick while pending");
-
-            loader.Current = InstanceContentState.Ready;
-            StepIn(door, player);
-            Tick();
-            Assert.That(transfer.Finished, Is.True, "ready and committed in the same tick");
-            Assert.That(player.InstanceId, Is.EqualTo(Private));
-            Assert.That(player.Container, Is.SameAs(hall));
-
-            Tick();
-            Tick();
-            Assert.That(loader.Reads, Is.EqualTo(reads + 1), "no longer polled once nothing waits for it");
-        }
-
-        [Test]
-        public void ALoaderThatNeverFinishesExpiresAtTheDeadline()
-        {
-            var (door, player, street) = Entrance();
-            var hall = Approach();
-            Loader(hall);
-            Tick();
-            var transfer = OnlyTransfer();
-            AcknowledgeClients();
-            StepIn(door, player);
-            Tick();
-            Assert.That(player.Container, Is.SameAs(street));
-
-            transfer.Deadline = Time.unscaledTime - 1f;
-            LogAssert.Expect(LogType.Warning, new Regex("expired while its content was still loading"));
-            Tick();
-
-            Assert.That(transfer.Finished, Is.True);
-            Assert.That(transfer.Ready, Is.False);
-            Assert.That(transfer.Error, Does.Contain("did not finish loading"));
-            Assert.That(player.Container, Is.SameAs(street), "the player stays in the source");
-            Assert.That(player.InstanceId, Is.EqualTo(0UL));
-            Assert.That(Transfers(W).Count, Is.EqualTo(1), "the boundary prepares the crossing again");
-            Assert.That(OnlyTransfer(), Is.Not.SameAs(transfer));
-        }
-
-        [Test]
-        public void EveryLoaderMustBeReady()
-        {
-            var (door, player, street) = Entrance();
-            var hall = Approach();
-            var first = Loader(hall, "first");
-            var second = Loader(hall, "second");
-            first.Fraction = 0.5f;
-
-            Tick();
-            var transfer = OnlyTransfer();
-            Assert.That(InstanceScenes.ContentProgress(hall), Is.EqualTo(0.25f).Within(1e-5f));
-            AcknowledgeClients();
-
-            first.Current = InstanceContentState.Ready;
-            StepIn(door, player);
-            Tick();
-            Assert.That(transfer.Ready, Is.False, "one of two loaders is not enough");
-            Assert.That(player.Container, Is.SameAs(street));
-            Assert.That(InstanceScenes.ContentProgress(hall), Is.EqualTo(0.5f).Within(1e-5f));
-
-            second.Current = InstanceContentState.Ready;
-            StepIn(door, player);
-            Tick();
-            Assert.That(player.InstanceId, Is.EqualTo(Private));
-        }
-
-        [Test]
-        public void AFailedLoaderRefusesTheCrossing()
-        {
-            var (door, player, street) = Entrance();
-            var hall = Approach();
-            var loader = Loader(hall);
-            Tick();
-            var transfer = OnlyTransfer();
-            AcknowledgeClients();
-
-            loader.Current = InstanceContentState.Failed;
-            StepIn(door, player);
-            Tick();
-            Assert.That(transfer.Ready, Is.False);
-            Assert.That(transfer.Error, Does.Contain("failed to load"));
-            Assert.That(player.Container, Is.SameAs(street));
         }
 
         [Test]

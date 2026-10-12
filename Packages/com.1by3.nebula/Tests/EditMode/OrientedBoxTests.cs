@@ -4,7 +4,7 @@ using NUnit.Framework;
 namespace Nebula.Tests
 {
     /// <summary>
-    /// The oriented box an <see cref="InstanceBoundary"/> tests crossings in. Pure C#, so the standalone test runner
+    /// The oriented-box primitive that began as the old boundary's crossing volume and that the face-relative tests of <c>docs/portals.md</c> D38 build on. Pure C#, so the standalone test runner
     /// runs it too. A door 4 m wide, 4 m tall and 1 m deep stands on ground tilted 35 degrees about x.
     /// </summary>
     public sealed class OrientedBoxTests

@@ -84,10 +84,10 @@ namespace Nebula
         /// host scope (on a sphere) opens on an interior built upright in its own space. The template's boxes and content
         /// stay upright about <paramref name="absoluteOrigin"/>; a point p of the instance is
         /// <c>absoluteOrigin + rotation × (p − absoluteOrigin)</c> in the host. Every process that registers the instance
-        /// learns the pose from its lease rows (<see cref="InstanceContainerInfo.HasPose"/>): crossings through an
-        /// <see cref="InstanceBoundary"/> map position, rotation and velocity through it, and a client draws the instance
+        /// learns the pose from its lease rows (<see cref="InstanceContainerInfo.HasPose"/>): crossings through a
+        /// <see cref="Portal"/> map position, rotation and velocity through it, and a client draws the instance
         /// turned behind its door, and the host world turned outside it from inside. Pass the same rotation every time
-        /// (round it, as <see cref="InstanceBoundary"/> does): a different one is a different definition, and refused.
+        /// (round it, as <see cref="Portal.PoseRotation"/> does): a different one is a different definition, and refused.
         /// </summary>
         public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Double3 absoluteOrigin, Quaternion rotation)
         {
@@ -186,7 +186,7 @@ namespace Nebula
             var entities = new HashSet<NetworkIdentity>();
             foreach (var transfer in transfers)
                 if (transfer == null || !transfer.Ready || !ValidTransfer(transfer) || transfer.Entity.IsSceneEntity ||
-                    !entities.Add(transfer.Entity) || !InstanceScenes.Prepare(transfer.Destination)) return false;
+                    !entities.Add(transfer.Entity) || !InstanceScenes.Complete(transfer.Destination)) return false;
             var positions = new Double3[transfers.Count];
             var rotations = new Quaternion[transfers.Count];
             var seated = new bool[transfers.Count];
@@ -350,7 +350,7 @@ namespace Nebula
             if (transfer == null || !transfer.Ready || !ValidTransfer(transfer)) return false;
             var entity = transfer.Entity;
             if (entity.IsSceneEntity) throw new InvalidOperationException("Scene entities cannot leave their authored scene");
-            if (!InstanceScenes.Prepare(transfer.Destination)) return false;
+            if (!InstanceScenes.Complete(transfer.Destination)) return false;
             entity.SetContainer(transfer.Destination);
             return true;
         }
@@ -469,6 +469,7 @@ namespace Nebula
 
         private void OnInstanceReady(Peer peer, InstancePreparationMsg message)
         {
+            if (message.LinkId != 0) { OnLinkReady(peer, message); return; }
             if (!_instanceTransfers.TryGetValue(message.RequestId, out var transfer) || message.EntityId != transfer.Entity.NetId ||
                 message.Destination != transfer.Message.Destination || message.LeaseEpoch != transfer.Message.LeaseEpoch) return;
             if (peer.Role == PeerRole.Worker && peer.Id != transfer.Destination.OwnerWorkerId) return;

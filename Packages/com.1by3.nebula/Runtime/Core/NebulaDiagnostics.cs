@@ -20,8 +20,27 @@ namespace Nebula
         /// </summary>
         public static int SplitCohesionGroups { get; internal set; }
 
+        /// <summary>
+        /// How many portal links closed because the band never emptied within <see cref="Portal.CloseTimeoutSeconds"/>
+        /// (<c>docs/portals.md</c> D9, D36). Each one is also logged through <see cref="NebulaLog.Warn"/>.
+        /// </summary>
+        public static int PortalCloseOverruns { get; internal set; }
+
+        /// <summary>How many crossings portals refused: an entity that met the aperture while its link was not open, or that was not admitted (<c>docs/portals.md</c> D17, D36).</summary>
+        public static int PortalRefusals { get; internal set; }
+
+        /// <summary>How many portal links are open on this worker right now (<c>docs/portals.md</c> D36).</summary>
+        public static int OpenPortalLinks { get; internal set; }
+
+        /// <summary>How many of this worker's open portal links lead into a container another worker owns (<c>docs/portals.md</c> D36).</summary>
+        public static int SplitPortalLinks { get; internal set; }
+
         internal static void ResetForNewSession()
         {
+            PortalCloseOverruns = 0;
+            PortalRefusals = 0;
+            OpenPortalLinks = 0;
+            SplitPortalLinks = 0;
             RejectedAuthorityRpcSends = 0;
             SplitCohesionGroups = 0;
         }

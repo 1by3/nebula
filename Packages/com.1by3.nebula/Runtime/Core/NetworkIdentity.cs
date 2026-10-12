@@ -590,7 +590,7 @@ namespace Nebula
         public Container Container { get; internal set; }
         /// <summary>
         /// The entity is fixed to <see cref="Container"/> (<see cref="FrameAttachment"/>): its authority's tick does not
-        /// re-resolve its container from its position, and no <see cref="InstanceBoundary"/> moves it. The owner check
+        /// re-resolve its container from its position, and no <see cref="Portal"/> moves it. The owner check
         /// still runs, so it is handed to whichever worker owns the container. Local to the authority; a handover or a
         /// restore sets it again (<c>docs/frame-bodies.md</c> D8).
         /// </summary>
@@ -1787,7 +1787,7 @@ namespace Nebula
                 return;
             }
             _carrierCycleWarned = false;
-            if (container != null && container.InstanceId != 0 && !InstanceScenes.Prepare(container))
+            if (container != null && container.InstanceId != 0 && !InstanceScenes.Complete(container))
                 throw new InvalidOperationException("Instance content is unavailable: " + container.ContainerId);
             // Changing space (into or out of a physics frame, docs/container-tree.md §3): the pose and velocity are
             // converted through the frames' current poses. Only where frames are simulated at the identity pose (a

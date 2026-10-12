@@ -17,15 +17,18 @@ namespace Nebula
     /// <para>
     /// Implement it on a component of the part's content prefab (<see cref="InstanceTemplate.Part.ContentResource"/>),
     /// or on one the game adds under the part's container in <c>Awake</c>. When the content is created, Nebula
-    /// collects the active components under the container that implement this interface. A client then acknowledges
-    /// a crossing into the part, and the destination worker marks itself ready, only once every one of them reports
+    /// collects the active components under the container that implement this interface. A portal link
+    /// (<see cref="Portal"/>) opens, and a client says it holds the far window (<see cref="MsgId.PortalWarm"/>), and
+    /// a client acknowledges a crossing prepared with <see cref="NebulaWorker.PrepareTransfer"/> into the part, and the
+    /// destination worker marks itself ready, only once every one of them reports
     /// <see cref="InstanceContentState.Ready"/>. One that reports <see cref="InstanceContentState.Failed"/> refuses the
-    /// crossing. Content with none of them is ready as soon as it is created, as before.
+    /// crossing and keeps a link from opening. Content with none of them is ready as soon as it exists.
     /// </para>
     /// <para>
     /// Nebula reads <see cref="State"/> once a frame on a client, and once a tick on a worker, only while a
-    /// preparation waits for it. Keep it cheap and free of allocations. A crossing still expires at its preparation
-    /// timeout (<see cref="NebulaWorker.PrepareTransfer"/>); an <see cref="InstanceBoundary"/> then prepares it again.
+    /// preparation or a link waits for it. Keep it cheap and free of allocations. A crossing prepared with
+    /// <see cref="NebulaWorker.PrepareTransfer"/> still expires at its preparation timeout; a <see cref="Portal"/> link
+    /// keeps waiting, reporting <see cref="PortalWait.FarWorkerContent"/>, and stops polling once it is open.
     /// </para>
     /// </summary>
     public interface IInstanceContentLoader

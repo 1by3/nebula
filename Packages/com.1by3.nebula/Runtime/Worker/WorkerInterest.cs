@@ -754,6 +754,8 @@ namespace Nebula
         /// </summary>
         private void AddGatewayLink(Peer gateway)
         {
+            // Portals are not region-bound (docs/portals.md D45): a gateway that connects is told every one this worker publishes.
+            PublishPortalsTo(gateway);
             gateway.GatewayBit = -1;
             for (int bit = 0; bit < RegionPublisher.MaxGateways; bit++)
             {

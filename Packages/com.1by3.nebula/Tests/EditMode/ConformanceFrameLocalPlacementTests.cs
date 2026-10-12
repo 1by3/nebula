@@ -19,7 +19,7 @@ namespace Nebula.Tests
     /// <para>
     /// Tier B: one real <see cref="NebulaWorker"/> on the <see cref="ConformanceMesh"/>, a <see cref="LocalControlPlane"/>
     /// for the scopes and the lease rows, and preview scenes for the frames, as in
-    /// <see cref="ConformanceFramedInstanceBoundaryTests"/>.
+    /// <see cref="ConformanceFramedPortalTests"/>.
     /// </para>
     /// </summary>
     [Category("Conformance")]

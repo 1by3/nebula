@@ -67,6 +67,9 @@ namespace Nebula
             public readonly Dictionary<ulong, ushort> ViewSeq = new Dictionary<ulong, ushort>();
             /// <summary>Container rows this client has been sent, so ownership travels as a delta and not as the lease table.</summary>
             public readonly HashSet<string> KnownContainers = new HashSet<string>();
+            /// <summary>The portals and links this client has been sent, with the version of the record it holds (<c>docs/portals.md</c> D45).</summary>
+            public readonly Dictionary<ulong, int> KnownPortals = new Dictionary<ulong, int>();
+            public readonly Dictionary<ulong, int> KnownPortalLinks = new Dictionary<ulong, int>();
             /// <summary>An interest limit this client ran into (foci, box size, container rows) has been reported; said once, not four times a second.</summary>
             public bool InterestLimitWarned;
             /// <summary>Frames (<see cref="RegionKeys.FrameKeyOf"/>) this client is looking into from outside their box, held until it is a little further than <see cref="InterestSettings.FrameApproachMargin"/>, so a pawn hovering at the margin does not flap.</summary>
@@ -1252,6 +1255,8 @@ namespace Nebula
                 case MsgId.EntityForget: OnEntityForget(w, EntityForgetMsg.Read(r)); break;
                 case MsgId.EntityRedirect: OnEntityRedirect(w, EntityRedirectMsg.Read(r)); break;
                 case MsgId.SyncAudience: OnSyncAudience(w, SyncAudienceMsg.Read(r)); break;
+                case MsgId.Portals: OnPortals(w, PortalsMsg.Read(r)); break;
+                case MsgId.PortalLinks: OnPortalLinks(w, PortalLinksMsg.Read(r)); break;
                 default: NebulaLog.Warn($"gateway got unexpected {id} from worker {w.WorkerId}"); break;
             }
         }
@@ -1285,6 +1290,7 @@ namespace Nebula
                 _dialing.Remove(w.WorkerId);
             }
             NebulaLog.Warn($"worker {w.WorkerId} disconnected; dropping its entities");
+            DropWorkerPortals(w.Index);
             _scratchIds.Clear();
             foreach (var rec in _entities.Values) if (rec.OwnerWorkerIndex == w.Index) _scratchIds.Add(rec.NetId);
             foreach (var netId in _scratchIds)
@@ -1975,6 +1981,7 @@ namespace Nebula
                     Send(w.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
                     break;
                 }
+                case MsgId.PortalWarm: OnPortalWarm(c, PortalWarmMsg.Read(r)); break;
                 case MsgId.ClientFocusHint: OnClientFocusHint(c, ClientFocusHintMsg.Read(r)); break;
                 case MsgId.Goodbye: OnGoodbye(c); break;
                 case MsgId.Ping:

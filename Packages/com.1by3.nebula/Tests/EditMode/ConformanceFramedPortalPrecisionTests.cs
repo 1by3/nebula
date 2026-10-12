@@ -10,14 +10,13 @@ using Object = UnityEngine.Object;
 namespace Nebula.Tests
 {
     /// <summary>
-    /// An <see cref="InstanceBoundary"/> built in a chunk of a planet whose carrier stands 50,000 km from its scope's
-    /// origin, where a float is 4 m apart: <see cref="InstanceBoundary.AbsolutePosition"/> and
-    /// <see cref="InstanceBoundary.InstanceOrigin"/> are worked out in double from the boundary's frame-local position,
-    /// so they are exact to the millimetre and do not depend on the float <c>transform.position</c> of a process.
+    /// A <see cref="Portal"/> built in a chunk of a planet whose carrier stands 50,000 km from its scope's
+    /// origin, where a float is 4 m apart: <see cref="Portal.NearFace"/> is worked out in double from the portal's frame-local
+    /// position, so its origin is exact to the millimetre and does not depend on the float <c>transform.position</c> of a process.
     /// <para>Tier B, set up as <see cref="ConformanceFrameLocalPlacementTests"/>.</para>
     /// </summary>
     [Category("Conformance")]
-    public sealed class ConformanceFramedBoundaryPrecisionTests
+    public sealed class ConformanceFramedPortalPrecisionTests
     {
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
         private const string Scope = "space/far";
@@ -191,25 +190,25 @@ namespace Nebula.Tests
         private static Double3 InChunk(Container chunk, Double3 frameLocal) => frameLocal - chunk.transform.localPosition;
 
         [Test]
-        public void ABoundaryFarFromTheScopeOriginReadsItsPositionToTheMillimetre()
+        public void APortalFarFromTheScopeOriginReadsItsFaceToTheMillimetre()
         {
             var chunk = Build(out var planet);
             var go = new GameObject("far door");
             go.transform.SetParent(chunk.ContentRoot, false);
             go.transform.localPosition = (InChunk(chunk, Pad)).ToVector3();
-            var boundary = go.AddComponent<InstanceBoundary>();
+            var portal = go.AddComponent<Portal>();
             try
             {
-                Assume.That(boundary.HostInstanceId, Is.EqualTo(chunk.InstanceId));
+                Assume.That(portal.NearScope, Is.EqualTo(chunk.InstanceId));
                 // Independent of the code under test: the carrier in double, plus the pad (the planet is not turned).
                 var carrier = planet.ScopePositionPrecise;
                 var expected = ContainerRegistry.ToAbsolutePrecise(carrier + Pad, chunk.InstanceId);
-                var actual = boundary.AbsolutePosition;
-                TestContext.WriteLine($"boundary error {Distance(expected, actual):E3} m");
-                Assert.Less(Distance(expected, actual), Millimetre, "AbsolutePosition is exact");
-                Assert.AreEqual(Math.Round(expected.X, 3), boundary.InstanceOrigin.X, 1.5e-3, "InstanceOrigin x");
-                Assert.AreEqual(Math.Round(expected.Y, 3), boundary.InstanceOrigin.Y, 1.5e-3, "InstanceOrigin y");
-                Assert.AreEqual(Math.Round(expected.Z, 3), boundary.InstanceOrigin.Z, 1.5e-3, "InstanceOrigin z");
+                var actual = portal.NearFace.Origin;
+                TestContext.WriteLine($"face error {Distance(expected, actual):E3} m");
+                Assert.Less(Distance(expected, actual), Millimetre + 5e-4, "the face's origin is exact to the millimetre it is rounded to");
+                Assert.AreEqual(Math.Round(expected.X, 3), actual.X, 1.5e-3, "origin x");
+                Assert.AreEqual(Math.Round(expected.Y, 3), actual.Y, 1.5e-3, "origin y");
+                Assert.AreEqual(Math.Round(expected.Z, 3), actual.Z, 1.5e-3, "origin z");
                 // The float read this replaces was metres off at this distance.
                 var viaFloat = ContainerRegistry.ToAbsolutePrecise(PhysicsFrames.ToScope(go.transform.position, chunk.InnerSpace), chunk.InstanceId);
                 Assert.Greater(Distance(expected, viaFloat), 0.05, "the float path was not precise here, so the test discriminates");

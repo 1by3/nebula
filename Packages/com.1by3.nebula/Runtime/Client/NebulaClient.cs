@@ -9,7 +9,7 @@ namespace Nebula
     /// predicts its own player. It is never a party to the handover protocol: which worker produced a snapshot is
     /// metadata used for epoch filtering and the debug overlay, nothing else.
     /// </summary>
-    public sealed class NebulaClient : MonoBehaviour, IRpcSink
+    public sealed partial class NebulaClient : MonoBehaviour, IRpcSink
     {
         public enum State { Disconnected, Connecting, Connected, InGame }
 
@@ -922,6 +922,7 @@ namespace Nebula
             TickConnection();
             TickStallWatch();
             TickInstancePreparations();
+            TickPortalWarm();
             if (ConnectionState == State.Disconnected || ConnectionState == State.Connecting) return;
             _frames++;
             float frameMs = Time.unscaledDeltaTime * 1000f;
@@ -1554,6 +1555,8 @@ namespace Nebula
                 case MsgId.EntityState: OnEntityState(EntitySyncMsg.Read(r)); break;
                 case MsgId.OwnerState: OnOwnerState(OwnerStateMsg.Read(r)); break;
                 case MsgId.FarEntities: OnFarEntities(r); break;
+                case MsgId.Portals: Portals.ApplyRecords(PortalsMsg.Read(r)); break;
+                case MsgId.PortalLinks: OnPortalLinks(PortalLinksMsg.Read(r)); break;
                 default: NebulaLog.Warn($"client got unexpected {id}"); break;
             }
         }
@@ -2156,6 +2159,8 @@ namespace Nebula
             _driven.Clear();
             _drivenInputs.Clear();
             ClearFar();
+            _warming.Clear();
+            Portals.ResetClient();
             _hasRenderOffset = false;
             _hasServerState = false;
             EndStall();

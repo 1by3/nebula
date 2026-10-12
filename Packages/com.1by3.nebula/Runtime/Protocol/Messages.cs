@@ -96,6 +96,23 @@ namespace Nebula
         /// The gateway sends it only to clients that negotiated 26 or later.
         /// </summary>
         FarEntities = 26,
+        /// <summary>
+        /// Worker -> gateway -> client: portals appearing and going (<see cref="PortalsMsg"/>, protocol 28,
+        /// <c>docs/portals.md</c> D45). The gateway sends a client a portal's record behind the container row of either of
+        /// its faces and withdraws it with the row.
+        /// </summary>
+        Portals = 27,
+        /// <summary>
+        /// Worker -> gateway -> client: the state of each party's link through a portal (<see cref="PortalLinksMsg"/>,
+        /// protocol 28). To the gateway it carries the members and the observers; to a client only whether it is one.
+        /// </summary>
+        PortalLinks = 28,
+        /// <summary>
+        /// Client -> gateway -> worker: this client holds the far window of a link and its content is ready
+        /// (<see cref="PortalWarmMsg"/>, protocol 28). The gateway forwards it only from a member of the link, stamping the
+        /// client id, to the worker that owns the portal.
+        /// </summary>
+        PortalWarm = 29,
 
         // Gateway -> worker
         SpawnPlayer = 30,
@@ -205,19 +222,20 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 27;
+        public const ushort ProtocolVersion = 28;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 26, one below <see cref="ProtocolVersion"/>. Protocol 27 (an
-        /// instance's pose against its host, <c>docs/scope-frames.md</c> D12) is additive: a trailing section of
-        /// <see cref="MsgId.ContainerOwnership"/> an older client stops before, and then draws a turned instance unturned. Protocol 26
-        /// (the far relevance tier, <c>docs/interest-management.md</c> §16) is additive for clients: a new message
-        /// (<see cref="MsgId.FarEntities"/>) a gateway sends only to clients that negotiated 26. Protocol 25 (driven
-        /// vehicles, <c>docs/driven-vehicles.md</c>) added a message a client sends only while it drives something
-        /// (<see cref="MsgId.DriveInput"/>) and a trailing driver field in the spawn body. Clients of 24 and older are
-        /// refused with <see cref="JoinRejectReason.ProtocolUnsupported"/> and must be rebuilt. Gateway-to-worker and
-        /// worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
+        /// The oldest client protocol the gateway accepts: 28, the version itself. Protocol 28 (portals,
+        /// <c>docs/portals.md</c> D45, D46) closes the window: its new messages (<see cref="MsgId.Portals"/>,
+        /// <see cref="MsgId.PortalLinks"/>, <see cref="MsgId.PortalWarm"/>) are additive bytes, but their meaning is not. A
+        /// client of 27 would be sent replicas of scopes it believes hidden, would never draw them posed, and would predict
+        /// its pawn into an aperture it does not know is solid. Clients of 27 and older are refused with
+        /// <see cref="JoinRejectReason.ProtocolUnsupported"/> and must be rebuilt. Protocol 27 (an instance's pose against
+        /// its host, <c>docs/scope-frames.md</c> D12) and 26 (the far relevance tier, <c>docs/interest-management.md</c> §16)
+        /// were additive; 25 (driven vehicles, <c>docs/driven-vehicles.md</c>) added a message a client sends only while it
+        /// drives something (<see cref="MsgId.DriveInput"/>). Gateway-to-worker and worker-to-worker connections require
+        /// <see cref="ProtocolVersion"/> exactly.
         /// </summary>
-        public const ushort MinProtocolVersion = 26;
+        public const ushort MinProtocolVersion = 28;
         /// <summary>The first protocol whose clients are sent <see cref="MsgId.FarEntities"/>.</summary>
         public const ushort FarEntitiesVersion = 26;
         public PeerRole Role;

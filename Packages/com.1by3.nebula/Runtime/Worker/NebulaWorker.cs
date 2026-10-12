@@ -1191,6 +1191,7 @@ namespace Nebula
             DormantCount = dormant;
             UpdateInstancePreparations();
             ContainerRegistry.RefreshCaches();
+            UpdatePortals();
             // Interior colliders of every physics frame follow their sources (a ramp lowering, a door opening).
             PhysicsFrames.SyncAllContent();
             ProfBegin.End();
@@ -1314,7 +1315,7 @@ namespace Nebula
                 _passDue++;
                 ts = System.Diagnostics.Stopwatch.GetTimestamp();
                 _gameMode?.PrepareSpatialFrame(e);
-                InstanceBoundary.Tick(this, e);
+                Portals.Tick(this, e);
                 tBoundary += System.Diagnostics.Stopwatch.GetTimestamp() - ts;
                 // A carrier never resolves into a container it carries: its own box (its origin is inside it), nor
                 // the box of another carrier riding inside it, which is how two overlapping ships would each end up
@@ -3793,6 +3794,7 @@ namespace Nebula
                 case MsgId.SpawnPlayer: OnSpawnPlayer(peer, SpawnPlayerMsg.Read(r)); break;
                 case MsgId.InstancePrepare: OnInstancePrepare(peer, InstancePreparationMsg.Read(r)); break;
                 case MsgId.InstanceReady: OnInstanceReady(peer, InstancePreparationMsg.Read(r)); break;
+                case MsgId.PortalWarm: OnPortalWarm(peer, PortalWarmMsg.Read(r)); break;
                 case MsgId.DespawnPlayer: OnDespawnPlayer(peer, DespawnPlayerMsg.Read(r)); break;
                 case MsgId.ClientInput:
                 case MsgId.ForwardInput: OnClientInput(peer, ClientInputMsg.Read(r)); break;
