@@ -1,7 +1,8 @@
 # Portals — design
 
 Status: design of record for **NEB-427**, protocol **v28** (new messages; the client window closes to 28..28, see §12).
-Nothing here is implemented yet: §15 maps it onto NEB-428 to NEB-437. Decisions made without asking are marked **D#**.
+The design was approved by Jesse, the project owner, on 2026-10-12, and implementation is on the branch `jesse/portals`:
+§15 maps it onto NEB-428 to NEB-437. Decisions made without asking are marked **D#**.
 Builds on `docs/scope-frames.md` (D11, D12: pinned instance frames, turned doors, NEB-426), `docs/scope-activation.md`
 (D2, D13, D14, D19, D21, §12, §13), `docs/interest-management.md`, `docs/cohesion-hints.md`, `docs/entity-extents.md`
 and `docs/state-history.md`. It supersedes `docs/scope-frames.md` §7's "seamless scope-to-scope travel" non-goal,
@@ -108,22 +109,22 @@ scope's space (an offset portal into a place that exists anyway, or the next flo
 side is `InstanceBoundary`'s rule unchanged: the far scope's key is `TemplateId + "/" + party`, prepared with
 `PrepareInstance(template, key, nearFace.AbsoluteOrigin, nearFace.PoseRotation)`, so it is coincident by construction and
 its far face is the near face's absolute pose read in the instance's upright space. Keeping the derivation byte for byte
-is what lets the `InstanceBoundary` shim (D7) find every instance a game has already persisted.
+is what lets a game find every instance it has already persisted; that rule stands on its own (D7).
 
 **D6 A portal's id is derived, not allocated.** `PortalId = ScopeKeys.Hash(containerId + "#" + Id)`, where `Id` is
 authored and unique within the near container (a second component with the same id is ignored and logged). Every
 worker, network gateway and client computes the same id from what it already has, as `docs/scope-activation.md` D3 does
 for container ids.
 
-**D7 `InstanceBoundary` becomes a shim over a portal, with its old semantics.** It builds a `Portal` with a
-template far side, party = `ResolveKey(entity)` (or the owner's identity, or `SharedKey`), and one extra aperture
-containment kind, `Volume`, used by nothing else: the far side is the inside of the `Interior` box (turned with the
-boundary, widened by `ExitMargin` on the way out), not a half-space beyond a plane. Its public members keep their
-meaning: `Request` and `RequireRequest` drive the link open and closed, `CrossingReady`, `TryGetPreparation` and
-`InstanceCrossingState` report the link's readiness in the old statuses, `ResolveCompanions` and `CompanionLeftBehind`
-map onto D13, `CanEnter` onto D11. An entity that reaches the face of a link that is not open is held where it last
-stood, as today, only under `Volume`. It exists so that a game compiles and behaves the same on the release that
-introduces portals; new content uses plane apertures, and the shim's fate is open question 5.
+**D7 `InstanceBoundary` is removed, not shimmed; decided by the project owner on 2026-10-12.** There is no
+backwards compatibility and no incremental shipping: only Holoverse uses this code and it has no active users. The type
+goes in NEB-428 and the game ports to `Portal` in the same pass. There is no `Volume` containment kind; every portal uses
+a plane aperture (D3). What a game does instead: put a `Portal` with a template far side (D5) on its door, with the party
+the game chooses (D8), and move the door onto the face, because a plane aperture is a stricter rule than the old
+`Interior` box (§14, item 10). `Request` and `RequireRequest` become opening and closing the portal for a party,
+`CrossingReady`, `TryGetPreparation` and `InstanceCrossingState` become the link's state and wait (§3),
+`ResolveCompanions` and `CompanionLeftBehind` map onto D13, and `CanEnter` onto D11. D5's key derivation stays byte for
+byte, so persisted instances are still found.
 
 ## 3. Parties, state and readiness
 
@@ -218,7 +219,7 @@ refused (not admitted, link not open, `AmbiguousParty`, a member not yet warm) d
 aperture collider, which is solid for it. A mover with no body of its own (a `CharacterController`, a script-moved
 projectile) is clamped: its root is put back `CrossDepth` short of the plane and its velocity's component along the face
 normal removed. Either way the near worker raises `Refused(entity, link, reason)` so the game can bounce, drop or destroy
-it. Holding the entity where it last stood is the `Volume` shim's behaviour only (D7).
+it. Nothing holds an entity where it last stood.
 
 **D18 Everything an entity carries in time goes through the link pose with it.** At the commit: the position in double
 (D37) and rotation; `Motion.Velocity`; a `Rigidbody`'s linear and angular velocity; and the `StateHistory` ring, whose
@@ -279,8 +280,9 @@ the client stands in.
 into scope 0 and only through an axis-aligned box fixed at preparation; `ObserveHost` kept the host's rows from a
 per-connection history (`ClientConn.HostViews`), lost on a reconnect inside (`docs/scope-activation.md` §12.3), and no
 host entities (D24 there). A link's windows give both directions, any scope, rows and entities, from link records that
-survive a reconnect. The shim (D7) maps a template's `ObservePublic` and `PublicView` onto the host side's window of its
-link, and `ObserveHost` onto the same window; NEB-436 removes the old paths once nothing reads them. NEB-370's sibling
+survive a reconnect. `ObservePublic`, `PublicView`, `ObserveHost`, `ClientConn.HostViews` and `HostCarriers` are removed in the change that
+brings windows (NEB-431), with no mapping onto them: a game that looked out of a room declares the host side's window of
+its portal instead. NEB-370's sibling
 observation (one instance seeing another's entities) is the general case of D20.
 
 **D25 Observed entities are replicas in their own scope.** A client never simulates them; it predicts against them only
@@ -470,9 +472,9 @@ not know is solid. Decided by the project owner; no compatibility window. The us
 apply: a `protocol-28-handshake.json` recording, a frozen decoder for the next bump, the table row.
 
 **D47 What 27 added stays.** The pose section of `ContainerOwnership` (`docs/scope-frames.md` D12) still carries
-`InstancePoses` to clients, now as the source of a template link's rotation (D39). Removing the `ObserveHost` flag
-byte from lease rows and the `ObservePublic` fields from scope definitions is NEB-436's, and changes nothing a client
-reads.
+`InstancePoses` to clients, now as the source of a template link's rotation (D39). The `ObserveHost` flag byte
+leaves lease rows and the `ObservePublic` fields leave scope definitions under protocol 28 (NEB-431); nothing a client
+reads changes.
 
 ## 13. Hitch budget
 
@@ -489,7 +491,7 @@ How the design keeps them, and what a test pins:
 | content load at a crossing | the far side is warm before Open (D10); a commit loads nothing (D16) | no `Instantiate` or `Resources.Load` during a commit tick |
 | content load at preparation | sliced: `IInstanceContentLoader`, and `InstanceScenes.Prepare` made asynchronous (§14, item 3) | worker tick ≤ 16 ms while a large far scope prepares |
 | proxies | pooled, built while Preparing (D26, D27); Open is a state flip | no allocation when a body enters the band |
-| a hold at the face | none outside the `Volume` shim (D16, D17) | a crossing commits on the tick the root passes |
+| a hold at the face | none (D16, D17) | a crossing commits on the tick the root passes |
 | a snap at the commit | pose, velocity, history, interpolation and prediction history go through the link (D18) | correction at a crossing ≤ 0.1 m, replica speed continuous |
 | drawing | posing a few roots, not the world (D41) | client frame ≤ 33 ms with two drawn scopes |
 | cross-worker | co-location (D34); a split commit is one handover (D35) | correction ≤ 0.1 m on a split link |
@@ -503,7 +505,7 @@ How the design keeps them, and what a test pins:
 2. **Per-entity preparations hold at the face.** `NebulaWorker.ValidTransfer` requires `entity.Container ==
    transfer.Source` and the same epoch, and a preparation expires after 15 s; `InstanceBoundary.Cross` writes
    `entity.transform.position` back to `crossing.LastPosition` while it waits. The link's standing preparation (D10, D16)
-   replaces both for plane apertures; the shim keeps the old path (D7).
+   replaces both, and `InstanceBoundary` goes with them (D7).
 3. **Content is loaded synchronously, in the tick, on first prepare.** `InstanceScenes.Prepare` creates the physics scene
    lazily and does `Resources.Load` and `Instantiate` of a part's whole prefab inside the worker tick (and on a client
    when the row arrives). A large interior breaks R2. NEB-428 moves the scene's creation and the prefab load into
@@ -522,8 +524,8 @@ How the design keeps them, and what a test pins:
 9. **History is left behind.** `StateHistory` entries hold a world pose and their container (`docs/state-history.md` D4)
    and are not touched at a crossing; D18 rewrites them.
 10. **The crossing test is a volume.** `InstanceBoundary.InteriorContains` makes the whole `Interior` box the inside, so
-    an entity is "in" whatever face it came through. That is the `Volume` containment of the shim (D7); a plane aperture
-    is a different, stricter rule, and content moved onto portals must have its door on the face.
+    an entity is "in" whatever face it came through. A plane aperture
+    is a different, stricter rule, and content ported to portals must have its door on the face (D7).
 11. **Companions move by translation only.** `InstanceBoundary.Commit` commits the group with one displacement
     (`TryCommitTransfers(Group, therePrecise − entity.ScopePositionPrecise)`), which preserves each member's rotation,
     so through a turned door a held item arrives unturned. D18 maps every member's full pose.
@@ -537,17 +539,17 @@ How the design keeps them, and what a test pins:
 
 ## 15. Implementation plan
 
-Each issue is one Nebula PR to the public repo. Conformance scenarios get the next free numbers of
-`docs/conformance-suite.md` (50 onwards) in the PR that implements them.
+Milestones 1 to 3 land as one Nebula branch, `jesse/portals`, with one commit per issue, merged once, and the game is
+ported in the same pass (D7). Nothing between the commits needs to be shippable, but each commit must compile and keep
+the Nebula test suites green, minus tests deleted with removed features. Conformance scenarios get the next free numbers
+of `docs/conformance-suite.md` (50 onwards) in the commit that implements them.
 
 **Milestone 1, portals and anything crosses.**
 
-- **NEB-428 `Portal` replaces `InstanceBoundary`.** The component, faces, apertures (`Box`, and `Volume` for the
-  shim), party links and their state machine with wait reasons (§3), the standing preparation (D10), asynchronous content
-  preparation (§14, item 3), messages 27 to 29 and protocol 28 with the window closed (§12). `InstanceBoundary` becomes
-  the shim (D7) with the same keys, events and statuses; `ObservePublic`, `ObserveHost` and `HostCarriers` are left as
-  they are. Tests: every existing `InstanceBoundary*` test and `ConformanceFramedInstanceBoundaryTests` pass unchanged on
-  the shim; a state-machine test of every transition and wait; tier A (fake mesh, real network gateway): a portal's
+- **NEB-428 `Portal` replaces `InstanceBoundary`.** The component, faces, plane apertures (`Box`), party links and their state machine with wait reasons (§3), the standing preparation (D10), asynchronous content
+  preparation (§14, item 3), messages 27 to 29 and protocol 28 with the window closed (§12). `InstanceBoundary` is removed
+  (D7) and the game's doors move onto `Portal`. Tests: the existing `InstanceBoundary*` tests' scenarios are ported to
+  `Portal`, and `ConformanceFramedInstanceBoundaryTests` becomes a portal conformance test; a state-machine test of every transition and wait; tier A (fake mesh, real network gateway): a portal's
   record and link state reach clients holding either face's row and only those, a non-member gets no observer bit, a
   27 client is refused; `ConformanceProtocolCompatibilityTests` on 28..28.
 - **NEB-429 Any entity crosses on its own.** D14 to D19 except the observation half of D19: the swept and predictive test,
@@ -564,8 +566,9 @@ Each issue is one Nebula PR to the public repo. Conformance scenarios get the ne
 
 **Milestone 2, seeing and acting across.** The three issues are independent.
 
-- **NEB-431 Observe both ways.** §5: windows, the `CanObserve` rule, per-window salts, the shim's mapping of
-  `ObservePublic`/`ObserveHost`. Tests (tier A): a member in the near window receives the far window's rows, carriers and
+- **NEB-431 Observe both ways.** §5: windows, the `CanObserve` rule, per-window salts. Removes `ObservePublic`, `PublicView`,
+  `ObserveHost`, `ClientConn.HostViews` and `HostCarriers`, with the `ObserveHost` flag byte of lease rows and the
+  `ObservePublic` fields of scope definitions (D24, D47). Tests (tier A): a member in the near window receives the far window's rows, carriers and
   entities and not what is outside it, and the reverse from inside; a non-member receives nothing through; one portal
   deep; closing revokes; a crate thrown in stays for its thrower while a non-member onlooker loses it and never hears of
   its destination (`docs/scope-activation.md` D13 kept); a client reconnecting inside sees out again.
@@ -582,12 +585,12 @@ Each issue is one Nebula PR to the public repo. Conformance scenarios get the ne
 - **NEB-434 Co-location and cross-worker commits.** D34 to D36. Tests (tier B, two workers): a link that is not Closed
   binds its containers into one item; with the far scope forced onto the other worker, a crossing commits through one
   handover with no hold and a correction ≤ 0.1 m; every wait reason is reported in its situation.
-- **NEB-435 Several drawn scopes.** §10: `PoseOf`, posing non-anchor roots and cameras, rendering-layer slots. Tests:
-  extend `ConformanceFarInstanceClientFrameTests` with two turned scopes drawn at once and from inside a turned scope;
-  the anchor's roots are never moved; slot bits are stamped and nothing else of the mask changes.
-- **NEB-436 Cleanup.** Remove `ObservePublic`, `ObserveHost`, `HostViews`, `HostCarriers` and `InstanceViews`'
-  scene-root turn; decide the shim's future (open question 5); fold in NEB-405, NEB-308 and NEB-408; update the
-  instancing, scopes and physics guides and `docs/conformance-suite.md`.
+- **NEB-435 Several drawn scopes.** §10: `PoseOf`, posing non-anchor roots and cameras, rendering-layer slots. Removes
+  `InstanceViews`' scene-root turn (§14, item 7). Tests: extend `ConformanceFarInstanceClientFrameTests` with two turned
+  scopes drawn at once and from inside a turned scope; the anchor's roots are never moved; slot bits are stamped and nothing else of the mask changes.
+- **NEB-436 Cleanup.** Fold in NEB-405, NEB-308, NEB-408 and the HVR-674 leftovers; update the instancing, scopes and
+  physics guides and `docs/conformance-suite.md`. The old paths are not here: each is removed by the issue that
+  replaces it (NEB-428, NEB-431, NEB-435).
 
 **Milestone 7, offset portals.**
 
@@ -606,7 +609,7 @@ Each issue is one Nebula PR to the public repo. Conformance scenarios get the ne
 | `ObservePublic` and `PublicView`, scope 0 only | the host side's window, any scope (D24) |
 | `docs/scope-frames.md` D12, drawing by turning the world | `PoseOf` and posed roots and cameras (D40, D41) |
 | `docs/scoped-chunk-grids.md` §7: no ghosting or interaction across scopes | adjacency at portals only, within a band (D30) |
-| `InstanceBoundary` | a shim over `Portal` (D7) |
+| `InstanceBoundary` | removed; `Portal` (D7) |
 | NEB-370 sibling observation, NEB-371 cross-worker crossings, NEB-232 adjacency research | D20, D35, D30 |
 
 ## 17. Seams kept open
@@ -643,7 +646,7 @@ band. What it changed in this design:
 | Proxies are cheap and accurate | create about 0.4 ms (pooled), keep 0.02 ms a tick, 1 cm pose error | D26 |
 | The client must predict against proxies posed from the authoritative tick | 52 corrections in 2.5 s without, 29 with interpolated poses, 0 control | D25 |
 | A body on a proxy re-posed every tick never sleeps; mirrored pairs push through | 0.8 to 1 m/s jitter; 0.9 m squeeze | D26 |
-| The volume containment's 1.2 m exit margin strands slow bodies in the far scope | a slow crate stopped outside still in the instance | D15 (plane, 5 cm), D7 (shim only) |
+| The volume containment's 1.2 m exit margin strands slow bodies in the far scope | a slow crate stopped outside still in the instance | D15 (plane, 5 cm); the volume containment is gone (D7) |
 | First spawn and first replica instantiate dominate, not the crossing | 34 ms worker, 64 to 74 ms client, once | §13: prewarm what crosses with the far content |
 
 The hitch budget could not be judged on an Editor-hosted worker, which peaks at 16 to 21 ms with nothing crossing; the
@@ -651,6 +654,9 @@ crossing step added at most 1.9 ms. R2 is measured on a built worker (milestone 
 once leaving the instance and was not isolated; NEB-431's window tests include a pawn leaving while observing the host.
 
 ## 19. Open questions
+
+Jesse approved the design as written on 2026-10-12, so every question below takes the default this document proposes,
+except Q5 and Q11, which he answered.
 
 1. **Sizes.** `BandDepth` 2 m, `CrossDepth` 5 cm, `WindowMargin` and `WindowDepth` (proposed 8 m and 48 m),
    `MaxPortalWindows` 4, `CloseTimeoutSeconds` 5. The HVR-683 spike used a 2 m band and found it enough for a door-sized crate (§18); the window sizes were not measured.
@@ -660,8 +666,8 @@ once leaving the instance and was not isolated; NEB-431's window tests include a
    names a party. Is refusal the right default, rather than the most recently opened link?
 4. **Crash.** A crashed near worker's links read Closed (D44), and anything straddling is pushed out when the far side
    comes back. Acceptable?
-5. **The shim's future.** Keep `Volume` containment and `InstanceBoundary` as a supported compatibility type, or remove
-   both in NEB-436 once content moves to plane apertures?
+5. **The shim's future.** Answered by Jesse on 2026-10-12: there is no shim. `InstanceBoundary` is removed and the game
+   ports to `Portal` in the same pass; there is no `Volume` containment (D7).
 6. **Far-leg queries on a split link.** D33 truncates a cast that leaves the band on another worker. Acceptable, given D34
    keeps links co-located, or does it need an asynchronous `WorkerQuery` leg?
 7. **Rendering layers.** Should Nebula stamp renderers (D42), or only assign slots and let the game stamp? Is eight slots
@@ -671,5 +677,6 @@ once leaving the instance and was not isolated; NEB-431's window tests include a
    preparation; is it worth it, or should prediction at the face accept the worker's correction?
 10. **Turning frames.** `docs/container-tree.md` already asks for doors on frames that do not turn. Does a face on a
     turning carrier need to work, or is that a documented limit?
-11. **NEB-431 before NEB-429?** NEB-429 alone makes a thrower lose sight of a crate at the commit (§14, item 4). Ship
-    them in one release, or accept the gap between milestones?
+11. **NEB-431 before NEB-429?** Answered by Jesse on 2026-10-12: they ship together. NEB-429 and NEB-431, with the rest
+    of milestones 1 to 3, land as one branch, one commit per issue, merged once (§15), so the gap of §14, item 4 never
+    ships.
