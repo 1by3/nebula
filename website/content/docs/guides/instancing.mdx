@@ -1,11 +1,18 @@
 ---
 title: Create private instances
-description: Define private areas with containers, open a portal to them for a party, and let players and their companions cross.
+description: Define private areas, open a portal to them for a party, and let players and their companions cross, collide, aim, see and draw through it.
 ---
 
 An instance is a separate [simulation scope](/docs/guides/scopes) containing one or more [runtime containers](/docs/guides/runtime-containers). Its entities have independent authority and physics. Instance ID `0` is the public world. Multiple instances can occupy the same coordinates.
 
 This page is the worker-side path: your game opens a `Portal` for a party, the worker prepares the instance behind it, and players walk through. To create a scope from outside a worker — from a matchmaker, a travel menu or a login flow — or to route a player into one at join, see [Simulation scopes](/docs/guides/scopes). Both paths produce the same scope for the same key.
+
+A `Portal` is the only way between two scopes. This page follows one from setup to play:
+
+1. [Define an area](#define-an-area) and [open and close a portal](#open-and-close-a-portal).
+2. [Cross at the face](#cross-at-the-face), [collide](#collide-across-a-portal) and [cast](#cast-through-a-portal) through it.
+3. [Look through a portal](#look-through-a-portal) and [draw what is through it](#draw-what-is-through-a-portal).
+4. [Save and retire an instance](#save-and-retire-an-instance), then [build and test](#build-and-test).
 
 Use instances for private homes, party dungeons, training rooms, or separate copies of a mission. A container still defines where simulation happens and which [worker](/docs/concepts/containers-and-handover) is responsible. The instance ID determines which copy an entity belongs to. Creating an ordinary runtime container alone does not make it private.
 
@@ -37,6 +44,15 @@ The portal preserves world position when crossing. Its aperture is a rectangle o
 
 Static content prefabs must not contain `NetworkIdentity` components. Spawn networked furniture, enemies, and other stateful objects through the worker's spawn API, passing an instance container. Add `PersistentEntity` and use instance-specific persistence keys for objects that must survive a restart.
 
+### Coincident and offset portals
+
+A portal joins two **faces**: the near face, where the `Portal` stands in its scope, and the far face, in the far scope. A link maps a point of one scope into the other about the two faces, in double precision, so a crossing is exact however far from the origin either scope is.
+
+- A **coincident portal** has both faces at the same absolute point. The far scope is built where the door is, inside the near side's solid mass, and a crossing changes scope without moving the entity: it keeps its absolute position to the millimeter. A portal with a template far side (`FarTemplate`) is always coincident, and so is a fixed far side whose face has the same origin as the near face. When the two faces are turned differently, such as a door on a sphere with an interior built upright, the link is a pure turn about the door (see `TurnWithFace`).
+- An **offset portal** has its faces at different points: a doorway into a place that exists anyway, or the stairs to the next floor of a fixed building. The link then carries a translation as well as a turn.
+
+Build coincident portals. Offset portals are not supported yet: `Portal.SetFixedFarSide` accepts a far face at another point, but crossing, windows, proxies, queries and drawing are not yet written or tested to honor the translation. Everything on this page describes coincident portals.
+
 ### Template and portal settings
 
 | Setting | What to configure |
@@ -48,7 +64,7 @@ Static content prefabs must not contain `NetworkIdentity` components. Spawn netw
 | `Portal.Id` | A name unique within the container the portal stands in. With that container's id it derives the portal's id on every process. |
 | `Portal.FarTemplate` | The template behind the face. The far scope of a party is `TemplateId + "/" + party`. For a scope that exists anyway, call `SetFixedFarSide` instead. |
 | `Portal.Aperture` | The opening on the face's plane: `PortalAperture.Box(halfWidth, halfHeight)`, centered on the portal's position. |
-| `Portal.TurnWithFace` | Build the far scope in the portal's axes (on by default), so the interior stands behind a door that is not upright. Off keeps the near scope's axes. |
+| `Portal.TurnWithFace` | Build the far scope in the portal's axes, so the interior stands behind a door that is not upright. On by default. Off keeps the near scope's axes. |
 | `Portal.PartyOf` | Which party an entity belongs to. By default the owner's identity. See [Choose who enters together](#choose-who-enters-together). |
 | `Portal.CanEnter` | Admission into a link's far scope. By default a server-owned entity, or a member's entity once the member is warm. |
 | `Portal.WindowMargin`, `Portal.WindowDepth` | The size of the portal's two windows (8 m and 48 m by default). See [Look through a portal](#look-through-a-portal). |
@@ -121,7 +137,8 @@ Your game is responsible for the rest:
 - **Keep the entrance chunk leased and the near scope active while the instance is occupied.** A scoped grid leases chunks around the players standing in it, and players inside the instance are not standing in it. Pin the entrance chunk on the grid's allocator (`RuntimeGridAllocator.AddPin`) while anyone is inside, and keep the scope from retiring.
 - **Open and close the portal on the worker that owns its container.** A link lives on that worker, and so does the crossing test; the instance is leased first by the worker that prepared it.
 - **Let occupants look out.** A client inside sees the grid's chunks and entities around the door through the portal's window, from the link records, with no option to set. Make the players who should look out members of the link, or mark the door `ObserveAnyone`; see [Look through a portal](#look-through-a-portal).
-- **Looking through the doorway.** On the client an instance entered from the scope the player stands in shares that scope's origin frame, so its content is drawn exactly behind the door and the host's scenery exactly outside it; the content of a scope the client may look through is drawn while the link is open. Build the interior in the portal's own axes (its forward is the way in): an instance is prepared with the portal's rotation (`Portal.PoseRotation`, off with `TurnWithFace`), so on a curved surface it stands behind the door the way the door stands, crossings carry the player's facing and velocity through it, and each drawn scope is posed against the anchor (see [Draw what is through a portal](#draw-what-is-through-a-portal)).
+- **Build the interior in the portal's own axes.** Its forward is the way in. An instance is prepared with the portal's rotation (`Portal.PoseRotation`, the identity with `TurnWithFace` off), so on a curved surface it stands behind the door the way the door stands, and a crossing carries the player's facing and velocity through it.
+- **Let the client draw both sides.** On the client, an instance entered from the scope the player stands in shares that scope's origin frame, so its content is drawn exactly behind the door and the host's scenery exactly outside it. The content of a scope the client may look through is drawn while the link is open, posed against the anchor (see [Draw what is through a portal](#draw-what-is-through-a-portal)).
 
 ## Open and close a portal
 
@@ -172,7 +189,7 @@ An entity stops at the face when the link is not open, when it is not admitted, 
 | `NoDestination` | The container it would arrive in is not here yet, or its lease moved. |
 | `SplitAboard` | A carrier has riders this worker does not simulate (a rider held only as a ghost, an interior leased to another worker), so carrying it through would leave them behind. It is refused whole. |
 
-A physical body is meant to meet a collider across the aperture; until that is built, a refused `Rigidbody` is stopped like any other mover.
+A `Rigidbody` that a link does not admit also meets the thin collider over the opening (see [Collide across a portal](#collide-across-a-portal)), so it bounces off the door instead of being put back.
 
 ## Read a link's state
 
@@ -442,9 +459,11 @@ A few rules to design around:
 - **Closing takes it away at once.** A link that is `Open` or `Closing` shows both sides; when it closes, the far side's entities are despawned for the client, and its container rows follow after the usual linger.
 - **A thrown crate stays with its thrower.** An entity that crosses changes scope, and a client that may look through the link it went through, from inside the near window, keeps it: no despawn, no new spawn, no blink. An onlooker who may not look through loses it at once and is never told the other scope exists.
 - **A reconnect inside sees out again.** The link records live on the gateway, so nothing about where a player came from is remembered.
-- **Nothing is simulated across except at the face.** A client holds what it is sent as replicas in their own scope. It collides with them only through the proxies it builds in the band for its pawn (see [Collide across a portal](#collide-across-a-portal)), and it aims at them and hits them with a portal query (see [Cast through a portal](#cast-through-a-portal)); drawing the other scope posed at the door is a separate feature. A client that is sent an entity naming a container it has no row for holds the update, whatever the container's kind, until the row arrives.
+- **Nothing is simulated across except at the face.** A client holds what it is sent as replicas in their own scope. It collides with them only through the proxies it builds in the band for its pawn (see [Collide across a portal](#collide-across-a-portal)), and it aims at them and hits them with a portal query (see [Cast through a portal](#cast-through-a-portal)); the scopes it draws are posed at their doors (see [Draw what is through a portal](#draw-what-is-through-a-portal)). A client that is sent an entity naming a container it has no row for holds the update, whatever the container's kind, until the row arrives.
 
-`ObservePublic`, `PublicView` and `ObserveHost` of the instance template, and their counterparts on `ScopeDefinition`, no longer exist: what a room looks out at is its portals' windows, and what a street looks into is the same windows. A window onto ground that is a planet carrying its own frame is authorized and its rows are kept, and the ground's entities are found through the planet's own regions.
+A window onto ground that is a planet carrying its own frame is authorized and its rows are kept, and the ground's entities are found through the planet's own regions.
+
+If you used the options that earlier versions had for this, `ObservePublic`, `PublicView` and `ObserveHost` on the instance template and their counterparts on `ScopeDefinition`, remove them. They no longer exist: what a room looks out at is its portals' windows, and what a street looks into is the same windows. Set `Portal.ObserveAnyone` or `Portal.AddObserver` to decide who may look.
 
 If your game builds a chunk's content after `NebulaChunks.Loaded` returns, check `NebulaChunks.IsDrawn` and keep new renderers hidden while it is `false`. Otherwise the client hides them only when the player next moves into another container.
 
@@ -594,7 +613,7 @@ Releasing one part by hand does not retire the others; use the [scope lifecycle]
 
 ## Build and test
 
-Rebuild workers, gateways, and clients together. Instance metadata changes the wire protocol to version `12`.
+Rebuild workers, gateways, and clients together. Portals use wire protocol version `28`, and a client accepts only a gateway on the same version.
 
 Use two clients to check that public observers lose sight of an entering player, occupants see out through the door's window, and different private copies cannot see or hit each other. Test missing content and worker reassignment during preparation: both must leave the source authoritative until a valid transfer can be committed.
 
@@ -608,13 +627,16 @@ Use distinct player identities for the personal-instance test. Two clients shari
 | Two admitted players resolve the same key | They see each other inside the same copy. |
 | Occupant leaves | Public visibility returns without reconnecting. |
 | Run a raycast or spawn a projectile at overlapping coordinates | Gameplay affects only the intended scope. |
+| Throw a crate through an open portal, then close it | The crate arrives in the far scope and keeps its momentum; with the link closed, it bounces off the door. |
+| Fire a `PortalQueries.Raycast` through an open portal | The hit is in the far scope (`ThroughPortal`); through a closed one it is the door (`Aperture`). |
+| Stand in the window of a link you may look through | You see the other side's entities, drawn at the door; when the link closes they disappear. |
 | Traverse multiple private parts | Ordinary container resolution stays within that instance. |
 | Deny entry, remove a required resource, or change a lease while a link prepares | The link does not open, or the crossing is refused; the game can retry after correcting the condition. |
 | Restart and enter a saved home | Persistent contents restore when the same containers are recreated. |
 
 ### Rebuild after a protocol change
 
-Editor compilation updates the client running in Unity. It does not update an already-running gateway or the worker executables. If the gateway log reports `client protocol 12 != 11; disconnecting`, the editor and mesh are from different protocol versions.
+Editor compilation updates the client running in Unity. It does not update an already-running gateway or the worker executables. If the gateway log reports a line such as `client 'player-1' refused: protocol 27 != 28`, the editor and mesh are from different protocol versions.
 
 From the game project's root, rebuild and restart the mesh:
 

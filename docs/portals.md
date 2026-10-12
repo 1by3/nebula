@@ -1,8 +1,9 @@
 # Portals — design
 
 Status: design of record for **NEB-427**, protocol **v28** (new messages; the client window closes to 28..28, see §12).
-The design was approved by Jesse, the project owner, on 2026-10-12, and implementation is on the branch `jesse/portals`:
-§15 maps it onto NEB-428 to NEB-437. Decisions made without asking are marked **D#**.
+The design was approved by Jesse, the project owner, on 2026-10-12. **Implemented on the branch `jesse/portals`
+(milestones 1 to 3, NEB-428 to NEB-436); milestone 7, offset portals (NEB-437), is not built.** §15 maps the design onto
+the issues, each with the commit that built it. Decisions made without asking are marked **D#**.
 Builds on `docs/scope-frames.md` (D11, D12: pinned instance frames, turned doors, NEB-426), `docs/scope-activation.md`
 (D2, D13, D14, D19, D21, §12, §13), `docs/interest-management.md`, `docs/cohesion-hints.md`, `docs/entity-extents.md`
 and `docs/state-history.md`. It supersedes `docs/scope-frames.md` §7's "seamless scope-to-scope travel" non-goal,
@@ -1008,6 +1009,7 @@ of `docs/conformance-suite.md` (50 onwards) in the commit that implements them.
   `Portal`, and `ConformanceFramedInstanceBoundaryTests` becomes a portal conformance test; a state-machine test of every transition and wait; tier A (fake mesh, real network gateway): a portal's
   record and link state reach clients holding either face's row and only those, a non-member gets no observer bit, a
   27 client is refused; `ConformanceProtocolCompatibilityTests` on 28..28.
+  *Built in `d78369b` (docs `23399d9`).*
 - **NEB-429 Any entity crosses on its own.** D14 to D19 except the observation half of D19: the swept and predictive test,
   server-owned entities, carriers with seated riders and followed contents, companions through `ResolveCompanions`,
   refusal by collider and clamp, velocity, history, interpolation and prediction history through the link. Tests (tier
@@ -1015,6 +1017,7 @@ of `docs/conformance-suite.md` (50 onwards) in the commit that implements them.
   `PrepareTransfer`, no hold and nothing instantiated; a projectile at 300 m/s crosses without a step behind the face; a
   ship with two riders crosses with them seated; a refused crate is stopped and `Refused` raised; a history read at the
   crossing tick answers in the destination's space; the pawn's correction at a crossing ≤ 0.1 m.
+  *Built in `b41cf62`.*
 - **NEB-430 Geometry in double and oriented.** D4, D37 to D39: faces in double, the pivot form, face-relative
   `OrientedBox` tests, `Portals.Map` and `Turn`. Tests: a portal 5×10⁷ m out on a door turned 55° about x and 180°
   about y, crossings both ways land to the millimetre with rotation and velocity turned (extending
@@ -1063,6 +1066,7 @@ split link has none (D27); a refused body that has colliders is stopped by the a
 `PortalPhysics.NearApertureOf`/`FarApertureOf`); NEB-434 should extend the ghosting here to a body's whole group and give a split link its throat, and is where `PortalHandoff` is built; NEB-435's drawn
 scopes need nothing of the physics, which stays in each scope's upright space; NEB-437's offset portals are already carried by the pivot form (`PortalFaceFrame` and the two turns), the proxies and the aperture
 colliders need no change for a translation.
+  *Built in `f43b095`.*
 
 **Milestone 2, seeing and acting across.** The three issues are independent.
 
@@ -1072,10 +1076,12 @@ colliders need no change for a translation.
   entities and not what is outside it, and the reverse from inside; a non-member receives nothing through; one portal
   deep; closing revokes; a crate thrown in stays for its thrower while a non-member onlooker loses it and never hears of
   its destination (`docs/scope-activation.md` D13 kept); a client reconnecting inside sees out again.
+  *Built in `6ad4912`.*
 - **NEB-432 Proxies in the band.** §6 and the NEB-232 decision: proxies, the throat and its validation, the aperture
   collider, portal adjacency and proxy ghosts. Tests (play mode): a crate rests straddling an open face; a body pushed
   through crosses without a jolt; a closed portal stops a body; a refused body bounces; on two workers a body in the band
   is a proxy on the far worker and nothing outside the band is ghosted across.
+  *Built in `5756d1d` and `dd18e82` (a side in a physics frame).*
 - **NEB-433 Queries across.** §7. Tests: a ray through an open aperture hits a far entity, at its rewound pose with a
   tick; a closed aperture is hit at the plane; proxies are never hit; a face with two parties' links casts into the
   asker's party's scope; a far leg beyond the band on another worker is `Truncated`.
@@ -1083,6 +1089,7 @@ colliders need no change for a translation.
   `Tests/EditMode/PortalQueriesLogicTests` (8), conformance scenarios 64 to 67. The `LagCompensatedHitscan` sample is a `PortalQueries.Raycast` with a tick and keeps no scope filter of its own. Deviations from
   the design as written, each recorded at its decision: `PortalQueries` is an instance for each process, not a static class (D32); points are scene-space floats about the faces, not `Double3` (D32); a
   leg in the band of a split link is not rewound (D33). What a game does to adopt it is in the instancing guide, "Cast through a portal".
+  *Built in `bbb3b92`.*
 
 **Milestone 3, across workers and on the client.**
 
@@ -1099,18 +1106,25 @@ colliders need no change for a translation.
   network gateways keep the old worker's records for a second after a handoff (D44). **Seams left:** a split link still has no static throat and contact across it is one-sided (D27, D31); a rider's
   history on a ghost holder is not rewritten (D18); a row that appears after a link opened is entered only after the link prepares again; offset portals (NEB-437) change none of it, because every row is
   found in the far face's own axes.
+  *Built in `e473fa8`.*
 - **NEB-435 Several drawn scopes** (*built: `DrawnScopes`, `ScopeLayers`, `ScopePose`, `Portals.Draw.cs`; EditMode `ConformanceDrawnScopesTests`, scenarios 74 and 75; see the notes under D40 to D42*). §10: `PoseOf`, posing non-anchor roots and cameras, rendering-layer slots. Removes
   `InstanceViews`' scene-root turn (§14, item 7). Tests: extend `ConformanceFarInstanceClientFrameTests` with two turned
   scopes drawn at once and from inside a turned scope; the anchor's roots are never moved; slot bits are stamped and nothing else of the mask changes.
+  *Built in `ca9801d`.*
 - **NEB-436 Cleanup.** Fold in NEB-405, NEB-308, NEB-408 and the HVR-674 leftovers; update the instancing, scopes and
   physics guides and `docs/conformance-suite.md`. The old paths are not here: each is removed by the issue that
   replaces it (NEB-428, NEB-431, NEB-435).
+  *As built:* NEB-405 `InstanceScenes` reuses or renames a scene and `Reset` unloads what it forgets; NEB-308 a client places a scope's root container in the scope's physics scene as it is created (`InstanceScenes.Place`);
+  NEB-408 the frame approach margin is `Container.FrameApproachMargin`, 0 (off) by default, carried with the placement and the lease row, and `NebulaConfig.InterestFrameApproachMargin` is removed
+  (a game opts in per planet or station); scenario 42 is per container and scenario 76 pins NEB-405 and NEB-308.
+  *Built in `741a8fa` (docs in the commit after it).*
 
 **Milestone 7, offset portals.**
 
 - **NEB-437 Non-coincident link pose.** Every reader of a link pose honours its translation: crossing, windows (D21 for
   an offset portal), proxies, queries, `PoseOf`. Tests: an offset portal between two places in one scope and between two
   scopes; a crate goes through both ways; a ray and an observer see through; a proxy straddles; precision at 10⁸ m on both faces.
+  *Not built: milestone 7 is outside the `jesse/portals` branch.*
 
 ## 16. What this supersedes
 

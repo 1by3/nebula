@@ -65,6 +65,14 @@ public FrameInterestMode FrameInterest;
 
 How a framed container's contents are bucketed for interest ([`FrameInterestMode`](/docs/reference/containers/frame-interest-mode)).
 
+### FrameApproachMargin [#frameapproachmargin]
+
+```csharp
+public float FrameApproachMargin;
+```
+
+For a frame with [`FrameInterestMode.OwnRegions`](/docs/reference/containers/frame-interest-mode#ownregions): metres from its box within which a client in the space around it also looks into it ([`Container.FrameApproachMargin`](/docs/reference/containers/container#frameapproachmargin)). 0 is off.
+
 ## Properties
 
 ### IsRoot [#isroot]
@@ -113,7 +121,7 @@ A child box, centred at `localCenter` in `parentId`'s frame.
 ### WithPhysicsFrame [#withphysicsframe]
 
 ```csharp
-public ContainerPlacement WithPhysicsFrame(FrameInterestMode interest = FrameInterestMode.WithCarrier);
+public ContainerPlacement WithPhysicsFrame(FrameInterestMode interest = FrameInterestMode.WithCarrier, float approachMargin = 0f);
 ```
 
 The same placement with its own physics frame.

@@ -72,6 +72,15 @@ public FrameInterestMode FrameInterest = FrameInterestMode.WithCarrier;
 
 Frame only: WithCarrier publishes everything inside with the carrier (ships); OwnRegions buckets it in regions of the frame itself (planets).
 
+### FrameApproachMargin [#frameapproachmargin]
+
+```csharp
+[Min(0f)]
+public float FrameApproachMargin;
+```
+
+Frame with OwnRegions only: metres from this container's box within which a client in the space around it also looks into it (a pilot over a planet sees what stands on it). 0, the default, turns it off: nobody outside the box sees in. Hold it to the distance a viewer can use; it widens interest to every client that comes that near.
+
 ### Hint [#hint]
 
 ```csharp

@@ -429,7 +429,7 @@ client is refused with its range instead of being admitted into a world it would
 
 **D23 A client outside a framed container's box looks into it while it is near (NEB-386).** D18's enclosing foci look
 outward from a frame; this is the mirror, inward. A pawn in the space around a frame with regions of its own (a
-planet, a station) that is within `InterestFrameApproachMargin` (default 4,000 m, 0 turns it off) of the frame's box
+planet, a station) that is within the frame's own `Container.FrameApproachMargin` (metres; 0, the default, turns it off, NEB-408) of the frame's box
 gets one more focus, in that frame's region space (`InterestFocus.Space`), so `ClientInterest` scans the frame's
 buckets with it: a pilot over a planet sees the outposts, ships and players standing on it, and the same rule serves a
 ship looking at a station or a fighter at a capital ship's deck. The gateway adds it beside the enclosing foci
@@ -529,7 +529,7 @@ only the last registered owns the box and its frame. Scenario 21's two-worker ca
   box's hysteresis.
 - `grid.Frame.OriginOffset` of a hosted grid converts in simulation space only. A client draws the host posed (D11):
   convert a host-local point for rendering with `PhysicsFrame.ToParent`.
-- A client outside a planet's box sees what stands on it only within `InterestFrameApproachMargin` of the box, and from the box's face, not from where it is (D23). A gateway of its own knows a carried planet's box only from its chunks' leases.
+- A client outside a planet's box sees what stands on it only within the planet's `FrameApproachMargin` of the box, when it set one, and from the box's face, not from where it is (D23). A gateway of its own knows a carried planet's box only from its chunks' leases.
 - The planet → space → planet lap runs in one process as scenario 40 (`ConformanceFramedPlanetLapTests`, two workers
   and a gateway, no client process; the sample `Samples~/FramedPlanetLap`) over ground leased statically, and as
   scenario 41 over a hosted grid streamed around players (D22). Not yet on a live mesh. What it found

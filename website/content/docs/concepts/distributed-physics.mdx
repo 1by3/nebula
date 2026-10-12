@@ -13,6 +13,7 @@ A **container** is a box-shaped area of the game world assigned to a **worker**,
 | --- | --- | --- |
 | Two bodies simulated by the same worker | Ordinary PhysX. Contacts, joints, and articulations resolve in one solver. | Exact |
 | A body and a ghost (a **ghost contact**) | The local body collides with a kinematic copy that is one tick behind. The collision does not change the entity on its authoritative worker. | One-sided, one tick behind |
+| A body in the doorway of an open [portal](/docs/guides/instancing#collide-across-a-portal) | The other scope's scene holds a kinematic proxy of the body, posed through the link, so the body is felt from both sides. A thin collider over the opening stops what the link does not admit. | One-sided |
 | A `Joint` or `ArticulationBody` between entities in different containers | Each worker solves its side against a kinematic copy of the other body. The two results do not agree. | Unsupported |
 
 The rest of this page explains each row and what to do instead.
@@ -79,6 +80,8 @@ By default the worker that has authority over the carrier also has authority ove
 Each private [instance](/docs/guides/instancing) has its own Unity physics scene. The worker steps every loaded instance scene once per tick, after `NetworkTick`. Entities in different instances never collide, even at the same coordinates, and a global `Physics` query only inspects the public scene. Use `NetworkIdentity.PhysicsScene` for raycasts and overlaps from an entity, or `InstanceScenes.PhysicsFor(instanceId)` for a known instance.
 
 Ghosts follow the same rule: a ghost is instantiated under its container's transform and lands in that container's scene, so it collides only with bodies in the same instance.
+
+The one place two scopes touch is the face of an open portal. A body in the doorway has a **proxy**, a kinematic copy of its colliders, in the other scope's scene, and each side's static floor and walls stand in the other as the doorway's geometry. Contact is one-sided, as for a ghost: each side resolves against the other side's proxies, and a proxy never pushes its body. When the two scopes are on different workers the proxy is a ghost held in the band around the face, and the doorway has no static geometry from the far side. See [Collide across a portal](/docs/guides/instancing#collide-across-a-portal) and [Cast through a portal](/docs/guides/instancing#cast-through-a-portal).
 
 ## What to do instead
 
