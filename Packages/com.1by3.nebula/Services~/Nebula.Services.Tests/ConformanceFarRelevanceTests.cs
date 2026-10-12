@@ -161,6 +161,8 @@ public class ConformanceFarRelevanceTests
     [Test]
     public void AProtocol25ClientIsNeverSentTheFarTier()
     {
+        // Protocol 27 (NEB-426) closed the window to 26..27: no client below the far tier is admitted any more.
+        if (HelloMsg.MinProtocolVersion >= HelloMsg.FarEntitiesVersion) Assert.Pass("every admitted client reads the far tier");
         using var fleet = new Fleet(gateways: 1);
         var old = Pilot(fleet, "old", new Vector3(0, 0, 0), version: HelloMsg.MinProtocolVersion);
         Assert.That(old.Welcome!.Value.NegotiatedVersion, Is.EqualTo(HelloMsg.MinProtocolVersion));

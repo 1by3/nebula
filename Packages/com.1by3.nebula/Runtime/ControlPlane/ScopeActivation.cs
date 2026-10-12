@@ -121,8 +121,12 @@ namespace Nebula
     {
         /// <summary>Non-empty and unique within the definition. It is hashed with the scope key into the container id, so changing it renames the place.</summary>
         public string PartId = "";
-        /// <summary>Box centre, in the same absolute frame as <see cref="LeaseInfo.Bounds"/> (see <c>docs/scope-activation.md</c> D4).</summary>
-        public Vector3 Center;
+        /// <summary>
+        /// Box centre, in the same absolute frame as <see cref="LeaseInfo.Center"/> (see <c>docs/scope-activation.md</c> D4),
+        /// in double, so a part 100,000 km from the absolute origin is placed to the millimetre (NEB-426). A
+        /// <c>Vector3</c> converts implicitly.
+        /// </summary>
+        public Double3 Center;
         /// <summary>Box size; every component must be positive.</summary>
         public Vector3 Size;
         /// <summary>Resources path of this part's static geometry, or empty. Loaded by the worker that owns the lease, through the game's existing instance-content path.</summary>
@@ -158,6 +162,16 @@ namespace Nebula
         public bool ObserveHost;
         /// <summary>An opaque blob the game or a later milestone attaches to the definition. Never parsed by Nebula.</summary>
         public string Payload = "";
+        /// <summary>
+        /// Whether the scope's own space is turned against the host it is entered from (<see cref="InstanceContainerInfo.HasPose"/>,
+        /// <c>docs/scope-frames.md</c> D12). Copied to every part's lease row. Written only when set, so a definition without
+        /// it compares equal to one written before it existed.
+        /// </summary>
+        public bool HasPose;
+        /// <summary>The point the scope's space and its host's share, absolute.</summary>
+        public Double3 PoseOrigin;
+        /// <summary>The scope's axes in its host's.</summary>
+        public Quaternion PoseRotation = Quaternion.identity;
 
         /// <summary>The reason this definition cannot be activated, or null when it is well formed.</summary>
         public string Validate()
@@ -302,7 +316,7 @@ namespace Nebula
                     if (part == null) continue;
                     w.BeginObject();
                     w.Prop("partId", part.PartId ?? "");
-                    w.Key("center"); ControlPlaneJson.Vec(w, part.Center);
+                    w.Key("center"); WriteCenter(w, part.Center);
                     w.Key("size"); ControlPlaneJson.Vec(w, part.Size);
                     w.Prop("content", part.ContentResource ?? "");
                     w.EndObject();
@@ -315,7 +329,48 @@ namespace Nebula
             w.Key("observationCenter"); ControlPlaneJson.Vec(w, d.ObservationCenter);
             w.Key("observationSize"); ControlPlaneJson.Vec(w, d.ObservationSize);
             w.Prop("payload", d.Payload ?? "");
+            if (d.HasPose)
+            {
+                w.Key("poseOrigin"); ControlPlaneJson.Vec(w, d.PoseOrigin);
+                w.Key("poseRotation");
+                w.BeginArray();
+                ControlPlaneJson.Num(w, d.PoseRotation.x); ControlPlaneJson.Num(w, d.PoseRotation.y);
+                ControlPlaneJson.Num(w, d.PoseRotation.z); ControlPlaneJson.Num(w, d.PoseRotation.w);
+                w.EndArray();
+            }
             w.EndObject();
+        }
+
+        /// <summary>
+        /// A part's centre, written the way a float centre always was when it is one (so a definition stored before
+        /// centres were double compares equal to the same definition now), and at full double precision otherwise.
+        /// </summary>
+        private static void WriteCenter(JsonWriter w, Double3 c)
+        {
+            w.BeginArray();
+            CenterNum(w, c.X); CenterNum(w, c.Y); CenterNum(w, c.Z);
+            w.EndArray();
+        }
+
+        private static void CenterNum(JsonWriter w, double d)
+        {
+            float f = (float)d;
+            if ((double)f == d) ControlPlaneJson.Num(w, f);
+            else ControlPlaneJson.Num(w, d);
+        }
+
+        /// <summary>The inverse of <see cref="WriteCenter"/>: a number written in float form reads back as that float, exactly.</summary>
+        private static Double3 ReadCenter(Dictionary<string, object> o, string key)
+        {
+            var d = ControlPlaneJson.Vec3D(o, key);
+            return new Double3(AsWritten(d.X), AsWritten(d.Y), AsWritten(d.Z));
+        }
+
+        private static double AsWritten(double d)
+        {
+            float f = (float)d;
+            if (float.IsInfinity(f)) return d;
+            return double.Parse(f.ToString("R", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture) == d ? f : d;
         }
 
         /// <summary>Read a definition written by <see cref="WriteDefinition(ScopeDefinition)"/>. An empty or malformed document reads as an empty definition.</summary>
@@ -339,7 +394,7 @@ namespace Nebula
                     d.Parts.Add(new ScopePart
                     {
                         PartId = ControlPlaneJson.Str(p, "partId"),
-                        Center = ControlPlaneJson.Vec(p, "center"),
+                        Center = ReadCenter(p, "center"),
                         Size = ControlPlaneJson.Vec(p, "size"),
                         ContentResource = ControlPlaneJson.Str(p, "content"),
                     });
@@ -350,6 +405,12 @@ namespace Nebula
             d.ObservationCenter = ControlPlaneJson.Vec(o, "observationCenter");
             d.ObservationSize = ControlPlaneJson.Vec(o, "observationSize");
             d.Payload = ControlPlaneJson.Str(o, "payload");
+            if (o.TryGetValue("poseRotation", out var q) && PersistenceJson.TryNumbers(q, 4, out var n))
+            {
+                d.HasPose = true;
+                d.PoseOrigin = ControlPlaneJson.Vec3D(o, "poseOrigin");
+                d.PoseRotation = new Quaternion((float)n[0], (float)n[1], (float)n[2], (float)n[3]);
+            }
             return d;
         }
 
@@ -518,7 +579,7 @@ namespace Nebula
             {
                 string containerId = ScopeKeys.ContainerId(key, part.PartId);
                 scope.ContainerIds.Add(containerId);
-                EnsureRuntimeContainer(containerId, new Bounds(part.Center, part.Size), request.PreferredWorkerId ?? "", new InstanceContainerInfo
+                EnsureRuntimeContainer(containerId, ContainerPlacement.Root(part.Center, part.Size), request.PreferredWorkerId ?? "", new InstanceContainerInfo
                 {
                     InstanceId = scope.InstanceId,
                     ContentResource = part.ContentResource ?? "",
@@ -528,6 +589,9 @@ namespace Nebula
                     ObservationCenter = definition.ObservationCenter,
                     ObservationSize = definition.ObservationSize,
                     ObserveHost = definition.ObserveHost,
+                    HasPose = definition.HasPose,
+                    PoseOrigin = definition.PoseOrigin,
+                    PoseRotation = definition.PoseRotation,
                 });
             }
             if (created) NebulaLog.Info($"control plane: scope '{key}' activated with {scope.ContainerIds.Count} container(s)");

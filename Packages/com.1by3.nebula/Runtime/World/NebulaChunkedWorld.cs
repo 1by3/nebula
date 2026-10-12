@@ -427,6 +427,9 @@ namespace Nebula
         {
             var grid = pawn != null ? NebulaChunks.GridHolding(pawn.Container) : null;
             if (grid != null && grid.IsHosted) grid = NebulaChunks.GridFor(grid.ScopeKey);
+            // A pawn in an instance that shares its host scope's frame (docs/scope-frames.md D11) keeps that frame's
+            // origin near it, so the instance and the world seen through its door both stay precise.
+            if (grid == null && pawn != null && ScopeFrames.IsShared(pawn.InstanceId)) grid = NebulaChunks.RootGridOf(ScopeFrames.Resolve(pawn.InstanceId));
             return grid ?? fallback;
         }
 

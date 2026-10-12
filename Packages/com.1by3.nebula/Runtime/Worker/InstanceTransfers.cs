@@ -60,22 +60,36 @@ namespace Nebula
         /// <param name="key">Game-selected home, party, or run key. The same template ID and key select the same scope.</param>
         /// <param name="origin">Instance origin in this process's world frame. Existing keys must retain their bounds and content resource.</param>
         public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Vector3 origin) =>
-            PrepareInstance(template, key, frame => ContainerRegistry.ToAbsolute(new Bounds(origin + frame.center, frame.size)));
+            PrepareInstance(template, key, ContainerRegistry.ToAbsolutePrecise(origin, 0UL));
 
         /// <summary>
         /// Create or find stable instance container leases at an origin in <b>absolute</b> coordinates: the form to use
         /// when the caller stands in a scope with an origin frame of its own (a scoped chunk grid), whose frame numbers
-        /// mean nothing to the instance. The instance itself has no frame; it lives in the public frame, like every
-        /// instance. Every other rule is <see cref="PrepareInstance(InstanceTemplate, string, Vector3)"/>'s.
+        /// mean nothing to the instance. Every other rule is <see cref="PrepareInstance(InstanceTemplate, string, Vector3)"/>'s.
+        /// <para>
+        /// The parts' boxes are composed and stored in double, and every process that registers them gives the instance
+        /// an origin frame of its own pinned at (near) this origin (<c>docs/scope-frames.md</c> D2, D11), so an instance
+        /// 100,000 km from the absolute origin is simulated near Unity's origin, to the millimetre.
+        /// </para>
         /// </summary>
         /// <param name="template">Layout with a stable ID, unique part IDs, and positive-size bounds.</param>
         /// <param name="key">Game-selected home, party, or run key. The same template ID and key select the same scope.</param>
         /// <param name="absoluteOrigin">Instance origin in absolute coordinates (<see cref="ContainerRegistry.ToAbsolutePrecise"/>). Existing keys must retain their bounds and content resource, so pass the same numbers every time (round them if they come from a transform).</param>
         public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Double3 absoluteOrigin) =>
-            PrepareInstance(template, key, frame => new Bounds((absoluteOrigin + frame.center).ToVector3(), frame.size));
+            PrepareInstance(template, key, absoluteOrigin, Quaternion.identity);
 
-        /// <summary>The shared body of both overloads: <paramref name="toAbsolute"/> turns a box relative to the instance origin into an absolute one.</summary>
-        private ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Func<Bounds, Bounds> toAbsolute)
+        /// <summary>
+        /// <see cref="PrepareInstance(InstanceTemplate, string, Double3)"/> for an instance whose own space is turned against
+        /// its host's by <paramref name="rotation"/> (<c>docs/scope-frames.md</c> D12): a door that is not upright in its
+        /// host scope (on a sphere) opens on an interior built upright in its own space. The template's boxes and content
+        /// stay upright about <paramref name="absoluteOrigin"/>; a point p of the instance is
+        /// <c>absoluteOrigin + rotation × (p − absoluteOrigin)</c> in the host. Every process that registers the instance
+        /// learns the pose from its lease rows (<see cref="InstanceContainerInfo.HasPose"/>): crossings through an
+        /// <see cref="InstanceBoundary"/> map position, rotation and velocity through it, and a client draws the instance
+        /// turned behind its door, and the host world turned outside it from inside. Pass the same rotation every time
+        /// (round it, as <see cref="InstanceBoundary"/> does): a different one is a different definition, and refused.
+        /// </summary>
+        public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Double3 absoluteOrigin, Quaternion rotation)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentException("An instance key is required", nameof(key));
             if (template == null || string.IsNullOrEmpty(template.TemplateId) || template.Parts == null || template.Parts.Length == 0) throw new ArgumentException("An instance template needs an ID and containers");
@@ -93,24 +107,32 @@ namespace Nebula
             // same ActivateScope a matchmaking service or a travel menu would call from outside the mesh
             // (docs/scope-activation.md D2). PreferredWorkerId keeps the old behaviour that the worker that asked
             // owns the new containers from the first change anyone sees.
-            var view = toAbsolute(template.PublicView);
             var definition = new ScopeDefinition
             {
                 Kind = ScopeKind.Parts,
                 ObservePublic = template.ObservePublic,
                 ObserveHost = template.ObserveHost,
-                ObservationCenter = view.center,
-                ObservationSize = view.size,
+                ObservationCenter = (absoluteOrigin + template.PublicView.center).ToVector3(),
+                ObservationSize = template.PublicView.size,
             };
+            if (Quaternion.Angle(Quaternion.identity, rotation) > PoseAngleEpsilon)
+            {
+                definition.HasPose = true;
+                definition.PoseOrigin = absoluteOrigin;
+                definition.PoseRotation = rotation;
+            }
             for (int i = 0; i < template.Parts.Length; i++)
             {
                 var part = template.Parts[i];
                 ulong id = InstanceKey(prefix + "/" + part.Id);
                 references[i] = ContainerRef.Runtime(id);
-                var bounds = toAbsolute(part.Bounds);
-                definition.Parts.Add(new ScopePart { PartId = part.Id, Center = bounds.center, Size = bounds.size, ContentResource = part.ContentResource ?? "" });
+                // Composed in double and kept in double on the lease row: narrowing an absolute centre 10^8 m out to
+                // float would move the part by metres (NEB-426).
+                var center = absoluteOrigin + part.Bounds.center;
+                var size = part.Bounds.size;
+                definition.Parts.Add(new ScopePart { PartId = part.Id, Center = center, Size = size, ContentResource = part.ContentResource ?? "" });
                 var existing = ControlPlane.FindLease(ContainerRegistry.RuntimeContainerId(id));
-                if (existing != null && (existing.Instance?.InstanceId != scope || existing.Bounds != bounds || existing.Instance.ContentResource != part.ContentResource))
+                if (existing != null && (existing.Instance?.InstanceId != scope || !SameCenter(existing.Center, center) || existing.BoundsSize != size || existing.Instance.ContentResource != part.ContentResource))
                     throw new InvalidOperationException("Instance key already names different content or bounds");
                 // The stored scope key is the contract's key for this scope (EntityLocation.ScopeKey). A row written
                 // before the key was recorded has none and stands; a row with a different key under the same hash is
@@ -122,6 +144,16 @@ namespace Nebula
             { ScopeKey = prefix, Definition = definition, PreferredWorkerId = WorkerId, Requester = WorkerId });
             return references;
         }
+
+        /// <summary>Degrees below which an instance's rotation counts as none: it shares its host's axes.</summary>
+        public const float PoseAngleEpsilon = 0.01f;
+
+        /// <summary>
+        /// Whether a stored part centre is the one being asked for. A row written before part centres were double
+        /// holds the float the old code narrowed to, so that float counts as the same place.
+        /// </summary>
+        private static bool SameCenter(Double3 stored, Double3 asked) =>
+            stored == asked || stored == Double3.From(asked.ToVector3());
 
         /// <summary>
         /// Commit a group only when every member is ready. Each member must have its own preparation and admission check.

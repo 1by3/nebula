@@ -23,6 +23,14 @@ public string ScopeKey { get; }
 
 The opaque scope key (`""` is the public world).
 
+### IsPinned [#ispinned]
+
+```csharp
+public bool IsPinned { get; }
+```
+
+Whether this is an instance scope's frame: an origin cell chosen once, near the instance's origin, when its first container turned up here, and never shifted (`docs/scope-frames.md` D11).
+
 ### InstanceId [#instanceid]
 
 ```csharp

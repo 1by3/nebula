@@ -114,7 +114,7 @@ The boundary's host scope is the scope of the container it is parented under. `H
 
 - Only entities in the host scope, or already in the boundary's own instance, cross it. A boundary on one planet ignores players standing at the same coordinates on another.
 - Positions are compared in absolute coordinates. A scoped grid moves its own origin on each worker, so the boundary converts its position and the player's through each scope's frame. The instance is created at the boundary's absolute position rounded to a millimeter (`InstanceOrigin`), so every worker names the same instance.
-- A crossing keeps the player's absolute position. The instance has no origin frame of its own, so the player's numbers in Unity change when they cross, but where they stand does not.
+- A crossing keeps the player's absolute position, to the millimetre. The instance has an origin frame of its own, pinned near the instance's origin in each process that holds it, so an instance far from the public origin (a dungeon on a planet 50,000 km out) is still simulated near Unity's origin. The player's numbers in Unity change when they cross, but where they stand does not.
 - A player who leaves returns to a container of the host scope that holds their position. Until that chunk is leased, they stay inside at the last position the boundary recorded.
 
 Your game is responsible for the rest:
@@ -123,7 +123,7 @@ Your game is responsible for the rest:
 - **Keep the boundary on the worker that simulates the occupants.** The boundary runs on each worker that has built the chunk's content. The instance is leased first by the worker that prepared it.
 - **Turn `ObservePublic` off.** It observes the public world, not the host scope, so occupants cannot see out into the grid. The boundary logs a warning when it is on.
 - **Turn `ObserveHost` on** to keep the grid's chunks around the entrance loaded, hidden, while players are inside. Without it, the client unloads them shortly after a player enters and loads them again after the player leaves. See [Keep the host loaded while inside](#keep-the-host-loaded-while-inside).
-- **Close the view between the two sides.** The host scope's scenery and the instance's content render in different origin frames on the client, so a player inside cannot look out through the doorway. Put a door, a turn, or a dark passage at the crossing.
+- **Looking through the doorway.** On the client an instance entered from the scope the player stands in shares that scope's origin frame, so its content is drawn exactly behind the door and the host's scenery exactly outside it, and keep the content drawn with `InstanceScenes.KeepDrawn` while the door is open. Build the interior in the boundary's own axes (its forward is the way in): an instance is prepared with the door's rotation (`InstanceBoundary.PoseRotation`, off with `TurnWithDoor`), so on a curved surface it stands behind the door the way the door stands, crossings carry the player's facing and velocity through it, and each side is drawn turned for the other.
 
 ## Prepare crossings on request
 

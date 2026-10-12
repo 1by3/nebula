@@ -80,6 +80,9 @@ namespace Nebula
         /// <summary>Widen a float vector.</summary>
         public static Double3 From(Vector3 v) => new Double3(v.x, v.y, v.z);
 
+        /// <summary>Widening is exact, so a float vector converts implicitly (a <see cref="ScopePart"/> written with a <c>Vector3</c> centre keeps compiling).</summary>
+        public static implicit operator Double3(Vector3 v) => From(v);
+
         /// <summary>Narrow to a float vector. Take any origin off first.</summary>
         public Vector3 ToVector3() => new Vector3((float)X, (float)Y, (float)Z);
 

@@ -102,7 +102,7 @@ public class ConformanceScopedGridTests
         Assert.That(read.NormalizedAnchor(), Is.EqualTo(Anchor));
 
         // A role with no control plane (a client) has only the container row, and that is enough.
-        var inferred = ChunkGridDefinition.Infer(Anchor, new Bounds(scope.Definition.Parts[0].Center, scope.Definition.Parts[0].Size));
+        var inferred = ChunkGridDefinition.Infer(Anchor, new Bounds(scope.Definition.Parts[0].Center.ToVector3(), scope.Definition.Parts[0].Size));
         Assert.That(inferred!.CellSize, Is.EqualTo(read.CellSize));
         Assert.That(inferred.Planar, Is.EqualTo(read.Planar));
     }

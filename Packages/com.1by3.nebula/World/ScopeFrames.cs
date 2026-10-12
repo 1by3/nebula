@@ -51,6 +51,17 @@ namespace Nebula.World
         }
 
         /// <summary>
+        /// Whether this is an instance scope's frame (<c>docs/scope-frames.md</c> D11): an origin cell chosen once, near
+        /// the instance's origin, when the instance's first container turned up here, and never shifted. A scoped grid
+        /// that later names the same scope replaces it (<see cref="ScopeFrames.Ensure"/>).
+        /// </summary>
+        public bool IsPinned { get; private set; }
+
+        /// <summary>An instance scope's pinned frame: <paramref name="cell"/> of a lattice of <paramref name="cellSize"/> sits at Unity's origin.</summary>
+        internal static ScopeFrame Pinned(string scopeKey, ulong instanceId, Vector3 cellSize, Vector3Int cell) =>
+            new ScopeFrame(scopeKey, instanceId, cellSize) { _cell = cell, IsPinned = true };
+
+        /// <summary>
         /// Whether this frame follows the floating origin of a host container instead of keeping an origin cell (a
         /// hosted grid's frame, <c>docs/container-tree.md</c> D22). Its absolute coordinates are the host's own.
         /// </summary>
@@ -166,9 +177,9 @@ namespace Nebula.World
     /// <see cref="WorldOrigin"/>; a scope gets one the first time this process names it, which on a worker is the
     /// first time one of its containers turns up here (<c>docs/scoped-chunk-grids.md</c> D7).
     /// <para>
-    /// A container or an entity whose scope has <b>no</b> frame here is in the public frame: that is what keeps an
-    /// instance scope (a room, a dungeon) behaving exactly as it did before per-scope frames existed. Only a scope
-    /// that asked for a frame of its own — a scoped chunk grid — leaves it.
+    /// A container or an entity whose scope has <b>no</b> frame here is in the public frame. A scoped chunk grid takes
+    /// a frame of its own (<see cref="Ensure"/>), and an instance scope (a room, a dungeon) a pinned one near its origin
+    /// (<see cref="Pin"/>, <c>docs/scope-frames.md</c> D11).
     /// </para>
     /// </summary>
     public static class ScopeFrames
@@ -203,14 +214,49 @@ namespace Nebula.World
         }
 
         /// <summary>Whether <paramref name="instanceId"/> has a frame of its own here (false for the public world and for any scope that shares it).</summary>
-        public static bool HasFrame(ulong instanceId) => instanceId != 0 && ByInstance.ContainsKey(instanceId);
+        public static bool HasFrame(ulong instanceId)
+        {
+            instanceId = Resolve(instanceId);
+            return instanceId != 0 && ByInstance.ContainsKey(instanceId);
+        }
+
+        /// <summary>Instance scopes that share another scope's frame here (a client's instance shares its host's, D11).</summary>
+        private static readonly Dictionary<ulong, ulong> SharedWith = new Dictionary<ulong, ulong>();
+
+        /// <summary>The scope whose frame <paramref name="instanceId"/> lives in: itself, or the host it shares a frame with.</summary>
+        public static ulong Resolve(ulong instanceId)
+        {
+            for (int hops = 0; hops < 8 && instanceId != 0 && SharedWith.Count > 0 && SharedWith.TryGetValue(instanceId, out var host); hops++)
+                instanceId = host;
+            return instanceId;
+        }
+
+        /// <summary>Whether <paramref name="instanceId"/> shares the frame of the scope it was entered from (<see cref="Share"/>).</summary>
+        public static bool IsShared(ulong instanceId) => instanceId != 0 && SharedWith.ContainsKey(instanceId);
+
+        /// <summary>
+        /// Make an instance scope live in <paramref name="hostInstanceId"/>'s frame (0: the public frame), and move with it,
+        /// as every instance did before NEB-426. A client does this for an instance entered from a scope it is in, so the
+        /// instance is drawn exactly where it is relative to that world (a doorway looks through to the right place, both
+        /// ways) and a crossing does not move the pawn in Unity; the client keeps that frame's origin near its pawn, so
+        /// it stays precise (<c>docs/scope-frames.md</c> D11). Ignored for a scope that already has or shares a frame.
+        /// </summary>
+        public static void Share(ulong instanceId, ulong hostInstanceId)
+        {
+            if (instanceId == 0 || instanceId == hostInstanceId || ByInstance.ContainsKey(instanceId) || SharedWith.ContainsKey(instanceId)) return;
+            if (Resolve(hostInstanceId) == instanceId) return; // never a loop
+            SharedWith[instanceId] = hostInstanceId;
+        }
 
         /// <summary>
         /// The frame <paramref name="instanceId"/>'s containers live in: its own when it has one, the public frame
         /// otherwise. Never null, so every caller has one answer to convert with.
         /// </summary>
-        public static ScopeFrame Of(ulong instanceId) =>
-            instanceId != 0 && ByInstance.TryGetValue(instanceId, out var frame) ? frame : Public;
+        public static ScopeFrame Of(ulong instanceId)
+        {
+            instanceId = Resolve(instanceId);
+            return instanceId != 0 && ByInstance.TryGetValue(instanceId, out var frame) ? frame : Public;
+        }
 
         /// <summary>The frame of a scope key; the public frame for <c>""</c> and for a scope with none of its own.</summary>
         public static ScopeFrame Of(string scopeKey) =>
@@ -220,7 +266,11 @@ namespace Nebula.World
         /// The id of the frame a scope's containers move with: the scope's own id when it has a frame, 0 (the public
         /// frame) otherwise. This is the key an origin shift is addressed to.
         /// </summary>
-        public static ulong FrameIdOf(ulong instanceId) => HasFrame(instanceId) ? instanceId : 0UL;
+        public static ulong FrameIdOf(ulong instanceId)
+        {
+            instanceId = Resolve(instanceId);
+            return instanceId != 0 && ByInstance.ContainsKey(instanceId) ? instanceId : 0UL;
+        }
 
         /// <summary>
         /// Give a scope a frame of its own, or return the one it has. The public world's is <see cref="Public"/> and
@@ -230,6 +280,10 @@ namespace Nebula.World
         public static ScopeFrame Ensure(string scopeKey, ulong instanceId, Vector3 cellSize)
         {
             if (instanceId == 0 || string.IsNullOrEmpty(scopeKey)) return Public;
+            // An instance frame pinned before this process knew the scope has a grid gives way to the grid's own
+            // (docs/scope-frames.md D11); the activation's zero-delta shift re-places the containers (D5).
+            if (ByInstance.TryGetValue(instanceId, out var pinned) && pinned.IsPinned) Unpin(instanceId);
+            SharedWith.Remove(instanceId);
             if (ByInstance.TryGetValue(instanceId, out var frame))
             {
                 if (cellSize.x > 0f && cellSize.y > 0f && cellSize.z > 0f) frame.CellSize = cellSize;
@@ -239,6 +293,52 @@ namespace Nebula.World
             ByInstance[instanceId] = frame;
             ByScope[scopeKey] = frame;
             return frame;
+        }
+
+        /// <summary>
+        /// The cell size of an instance scope's pinned frame when the public world has no definition to borrow one from.
+        /// Any value works; this one keeps the instance within about 900 m of Unity's origin.
+        /// </summary>
+        public const float PinnedCellSize = 1024f;
+
+        /// <summary>
+        /// Give an instance scope (a room, a dungeon, an interior: anything that is not a scoped grid) a frame of its own,
+        /// pinned so that the absolute point (<paramref name="x"/>, <paramref name="y"/>, <paramref name="z"/>), in double, sits near Unity's origin, or return the frame it already has
+        /// (<c>docs/scope-frames.md</c> D11). The pin is a cell of the public world's lattice (its cell size, or
+        /// <see cref="PinnedCellSize"/> without a world definition), rounded to the nearest: so while this process's public
+        /// origin is at that same cell, the instance's frame and the public one coincide exactly and nothing about where
+        /// the instance appears relative to the public world changes. A pinned frame never shifts. Frames are local to a
+        /// process, so a worker and a client may pin the same instance differently and still agree on every absolute
+        /// coordinate (D4).
+        /// </summary>
+        public static ScopeFrame Pin(string scopeKey, ulong instanceId, double x, double y, double z)
+        {
+            if (instanceId == 0) return Public;
+            if (ByInstance.TryGetValue(instanceId, out var existing)) return existing;
+            if (SharedWith.ContainsKey(instanceId)) return Of(instanceId);
+            var world = WorldOrigin.Definition;
+            var size = world != null ? world.CellSize : Vector3.zero;
+            if (!(size.x > 0f && size.y > 0f && size.z > 0f)) size = new Vector3(PinnedCellSize, PinnedCellSize, PinnedCellSize);
+            var cell = new Vector3Int(PinAxis(x, size.x), PinAxis(y, size.y), PinAxis(z, size.z));
+            var frame = ScopeFrame.Pinned(scopeKey ?? "", instanceId, size, cell);
+            ByInstance[instanceId] = frame;
+            if (!string.IsNullOrEmpty(scopeKey)) ByScope[scopeKey] = frame;
+            return frame;
+        }
+
+        private static int PinAxis(double origin, float cellSize)
+        {
+            double c = Math.Round(origin / cellSize);
+            return c > int.MaxValue ? int.MaxValue : c < int.MinValue ? int.MinValue : (int)c;
+        }
+
+        /// <summary>Forget an instance scope's pinned frame (its last container here went away). Any other frame is left alone.</summary>
+        public static void Unpin(ulong instanceId)
+        {
+            if (SharedWith.Remove(instanceId)) return;
+            if (!ByInstance.TryGetValue(instanceId, out var frame) || !frame.IsPinned) return;
+            ByInstance.Remove(instanceId);
+            if (!string.IsNullOrEmpty(frame.ScopeKey) && ByScope.TryGetValue(frame.ScopeKey, out var named) && named == frame) ByScope.Remove(frame.ScopeKey);
         }
 
         /// <summary>Forget a scope's frame (its last container went away). The public frame cannot be removed.</summary>
@@ -252,6 +352,7 @@ namespace Nebula.World
         /// <summary>New play session, or the world was unloaded: every scoped frame goes, the public one is reset by <see cref="WorldOrigin.Reset"/>.</summary>
         internal static void Clear()
         {
+            SharedWith.Clear();
             ByInstance.Clear();
             ByScope.Clear();
         }

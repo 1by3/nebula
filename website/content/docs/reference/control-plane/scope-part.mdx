@@ -25,10 +25,10 @@ Non-empty and unique within the definition. It is hashed with the scope key into
 ### Center [#center]
 
 ```csharp
-public Vector3 Center;
+public Double3 Center;
 ```
 
-Box centre, in the same absolute frame as [`LeaseInfo.Bounds`](/docs/reference/control-plane/lease-info#bounds) (see `docs/scope-activation.md` D4).
+Box centre, in the same absolute frame as [`LeaseInfo.Center`](/docs/reference/control-plane/lease-info#center) (see `docs/scope-activation.md` D4), in double, so a part 100,000 km from the absolute origin is placed to the millimetre. A `Vector3` converts implicitly.
 
 ### Size [#size]
 

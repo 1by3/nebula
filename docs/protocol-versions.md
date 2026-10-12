@@ -37,7 +37,8 @@ Protocol numbers are read from `HelloMsg.ProtocolVersion` at each release tag (`
 | v0.1.0-alpha.31 – alpha.32 | 19 | `DynamicContainer` folded into `Container` (NEB-264, `docs/container-tree.md` D21); **not additive**, so the minimum is 19 too |
 | v0.1.0-beta.0 | 20 | sync audiences (NEB-321, `docs/sync-audience.md` D10); **additive**, so the minimum stays 19 |
 | v0.1.0-beta.1 | 24 | relevance tiers (NEB-359, `docs/server-owned-entities.md` D5); **additive** for clients, so the window is 23..24. 21 (replicated maps, NEB-335), 22 (forwarded token claims, NEB-357) and 23 (deliberate session endings, recovering hold, owner-connected flag, NEB-354 to NEB-356; **closes the window to 23..23**, pre-1.0, see `docs/compatibility-policy.md` D1) were never released under a tag |
-| unreleased | 26 | the far relevance tier (NEB-388, `docs/interest-management.md` §16); **additive** for clients, so the window is 25..26. 25 (driven vehicles, NEB-361, `docs/driven-vehicles.md` §4; window 24..25) was never released under a tag, so this release refuses clients of `0.1.0-beta.1` (24) |
+| unreleased | 27 | an instance's pose against its host (NEB-426, `docs/scope-frames.md` D12), a trailing section of `ContainerOwnership`; **additive**, so the window is 26..27 |
+| never released | 26 | the far relevance tier (NEB-388, `docs/interest-management.md` §16); **additive** for clients, so the window is 25..26. 25 (driven vehicles, NEB-361, `docs/driven-vehicles.md` §4; window 24..25) was never released under a tag, so this release refuses clients of `0.1.0-beta.1` (24) |
 
 Every step in that table was breaking, because until now there was no window to be additive inside: a gateway
 required an exact match, and `HelloMsg.Write` could not even announce a version other than the one it was built

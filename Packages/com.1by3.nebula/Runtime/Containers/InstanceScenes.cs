@@ -19,6 +19,9 @@ namespace Nebula
         private static readonly Dictionary<ulong, int> DrawnRequests = new Dictionary<ulong, int>();
         private static ulong _view;
 
+        /// <summary>The scope whose content the local view is in (0: the public world or a scoped grid).</summary>
+        internal static ulong View => _view;
+
         /// <summary>
         /// How long a destination worker or a client keeps waiting for content to load before it stops answering a
         /// preparation. The source worker's own timeout (<see cref="NebulaWorker.PrepareTransfer"/>) is what ends the

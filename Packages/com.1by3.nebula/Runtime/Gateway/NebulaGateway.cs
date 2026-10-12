@@ -146,6 +146,11 @@ namespace Nebula
             /// (docs/scope-activation.md §12).
             /// </summary>
             public readonly List<HostView> HostViews = new List<HostView>();
+            /// <summary>
+            /// The carriers the observed host's rows are fixed in, out to their root (a planet whose ground holds the
+            /// door): kept in this client's set while it observes the host, so those rows can be built (NEB-426).
+            /// </summary>
+            public readonly HashSet<ulong> HostCarriers = new HashSet<ulong>();
             /// <summary>Whether <see cref="Placed"/> has been recorded.</summary>
             public bool HasPlaced;
             /// <summary>The pawn's scope and absolute position the last time its scope resolved: what a scope change pushes onto <see cref="HostViews"/>.</summary>
@@ -644,6 +649,9 @@ namespace Nebula
         {
             if (!client.Welcomed) return false;
             if (entity.NetId == client.PawnNetId) return true;
+            // A carrier the observed host's rows are fixed in (NEB-426): the client may hold those rows, so it may hold
+            // the body they are fixed in. Nothing it carries comes with it.
+            if (client.HostCarriers.Count > 0 && client.HostCarriers.Contains(entity.NetId)) return true;
             var target = ScopeContainer(entity.Container);
             // Unknown runtime containers must never fall back to public visibility.
             if (target == null && !entity.Container.IsNone) return false;

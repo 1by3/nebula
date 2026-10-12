@@ -182,6 +182,7 @@ namespace Nebula
             RuntimeUnregistering = null;
             RuntimeBoundsInFrame = null;
             RuntimeClaims = null;
+            InstancePoses.Clear();
             WorkerIdByIndex = index => NebulaRuntime.IsServer && index == NebulaRuntime.LocalWorkerIndex ? NebulaRuntime.LocalWorkerId : "";
         }
 
@@ -582,7 +583,16 @@ namespace Nebula
         public static Container RegisterRuntime(ulong id, ContainerPlacement placement, InstanceContainerInfo instance = null)
         {
             if (placement.IsRoot)
+            {
+                // A turned instance (D12): every process learns its pose from the rows, before it is drawn or crossed.
+                if (instance != null && instance.InstanceId != 0 && instance.HasPose) InstancePoses.Learn(instance);
+                // An instance scope's first root container here pins the scope's own origin frame near it, so the
+                // instance is simulated near Unity's origin however far out it is (docs/scope-frames.md D11). A scope
+                // that already has a frame (a scoped grid's, or the pin of an earlier part) keeps it.
+                if (instance != null && instance.InstanceId != 0 && !ScopeFrames.HasFrame(instance.InstanceId) && !ScopeFrames.IsShared(instance.InstanceId))
+                    ScopeFrames.Pin(instance.ScopeKey, instance.InstanceId, placement.Center.X, placement.Center.Y, placement.Center.Z);
                 return RegisterRuntime(id, new Bounds(ToFrame(placement.Center, instance?.InstanceId ?? 0UL), placement.Size), instance, placement, fromPlacement: true);
+            }
             var parent = FindById(placement.ParentId);
             if (parent == null)
             {
@@ -792,6 +802,7 @@ namespace Nebula
             c.IsRuntime = false;
             c.Index = ushort.MaxValue;
             c.FixedParent = null;
+            UnpinIfLast(c.InstanceId);
             if (c.gameObject != null)
             {
                 if (Application.isPlaying) UnityEngine.Object.Destroy(c.gameObject);
@@ -838,6 +849,19 @@ namespace Nebula
             RuntimeScratchIds.Clear();
         }
 
+        /// <summary>An instance scope's pinned frame goes with the scope's last container here (docs/scope-frames.md D11).</summary>
+        private static void UnpinIfLast(ulong instanceId)
+        {
+            if (instanceId == 0) return;
+            bool last = true;
+            foreach (var other in RuntimeList) if (other != null && other.InstanceId == instanceId) { last = false; break; }
+            if (last) InstancePoses.Forget(instanceId);
+            bool shared = ScopeFrames.IsShared(instanceId);
+            if (!shared && (!ScopeFrames.HasFrame(instanceId) || !ScopeFrames.Of(instanceId).IsPinned)) return;
+            foreach (var other in RuntimeList) if (other != null && other.InstanceId == instanceId) return;
+            ScopeFrames.Unpin(instanceId);
+        }
+
         /// <summary>An absolute box (as leases and telemetry carry it) in the public world's frame.</summary>
         public static Bounds ToFrame(Bounds absolute) => ToFrame(absolute, 0UL);
 
@@ -871,6 +895,16 @@ namespace Nebula
         {
             var origin = OriginOf(instanceId);
             return new Double3(frame.x - origin.X, frame.y - origin.Y, frame.z - origin.Z);
+        }
+
+        /// <summary>
+        /// <see cref="ToAbsolutePrecise(Vector3, ulong)"/> for a frame position already held in double, so a position far
+        /// from the frame's origin (a planet carrier's ground) is never narrowed to float on the way.
+        /// </summary>
+        public static Double3 ToAbsolutePrecise(Double3 frame, ulong instanceId)
+        {
+            var origin = OriginOf(instanceId);
+            return new Double3(frame.X - origin.X, frame.Y - origin.Y, frame.Z - origin.Z);
         }
 
         /// <summary>Where absolute (0,0,0) sits in a scope's frame, in double.</summary>

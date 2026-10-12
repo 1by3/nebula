@@ -1,6 +1,6 @@
 # Per-scope origin frames — design
 
-Status: design of record for **NEB-241**, protocol **v18** (no message, field or version changed; see §6). Decisions
+Status: design of record for **NEB-241**, protocol **v18**, and **NEB-426** (instance frames, D11, no protocol change) (no message, field or version changed; see §6). Decisions
 made without asking are marked **D#**. Builds directly on `docs/scoped-chunk-grids.md` (NEB-239) and closes its D12.
 User-facing pages: `website/content/docs/guides/infinite-runtime-world.mdx` (§"Two worlds on one worker") and
 `website/content/docs/guides/scopes.mdx`. Conformance: scenario 14 of `docs/conformance-suite.md`
@@ -41,12 +41,13 @@ every existing test and every game that never activates a scope sees no change a
 not one byte on the wire. The new surface (`ScopeFrame`, `ScopeFrames`, `RuntimeGrid.Frame`,
 `RuntimeGrid.ShiftOrigin`) sits beside it.
 
-**D2 A scope gets a frame of its own only when it has a grid in this process; everything else stays in the public
-frame.** `ScopeFrames.FrameIdOf(instanceId)` answers "which frame do this scope's containers move with" and
-returns 0 — the public frame — for every scope that has not asked for one. That is deliberate and it is what keeps
-NEB-233's *instance* scopes (a room, a dungeon, an interior) behaving precisely as they did: they are placed
-relative to the public origin, they move with it, and nothing about them changed. Only a **scoped chunk grid** —
-a whole world, which is the thing that can be millions of metres from the public world — takes a frame.
+**D2 A scoped chunk grid gets a frame of its own when it has a grid in this process; an instance scope gets a pinned
+one (D11); nothing else leaves the public frame.** `ScopeFrames.FrameIdOf(instanceId)` answers "which frame do this
+scope's containers move with" and returns 0, the public frame, for a scope that has neither. A **scoped chunk grid** (a
+whole world, which can be millions of metres from the public world) takes a frame that follows its players. Until
+NEB-426, NEB-233's *instance* scopes (a room, a dungeon, an interior) had none: they were placed relative to the public
+origin and moved with it, so an instance prepared 10^8 m from that origin was simulated 10^8 m from Unity's origin, where
+a float is 8 m apart, and its player, colliders and physics snapped. D11 replaces that rule.
 
 The frame is registered by `NebulaChunks.Activate`, which is already the one place a grid comes into being in a
 process, on the rule NEB-239 D7 set: the first time one of the scope's containers turns up here.
@@ -107,6 +108,76 @@ own new frame. One pass, no special case anywhere else.
 one scope at a time, so it picks the grid of the scope its pawn stands in and follows that one — which for an
 unscoped game *is* the public grid, so the client's behaviour is unchanged, and for a client in scope B is B's
 frame and only B's. The conformance test asserts exactly that.
+
+**D11 An instance scope gets a pinned frame of its own, near its origin, in every process that registers it
+(NEB-426).** When an instance scope's first root container is registered here from its placement (a lease row),
+`ContainerRegistry.RegisterRuntime` calls `ScopeFrames.Pin`: a frame whose origin cell is the cell of the public
+world's lattice nearest the container's absolute centre (the public definition's cell size, or
+`ScopeFrames.PinnedCellSize`, 1,024 m, without one). It is chosen once and never shifts (`ScopeFrame.IsPinned`), and it
+goes with the scope's last container here (`ScopeFrames.Unpin`). Every rule of D4 then applies unchanged: entering an
+instance converts with `ToFrame(absolute, scope)` and leaving with `ToFrame(absolute, host)`, both in double, so a
+crossing lands to the millimetre however far out the instance is. The decisions behind it:
+
+- *Uniform, not distance-gated.* Every instance gets one, so behaviour does not depend on where an instance happens to
+  be. It is harmless near the origin: snapping to the public lattice means that while this process's public origin is at
+  the pinned cell, the two frames coincide exactly, so an instance next to the public world (an observed interior,
+  `ObservePublic`) appears exactly where it did before.
+- *Process-local, no protocol change.* Frames never reach the wire (D4): lease rows and telemetry carry absolute
+  coordinates and entity poses are container-local, so a worker and a client may pin one instance differently and still
+  agree on everything. A client in an instance has no grid to follow; its public origin stays where it was (D6).
+- *Part centres are double end to end.* `ScopePart.Center` is a `Double3` (a `Vector3` converts implicitly),
+  `PrepareInstance` composes `absoluteOrigin + part.Center` in double and the lease row stores it so; before, the
+  absolute centre was narrowed to float on the way, metres off at 10^8 m. A part centre that is a float is written to a
+  scope definition exactly as before, so stored definitions still compare equal.
+- *A client shares the host's frame instead of pinning.* Pinning is right for simulation, but a client draws both
+  sides of a door. When an instance's first container reaches a client whose pawn stands in another scope (the one it
+  will enter from), `NebulaClient` calls `ScopeFrames.Share(instance, host)` before registering it: the instance lives
+  in that scope's frame on that client and moves with it (`ScopeFrames.Resolve`, `IsShared`), as instances shared the
+  public frame before. The interior is then drawn exactly behind the door, the crossing does not move the pawn in Unity,
+  and the world outside stays where it was. Inside, the client keeps that frame's origin near its pawn
+  (`NebulaChunkedWorld.OriginGridOf` follows the host's root grid), so both stay near Unity's origin. Without a pawn, or
+  for the pawn's own scope, the instance is pinned. A door turned against its host is D12.
+- *A grid wins.* If a scope that was pinned turns out to have a scoped grid here, `ScopeFrames.Ensure` replaces the pin
+  with the grid's frame and D5's zero-delta shift re-places its containers.
+
+Conformance: `Tests/EditMode/ConformanceFarInstanceFrameTests.cs` (an instance 5×10^7 m out: a player crosses in, is
+simulated within 10 km of Unity's origin at the absolute point it walked through to the millimetre, and walks back out
+as precisely).
+
+**D12 An instance entered through a turned door is built upright in its own space and posed at the door (NEB-426,
+protocol 27).** A door on a sphere stands along the local up, not the scope's: Station Nine's on Mass is turned 55°
+about x and 180° about y. Its interior is authored in the door's own axes (forward is the way in, up is up), so it can
+only stand behind the door if its space is turned the way the door is.
+
+- *The pose.* `InstanceBoundary.PoseRotation` is the door's rotation in its host scope's space (`ScopeRotation`, rounded
+  to 1e-6, identity within 0.01°; `TurnWithDoor = false` keeps the host's axes). `PrepareInstance(template, key, origin,
+  rotation)` records it on the scope definition (`HasPose`, `PoseOrigin`, `PoseRotation`, JSON written only when set) and
+  every part's lease row (`InstanceContainerInfo.HasPose`, stored after the row's flags byte). A point p of the instance's
+  space is `origin + rotation × (p − origin)` in the host's. The parts' boxes stay upright about the origin, so a worker
+  simulates the interior upright, with gravity down, exactly as before.
+- *Every process learns it from the rows* (`InstancePoses`, filled by `ContainerRegistry.RegisterRuntime`, forgotten with
+  the scope's last container). A client gets it in a trailing section of `ContainerOwnership`: protocol 27, additive,
+  window 26..27.
+- *Crossings turn.* The boundary compares an occupant in the host's space (`ToHost`), and commits into the instance at
+  `FromHost(point)`, with its rotation and `Motion.Velocity` turned by the inverse; leaving, by the pose. The pose is
+  committed in double (`TryCommitTransfer(transfer, null, Double3, rotation)`), so a host scope whose origin is far from the
+  door on this worker still lands the entity to the millimetre. `InstancePoses.Turn(from, to)` is the turn a game applies
+  to its own heading bookkeeping (a pawn's yaw) when its entity changes scope.
+- *A client draws each side turned for the other, only while cameras draw* (`InstanceViews`, after the scene's render
+  origin and the frames' children are placed): from outside, each drawn turned instance's root containers turn about its
+  door; from inside one, every other scene root (the host world, its frames' pivots, the sun) turns back about the door,
+  except the instance itself and the cameras. Everything is put back exactly when drawing ends, so simulation, prediction
+  and every pose a game reads stay upright.
+- *Looking out needs the host's ground resident.* A door in a chunk hosted by a framed carrier (a planet) is a row fixed in
+  that carrier, held on a client until the carrier is sent (`ContainerRegistry.IsHeldForCarrier`). The host view
+  (`ObserveHost`) therefore also queries the frame the pawn stood in where it left the host, and keeps the carriers of
+  exactly the host rows it keeps, out to the root of their chain, in the client's set (`ClientConn.HostCarriers`: always
+  relevant, authorized by `CanObserve`, followed by name on their workers). Nothing those carriers hold comes with them,
+  and the rest of the planet's ground stays out. No protocol change: the carrier arrives as any spawn does.
+  (`InstanceObserveHostTests.AnOccupantKeepsTheCarrierOfTheHostGroundAtTheDoorAndNothingElseOfIt`.)
+
+Conformance: `ConformanceFarInstanceFrameTests.ATurnedDoorTurnsItsInstanceAndCrossingsTurnWithIt` and
+`ConformanceFarInstanceClientFrameTests.TheClientDrawsATurnedInstanceTurnedBehindItsDoorAndTheWorldTurnedBackFromInside`.
 
 ## 3. Interest: scope-salted region ids
 

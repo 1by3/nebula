@@ -795,6 +795,7 @@ namespace Nebula
             client.PreparedRows.Clear();
             client.RowsLeaving.Clear();
             client.HostViews.Clear();
+            client.HostCarriers.Clear();
             ReleaseFar(client, sendGone: false);
             client.HasPlaced = false;
             _hintFilter.Forget(client.ClientId);
@@ -887,6 +888,7 @@ namespace Nebula
             foreach (var rec in _entities.Values) if (rec.OwnerClientId == client.ClientId || rec.DriverClientId == client.ClientId) _alwaysScratch.Add(rec.NetId);
             var extras = client.Query.Entities;
             for (int i = 0; i < extras.Count; i++) _alwaysScratch.Add(extras[i]);
+            foreach (ulong carrier in client.HostCarriers) _alwaysScratch.Add(carrier);
             client.Interest.SetAlways(_alwaysScratch);
 
             _entered.Clear();
@@ -1358,6 +1360,8 @@ namespace Nebula
                         for (int i = 0; i < extras.Count; i++) AddExplicit(extras[i]);
                     }
                 }
+                // The carriers of the host ground it observes, wherever their workers are (NEB-426).
+                foreach (ulong carrier in client.HostCarriers) AddExplicit(carrier);
                 // A client that owns an entity must hear about it wherever it is, so its worker is linked. The
                 // worker is resolved through the control plane, not through the links we already hold: after a
                 // handover the owner may be one we have never dialled, and this is where we dial it.
@@ -1814,7 +1818,7 @@ namespace Nebula
                 // query in the scope's space finds (NEB-394).
                 if (root.FrameKey != 0) AddFrameWindow(root.FrameKey, root.AbsX, root.AbsY, root.AbsZ, 0, 0, 0, reach);
                 if (scope != null) Add(scope.ContainerId);
-                if (scope != null || pawn.Container.IsNone) TrackHostViews(client, scopeInstance, px, py, pz);
+                if (scope != null || pawn.Container.IsNone) TrackHostViews(client, scopeInstance, px, py, pz, root.FrameKey, root.AbsX, root.AbsY, root.AbsZ);
                 observeHost = TryGetObservedHost(client, scope, out host);
             }
             var foci = client.Interest?.Foci;
@@ -1837,7 +1841,19 @@ namespace Nebula
                     }
             }
             // The host's window after the client's own: the budget can only ever withhold ground it is not standing on.
-            if (observeHost) AddHostWindow();
+            client.HostCarriers.Clear();
+            if (observeHost)
+            {
+                int hostFrom = _containerIdScratch.Count;
+                AddHostWindow();
+                // The ground the pawn left was in a frame with regions of its own (a planet that is a carrier, D22):
+                // those rows are boxes in the frame's coordinates, which the scope query above never finds.
+                if (host.FrameKey != 0) AddFrameWindow(host.FrameKey, host.FX, host.FY, host.FZ, 0, 0, 0, reach);
+                // A host row fixed in a carrier cannot be built without that carrier, so the carriers of exactly these
+                // rows, out to the root of their chain, are kept in the client's set too (NEB-426): from inside, the
+                // ground beyond the door is there to draw. Only these, never the carrier's other interest.
+                for (int i = hostFrom; i < _containerIdScratch.Count; i++) CollectHostCarriers(client, _containerIdScratch[i]);
+            }
             // A destination a worker asked this client to prepare (D14): pinned for the life of the crossing, whatever
             // the window says, so the client can still resolve it when the commit names it.
             if (client.PreparedRows.Count > 0)
