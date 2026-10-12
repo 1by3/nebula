@@ -247,7 +247,12 @@ link and its observers before any commit through it can be relayed.
 link when it is one of the link's observers and its pawn is in that side's scope and inside that side's window. It then
 receives the other side's window: its container rows, the carriers of those rows out to the root of their chain (what
 `HostCarriers` does for one door today, `docs/scope-frames.md` D12), and every entity standing in it. Both ways, for
-every link: from the planet into a room, and from the room out to the planet.
+every link: from the planet into a room, and from the room out to the planet. An entity is relayed through a window only
+after its container's row and that row's carrier chain (`docs/scope-activation.md` D14, D15). A client that is sent an
+entity whose container it cannot resolve holds the update, whatever the container's kind, instead of placing the entity
+in the public world (§18: today `NebulaClient.OnEntitySpawn` holds only for carrier and runtime containers and otherwise
+calls `SetContainer(null)`, so a crate crossing out of an instance landed in scope 0 with its container-local coordinates
+read from the world root, about 1.2 km off).
 
 **D21 The network gateway authorises it in `CanObserve`, from link records only.** One rule is added after the existing
 ones: an entity in scope T is observable by a client in scope S when an Open or Closing link joins S and T, the client is
