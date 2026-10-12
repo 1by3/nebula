@@ -201,7 +201,11 @@ namespace Nebula
                     : $"the content resource '{holder.Instance.ContentResource}' of {holder.ContainerId} holds network identities");
                 return false;
             }
-            pending.Instantiate = UnityEngine.Object.InstantiateAsync(prefab, holder.transform);
+            // In the container's space: InstantiateAsync(prefab, parent) keeps the prefab's pose as a world pose, and the
+            // container has usually moved to its place in its frame by then, so the content would land that far from it
+            // (1.2 km on a planet). Placed in the parent's space, it stands at its local pose wherever the container is
+            // when it lands, before its Awake runs (which may turn it).
+            pending.Instantiate = UnityEngine.Object.InstantiateAsync(prefab, new InstantiateParameters { parent = holder.transform, worldSpace = false });
             return true;
         }
 
