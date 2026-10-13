@@ -393,5 +393,28 @@ namespace Nebula.Tests
             Assert.That(_refused.Exists(r => r.entity == stranger && r.why == PortalRefusal.NotAdmitted), Is.True, "and Refused was raised for it");
             yield break;
         }
+
+        // ------------------------------------------------------------------------------------------ an ignored pair is checked, not trusted
+
+        [UnityTest]
+        public IEnumerator AnAdmittedBodysIgnoredPairWithTheApertureIsRestoredAfterUnityForgetsIt()
+        {
+            _rig.OpenDoor(); // for client 7, a warm member
+            var member = _rig.Walker(-1f, -0.5f, PortalHarness.Client);
+            _rig.Steps(12);
+            Assert.That(member.InstanceId, Is.EqualTo(0UL), "short of the plane: it is still in the street, in the band");
+            var body = member.GetComponent<CharacterController>();
+            var aperture = PortalPhysicsRig.Aperture(member.gameObject.scene);
+            Assert.That(aperture, Is.Not.Null, "an aperture collider in the body's scene");
+            Assert.That(Physics.GetIgnoreCollision(body, aperture), Is.True, "an admitted body ignores the aperture of its side");
+
+            // Unity forgets an ignored pair in some cases (a collider deactivated, a pair asked for while one side was inactive) while the worker's
+            // list still names the collider; the forgetting is stood in for here by dropping the pair behind the worker's back.
+            Physics.IgnoreCollision(body, aperture, false);
+            Assert.That(Physics.GetIgnoreCollision(body, aperture), Is.False, "the pair is gone and the body would stand against the aperture");
+            _rig.Steps(2);
+            Assert.That(Physics.GetIgnoreCollision(body, aperture), Is.True, "the next pass asks for it again");
+            yield break;
+        }
     }
 }

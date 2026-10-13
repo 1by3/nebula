@@ -161,6 +161,13 @@ namespace Nebula.Tests
             return result;
         }
 
+        /// <summary>The aperture collider of the link's side in <paramref name="scene"/>, or null.</summary>
+        public static Collider Aperture(Scene scene)
+        {
+            foreach (var proxy in Proxies(p => p.IsAperture)) if (proxy.gameObject.scene == scene) return proxy.GetComponent<Collider>();
+            return null;
+        }
+
         public Scene HallScene => H.Hall.gameObject.scene;
 
         /// <summary>Whether a scene Nebula made (an instance's, a frame's) is still loaded: an unload takes frames.</summary>
