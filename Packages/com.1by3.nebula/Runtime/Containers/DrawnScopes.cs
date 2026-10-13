@@ -41,6 +41,8 @@ namespace Nebula
         /// <summary>Transforms outside any container that a game asked to be drawn with a scope (<see cref="Portals.DrawWith"/>).</summary>
         private static readonly Dictionary<Transform, ulong> Followers = new Dictionary<Transform, ulong>();
         private static readonly List<Transform> GoneFollowers = new List<Transform>();
+        /// <summary>Cameras a game keeps out of the view's pose (<see cref="Portals.KeepUnposed"/>).</summary>
+        private static readonly HashSet<Camera> Unposed = new HashSet<Camera>();
         private static ulong _anchor;
         private static bool _dirty = true;
         private static bool _mapsBuilt;
@@ -273,11 +275,20 @@ namespace Nebula
                     for (int i = 0; i < cameras.Count; i++)
                     {
                         var camera = cameras[i];
-                        if (camera == null || IsUnderPosed(camera.transform)) continue;
+                        if (camera == null || Unposed.Contains(camera) || IsUnderPosed(camera.transform)) continue;
                         Pose(camera.transform, from, to, pose.Turn);
                     }
                 }
             }
+        }
+
+        /// <summary>Keep <paramref name="camera"/> out of the view's pose, or put it back (<see cref="Portals.KeepUnposed"/>).</summary>
+        internal static void KeepUnposed(Camera camera, bool keep)
+        {
+            if (camera == null) return;
+            Unposed.RemoveWhere(c => c == null);
+            if (keep) Unposed.Add(camera);
+            else Unposed.Remove(camera);
         }
 
         /// <summary>Draw <paramref name="t"/> as part of <paramref name="scope"/> (<see cref="Portals.DrawWith"/>); 0 stops.</summary>

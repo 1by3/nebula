@@ -47,6 +47,13 @@ namespace Nebula
         public static void DrawWith(Transform transform, ulong scope) => Nebula.DrawnScopes.DrawWith(transform, scope);
 
         /// <summary>
+        /// Keep <paramref name="camera"/> where the game put it while Nebula draws (<paramref name="keep"/> false puts it back with the rest). When the
+        /// view is not the <see cref="Anchor"/>, Nebula moves every camera that draws by the view's pose; a camera that looks at something of its own
+        /// rather than the world (a portrait of the player's avatar in a corner of space, a preview rendered to a texture) would be moved off it.
+        /// </summary>
+        public static void KeepUnposed(Camera camera, bool keep = true) => Nebula.DrawnScopes.KeepUnposed(camera, keep);
+
+        /// <summary>
         /// The rendering-layer bit (a single bit of <see cref="NebulaConfig.ScopeRenderingLayers"/>) a drawn scope holds, or 0 when slots are
         /// off, the scope is not drawn, or more scopes are drawn than there are bits (<c>docs/portals.md</c> D42). Nebula stamps this bit, and
         /// only this bit of the reserved mask, on its static content, its chunks' content and its entities' renderers; use it in a light's
