@@ -43,6 +43,8 @@ namespace Nebula.Tests
             Editor(Assets, "CreateFolder", "Assets", "NebulaAsyncContentTest");
             Editor(Assets, "CreateFolder", Folder, "Resources");
             var hall = new GameObject("hall");
+            hall.transform.localPosition = new Vector3(3f, 0f, 4f);
+            hall.AddComponent<NebulaAsyncContentTurn>();
             var floor = GameObject.CreatePrimitive(PrimitiveType.Cube);
             floor.name = "floor";
             floor.transform.SetParent(hall.transform, false);
@@ -141,6 +143,27 @@ namespace Nebula.Tests
             ContainerRegistry.UnregisterRuntime(92005);
             for (int i = 0; i < 30; i++) yield return null;
             Assert.That(InstanceScenes.ContentState(part), Is.Not.EqualTo(InstanceContentState.Loading), "nothing is left loading for a container that is gone");
+        }
+
+        [UnityTest]
+        public IEnumerator ContentLandsAtItsLocalPoseUnderAContainerThatMovedAfterTheLoadStarted()
+        {
+            var part = Part(92006, Resource);
+            try
+            {
+                Assert.That(InstanceScenes.Prepare(part), Is.True);
+                // The container moves to its place in its frame while the content is still loading.
+                part.transform.SetPositionAndRotation(new Vector3(1200f, 40f, -300f), Quaternion.Euler(0f, 30f, 0f));
+                int frames = 0;
+                while (InstanceScenes.ContentState(part) == InstanceContentState.Loading && frames < 300) { yield return null; frames++; }
+                Assert.That(InstanceScenes.ContentState(part), Is.EqualTo(InstanceContentState.Ready));
+
+                var content = part.transform.GetChild(0);
+                Assert.That(content.localPosition, Is.EqualTo(new Vector3(3f, 0f, 4f)), "at the prefab's pose in the container's space, not as a world pose");
+                Assert.That((content.position - part.transform.TransformPoint(new Vector3(3f, 0f, 4f))).magnitude, Is.LessThan(1e-3f), "wherever the container stands");
+                Assert.That(Quaternion.Angle(content.localRotation, Quaternion.Euler(0f, 90f, 0f)), Is.LessThan(0.01f), "and the turn its Awake made is kept");
+            }
+            finally { ContainerRegistry.UnregisterRuntime(92006); }
         }
     }
 }
