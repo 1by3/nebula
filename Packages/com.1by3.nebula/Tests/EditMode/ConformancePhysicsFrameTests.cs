@@ -288,6 +288,74 @@ namespace Nebula.Tests
             }
         }
 
+        /// <summary>
+        /// NEB-445: moving a frame's root marks every collider under it as moved, and the next sync rewrites them all, so
+        /// a client posing a dense frame for each prediction step, each replayed correction and each rendered frame spent
+        /// tens of milliseconds a frame on it. A frame already at a pose is not written again, and a frame held at its
+        /// simulation pose between steps stays there until it is released or posed for drawing.
+        /// </summary>
+        [Test]
+        public void AFrameAtItsPoseOrHeldBetweenStepsIsNotMovedAgain()
+        {
+            MeshWith(1);
+            var ship = W1.SpawnServerDriven(_shipPrefab, _yard, new Vector3(20f, 1f, 0f), Quaternion.Euler(0f, 30f, 0f));
+            var box = ship.Carried;
+            var frame = box.Frame;
+            var rock = new GameObject("rock");
+            _objects.Add(rock);
+            rock.transform.SetParent(frame.Root, false);
+            rock.transform.localPosition = new Vector3(3f, 0f, 4f);
+            rock.AddComponent<BoxCollider>();
+            var pawn = new GameObject("pawn");
+            _objects.Add(pawn);
+            pawn.transform.SetParent(frame.Root, false);
+            pawn.transform.localPosition = new Vector3(1f, 0f, 1f);
+
+            bool wasServer = NebulaRuntime.IsServer, wasClient = NebulaRuntime.IsClient;
+            NebulaRuntime.IsServer = false;
+            NebulaRuntime.IsClient = true;
+            try
+            {
+                Assume.That(PhysicsFrames.RendersFrames);
+                PhysicsFrames.PoseForRender();
+                var drawn = frame.Root.position;
+                rock.transform.hasChanged = false;
+                PhysicsFrames.PoseForRender();
+                Assert.IsFalse(rock.transform.hasChanged, "a frame already at its render pose is not written again");
+
+                PhysicsFrames.BeginSimulation(box, pawn.transform);
+                var simulated = frame.Root.position;
+                PhysicsFrames.EndSimulation(hold: true);
+                Assert.IsTrue(PhysicsFrames.InSimulationPose(box), "held at its simulation pose");
+                Assert.IsTrue(frame.Root.position.Equals(simulated));
+                rock.transform.hasChanged = false;
+                PhysicsFrames.BeginSimulation(box, pawn.transform);
+                Assert.IsFalse(rock.transform.hasChanged, "the next step finds the frame where it goes");
+                Assert.IsTrue(frame.Root.position.Equals(simulated), "at the same exact pose");
+                PhysicsFrames.EndSimulation(hold: true);
+                PhysicsFrames.ReleaseSimulationPose();
+                Assert.IsFalse(PhysicsFrames.InSimulationPose(box), "released");
+                Assert.That(Vector3.Distance(drawn, frame.Root.position), Is.LessThan(1e-4f), "back at the render pose");
+
+                PhysicsFrames.BeginSimulation(box, pawn.transform);
+                PhysicsFrames.EndSimulation(hold: true);
+                PhysicsFrames.PoseForRender();
+                Assert.IsFalse(PhysicsFrames.InSimulationPose(box), "posing the frames for drawing releases a held frame");
+                Assert.That(Vector3.Distance(drawn, frame.Root.position), Is.LessThan(1e-4f));
+
+                PhysicsFrames.BeginSimulation(box, pawn.transform);
+                PhysicsFrames.EndSimulation();
+                Assert.IsFalse(PhysicsFrames.InSimulationPose(box), "a step ended without a hold goes back at once, as before");
+                Assert.That(Vector3.Distance(drawn, frame.Root.position), Is.LessThan(1e-4f));
+            }
+            finally
+            {
+                PhysicsFrames.EndSimulation();
+                NebulaRuntime.IsServer = wasServer;
+                NebulaRuntime.IsClient = wasClient;
+            }
+        }
+
         // ------------------------------------------------------------------------------------ placing in the scope (NEB-310)
 
         /// <summary>A ship at a pose that is not the identity, with a crew member taken aboard by the pose owner.</summary>

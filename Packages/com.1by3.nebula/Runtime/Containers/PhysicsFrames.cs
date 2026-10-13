@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.LowLevel;
+using UnityEngine.PlayerLoop;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
@@ -371,6 +373,8 @@ namespace Nebula
         private static readonly List<PhysicsFrame> PoseOrder = new List<PhysicsFrame>();
         private static readonly Dictionary<Collider, Collider> CloneSources = new Dictionary<Collider, Collider>();
         private static PhysicsFrame _simulating;
+        /// <summary>The frame in <see cref="_simulating"/> stays at its simulation pose after its step (<see cref="EndSimulation(bool)"/>).</summary>
+        private static bool _held;
         private static int _sceneCounter;
 
         /// <summary>
@@ -412,6 +416,8 @@ namespace Nebula
             PoseOrder.Clear();
             CloneSources.Clear();
             _simulating = null;
+            _held = false;
+            _releaseHooked = false;
             CrossingPolicy = null;
             RenderAnchor = null;
             ContentAnchor = null;
@@ -432,6 +438,7 @@ namespace Nebula
         {
             EndDrawing();
             _simulating = null;
+            _held = false;
             RenderAnchor = null;
             ContentAnchor = null;
             SceneRenderOrigin.ResetAfterPlay();
@@ -495,7 +502,11 @@ namespace Nebula
             EndDrawing();
             try { Releasing?.Invoke(frame); }
             catch (Exception e) { NebulaLog.Error($"PhysicsFrames.Releasing threw: {e}"); }
-            if (_simulating == frame) _simulating = null;
+            if (_simulating == frame)
+            {
+                _simulating = null;
+                _held = false;
+            }
             Frames.Remove(frame);
             var owner = frame.Owner;
             if (!ReferenceEquals(owner, null)) owner.Frame = null;
@@ -1124,7 +1135,8 @@ namespace Nebula
         /// <summary>
         /// Whether <paramref name="space"/>'s frame root is at its simulation pose right now (the identity less the
         /// frame's floating origin, <see cref="PhysicsFrame.LocalToSimulation"/>): always on a worker, and on a client
-        /// during a prediction step (<see cref="BeginSimulation(Container, Transform)"/>). False for the scope's own space.
+        /// during a prediction step (<see cref="BeginSimulation(Container, Transform)"/>) and while the frame is held at that
+        /// pose between steps (<see cref="EndSimulation(bool)"/>). False for the scope's own space.
         /// </summary>
         public static bool InSimulationPose(Container space) => space != null && space.Frame != null && (!RendersFrames || _simulating == space.Frame);
 
@@ -1186,6 +1198,8 @@ namespace Nebula
             InstallDrawHooks();
             if (Frames.Count == 0) return;
             EndDrawing();
+            // A frame held at its simulation pose since the last prediction step is drawn like any other (NEB-445).
+            if (_held) Unhold(false);
             PoseOrder.Clear();
             // A frame whose owner was destroyed without being released is skipped: it has no pose, and nothing to sort by.
             for (int i = 0; i < Frames.Count; i++)
@@ -1204,6 +1218,8 @@ namespace Nebula
         /// frame-local offset meets -O first, where the two cancel exactly, and only the small difference is turned.
         /// The root's world pose is still (T, R) to float precision; <see cref="PhysicsFrame.RenderPosition"/> holds it
         /// exactly. With no render origin the pivot is at (T, R, S) and the root at the identity under it.
+        /// A transform already at its pose is not written (NEB-445): any write, even of the same value, marks every
+        /// collider under it as moved, and the next <see cref="Physics.SyncTransforms"/> then rewrites all of them.
         /// </summary>
         private static void PoseForRender(PhysicsFrame frame)
         {
@@ -1223,17 +1239,33 @@ namespace Nebula
             {
                 // A root someone else reparented: posed directly, as before render origins.
                 frame.RenderOrigin = Vector3.zero;
-                frame.Root.SetPositionAndRotation(position, rotation);
-                frame.Root.localScale = scale;
+                SetPose(frame.Root, position, rotation, scale);
                 return;
             }
             var origin = RenderOriginOf(frame);
             frame.RenderOrigin = origin;
             frame._pivotScene = origin == Vector3.zero ? precise : frame.LocalToRenderPrecise(Double3.From(origin));
-            pivot.SetPositionAndRotation(frame._pivotScene.ToVector3(), rotation);
-            pivot.localScale = scale;
-            frame.Root.SetLocalPositionAndRotation(-origin, Quaternion.identity);
-            frame.Root.localScale = Vector3.one;
+            SetPose(pivot, frame._pivotScene.ToVector3(), rotation, scale);
+            SetLocalPose(frame.Root, -origin, Quaternion.identity, Vector3.one);
+        }
+
+        /// <summary>
+        /// Put <paramref name="t"/> at this world position and rotation and this local scale, writing only what differs.
+        /// Compared exactly (<c>Equals</c>, not <c>==</c>, which is approximate): a pose a few ulps off is still written.
+        /// </summary>
+        private static void SetPose(Transform t, Vector3 position, Quaternion rotation, Vector3 scale)
+        {
+            t.GetPositionAndRotation(out var p, out var r);
+            if (!p.Equals(position) || !r.Equals(rotation)) t.SetPositionAndRotation(position, rotation);
+            if (!t.localScale.Equals(scale)) t.localScale = scale;
+        }
+
+        /// <summary><see cref="SetPose"/> in <paramref name="t"/>'s parent's coordinates.</summary>
+        private static void SetLocalPose(Transform t, Vector3 position, Quaternion rotation, Vector3 scale)
+        {
+            t.GetLocalPositionAndRotation(out var p, out var r);
+            if (!p.Equals(position) || !r.Equals(rotation)) t.SetLocalPositionAndRotation(position, rotation);
+            if (!t.localScale.Equals(scale)) t.localScale = scale;
         }
 
         /// <summary>
@@ -1367,6 +1399,9 @@ namespace Nebula
         internal static void BeginDrawing(IReadOnlyList<Camera> cameras)
         {
             if (_drawing || !RendersFrames) return;
+            // A frame left at its simulation pose by a prediction step is drawn where it belongs (NEB-445). Drawing
+            // queries nothing, so no sync is needed.
+            if (_held) Unhold(false);
             _drawing = true;
             // The scene first, so a game placing its camera in SceneRenderOrigin.Shifted still reads frame-local poses.
             bool withCameras = cameras != null && cameras.Count > 0;
@@ -1423,7 +1458,7 @@ namespace Nebula
         /// <summary>
         /// Client: put <paramref name="space"/>'s frame root at its simulation pose for a prediction step, so the
         /// predicted pawn simulates exactly as its worker does (D11): the identity less the frame's floating origin.
-        /// Pair with <see cref="EndSimulation"/>. <see cref="BeginSimulation(Container, Transform)"/> first moves that
+        /// Pair with <see cref="EndSimulation()"/>. <see cref="BeginSimulation(Container, Transform)"/> first moves that
         /// origin near what is predicted.
         /// </summary>
         public static void BeginSimulation(Container space) => BeginSimulation(space, null);
@@ -1438,35 +1473,137 @@ namespace Nebula
         /// history is container-local), so nothing is shifted and <see cref="PhysicsFrame.Shifted"/> is not raised.
         /// The frame's pivot goes to the identity first, so the root's simulation pose is set exactly, never through a
         /// turned render origin (D25).
+        /// <para>
+        /// Moving a frame's root moves every collider under it, and the sync that follows rewrites each one, so its cost
+        /// grows with everything loaded in the frame (NEB-445). A frame still at its simulation pose for the same origin,
+        /// held there by <see cref="EndSimulation(bool)"/>, is not moved again; nor is any transform already where it goes.
+        /// </para>
         /// </summary>
         public static void BeginSimulation(Container space, Transform predicted)
         {
             if (!RendersFrames) return;
             EndDrawing();
             var frame = space != null ? space.Frame : null;
+            // Another frame held at its simulation pose goes back to its render pose first: one frame simulates at a time.
+            if (_held && _simulating != frame) Unhold(false);
+            _held = false;
             _simulating = frame;
-            if (frame == null || frame.Root == null) return;
-            // The root is at its render pose here, so this is the predicted entity's frame-local position.
-            if (predicted != null && NextOrigin(frame, frame.Root.InverseTransformPoint(predicted.position), out var origin)) frame.Origin = origin;
+            if (frame == null || frame.Root == null)
+            {
+                Physics.SyncTransforms();
+                return;
+            }
+            if (predicted != null && NextOrigin(frame, LocalPositionIn(frame, predicted), out var origin)) frame.Origin = origin;
             if (frame.Pivot != null && frame.Root.parent == frame.Pivot)
             {
-                frame.Pivot.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-                frame.Pivot.localScale = Vector3.one;
-                frame.Root.SetLocalPositionAndRotation(-frame.Origin, Quaternion.identity);
+                SetPose(frame.Pivot, Vector3.zero, Quaternion.identity, Vector3.one);
+                SetLocalPose(frame.Root, -frame.Origin, Quaternion.identity, Vector3.one);
             }
-            else frame.Root.SetPositionAndRotation(-frame.Origin, Quaternion.identity);
-            frame.Root.localScale = Vector3.one;
+            else SetPose(frame.Root, -frame.Origin, Quaternion.identity, Vector3.one);
             Physics.SyncTransforms();
         }
 
+        /// <summary>
+        /// <paramref name="t"/>'s position in <paramref name="frame"/>'s local coordinates, the same at either pose of the
+        /// root: composed in double from the local poses in between when it hangs under the root, as a predicted entity
+        /// does, and read through the root otherwise.
+        /// </summary>
+        private static Vector3 LocalPositionIn(PhysicsFrame frame, Transform t) =>
+            IsUnder(t, frame.Root) ? LocalIn(t, frame.Root).ToVector3() : frame.Root.InverseTransformPoint(t.position);
+
         /// <summary>Client: the prediction step is over; the frame goes back to its render pose.</summary>
-        public static void EndSimulation()
+        public static void EndSimulation() => EndSimulation(false);
+
+        /// <summary>
+        /// Client: the prediction step is over. With <paramref name="hold"/> false the frame goes back to its render pose,
+        /// as <see cref="EndSimulation()"/>. With it true the frame stays at its simulation pose, and
+        /// <see cref="InSimulationPose"/> stays true for it, until <see cref="ReleaseSimulationPose"/>,
+        /// <see cref="PoseForRender()"/>, drawing, a step in another frame, or the start of the next <c>PreUpdate</c>
+        /// (<see cref="HoldThroughFixedSteps"/>) puts it back (NEB-445). A client predicting
+        /// several steps, or replaying several corrections, in a row holds the frame between them, so the frame is moved
+        /// once for the batch instead of twice for each step; then releases it before anything else (game code, a ray
+        /// from the camera) can expect the frame where it is drawn.
+        /// </summary>
+        public static void EndSimulation(bool hold)
+        {
+            var frame = _simulating;
+            if (frame == null || !RendersFrames)
+            {
+                _simulating = null;
+                _held = false;
+                return;
+            }
+            if (hold)
+            {
+                _held = true;
+                InstallReleaseHook();
+                // What the step moved (the predicted entity) reaches the physics scene, as it did with the frame's return.
+                Physics.SyncTransforms();
+                return;
+            }
+            _held = true;
+            Unhold();
+        }
+
+        /// <summary>
+        /// Client: put a frame held at its simulation pose (<see cref="EndSimulation(bool)"/>) back at its render pose.
+        /// Does nothing when no frame is held.
+        /// </summary>
+        public static void ReleaseSimulationPose()
+        {
+            if (_held && RendersFrames) Unhold();
+        }
+
+        /// <summary>
+        /// Client: whether a frame held at its simulation pose by a prediction step in <c>FixedUpdate</c> stays there
+        /// through the rest of the frame's fixed steps, and goes back to its render pose once, as the frame's
+        /// <c>PreUpdate</c> starts (NEB-445). A client whose frame rate is below its tick rate runs several fixed steps a
+        /// frame, and each moved the frame twice. While held, scripts' <c>FixedUpdate</c> and the physics step see the
+        /// predicting frame at its simulation pose (<see cref="InSimulationPose"/> is true for it): what they read and
+        /// cast in the frame through its own objects agrees, but a ray from the camera does not meet the frame where it
+        /// is drawn. Turn this off if your game casts into a frame in render coordinates during <c>FixedUpdate</c>; the
+        /// frame then goes back after each <c>NebulaClient.FixedUpdate</c>. <c>Update</c>, <c>LateUpdate</c> and drawing
+        /// see every frame at its render pose either way.
+        /// </summary>
+        public static bool HoldThroughFixedSteps = true;
+
+        private static bool _releaseHooked;
+
+        /// <summary>The player-loop system that releases a held frame before the frame's <c>Update</c>.</summary>
+        private struct ReleaseHeldFrame { }
+
+        /// <summary>Put the release of a held frame at the start of <c>PreUpdate</c>, once (it runs after the last fixed step).</summary>
+        private static void InstallReleaseHook()
+        {
+            if (_releaseHooked) return;
+            _releaseHooked = true;
+            var loop = PlayerLoop.GetCurrentPlayerLoop();
+            var phases = loop.subSystemList;
+            if (phases == null) return;
+            for (int i = 0; i < phases.Length; i++)
+            {
+                if (phases[i].type != typeof(PreUpdate)) continue;
+                var list = phases[i].subSystemList ?? Array.Empty<PlayerLoopSystem>();
+                foreach (var s in list) if (s.type == typeof(ReleaseHeldFrame)) return;
+                var result = new PlayerLoopSystem[list.Length + 1];
+                result[0] = new PlayerLoopSystem { type = typeof(ReleaseHeldFrame), updateDelegate = ReleaseSimulationPose };
+                Array.Copy(list, 0, result, 1, list.Length);
+                phases[i].subSystemList = result;
+                loop.subSystemList = phases;
+                PlayerLoop.SetPlayerLoop(loop);
+                return;
+            }
+        }
+
+        /// <summary>The held frame back at its render pose, and the physics scene told when <paramref name="sync"/>.</summary>
+        private static void Unhold(bool sync = true)
         {
             var frame = _simulating;
             _simulating = null;
-            if (frame == null || !RendersFrames) return;
+            _held = false;
+            if (frame == null) return;
             PoseForRender(frame);
-            Physics.SyncTransforms();
+            if (sync) Physics.SyncTransforms();
         }
 
         private static readonly Comparison<PhysicsFrame> ByDepth = (a, b) => SpaceDepth(a.Owner).CompareTo(SpaceDepth(b.Owner));

@@ -14,17 +14,19 @@ namespace Nebula
         /// <param name="pawn">The local pawn.</param>
         /// <param name="replicas">Every entity the client holds.</param>
         /// <param name="tick">The tick being predicted.</param>
-        public void StepClient(NetworkIdentity pawn, IEnumerable<NetworkIdentity> replicas, uint tick)
+        /// <param name="holdFrame">Leave the pawn's frame at its simulation pose for the prediction step that follows
+        /// (<see cref="PhysicsFrames.EndSimulation(bool)"/>, NEB-445); the caller releases it.</param>
+        public void StepClient(NetworkIdentity pawn, IEnumerable<NetworkIdentity> replicas, uint tick, bool holdFrame = false)
         {
             if (!Enabled || !_isClient) return;
-            try { StepClientCore(pawn, replicas, tick); }
+            try { StepClientCore(pawn, replicas, tick, holdFrame); }
             catch (System.Exception e)
             {
                 if (_warned.Add("step-failed")) NebulaLog.Error($"portal physics failed on tick {tick}; it will try again next frame: {e}");
             }
         }
 
-        private void StepClientCore(NetworkIdentity pawn, IEnumerable<NetworkIdentity> replicas, uint tick)
+        private void StepClientCore(NetworkIdentity pawn, IEnumerable<NetworkIdentity> replicas, uint tick, bool holdFrame)
         {
             _tick = tick;
             if (pawn == null || !pawn.IsSpawned || pawn.Container == null || (Portals.Known.Count == 0 && _rigs.Count == 0 && _nearApertures.Count == 0))
@@ -63,7 +65,7 @@ namespace Nebula
             }
             finally
             {
-                if (simulating) PhysicsFrames.EndSimulation();
+                if (simulating) PhysicsFrames.EndSimulation(holdFrame);
             }
         }
 
