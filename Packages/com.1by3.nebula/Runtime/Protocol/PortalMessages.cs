@@ -58,6 +58,8 @@ namespace Nebula
         FarScopeRetired = 7,
         /// <summary>The near container is being reassigned to another worker.</summary>
         NearContainerMoving = 8,
+        /// <summary>The link is closing with its band empty and holds a moment longer (<see cref="Portal.CloseHoldSeconds"/>), still observed.</summary>
+        CloseHold = 9,
     }
 
     /// <summary>Bit flags of a <see cref="PortalLinkRecord"/>.</summary>

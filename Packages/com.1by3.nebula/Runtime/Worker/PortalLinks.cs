@@ -199,6 +199,8 @@ namespace Nebula
                 return;
             }
             if (BandOccupied(worker, link)) { SetState(link, PortalState.Closing, PortalWait.BandOccupied); return; }
+            // Held closing a moment though the band is empty (CloseHoldSeconds): observers still draw the far side while the game closes its door over it.
+            if (Now - link.ClosingSince < Mathf.Min(CloseHoldSeconds, CloseTimeoutSeconds - 0.5f)) { SetState(link, PortalState.Closing, PortalWait.CloseHold); return; }
             FinishClose(link, PortalWait.None);
         }
 

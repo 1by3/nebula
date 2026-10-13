@@ -185,6 +185,12 @@ root's side and is pushed out of the aperture box, and the overrun is logged. Ev
 client, `FarWorkerHandshake`, `BandOccupied`, `FarScopeRetired`, `NearContainerMoving`), so a door that will not open
 always says why, and `PortalLink.Progress` (0..1) gives a door's UI something to show.
 
+> **As built (NEB-435), the close hold.** `Portal.CloseHoldSeconds` (0 by default) keeps a link `Closing` at least that long after `Close`, though its band is
+> empty, with the wait `CloseHold` (a new `PortalWait`, 9; a byte on the wire, so no format change). A closing link is still observed and drawn (D40), so this is
+> the time a game's door takes to close over the aperture while every observer still has the far side to show behind it; without it the far side vanished on the
+> first tick the band was empty, before a door's leaves had shut. It is capped half a second under `CloseTimeoutSeconds`. Entry is refused meanwhile as in any
+> closing link (`PortalLinkTests.AClosingLinkHoldsForItsCloseHoldThoughItsBandIsEmpty`).
+
 > **As built (NEB-428).** The link table keeps a link after it closes (its `Generation` counts openings), so a closed link can still say why and an
 > occupant meets the aperture from inside (D17); a link is created by `Open` and lives as long as the component is enabled. `Open` on a closing link
 > prepares it again at once and, as every condition still holds, opens it on the next tick without asking the clients again. A member added to an

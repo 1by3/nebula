@@ -96,6 +96,16 @@ namespace Nebula
         public const float CrossDepth = 0.05f;
         /// <summary>How long a closing link waits for the band to empty before it closes anyway, in seconds.</summary>
         public const float CloseTimeoutSeconds = 5f;
+
+        /// <summary>
+        /// How long a link stays <see cref="PortalState.Closing"/> at least once <see cref="Close"/> is called, in seconds, even with its band empty
+        /// (<c>docs/portals.md</c> D9). A closing link is still observed, so every observer keeps drawing its far side (D40): this is the time a game
+        /// needs for whatever it shows closing over the aperture (a door's leaves sliding shut, a shutter, a fade) to finish while the far side is still
+        /// there to be seen behind it. Nothing enters a closing link meanwhile; bodies already straddling finish as usual. 0, the default, closes on the
+        /// first tick the band is empty. Kept below <see cref="CloseTimeoutSeconds"/>.
+        /// </summary>
+        [Tooltip("Seconds a closing link stays Closing (and its far side drawn for observers) at least: time for a door to close over the aperture. 0 closes as soon as the band is empty.")]
+        [Min(0f)] public float CloseHoldSeconds;
         /// <summary>How far from the face, in meters, an entity is tracked for a crossing and its companions are asked for.</summary>
         public const float ApproachDistance = 8f;
 

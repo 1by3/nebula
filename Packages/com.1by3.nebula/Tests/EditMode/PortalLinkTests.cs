@@ -206,6 +206,25 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void AClosingLinkHoldsForItsCloseHoldThoughItsBandIsEmpty()
+        {
+            _h.Door.CloseHoldSeconds = 1.2f;
+            var link = _h.OpenDoor();
+            _h.Player.transform.position = PortalHarness.At(0f, -6f); // out of the band
+            Assert.That(_h.Door.Close(PortalHarness.Owner), Is.True);
+            _h.Tick();
+            Assert.That(link.State, Is.EqualTo(PortalState.Closing), "held: a door is still closing over the aperture, and observers still draw the far side");
+            Assert.That(link.Wait, Is.EqualTo(PortalWait.CloseHold), "and it says why");
+            _h.Now += 1f;
+            _h.Tick();
+            Assert.That(link.State, Is.EqualTo(PortalState.Closing), "not yet");
+            _h.Now += 0.3f;
+            _h.Tick();
+            Assert.That(link.State, Is.EqualTo(PortalState.Closed), "closed once the hold is over");
+            Assert.That(link.Wait, Is.EqualTo(PortalWait.None));
+        }
+
+        [Test]
         public void ClosingGivesUpAfterTheTimeoutAndCountsTheOverrun()
         {
             var link = _h.OpenDoor();
