@@ -38,6 +38,9 @@ namespace Nebula
         private static readonly HashSet<Transform> Candidates = new HashSet<Transform>();
         private static readonly List<Posed> PosedList = new List<Posed>();
         private static readonly HashSet<Transform> PosedSet = new HashSet<Transform>();
+        /// <summary>Transforms outside any container that a game asked to be drawn with a scope (<see cref="Portals.DrawWith"/>).</summary>
+        private static readonly Dictionary<Transform, ulong> Followers = new Dictionary<Transform, ulong>();
+        private static readonly List<Transform> GoneFollowers = new List<Transform>();
         private static ulong _anchor;
         private static bool _dirty = true;
         private static bool _mapsBuilt;
@@ -258,6 +261,7 @@ namespace Nebula
                     if (t != null) Pose(t, from, to, pose.Turn);
                 }
             }
+            PoseFollowers(shift);
             ulong view = InstanceScenes.View;
             if (cameras != null && view != _anchor && Maps.TryGetValue(view, out var viewMap))
             {
@@ -274,6 +278,33 @@ namespace Nebula
                     }
                 }
             }
+        }
+
+        /// <summary>Draw <paramref name="t"/> as part of <paramref name="scope"/> (<see cref="Portals.DrawWith"/>); 0 stops.</summary>
+        internal static void DrawWith(Transform t, ulong scope)
+        {
+            if (t == null) return;
+            if (scope == 0) Followers.Remove(t);
+            else Followers[t] = scope;
+        }
+
+        private static void PoseFollowers(Double3 shift)
+        {
+            if (Followers.Count == 0) return;
+            foreach (var pair in Followers)
+            {
+                var t = pair.Key;
+                if (t == null) { GoneFollowers.Add(t); continue; }
+                ulong scope = pair.Value;
+                if (scope == _anchor || !t.gameObject.activeInHierarchy || IsUnderPosed(t) || !Maps.TryGetValue(scope, out var map)) continue;
+                var pose = ScopePose.From(in map, _anchor);
+                if (pose.IsIdentity) continue;
+                var from = Double3.From(ContainerRegistry.ToFrame(pose.FromOrigin, scope)) - shift;
+                var to = Double3.From(ContainerRegistry.ToFrame(pose.ToOrigin, _anchor)) - shift;
+                Pose(t, from, to, pose.Turn);
+            }
+            for (int i = 0; i < GoneFollowers.Count; i++) Followers.Remove(GoneFollowers[i]);
+            GoneFollowers.Clear();
         }
 
         /// <summary>Put back exactly everything <see cref="Begin"/> posed.</summary>

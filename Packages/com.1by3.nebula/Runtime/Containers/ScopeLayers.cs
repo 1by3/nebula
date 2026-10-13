@@ -30,6 +30,19 @@ namespace Nebula
         /// <summary>How many slots are held.</summary>
         internal static int Held => Slots.Count;
 
+        /// <summary>
+        /// The render pipeline masks a light's rendering layers to the ones the project defines (Tags and Layers), so a reserved bit that
+        /// isn't defined there lights nothing: a scope's lights go dark on its own renderers. Said once, when the mask is taken up.
+        /// </summary>
+        private static void WarnIfUndefined(uint mask)
+        {
+            if (mask == 0) return;
+            uint defined = RenderingLayerMask.GetDefinedRenderingLayersCombinedMaskValue();
+            uint missing = mask & ~defined;
+            if (missing != 0)
+                NebulaLog.Warn($"NebulaConfig.ScopeRenderingLayers reserves rendering layers 0x{missing:X} that the project doesn't define (Project Settings > Tags and Layers > Rendering Layers, defined 0x{defined:X}): lights on those layers light nothing (docs/portals.md D42)");
+        }
+
         /// <summary>Give each scope of <paramref name="drawn"/> a slot, the view (first) before the rest, and free the slot of every scope no longer in it.</summary>
         internal static void Sync(List<ulong> drawn)
         {
@@ -46,6 +59,7 @@ namespace Nebula
                 _warnedFull = false;
                 for (int i = 0; i < Scratch.Count; i++) Announce(Scratch[i], 0u, old);
                 Scratch.Clear();
+                WarnIfUndefined(mask);
             }
             if (mask == 0) return;
             foreach (var kv in Slots) if (!drawn.Contains(kv.Key)) Scratch.Add(kv.Key);

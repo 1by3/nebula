@@ -38,6 +38,15 @@ namespace Nebula
         public static Matrix4x4 RenderMatrixOf(ulong scope) => Nebula.DrawnScopes.RenderMatrixOf(scope);
 
         /// <summary>
+        /// Draw <paramref name="transform"/> as part of <paramref name="scope"/>: while cameras draw, Nebula poses it by the scope's
+        /// <see cref="PoseOf"/> as it poses the scope's root containers, and puts it back afterwards. For what a game keeps outside every container
+        /// but places in a scope's own space: a light that follows the local player's head, an effect between a hand and what it holds.
+        /// Without it such a thing is drawn unposed, away from the scope it belongs to, whenever that scope is not the <see cref="Anchor"/>.
+        /// Pass 0 to stop. A transform already under something posed is left to it; a destroyed one is forgotten.
+        /// </summary>
+        public static void DrawWith(Transform transform, ulong scope) => Nebula.DrawnScopes.DrawWith(transform, scope);
+
+        /// <summary>
         /// The rendering-layer bit (a single bit of <see cref="NebulaConfig.ScopeRenderingLayers"/>) a drawn scope holds, or 0 when slots are
         /// off, the scope is not drawn, or more scopes are drawn than there are bits (<c>docs/portals.md</c> D42). Nebula stamps this bit, and
         /// only this bit of the reserved mask, on its static content, its chunks' content and its entities' renderers; use it in a light's
