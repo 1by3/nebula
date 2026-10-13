@@ -116,6 +116,43 @@ namespace Nebula
     }
 
     /// <summary>
+    /// Where a cast went through an open portal (<c>docs/portals.md</c> D32): the link, the scope it left and the scope it entered, how far along it the plane was met, and the cast
+    /// as it continues on the far side, as a point in the far scope's scene (where the cast's reference point crossed the plane) and the direction there. Reported by
+    /// <see cref="PortalQueries.Raycast(PortalAsker, ulong, Vector3, Vector3, float, out PortalHit, out PortalCrossing, PortalQueryOptions)"/>.
+    /// </summary>
+    public readonly struct PortalCrossing
+    {
+        /// <summary>The id of the link the cast went through; 0 when it went through none.</summary>
+        public ulong LinkId { get; }
+        /// <summary>The scope the cast left.</summary>
+        public ulong FromScope { get; }
+        /// <summary>The scope the cast entered.</summary>
+        public ulong ToScope { get; }
+        /// <summary>How far along the cast the plane lay, in meters.</summary>
+        public float Distance { get; }
+        /// <summary>Where the cast met the plane, as a point in <see cref="ToScope"/>'s scene.</summary>
+        public Vector3 FarPoint { get; }
+        /// <summary>The cast's direction in <see cref="ToScope"/>'s scene (unit length).</summary>
+        public Vector3 FarDirection { get; }
+
+        /// <summary>Whether the cast went through a portal.</summary>
+        public bool Crossed => LinkId != 0;
+
+        /// <summary>The cast went through no portal.</summary>
+        public static PortalCrossing None => default;
+
+        internal PortalCrossing(ulong linkId, ulong from, ulong to, float distance, Vector3 farPoint, Vector3 farDirection)
+        {
+            LinkId = linkId;
+            FromScope = from;
+            ToScope = to;
+            Distance = distance;
+            FarPoint = farPoint;
+            FarDirection = farDirection;
+        }
+    }
+
+    /// <summary>
     /// Settings of a portal query (<c>docs/portals.md</c> D32, D33). Make one and keep it: a query takes it by reference and allocates nothing itself. The defaults are
     /// every layer but <see cref="NebulaConfig.PortalProxyLayer"/>, triggers ignored, the present, and a scope's own scene.
     /// </summary>

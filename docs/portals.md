@@ -698,6 +698,8 @@ spaces. A query through a face with several parties' links picks the asker's par
 > - **Limits.** A body straddling the face is in one scope; the part of it beyond the plane is a proxy and proxies are never hit, so a cast that passes through the doorway while a crate is half in it misses the
 >   half in the far room (it is hit by the near leg if it is hit before the plane). A sweep is not clipped to the doorway beyond what the near scene's geometry does.
 
+> **Crossing report.** `Raycast(..., out PortalHit hit, out PortalCrossing crossing, options)` also returns the open link the cast went through: its id, the scope left and entered, the distance to the plane, and the cast's point and direction in the far scene. It is what a game needs to test its own shapes or histories along the far leg (a hitscan that keeps analytic capsules, a sight line to a pose in history), where the cast itself may hit nothing.
+
 **D33 Lag compensation reuses state history, and Nebula rewinds the far leg.** Nebula has no rewind query today, only
 `NetworkIdentity.StateAt` (`docs/state-history.md`). A query with a `tick` poses the far window's entities at `StateAt(tick)`
 for the far leg, through a small `HistoryRewind` helper NEB-433 adds; a caller that rewinds its own scope already does

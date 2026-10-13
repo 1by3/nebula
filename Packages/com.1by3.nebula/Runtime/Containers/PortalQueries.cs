@@ -36,6 +36,7 @@ namespace Nebula
         private readonly NebulaWorker _worker;
         private readonly List<QFace> _faces = new List<QFace>(16);
         private readonly PortalHit[] _one = new PortalHit[1];
+        private PortalCrossing _crossing;
         private readonly Collider[] _overlaps = new Collider[256];
 
         internal PortalQueries(PortalPhysics physics, NebulaWorker worker)
@@ -65,6 +66,20 @@ namespace Nebula
             hit = n > 0 ? _one[0] : default;
             _one[0] = default;
             return n > 0;
+        }
+
+        /// <summary>
+        /// As <see cref="Raycast(PortalAsker, ulong, Vector3, Vector3, float, out PortalHit, PortalQueryOptions)"/>, and where the cast went through an open portal: the link, the
+        /// scopes, how far along the plane lay, and the ray as it continues in the far scene. A caller testing something of its own (a pose it keeps in history, a shape that is no
+        /// collider) along the far leg uses it: the far ray is the straight continuation of the near one, whether or not the cast hit anything there.
+        /// <paramref name="crossing"/> is <see cref="PortalCrossing.None"/> when the cast went through no portal.
+        /// </summary>
+        public bool Raycast(PortalAsker asker, ulong scope, Vector3 origin, Vector3 direction, float maxDistance, out PortalHit hit, out PortalCrossing crossing, PortalQueryOptions options = null)
+        {
+            _crossing = PortalCrossing.None;
+            bool found = Raycast(asker, scope, origin, direction, maxDistance, out hit, options);
+            crossing = _crossing;
+            return found;
         }
 
         /// <summary>Every hit along a ray, nearest first, continuing through an open portal; stops at a closed aperture. At most <paramref name="hits"/>.Length are written.</summary>
@@ -207,6 +222,7 @@ namespace Nebula
         private int Cast(in PortalAsker asker, ulong scope, QCast shape, Vector3 dir, float maxDistance, PortalHit[] buffer, bool all, PortalQueryOptions options)
         {
             var opt = options ?? DefaultOptions;
+            _crossing = PortalCrossing.None;
             if (buffer == null || buffer.Length == 0 || maxDistance <= 0f || dir.sqrMagnitude < 1e-12f) return 0;
             dir.Normalize();
             int mask = opt.EffectiveMask;
@@ -267,6 +283,11 @@ namespace Nebula
                 var otherFrame = face.Entering ? rig.FarFrame : rig.NearFrame;
                 var turn = face.Entering ? rig.TurnNearToFar : rig.TurnFarToNear;
                 ulong otherScope = face.Entering ? rig.FarScope : rig.NearScope;
+                if (otherFrame.Valid)
+                {
+                    var farAt = shape.Mapped(face.Frame, otherFrame, turn).Reference;
+                    _crossing = new PortalCrossing(rig.LinkId, currentScope, otherScope, traveled, farAt, (turn * dir).normalized);
+                }
                 if (_physics.OtherSide(rig, face.Entering, out var otherScene, out var otherSpace))
                 {
                     toAsker = new Unfold { Active = true, From = otherFrame, To = face.Frame, Turn = Quaternion.Inverse(turn) };

@@ -125,5 +125,19 @@ namespace Nebula.Tests
             Assert.That(edge.IsAperture, Is.False);
             Assert.That(default(PortalHit).Collider, Is.Null);
         }
+
+        [Test]
+        public void ACrossingSaysWhereTheCastWentThroughAndNoCrossingIsNone()
+        {
+            var crossing = new PortalCrossing(9UL, 1UL, 2UL, 4.5f, new Vector3(1f, 2f, 3f), Vector3.back);
+            Assert.That(crossing.Crossed, Is.True);
+            Assert.That(crossing.LinkId, Is.EqualTo(9UL));
+            Assert.That(crossing.FromScope, Is.EqualTo(1UL));
+            Assert.That(crossing.ToScope, Is.EqualTo(2UL));
+            Assert.That(crossing.Distance, Is.EqualTo(4.5f));
+            Assert.That(crossing.FarPoint, Is.EqualTo(new Vector3(1f, 2f, 3f)));
+            Assert.That(crossing.FarDirection, Is.EqualTo(Vector3.back));
+            Assert.That(PortalCrossing.None.Crossed, Is.False);
+        }
     }
 }

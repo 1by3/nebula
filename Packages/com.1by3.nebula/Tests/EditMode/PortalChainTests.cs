@@ -71,7 +71,8 @@ namespace Nebula.Tests
                 // A process that holds no link (a client past the room): the instance poses alone.
                 PortalHarness.Disable(inner);
                 PortalHarness.Disable(h.Door);
-                Assert.That(Portals.All, Does.Not.Contain(inner).And.Not.Contain(h.Door), "neither door is registered: no link at hand");
+                Assert.That(Portals.All, Has.No.Member(inner), "the inner door is not registered: no link at hand");
+                Assert.That(Portals.All, Has.No.Member(h.Door), "nor is the outer one");
                 // To the millimetre: the vault's origin is rounded to one, as every face's is (Portal.OriginResolution).
                 Assert.That(Distance(Portals.Map(vault, street, inVault), throughLinks), Is.LessThan(2e-3), "the vault to the street, through its own pose");
                 Assert.That(Distance(Portals.Map(room, vault, inRoom), roomToVault), Is.LessThan(2e-3), "the room to the vault: two instances of one world");

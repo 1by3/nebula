@@ -82,6 +82,28 @@ namespace Nebula.Tests
         }
 
         [UnityTest]
+        public IEnumerator ARayThroughAnOpenApertureReportsWhereItCrossedAndTheRayOnTheFarSide()
+        {
+            var link = _rig.OpenDoor();
+            _rig.Steps(10);
+
+            // Nothing in the hall is hit before the range runs out, and the cast still says it went through.
+            Assert.That(Q.Raycast(PartyA, 0UL, Street(0f, 0.5f, -10f), Vector3.forward, 11f, out _, out var crossing), Is.False);
+            Assert.That(crossing.Crossed, Is.True);
+            Assert.That(crossing.LinkId, Is.EqualTo(link.Id));
+            Assert.That(crossing.FromScope, Is.EqualTo(0UL));
+            Assert.That(crossing.ToScope, Is.EqualTo(PortalHarness.Private));
+            Assert.That(crossing.Distance, Is.EqualTo(10f).Within(0.02f), "the face is 10 m ahead");
+            Assert.That(crossing.FarPoint.z, Is.EqualTo(20f).Within(0.01f), "a coincident link: the same place, in the hall's scene");
+            Assert.That(crossing.FarDirection, Is.EqualTo(Vector3.forward).Using(new Vector3EqualityComparer(0.001f)));
+
+            // A cast that meets the street first went through nothing.
+            Assert.That(Q.Raycast(PartyA, 0UL, Street(-3f, 1f, -10f), Vector3.forward, 40f, out _, out var none), Is.True);
+            Assert.That(none.Crossed, Is.False);
+            yield break;
+        }
+
+        [UnityTest]
         public IEnumerator ARayThatHitsTheStreetFirstIsNotCarriedOn()
         {
             _rig.OpenDoor();
