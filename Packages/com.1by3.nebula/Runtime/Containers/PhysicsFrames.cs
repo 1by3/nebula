@@ -1563,7 +1563,9 @@ namespace Nebula
         /// cast in the frame through its own objects agrees, but a ray from the camera does not meet the frame where it
         /// is drawn. Turn this off if your game casts into a frame in render coordinates during <c>FixedUpdate</c>; the
         /// frame then goes back after each <c>NebulaClient.FixedUpdate</c>. <c>Update</c>, <c>LateUpdate</c> and drawing
-        /// see every frame at its render pose either way.
+        /// see every frame at its render pose either way. While it is on, <c>NebulaClient</c> also replays a correction of
+        /// its pawn in a frame in the next fixed step's hold instead of in <c>Update</c>, so a frame moves at most once
+        /// into its simulation pose and once back each rendered frame, whatever the correction rate.
         /// </summary>
         public static bool HoldThroughFixedSteps = true;
 

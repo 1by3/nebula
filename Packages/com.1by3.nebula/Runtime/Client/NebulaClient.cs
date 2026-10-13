@@ -345,6 +345,29 @@ namespace Nebula
         private readonly NetworkWriter _writer = new NetworkWriter(2048);
         private readonly NetworkWriter _inputWriter = new NetworkWriter(256);
         private readonly NetworkReader _reader = new NetworkReader();
+
+        /// <summary>A correction of the local pawn received in <c>Update</c>, replayed in the next fixed step (NEB-445).</summary>
+        private struct PendingCorrection
+        {
+            public NetworkIdentity Target;
+            public Container Container;
+            public uint Tick;
+            public uint Epoch;
+            public byte[] State;
+            public int Pawn;
+            public float Received;
+        }
+
+        private readonly List<PendingCorrection> _pendingCorrections = new List<PendingCorrection>();
+        private readonly NetworkReader _correctionReader = new NetworkReader();
+        /// <summary>Counts local pawn spawns, so a correction queued for an earlier pawn (or an earlier prediction of it) is dropped.</summary>
+        private int _pawnGeneration;
+
+        /// <summary>
+        /// How long a queued correction waits for a fixed step before it is replayed in <c>Update</c> anyway (seconds):
+        /// a client that stops predicting (a stall, no pawn) still applies what the worker said.
+        /// </summary>
+        public float PendingCorrectionTimeoutSeconds = 0.25f;
         private readonly NetworkReader _batchReader = new NetworkReader();
         private readonly List<ClientInputMsg.Frame> _recentInputs = new List<ClientInputMsg.Frame>();
         private ClientInputMsg _inputMsg = new ClientInputMsg { Frames = new List<ClientInputMsg.Frame>() };
@@ -923,6 +946,12 @@ namespace Nebula
             _transport.Poll(HandleTransportEvent);
             // Corrections replayed back to back held the pawn's frame at its simulation pose (NEB-445); it is drawn now.
             PhysicsFrames.ReleaseSimulationPose();
+            // Corrections queued for the next fixed step (NEB-445) that no fixed step will take: replayed here, as before.
+            if (_pendingCorrections.Count > 0 && !PendingCorrectionsWillReplay())
+            {
+                ReplayPendingCorrections();
+                PhysicsFrames.ReleaseSimulationPose();
+            }
 
             TickConnection();
             TickStallWatch();
@@ -1109,6 +1138,9 @@ namespace Nebula
             // before Update (PhysicsFrames.HoldThroughFixedSteps), or after this FixedUpdate with that off.
             try
             {
+                // Corrections received since the last fixed step, replayed in this step's hold, before the step: where
+                // Update would have replayed them, as no step ran in between, without moving the frame for them (NEB-445).
+                if (_pendingCorrections.Count > 0) ReplayPendingCorrections();
                 // The pawn predicts against what the worker has: the throat, the aperture colliders and proxies of the replicas in the band (docs/portals.md D25).
                 if (portalStep) _portalPhysics.StepClient(LocalPlayer, _entities.Values, first, holdFrame: true);
 
@@ -1786,6 +1818,8 @@ namespace Nebula
             if (e.IsLocalPlayer)
             {
                 LocalPlayer = e;
+                _pawnGeneration++;
+                _pendingCorrections.Clear();
                 e.Predicted?.ResetPrediction();
                 _predictTick = 0;
                 LocalPlayerSpawned?.Invoke(e);
@@ -2099,6 +2133,17 @@ namespace Nebula
                 PhysicsFrames.ReleaseSimulationPose();
                 target.SetContainer(container);
             }
+            // The pawn's correction in a frame waits for the next fixed step, whose hold has the frame at its simulation
+            // pose already: replaying it here moved the whole frame there and back once more every frame (NEB-445).
+            // No prediction step runs before then, so it replays exactly as it would have here; it is drawn up to one
+            // fixed step later. Corrections already queued keep their order ahead of one replayed now.
+            var space = container != null ? container.InnerSpace : null;
+            if (target == LocalPlayer && PhysicsFrames.HoldThroughFixedSteps && PhysicsFrames.RendersFrames && space != null && space.Frame != null)
+            {
+                _pendingCorrections.Add(new PendingCorrection { Target = target, Container = container, Tick = msg.Tick, Epoch = msg.Epoch, State = msg.State, Pawn = _pawnGeneration, Received = Time.unscaledTime });
+                return;
+            }
+            if (target == LocalPlayer && _pendingCorrections.Count > 0) ReplayPendingCorrections();
             _reader.Set(new ArraySegment<byte>(msg.State));
             // A correction replays inputs, which is simulation: in the pawn's frame at its simulation pose (D11). The
             // frame is held there for a next correction in the same poll, so a burst of them moves it once (NEB-445);
@@ -2111,6 +2156,32 @@ namespace Nebula
                 PhysicsFrames.ReleaseSimulationPose();
                 target.Carried.RefreshCache();
             }
+        }
+
+        /// <summary>Whether a fixed step will take the queued corrections soon: the client predicts its pawn, and the oldest is recent.</summary>
+        private bool PendingCorrectionsWillReplay() =>
+            ConnectionState == State.InGame && LocalPlayer != null && LocalPlayer.Predicted != null
+            && Time.unscaledTime - _pendingCorrections[0].Received <= PendingCorrectionTimeoutSeconds;
+
+        /// <summary>
+        /// Replay the queued corrections of the local pawn in order, each in its frame at its simulation pose, held for the
+        /// next (NEB-445). One whose pawn, epoch or container changed since it came is dropped: a newer report follows
+        /// every tick, and the state it describes no longer applies to what the client holds.
+        /// </summary>
+        private void ReplayPendingCorrections()
+        {
+            for (int i = 0; i < _pendingCorrections.Count; i++)
+            {
+                var c = _pendingCorrections[i];
+                var target = c.Target;
+                if (target == null || target != LocalPlayer || c.Pawn != _pawnGeneration || target.Predicted == null) continue;
+                if (target.Epoch != c.Epoch || target.Container != c.Container) continue;
+                _correctionReader.Set(new ArraySegment<byte>(c.State));
+                PhysicsFrames.BeginSimulation(c.Container != null ? c.Container.InnerSpace : null, target.transform);
+                try { target.Predicted.ClientReconcile(c.Tick, _correctionReader); }
+                finally { PhysicsFrames.EndSimulation(hold: true); }
+            }
+            _pendingCorrections.Clear();
         }
 
         /// <summary>

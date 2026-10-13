@@ -272,7 +272,9 @@ The rules that keep it invisible to everything else:
   `EndSimulation(hold: true)` leaves the frame at its simulation pose for the next step: `NebulaClient` holds it across
   the steps of a `FixedUpdate`, across the frame's fixed steps (`HoldThroughFixedSteps`, released as `PreUpdate`
   starts), and across corrections that arrive back to back in one poll (released by any other message, and after the
-  poll). `InSimulationPose` is true while a frame is held, so every conversion reads it where it stands; drawing and
+  poll); with `HoldThroughFixedSteps` a correction of the pawn in a frame is not replayed in `Update` at all but queued
+  for the next fixed step's hold, so a frame moves at most once there and once back each rendered frame.
+  `InSimulationPose` is true while a frame is held, so every conversion reads it where it stands; drawing and
   `PoseForRender` release it. The simulation pose itself is unchanged: the same root pose, origin and order of steps.
 - A frame whose content stays near its own origin (a ship's) never gets one while the anchor is aboard; a frame inside
   another (a ship on a planet) is posed from its carrier as drawn through the outer frame's render origin, outermost
