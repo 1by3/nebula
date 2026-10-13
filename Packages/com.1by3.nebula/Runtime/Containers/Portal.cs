@@ -353,7 +353,35 @@ namespace Nebula
         internal PortalFace TemplateFarFace(ulong farScope, string farContainerId)
         {
             var near = NearFace;
-            return new PortalFace(farScope, farContainerId, near.Origin, TurnWithFace ? Quaternion.identity : near.Rotation);
+            TemplateFarPose(out var origin, out _);
+            return new PortalFace(farScope, farContainerId, origin, TurnWithFace ? Quaternion.identity : near.Rotation);
+        }
+
+        /// <summary>
+        /// The origin and rotation a template far scope is prepared with (<see cref="NebulaWorker.PrepareInstance(InstanceTemplate, string, Double3, Quaternion)"/>):
+        /// the near face's origin and <see cref="PoseRotation"/>. NEB-438: when the near face stands in an instance whose own space is turned
+        /// against its host (<see cref="InstancePoses"/>: a room behind a door, and this a door inside it), both are carried through that pose
+        /// into the host's space, so the far scope's pose, too, is against the world it was ultimately entered from: every reader of an
+        /// instance's pose (a client relating two scopes no link record joins, the drawn set's fallback) takes it to be against that world.
+        /// The far face is that origin. A face in the world, or in an instance that is not turned, prepares exactly what it always did.
+        /// Rounded as the near face is, so one door always prepares one definition.
+        /// </summary>
+        internal void TemplateFarPose(out Double3 origin, out Quaternion rotation)
+        {
+            var near = NearFace;
+            origin = near.Origin;
+            rotation = PoseRotation;
+            if (!InstancePoses.TryGet(near.Scope, out var hostOrigin, out var hostRotation)) return;
+            var p = hostOrigin + PhysicsFrames.Rotate(hostRotation, near.Origin - hostOrigin);
+            origin = new Double3(Round(p.X), Round(p.Y), Round(p.Z));
+            rotation = Canonical(hostRotation * rotation);
+        }
+
+        /// <summary>The far face's origin of a template far side (<see cref="TemplateFarPose"/>), as its record carries it.</summary>
+        internal Double3 TemplateFarOrigin()
+        {
+            TemplateFarPose(out var origin, out _);
+            return origin;
         }
 
         // ------------------------------------------------------------------------------------------ links

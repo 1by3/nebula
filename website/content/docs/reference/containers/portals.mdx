@@ -114,6 +114,14 @@ public static Double3 Map(ulong from, ulong to, Double3 position);
 
 A pose of scope `from` in scope `to`, carried through the link between them (`docs/portals.md` D39): the position about the faces and in double, the rotation turned. Scopes that no portal and no instance pose relates, and a scope with itself, return the pose unchanged. For an instance a template portal built this is its pose against its host ([`InstancePoses`](/docs/reference/containers/instance-poses)), which every process learns from lease rows; for a portal with a fixed far side it is the portal's two faces, known to a worker for the links it holds and to a client from the portal records it was sent. Where several portals join the same two scopes, the one whose face is nearest the pose is used.
 
+### TryMap [#trymap]
+
+```csharp
+public static bool TryMap(ulong from, ulong to, PortalPose pose, out PortalPose mapped);
+```
+
+As [`Map`](#map), but says whether anything relates the scopes: false (and `mapped` the pose unchanged) when no portal and no instance pose does. A scope with itself is related by the identity. For a game that must tell "the same place on the other side" from "no way through" before it carries a pose, a direction or a hold across.
+
 ### Turn [#turn]
 
 ```csharp
@@ -137,6 +145,22 @@ public static Matrix4x4 RenderMatrixOf(ulong scope);
 ```
 
 A matrix that takes a point of `scope`'s own upright space, in drawing space, to where it is drawn (`docs/portals.md` D41). For what a transform cannot carry: meshes a game draws itself with matrices it keeps (`Graphics.RenderMeshInstanced`, a scatter, a decal batch). Multiply the matrix you would draw an unposed instance with by this one (`RenderMatrixOf(scope) * instanceMatrix`), while [`SceneRenderOrigin.Drawing`](/docs/reference/client/scene-render-origin#drawing) runs: "drawing space" is a scene position minus [`SceneRenderOrigin.Offset`](/docs/reference/client/scene-render-origin#offset), which is what the roots Nebula posed are in. A matrix built from a transform read inside `Drawing` already includes the pose and must not be multiplied again. The identity for the anchor and for a scope nothing relates to it.
+
+### DrawWith [#drawwith]
+
+```csharp
+public static void DrawWith(Transform transform, ulong scope);
+```
+
+Draw `transform` as part of `scope`: while cameras draw, Nebula poses it by the scope's [`PoseOf`](#poseof) as it poses the scope's root containers, and puts it back afterwards. For what a game keeps outside every container but places in a scope's own space: a light that follows the local player's head, an effect between a hand and what it holds. Without it such a thing is drawn unposed, away from the scope it belongs to, whenever that scope is not the [`Anchor`](#anchor). Pass 0 to stop. A transform already under something posed is left to it; a destroyed one is forgotten.
+
+### KeepUnposed [#keepunposed]
+
+```csharp
+public static void KeepUnposed(Camera camera, bool keep = true);
+```
+
+Keep `camera` where the game put it while Nebula draws (`keep` false puts it back with the rest). When the view is not the [`Anchor`](#anchor), Nebula moves every camera that draws by the view's pose; a camera that looks at something of its own rather than the world (a portrait of the player's avatar in a corner of space, a preview rendered to a texture) would be moved off it.
 
 ### RenderingLayerOf [#renderinglayerof]
 

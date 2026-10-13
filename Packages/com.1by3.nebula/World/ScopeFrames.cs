@@ -240,12 +240,18 @@ namespace Nebula.World
         /// instance is drawn exactly where it is relative to that world (a doorway looks through to the right place, both
         /// ways) and a crossing does not move the pawn in Unity; the client keeps that frame's origin near its pawn, so
         /// it stays precise (<c>docs/scope-frames.md</c> D11). Ignored for a scope that already has or shares a frame.
+        /// <para>
+        /// NEB-438: it shares the frame of the scope that owns it (<see cref="Resolve"/> of the host), not the host itself, so an
+        /// instance entered from an instance entered from a world keeps the world's frame when the instance between them leaves
+        /// this process: a chain of shares would stop at the one that left, which has no frame, and put the rest in the public one.
+        /// </para>
         /// </summary>
         public static void Share(ulong instanceId, ulong hostInstanceId)
         {
             if (instanceId == 0 || instanceId == hostInstanceId || ByInstance.ContainsKey(instanceId) || SharedWith.ContainsKey(instanceId)) return;
-            if (Resolve(hostInstanceId) == instanceId) return; // never a loop
-            SharedWith[instanceId] = hostInstanceId;
+            ulong owner = Resolve(hostInstanceId);
+            if (owner == instanceId) return; // never a loop
+            SharedWith[instanceId] = owner;
         }
 
         /// <summary>

@@ -138,6 +138,13 @@ is what lets a game find every instance it has already persisted; that rule stan
 > `InstanceBoundary` did; for a fixed far side it is the container of the far scope that holds the point 25 cm inside the far face. The deepest container
 > holding the mapped point (D16) waits for NEB-431's window, because a member client is warm only for the entry container.
 
+> **As built (NEB-438), chained portals.** A portal can stand in a far scope itself (the next floor of a building behind a door). When its near scope is a turned
+> instance, the far scope is prepared with the near face carried through that instance's pose (`Portal.TemplateFarPose`: origin `o + R (nearOrigin − o)`, rounded,
+> rotation `R × PoseRotation`), and its far face is that origin, so every instance's pose is against the world it was ultimately entered from: a process that holds no
+> link record between two scopes of the chain (a client two rooms in) relates them through their instance poses alone and gets what the links say, to the millimetre of the
+> rounding. A client shares a chained instance's frame with the scope that owns the frame (`ScopeFrames.Share` stores `Resolve(host)`), so the room in the middle
+> leaving the client changes nothing for the rooms past it (`PortalChainTests`).
+
 **D6 A portal's id is derived, not allocated.** `PortalId = ScopeKeys.Hash(containerId + "#" + Id)`, where `Id` is
 authored and unique within the near container (a second component with the same id is ignored and logged). Every
 worker, network gateway and client computes the same id from what it already has, as `docs/scope-activation.md` D3 does

@@ -272,8 +272,10 @@ namespace Nebula
             if (!fromTurned && !toTurned) return false;
             if (fromTurned && !toTurned) { map = new PortalMap(from, to, fromOrigin, fromOrigin, fromRotation); return true; }
             if (!fromTurned) { map = new PortalMap(from, to, toOrigin, toOrigin, Quaternion.Inverse(toRotation)); return true; }
-            // Two instances of one host: out of the first and into the second.
-            map = new PortalMap(from, to, fromOrigin, toOrigin, Quaternion.Inverse(toRotation) * fromRotation);
+            // Two instances of one host: out of the first into the host (o1 + R1 (p - o1)) and into the second (o2 + R2⁻¹ (P - o2)). NEB-438: the
+            // first's origin lands at o2 + R2⁻¹ (o1 - o2), which is o2 only when the two share an origin.
+            var inverse = Quaternion.Inverse(toRotation);
+            map = new PortalMap(from, to, fromOrigin, toOrigin + PhysicsFrames.Rotate(inverse, fromOrigin - toOrigin), inverse * fromRotation);
             return true;
         }
 

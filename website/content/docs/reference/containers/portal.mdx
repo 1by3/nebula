@@ -101,10 +101,11 @@ How long a closing link waits for the band to empty before it closes anyway, in 
 ### CloseHoldSeconds [#closeholdseconds]
 
 ```csharp
+[Min(0f)]
 public float CloseHoldSeconds;
 ```
 
-How long a link stays [`PortalState.Closing`](/docs/reference/protocol/portal-state#closing) at least once [`Close`](#close) is called, in seconds, even with its band empty. A closing link is still observed, so every observer keeps drawing its far side: this is the time a game needs for whatever it shows closing over the aperture (a door's leaves sliding shut, a shutter, a fade) to finish while the far side is still there to be seen behind it. Nothing enters a closing link meanwhile; bodies already straddling finish as usual. 0, the default, closes on the first tick the band is empty. Kept below [`CloseTimeoutSeconds`](#closetimeoutseconds).
+How long a link stays [`PortalState.Closing`](/docs/reference/protocol/portal-state#closing) at least once [`Close`](#close) is called, in seconds, even with its band empty (`docs/portals.md` D9). A closing link is still observed, so every observer keeps drawing its far side (D40): this is the time a game needs for whatever it shows closing over the aperture (a door's leaves sliding shut, a shutter, a fade) to finish while the far side is still there to be seen behind it. Nothing enters a closing link meanwhile; bodies already straddling finish as usual. 0, the default, closes on the first tick the band is empty. Kept below [`CloseTimeoutSeconds`](#closetimeoutseconds).
 
 ### ApproachDistance [#approachdistance]
 

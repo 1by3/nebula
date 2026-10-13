@@ -376,8 +376,9 @@ namespace Nebula
             }
             try
             {
-                var near = NearFace;
-                var parts = worker.PrepareInstance(FarTemplate, link.Party, near.Origin, PoseRotation);
+                // NEB-438: through the near scope's own pose when it is a turned instance, so the far scope's pose is against the world.
+                TemplateFarPose(out var origin, out var rotation);
+                var parts = worker.PrepareInstance(FarTemplate, link.Party, origin, rotation);
                 link.FarScopeKey = FarTemplate.TemplateId + "/" + link.Party;
                 link.FarScope = NebulaWorker.InstanceKey(link.FarScopeKey);
                 link.FarEntryRuntimeId = parts[0].RuntimeId;
@@ -490,7 +491,7 @@ namespace Nebula
                 NearRotation = near.Rotation,
                 FarKind = HasFixedFarSide ? PortalFarKind.Fixed : PortalFarKind.Template,
                 FarScope = HasFixedFarSide ? ScopeKeys.Hash(_fixedScopeKey) : 0UL,
-                FarOrigin = HasFixedFarSide ? _fixedOrigin : near.Origin,
+                FarOrigin = HasFixedFarSide ? _fixedOrigin : TemplateFarOrigin(),
                 FarRotation = HasFixedFarSide ? _fixedRotation : (TurnWithFace ? Quaternion.identity : near.Rotation),
                 TemplateId = FarTemplate != null ? FarTemplate.TemplateId : "",
                 ApertureKind = Aperture.Kind,
