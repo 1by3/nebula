@@ -76,6 +76,21 @@ namespace Nebula.Tests
             Assert.That(Portals.Turn(ScopeKeys.Hash("nowhere"), ScopeKeys.Hash("nothing")), Is.EqualTo(Quaternion.identity));
         }
 
+        [Test]
+        public void TryMapSaysWhetherAnythingRelatesTheScopes()
+        {
+            var link = _h.OpenDoor();
+            ulong room = link.FarScope;
+            var origin = _h.Door.NearFace.Origin;
+            var inStreet = new PortalPose(origin + PhysicsFrames.Rotate(Turn, new Double3(0.5, 1.0, -2.0)), Turn);
+            Assert.That(Portals.TryMap(0UL, room, inStreet, out var inRoom), Is.True);
+            Assert.That(Distance(inRoom.Position, Portals.Map(0UL, room, inStreet).Position), Is.LessThan(1e-9), "the same answer as Map");
+            Assert.That(Portals.TryMap(0UL, 0UL, inStreet, out var same), Is.True, "a scope with itself");
+            Assert.That(same.Position, Is.EqualTo(inStreet.Position));
+            Assert.That(Portals.TryMap(ScopeKeys.Hash("nowhere"), ScopeKeys.Hash("nothing"), inStreet, out var none), Is.False, "nothing relates them");
+            Assert.That(none.Position, Is.EqualTo(inStreet.Position));
+        }
+
         private PortalLink OffsetPortal(string name, Vector3 at, Double3 farOrigin, Quaternion farRotation, string scope)
         {
             var portal = _h.NewPortal(name, at);

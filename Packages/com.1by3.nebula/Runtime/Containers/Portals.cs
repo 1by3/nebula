@@ -197,6 +197,18 @@ namespace Nebula
             return new PortalPose(map.Point(pose.Position), map.Rotation(pose.Rotation));
         }
 
+        /// <summary>
+        /// As <see cref="Map(ulong, ulong, PortalPose)"/>, but says whether anything relates the scopes: false (and <paramref name="mapped"/> the
+        /// pose unchanged) when no portal and no instance pose does. A scope with itself is related by the identity. For a game that must tell
+        /// "the same place on the other side" from "no way through" before it carries a pose, a direction or a hold across.
+        /// </summary>
+        public static bool TryMap(ulong from, ulong to, PortalPose pose, out PortalPose mapped)
+        {
+            if (!TryMap(from, to, pose.Position, out var map)) { mapped = pose; return false; }
+            mapped = new PortalPose(map.Point(pose.Position), map.Rotation(pose.Rotation));
+            return true;
+        }
+
         /// <summary><see cref="Map(ulong, ulong, PortalPose)"/> for a position alone.</summary>
         public static Double3 Map(ulong from, ulong to, Double3 position) =>
             TryMap(from, to, position, out var map) ? map.Point(position) : position;
