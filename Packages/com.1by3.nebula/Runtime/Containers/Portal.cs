@@ -144,9 +144,17 @@ namespace Nebula
 
         /// <summary>
         /// Server-side admission into a link's far scope (<c>docs/portals.md</c> D11). When unset: a server-owned entity is
-        /// admitted, and an owned one when its client is a member of the link and warm. Leaving is not checked.
+        /// admitted, and an owned one when its client is a member of the link and warm. Leaving is not checked (see <see cref="CanLeave"/>).
         /// </summary>
         public Func<NetworkIdentity, PortalLink, bool> CanEnter;
+
+        /// <summary>
+        /// Server-side: whether an entity in a link's far scope may cross back out through it (<c>docs/portals.md</c> D11, D17), asked on the tick its root passes the
+        /// face, for the entity and for everything that crosses with it (riders, companions). When unset, leaving is never checked, so an occupant can always leave.
+        /// A game sets it to keep what belongs inside from walking out (an escort that must stay with its party, a guard that leashes to its post); an entity
+        /// it refuses is stopped short of the plane and <see cref="Refused"/> is raised with <see cref="PortalRefusal.NotAdmitted"/>, exactly as for <see cref="CanEnter"/>.
+        /// </summary>
+        public Func<NetworkIdentity, PortalLink, bool> CanLeave;
 
         /// <summary>
         /// Server-side: whether a client may look through a link (<c>docs/portals.md</c> D11), asked when it becomes a member.

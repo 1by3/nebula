@@ -303,6 +303,36 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void CanLeaveKeepsAnEntityInsideAndLeavingIsFreeWhenItIsUnset()
+        {
+            var link = _h.OpenDoor();
+            _h.Tick();
+            var crate = Crate(0.5f, -1f);
+            _h.Tick();
+            crate.transform.position = PortalHarness.At(0.5f, 1f);
+            _h.Tick();
+            Assert.That(crate.InstanceId, Is.EqualTo(PortalHarness.Private), "in");
+
+            _h.Door.CanLeave = (entity, l) => false;
+            crate.transform.position = PortalHarness.At(0.5f, -0.2f);
+            _h.Tick();
+            Assert.That(crate.Container, Is.SameAs(_h.Hall), "the game kept it in");
+            Assert.That(_refused, Is.EqualTo(new[] { (crate, link, PortalRefusal.NotAdmitted) }));
+
+            _h.Door.CanLeave = (entity, l) => entity == crate && l == link;
+            crate.transform.position = PortalHarness.At(0.5f, -0.2f);
+            _h.Tick();
+            Assert.That(crate.Container, Is.SameAs(_h.Street), "and let out when it says so");
+
+            _h.Door.CanLeave = null;
+            crate.transform.position = PortalHarness.At(0.5f, 1f);
+            _h.Tick();
+            crate.transform.position = PortalHarness.At(0.5f, -0.2f);
+            _h.Tick();
+            Assert.That(crate.Container, Is.SameAs(_h.Street), "unset, leaving is not asked");
+        }
+
+        [Test]
         public void AnEntityThatKeepsPushingIsRefusedOnEveryTickItReachesTheAperture()
         {
             _h.Ticks(2);

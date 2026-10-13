@@ -128,6 +128,19 @@ namespace Nebula
             return true;
         }
 
+        /// <summary>
+        /// Whether <paramref name="entity"/> may cross <paramref name="link"/> in the direction it is going: entering is <see cref="CanEnter"/>'s (or the default's); leaving is
+        /// unchecked unless the game set <see cref="CanLeave"/>, so an occupant can always leave a portal that never asks.
+        /// </summary>
+        private bool Allows(NetworkIdentity entity, PortalLink link, bool leaving)
+        {
+            if (!leaving) return Admits(entity, link);
+            var hook = CanLeave;
+            if (hook == null) return true;
+            try { return hook(entity, link); }
+            catch (Exception e) { NebulaLog.Error($"Portal '{name}': a CanLeave handler threw: {e}"); return false; }
+        }
+
         private bool Admits(NetworkIdentity entity, PortalLink link)
         {
             if (CanEnter != null)
@@ -288,7 +301,7 @@ namespace Nebula
             if (ObservationOnly) { why = PortalRefusal.NotAdmitted; return false; }
             if (link == null) { why = refusal == PortalRefusal.None ? PortalRefusal.LinkNotOpen : refusal; return false; }
             if (link.State != PortalState.Open) { why = PortalRefusal.LinkNotOpen; return false; }
-            if (!leaving && !Admits(entity, link)) { why = PortalRefusal.NotAdmitted; return false; }
+            if (!Allows(entity, link, leaving)) { why = PortalRefusal.NotAdmitted; return false; }
 
             var map = leaving ? link.ToNearMap : link.ToFarMap;
             Container destination;
@@ -309,20 +322,19 @@ namespace Nebula
             // The leader with everything aboard it, and the companions that can cross with it, each with theirs (D14). A carrier whose riders this
             // worker does not simulate is refused whole: moving it would leave them in the scope it left (D35).
             if (!AboardIsWhole(worker, entity)) { why = PortalRefusal.SplitAboard; NebulaDiagnostics.PortalSplitRefusals++; return false; }
-            var admit = leaving ? null : link;
             Group.Clear();
             Group.Add(entity);
-            if (!CollectAboard(worker, entity, admit)) { Group.Clear(); why = PortalRefusal.NotAdmitted; return false; }
+            if (!CollectAboard(worker, entity, link, leaving)) { Group.Clear(); why = PortalRefusal.NotAdmitted; return false; }
             foreach (var companion in crossing.Companions)
             {
                 var problem = CompanionProblem(companion, entity);
                 if (problem == PortalRefusal.None && !AboardIsWhole(worker, companion)) problem = PortalRefusal.SplitAboard;
-                if (problem == PortalRefusal.None && admit != null && !Admits(companion, admit)) problem = PortalRefusal.NotAdmitted;
+                if (problem == PortalRefusal.None && !Allows(companion, link, leaving)) problem = PortalRefusal.NotAdmitted;
                 if (problem == PortalRefusal.None)
                 {
                     int mark = Group.Count;
                     Group.Add(companion);
-                    if (!CollectAboard(worker, companion, admit)) { Group.RemoveRange(mark, Group.Count - mark); problem = PortalRefusal.NotAdmitted; }
+                    if (!CollectAboard(worker, companion, link, leaving)) { Group.RemoveRange(mark, Group.Count - mark); problem = PortalRefusal.NotAdmitted; }
                 }
                 if (problem != PortalRefusal.None) ReportLeftBehind(entity, companion, problem);
             }
@@ -367,10 +379,10 @@ namespace Nebula
         /// <summary>
         /// Add to <see cref="Group"/> everything this worker simulates that rides in <paramref name="carrier"/>'s box, at any depth (a cargo
         /// bay, the crew of a ship parked in a hangar): it crosses with its carrier and keeps its seat (<c>docs/scope-activation.md</c> D19, D21).
-        /// False when <paramref name="admit"/> is given and a passenger is not admitted, which refuses the carrier: nobody is carried into a
+        /// False when a passenger is not allowed through <paramref name="link"/> in this direction (<see cref="Allows"/>), which refuses the carrier: nobody is carried into a
         /// scope their client has not been readied for.
         /// </summary>
-        private bool CollectAboard(NebulaWorker worker, NetworkIdentity carrier, PortalLink admit)
+        private bool CollectAboard(NebulaWorker worker, NetworkIdentity carrier, PortalLink link, bool leaving)
         {
             if (carrier.Carried == null || !carrier.Carried.IsDynamic) return true;
             var entities = worker.AuthoritativeEntities;
@@ -379,7 +391,7 @@ namespace Nebula
                 var rider = entities[i];
                 if (rider == null || rider == carrier || !rider.IsSpawned || !rider.HasAuthority || rider.IsSceneEntity || Group.Contains(rider)) continue;
                 if (rider.Container == null || !rider.Container.IsCarriedBy(carrier)) continue;
-                if (admit != null && !Admits(rider, admit)) return false;
+                if (!Allows(rider, link, leaving)) return false;
                 Group.Add(rider);
             }
             return true;

@@ -259,7 +259,7 @@ property of the link, held for as long as the link is open. It is what lets a co
 **D11 Three hooks, on the near worker, keyed by party.** `PartyOf(entity)` says which party an entity belongs to (default:
 the owner's identity when it has an owner, as `InstanceBoundary.Personal`; null for a server-owned entity).
 `CanEnter(entity, link)` decides admission (default: admit while the link is Open when the entity is server-owned or its
-owner is a member). `CanObserve(clientId, link)` decides who may look through (default: the members). Observation
+owner is a member). `CanLeave(entity, link)` (NEB-439) is the same decision for the way back out, unset by default: an occupant can always leave. `CanObserve(clientId, link)` decides who may look through (default: the members). Observation
 is decided when a member is added, not per message: the near worker publishes each link's observer list (client ids,
 or `Anyone` for a door any passer-by may look through), and the network gateway enforces the list without running game
 code, which it cannot do as a standalone service (`Services~`).
