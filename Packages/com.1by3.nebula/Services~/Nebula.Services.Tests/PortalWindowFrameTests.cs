@@ -176,6 +176,40 @@ public class PortalWindowFrameTests
         Assert.That((bool)Call("CanObserve", _client, Dictionary("_entities")[PlanetId]!), Is.False);
     }
 
+    /// <summary>
+    /// A door 10⁸ m out in its scope, where a float is 8 m apart: the room's part is placed by its lease row's centre in double, and a player
+    /// 0.3 m inside its far face, at the floor 1.26 m below the aperture's centre, is read there and is inside the far window. Narrowed to a
+    /// float, the point fell 1.6 m behind the face and the player inside saw nothing through the open door (NEB-431).
+    /// </summary>
+    [Test]
+    public void APlayerJustInsideAFaceTenToTheEighthMetresOutIsInsideItsFarWindow()
+    {
+        const ulong Room = 5200, RoomScope = 6262;
+        var face = new Double3(-69_812_950.421, -287_858.201, -89_203_062.32);
+        var center = face + new Double3(0, 1, 12);
+        var size = new Vector3(20, 8, 24);
+        ContainerRegistry.SyncRuntime(new[] { new LeaseInfo { ContainerId = "rt_5200", HasBounds = true, BoundsCenter = center.ToVector3(), BoundsSize = size, Instance = new() { InstanceId = RoomScope } } });
+        Dictionary("_ownershipById").Add("rt_5200", new ContainerOwnershipEntry
+        {
+            ContainerId = "rt_5200", ContainerIndex = ContainerRef.RuntimeIndex, Epoch = 1, State = LeaseState.Active, HasBounds = true, BoundsSize = size,
+            HasPlacement = true, Placement = ContainerPlacement.Root(center, size),
+        });
+        var pawn = Record(9002, ContainerRef.Runtime(Room), (face + new Double3(0, -1.26, 0.3) - center).ToVector3());
+        Call("RefreshAbsolute", pawn);
+
+        var point = (Double3)Call("ScopePointOf", pawn);
+        var window = new PortalRecord
+        {
+            NearOrigin = face, NearRotation = Quaternion.Euler(54.7f, 0f, 0f), FarOrigin = face, FarRotation = Quaternion.identity,
+            HalfWidth = 1.5f, HalfHeight = 1.3f, WindowMargin = 8f, WindowDepth = 48f,
+        }.FarWindow(RoomScope);
+        var local = window.ToLocal(point);
+        Assert.That(local.X, Is.EqualTo(0).Within(2e-3), "across the face");
+        Assert.That(local.Y, Is.EqualTo(-1.26).Within(2e-3), "at the floor");
+        Assert.That(local.Z, Is.EqualTo(0.3).Within(2e-3), "0.3 m inside the face, where the player stands");
+        Assert.That(window.Contains(point), Is.True, "inside the far window");
+    }
+
     private object WithPosition(object rec, Vector3 at)
     {
         var spawn = (EntitySpawnMsg)Field(rec, "LastSpawn");

@@ -304,22 +304,20 @@ namespace Nebula.Tests
         }
 
         [Test]
-        public void TheGatewayRecordOfAnEntityInTheScopeItselfIsOnlyFloatPrecise()
+        public void TheGatewayRecordOfAnEntityInTheScopeItselfIsDoublePrecise()
         {
-            // The record's fields are doubles, but the position they are filled from is composed in float
-            // (RegionSpaceOf and AbsoluteOf return Vector3). For an entity that stands in the scope itself, not in a
-            // frame with regions of its own, 10,000 km out, that is a float's resolution there: about a metre. Pinned
-            // as the current limit, not as a goal: interest is bucketed in tens to hundreds of metres, so it decides
-            // nothing (docs/scope-frames.md section 7).
+            // The record's fields are doubles, and since NEB-431 the position they are filled from is composed in double too: a portal's
+            // window decides on it, and a float 10,000 km out is a metre apart (8 m at 10^8 m, where a player 1.6 m inside a door read as
+            // outside its window). For an entity that stands in the scope itself, not in a frame with regions of its own.
             var ship = SpawnIn(_scope, new Vector3(250.37f, 75.5f, -125.25f)); // world coordinates near this process's origin
             StartGateway();
             Announce(ship);
             var r = RecordOf(ship);
-            double truthX = 10_000_000.0 + 250.37; // the process origin is at exactly 10,000 km
+            double truthX = 10_000_000.0 + (double)250.37f; // the process origin is at exactly 10,000 km
             double error = Math.Abs(r.x - truthX);
-            TestContext.WriteLine($"gateway record, in the scope at 10,000 km: x {r.x:R} vs {truthX:R}, error {error:0.000} m, key {r.frameKey}");
+            TestContext.WriteLine($"gateway record, in the scope at 10,000 km: x {r.x:R} vs {truthX:R}, error {error:0.000000} m, key {r.frameKey}");
             Assert.AreEqual(0UL, r.frameKey);
-            Assert.LessOrEqual(error, 0.5, "a float at 10,000 km has a spacing of 1 m: rounded to the nearest metre");
+            Assert.LessOrEqual(error, 1e-3, "to the millimetre, not to a float's metre there");
         }
     }
 }

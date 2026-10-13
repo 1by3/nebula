@@ -490,9 +490,8 @@ enough, and no wire change was made:
   not depend on float precision.
 - *The gateway's record* (`EntityRecord.AbsX/AbsY/AbsZ`, with `FrameKey`) is stored in double, and an entity in a frame with regions of
   its own is filed in that frame's space, so its numbers are the frame-local wire numbers and no 10,000 km offset
-  enters. It is filled from `RegionSpaceOf`, which composes in `Vector3`: for an entity standing in the scope itself
-  (key 0) a long way from the origin the value therefore carries a float's resolution there (about a metre at 10,000 km).
-  Interest is bucketed in tens to hundreds of metres, so nothing decides on it; it is a limit to know, not changed here.
+  enters. It is filled from `RegionSpaceOf`, which composes in double since NEB-431 (a portal's window decides on it,
+  `docs/portals.md` D20): an entity standing in the scope itself (key 0) a long way from the origin is filed to the millimetre.
 
 A game that needs better than 1.6 cm for something large in a very big frame keeps it in a chunk, or in a framed
 carrier of its own (a ship's frame is local to the ship). Scenario 45 pins the numbers.

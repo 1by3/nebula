@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using Nebula.World;
@@ -145,25 +146,33 @@ namespace Nebula.Tests
         /// The scope (a root grid of 8 km cubes) with the planet standing in its chunk, the planet's ground hosted by the
         /// planet, the door's chunk leased, and a portal built in that chunk's content as a game builds it.
         /// </summary>
-        private Container Build(out NetworkIdentity planet, out RuntimeGrid ground)
+        private Container Build(out NetworkIdentity planet, out RuntimeGrid ground) => Build(out planet, out ground, Quaternion.identity, Double3.From(PlanetAt));
+
+        /// <summary>
+        /// <see cref="Build(out NetworkIdentity, out RuntimeGrid)"/> with the planet turned by <paramref name="planetRotation"/> in its scope and standing at
+        /// <paramref name="planetAt"/> (absolute, in double): the scope's frame is moved to the planet's cell first, as its grid follows its players.
+        /// </summary>
+        private Container Build(out NetworkIdentity planet, out RuntimeGrid ground, Quaternion planetRotation, Double3 planetAt)
         {
             var space = new RuntimeGrid(SpaceCell, planar: false, scopeKey: Scope);
             NebulaChunks.Activate(space, NebulaRoles.Worker, true, null);
+            var cell = space.CoordOfAbsolute(planetAt.ToVector3());
+            space.ShiftOrigin(cell);
             _plane.ActivateScope(new ScopeActivationRequest
             {
                 ScopeKey = Scope,
                 Definition = new ChunkGridDefinition { CellSize = SpaceCell, Planar = false }.ToScopeDefinition(),
                 PreferredWorkerId = W.Id,
             });
-            var spaceInstance = new InstanceContainerInfo { InstanceId = space.InstanceId, ScopeKey = Scope, PartId = ChunkKeys.PartId(Vector3Int.zero) };
-            var spaceChunk = ContainerRegistry.RegisterRuntime(space.IdOf(Vector3Int.zero), space.BoundsOf(Vector3Int.zero), spaceInstance);
+            var spaceInstance = new InstanceContainerInfo { InstanceId = space.InstanceId, ScopeKey = Scope, PartId = ChunkKeys.PartId(cell) };
+            var spaceChunk = ContainerRegistry.RegisterRuntime(space.IdOf(cell), space.BoundsOf(cell), spaceInstance);
             ContainerRegistry.ApplyLease(spaceChunk.ContainerId, W.Id, W.Index, 1);
-            _plane.EnsureRuntimeContainer(spaceChunk.ContainerId, ContainerRegistry.ToAbsolute(space.BoundsOf(Vector3Int.zero), space.InstanceId), W.Id, spaceInstance);
+            _plane.EnsureRuntimeContainer(spaceChunk.ContainerId, space.PlacementOf(cell), W.Id, spaceInstance);
 
             NetworkIdentity p = null;
             W.Act(() =>
             {
-                p = NetworkPrefabs.Instantiate(_planetPrefab, SystemLayoutFree.ToFrame(space, PlanetAt), Quaternion.identity, spaceChunk.ContentRoot);
+                p = NetworkPrefabs.Instantiate(_planetPrefab, ContainerRegistry.ToFrame(planetAt, space.InstanceId), planetRotation, spaceChunk.ContentRoot);
                 W.Instance.SpawnServerDriven(p, spaceChunk);
             });
             planet = p;
@@ -335,10 +344,126 @@ namespace Nebula.Tests
             AreClose(town, planet.Carried.Frame.SimulationToLocal(player.transform.position), "at the planet-local point");
         }
 
-        /// <summary>The scope frame arithmetic the tests need, without a game's layout.</summary>
-        private static class SystemLayoutFree
+
+        /// <summary>
+        /// The planet turned 54.7° about x against its scope (a door on a sphere), 10⁸ m from the scope's origin: a template's far face is the near face's origin with the
+        /// identity rotation in the instance's own upright space, the instance is posed by the near face's rotation, and every reader of the far
+        /// face agrees on that one convention (<c>docs/portals.md</c> D5, as built). A player 0.3 m inside the face, at the floor 1.26 m below the
+        /// aperture's centre, is inside the far window as a network gateway that shares this process measures it from what the worker sends (so the
+        /// client inside looks out), the crossing maps through the faces with no offset both ways, and the link's map, the instance's pose from its
+        /// lease row and the map a client draws with are one turn about one point.
+        /// </summary>
+        [Test]
+        public void OnAPlanetTurnedAgainstItsScopeAPlayerJustInsideTheInstanceIsInsideTheFarWindowAndTheMapsAgree()
         {
-            public static Vector3 ToFrame(RuntimeGrid grid, Vector3 absolute) => absolute + grid.Frame.OriginOffset;
+            var turn = Quaternion.Euler(54.7f, 0f, 0f);
+            // A door 10^8 m out in a star system, where a float is 8 m apart.
+            var chunk = Build(out var planet, out _, turn, new Double3(-69_812_950.421, -287_858.201, -89_203_062.32) - Double3.From(Door));
+            var player = Player(chunk, planet, Door + new Vector3(0f, 1f, -6f));
+            var link = OpenDoor();
+            var record = _portal.ToRecord();
+            ulong instance = NebulaWorker.InstanceKey("vault/" + Owner);
+            Assert.That(Quaternion.Angle(record.NearRotation, turn), Is.LessThan(0.01f), "the near face is turned as the planet is");
+            Assert.That(record.FarRotation, Is.EqualTo(Quaternion.identity), "the far face is upright in the instance's own space");
+            Assert.That(record.FarOrigin, Is.EqualTo(record.NearOrigin), "and stands at the near face's origin: a coincident portal");
+
+            // In through the door: (0, 1, 1) from the door in the planet's axes is (0, 1, 1) from the face in the instance's.
+            player.transform.position = planet.Carried.Frame.LocalToSimulation(Door + new Vector3(0f, 1f, 1f));
+            Tick();
+            var hall = ContainerRegistry.GetRuntime(NebulaWorker.InstanceKey("vault/" + Owner + "/hall"));
+            Assert.AreSame(hall, player.Container, "the player crossed into the instance");
+            var inside = ContainerRegistry.ToAbsolutePrecise(player.transform.position, instance) - record.FarOrigin;
+            AreClose(new Vector3(0f, 1f, 1f), inside.ToVector3(), "the crossing maps through the faces with no offset", 2e-3f);
+
+            // 0.3 m inside the face, at the floor under the aperture's centre.
+            var at = record.FarOrigin + new Double3(0, -1.26, 0.3);
+            player.transform.position = ContainerRegistry.ToFrame(at, instance);
+            Tick();
+            Assert.AreSame(hall, player.Container, "still inside");
+
+            // A network gateway that shares this process (the Editor's dev loop), fed what the worker sends.
+            var gateway = SharedProcessGateway(record, link, instance, player, out var client);
+            try
+            {
+                var pawn = GatewayEntities(gateway)[player.NetId];
+                var point = (Double3)CallGateway(gateway, "ScopePointOf", pawn);
+                var window = record.FarWindow(instance);
+                AreClose(new Vector3(0f, -1.26f, 0.3f), window.ToLocal(point).ToVector3(), "the gateway reads the player in the far face's axes where it stands", 2e-3f);
+                Assert.That(window.Contains(point), Is.True, "0.3 m inside the face is inside the far window");
+                CallGateway(gateway, "RefreshWindows", client, true);
+                Assert.That(((IList)GatewayField(client, "Windows")).Count, Is.EqualTo(1), "the player inside looks out through the open door");
+            }
+            finally { Object.DestroyImmediate(gateway.gameObject); }
+
+            // The link's map, the instance's pose from its lease row, and the record's faces (what a client draws with) are one turn about one point.
+            var toNear = link.ToNearMap;
+            Assert.That(Quaternion.Angle(toNear.Turn, turn), Is.LessThan(0.01f), "the instance is turned into the planet's scope by the near face's rotation");
+            Assert.That(InstancePoses.TryGet(instance, out var poseOrigin, out var poseRotation), Is.True, "the instance's pose is learned from its row");
+            Assert.That(Quaternion.Angle(poseRotation, toNear.Turn), Is.LessThan(0.01f), "the pose and the link turn alike");
+            Assert.That(poseOrigin, Is.EqualTo(record.FarOrigin), "about the face");
+            var drawn = new PortalMap(record.NearScope, instance, record.NearOrigin, record.FarOrigin, record.FarRotation * Quaternion.Inverse(record.NearRotation)).Inverse;
+            var outside = PhysicsFrames.Rotate(turn, new Double3(0, -1.26, 0.3)).ToVector3();
+            AreClose(outside, (toNear.Point(at) - record.NearOrigin).ToVector3(), "the link carries the point out through the face", 2e-3f);
+            AreClose(outside, (drawn.Point(at) - record.NearOrigin).ToVector3(), "the client draws it there", 2e-3f);
+
+            // Back out through the face: where it walked out, in the planet's own axes.
+            player.transform.position = ContainerRegistry.ToFrame(record.FarOrigin + new Double3(0, -1.26, -0.5), instance);
+            Tick();
+            Assert.AreSame(chunk, player.Container, "back in the planet's chunk");
+            AreClose(Door + new Vector3(0f, -1.26f, -0.5f), planet.Carried.Frame.SimulationToLocal(player.transform.position), "where it walked out, in the planet's own coordinates", 2e-3f);
+        }
+
+        private static readonly BindingFlags GatewayFlags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+
+        private static object CallGateway(NebulaGateway gateway, string name, params object[] args)
+        {
+            try { return typeof(NebulaGateway).GetMethod(name, GatewayFlags).Invoke(gateway, args); }
+            catch (TargetInvocationException ex) when (ex.InnerException != null) { System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw(); throw; }
+        }
+
+        private static object GatewayField(object target, string name) => target.GetType().GetField(name, GatewayFlags).GetValue(target);
+        private static void SetGatewayField(object target, string name, object value) => target.GetType().GetField(name, GatewayFlags).SetValue(target, value);
+        private static IDictionary GatewayDictionary(NebulaGateway gateway, string name) => (IDictionary)typeof(NebulaGateway).GetField(name, GatewayFlags).GetValue(gateway);
+        private static IDictionary GatewayEntities(NebulaGateway gateway) => GatewayDictionary(gateway, "_entities");
+        private static object GatewayNested(string name) => System.Activator.CreateInstance(typeof(NebulaGateway).GetNestedType(name, BindingFlags.NonPublic), true);
+
+        /// <summary>
+        /// A <see cref="NebulaGateway"/> in this process, as the Editor's dev loop runs one beside its worker: the control plane's rows, the player's
+        /// record as the worker sends it (container-local), the portal's record and the party's open link, and the player's client.
+        /// </summary>
+        private NebulaGateway SharedProcessGateway(PortalRecord portal, PortalLink link, ulong instance, NetworkIdentity player, out object client)
+        {
+            var gateway = new GameObject("gateway").AddComponent<NebulaGateway>();
+            typeof(NebulaGateway).GetField("<Config>k__BackingField", GatewayFlags).SetValue(gateway, _mesh.Config);
+            typeof(NebulaGateway).GetField("_transport", GatewayFlags).SetValue(gateway, new ConformanceMesh.RecordingTransport());
+            CallGateway(gateway, "InitializeInterest");
+            CallGateway(gateway, "IndexLeases", (IReadOnlyList<LeaseInfo>)new List<LeaseInfo>(_plane.Leases));
+
+            var rec = GatewayNested("EntityRecord");
+            SetGatewayField(rec, "NetId", player.NetId);
+            SetGatewayField(rec, "Container", player.ContainerRef);
+            SetGatewayField(rec, "OwnerWorkerIndex", W.Index);
+            SetGatewayField(rec, "OwnerClientId", 7UL);
+            var spawn = (EntitySpawnMsg)GatewayField(rec, "LastSpawn");
+            spawn.NetId = player.NetId; spawn.Container = player.ContainerRef; spawn.LocalPosition = player.LocalPosition; spawn.LocalRotation = player.LocalRotation; spawn.LocalScale = Vector3.one;
+            SetGatewayField(rec, "LastSpawn", spawn);
+            GatewayEntities(gateway).Add(player.NetId, rec);
+            CallGateway(gateway, "RefreshAbsolute", rec);
+
+            var entry = GatewayNested("PortalEntry");
+            SetGatewayField(entry, "Record", portal);
+            GatewayDictionary(gateway, "_portals").Add(portal.PortalId, entry);
+            var linkEntry = GatewayNested("LinkEntry");
+            SetGatewayField(linkEntry, "Record", new PortalLinkRecord { LinkId = link.Id, PortalId = portal.PortalId, FarScope = instance, State = PortalState.Open });
+            ((HashSet<ulong>)GatewayField(linkEntry, "Observers")).Add(7UL);
+            GatewayDictionary(gateway, "_portalLinks").Add(link.Id, linkEntry);
+            ((IList)GatewayField(entry, "Links")).Add(linkEntry);
+
+            client = System.Activator.CreateInstance(typeof(NebulaGateway).GetNestedType("ClientConn", BindingFlags.NonPublic), true);
+            SetGatewayField(client, "ClientId", 7UL); SetGatewayField(client, "PeerId", 7); SetGatewayField(client, "Welcomed", true);
+            SetGatewayField(client, "PawnNetId", player.NetId); SetGatewayField(client, "LastScope", instance);
+            GatewayDictionary(gateway, "_clientsById").Add(7UL, client);
+            return gateway;
         }
     }
 }

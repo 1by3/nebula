@@ -287,8 +287,7 @@ container with large local coordinates (a planet 500 km across), wherever its sc
   so simulation precision does not depend on where a planet sits in its system, which may be thousands of kilometres from the origin.
 - The gateway's absolute records (`EntityRecord.AbsX/AbsY/AbsZ` with `FrameKey`) are `double`. An entity in a frame
   with regions of its own is filed in the frame's space (its frame-local numbers); one standing in the scope itself is
-  filed from a position composed in `Vector3`, so far from the origin it carries a float's resolution (about a metre at
-  10,000 km). Region buckets are tens to hundreds of metres wide, so this decides nothing today.
+  filed from a position composed in double (NEB-431: a portal's window decides on it, and a float is 8 m apart 10^8 m out).
 
 Scenario 45 (`ConformanceFramePrecisionTests`) pins these numbers. A scope held by one worker where players are far
 apart on one very large planet is still the existing single-frame trade-off, and the answer to it is more workers, not more frames.

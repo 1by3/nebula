@@ -289,15 +289,15 @@ namespace Nebula.Tests
             Announce(w1, rock);
             var local = rock.LocalPosition;
 
-            var before = (Vector3)Call("WorldPosition", rock.ContainerRef, local);
+            var before = ((Double3)Call("WorldPosition", rock.ContainerRef, local)).ToVector3();
             _grid.KeepOriginNear(Far, 1);
-            var after = (Vector3)Call("WorldPosition", rock.ContainerRef, local);
+            var after = ((Double3)Call("WorldPosition", rock.ContainerRef, local)).ToVector3();
 
             Assert.AreEqual(1900f, before.x, 1e-3f);
             Assert.AreEqual(1100f, before.z, 1e-3f);
             Assert.AreEqual(before.x, after.x, 1e-3f, "a shift of the frame the gateway shares does not move an absolute position");
             Assert.AreEqual(before.z, after.z, 1e-3f);
-            var back = (Vector3)Call("ContainerPosition", rock.ContainerRef, after);
+            var back = (Vector3)Call("ContainerPosition", rock.ContainerRef, Double3.From(after));
             Assert.AreEqual(local.x, back.x, 1e-3f, "and ContainerPosition is still its inverse");
             Assert.AreEqual(local.z, back.z, 1e-3f);
         }

@@ -539,9 +539,10 @@ namespace Nebula
         /// Where a position of <paramref name="container"/> is for interest management, and in which region space: the
         /// innermost physics frame with regions of its own it stands in (frame-local coordinates, its key in
         /// <paramref name="frameKey"/>), or its scope (absolute coordinates, key 0). Carriers on the way out are
-        /// composed as <see cref="WorldPosition"/> composes them.
+        /// composed as <see cref="WorldPosition"/> composes them. In double: a scope's absolute coordinates are 10⁸ m out in a
+        /// star system, where a float is 8 m apart (<see cref="AbsoluteOf"/>).
         /// </summary>
-        internal Vector3 RegionSpaceOf(ContainerRef container, Vector3 local, out ulong frameKey)
+        internal Double3 RegionSpaceOf(ContainerRef container, Vector3 local, out ulong frameKey)
         {
             frameKey = 0;
             for (int hops = 0; hops <= _entities.Count + _ownershipById.Count; hops++)
@@ -568,13 +569,37 @@ namespace Nebula
         /// shifted frame, so the frame's origin is added back here, exactly as the worker does. On a gateway of its
         /// own the frame never moves and this is the container's world position (NEB-337).
         /// </para>
+        /// <para>
+        /// Kept in double. A root runtime container (an instance's part, a scoped grid's chunk) is placed from its lease row's absolute centre,
+        /// so the point is that centre plus the local offset, composed in double; a float is 8 m apart 10⁸ m out, and a point narrowed there
+        /// put a player 1.6 m inside a door on the wrong side of a window's face (<c>docs/portals.md</c> D20, as built). Any other container goes
+        /// through its transform as before, which is precise where a worker in the same process keeps its frame near it.
+        /// </para>
         /// </summary>
-        private static Vector3 AbsoluteOf(Container c, Vector3 local) =>
-            ContainerRegistry.ToAbsolutePrecise(c.ToWorld(local), c.InstanceId).ToVector3();
+        private Double3 AbsoluteOf(Container c, Vector3 local) =>
+            TryRootCenter(c, out var center) ? center + c.Rotation * local : ContainerRegistry.ToAbsolutePrecise(c.ToWorld(local), c.InstanceId);
 
         /// <summary>The inverse of <see cref="AbsoluteOf"/>: an absolute position of the container's scope in its local space.</summary>
-        private static Vector3 LocalOf(Container c, Vector3 absolute) =>
-            c.ToLocal(ContainerRegistry.ToFrame(Double3.From(absolute), c.InstanceId));
+        private Vector3 LocalOf(Container c, Double3 absolute) =>
+            TryRootCenter(c, out var center) ? Quaternion.Inverse(c.Rotation) * (absolute - center).ToVector3() : c.ToLocal(ContainerRegistry.ToFrame(absolute, c.InstanceId));
+
+        /// <summary>
+        /// A root runtime container's absolute centre, in double, from its lease row: the placement's centre when the row carries one, else its box's
+        /// (a float carries that one exactly, or the row would carry a placement). The container's transform stands there, so a local position is an offset from it.
+        /// </summary>
+        private bool TryRootCenter(Container c, out Double3 center)
+        {
+            center = default;
+            if (c == null || !c.IsRuntime || !_ownershipById.TryGetValue(c.ContainerId, out var row) || !row.HasBounds) return false;
+            if (row.HasPlacement)
+            {
+                if (!row.Placement.IsRoot) return false;
+                center = row.Placement.Center;
+                return true;
+            }
+            center = Double3.From(row.BoundsCenter);
+            return true;
+        }
 
         /// <summary>
         /// An absolute box of a scope in the frame the container registry holds that scope's boxes in, for a registry
@@ -583,24 +608,28 @@ namespace Nebula
         /// </summary>
         private static Bounds InRegistryFrame(Bounds absolute, ulong instanceId) => ContainerRegistry.ToFrame(absolute, instanceId);
 
+        /// <summary><see cref="InRegistryFrame(Bounds, ulong)"/> for a box whose absolute centre is held in double, which is narrowed only once it is in the registry's frame.</summary>
+        private static Bounds InRegistryFrame(Double3 center, Vector3 size, ulong instanceId) => new Bounds(ContainerRegistry.ToFrame(center, instanceId), size);
+
         /// <summary>
         /// The same point one region space further out: from a frame with regions of its own to the space around it,
         /// through the carrier that drives it (or the fixed frame's own placement). False in the scope's own space.
         /// </summary>
-        private bool TryLiftOut(ref ContainerRef frame, ref Vector3 position, ref ulong frameKey)
+        private bool TryLiftOut(ref ContainerRef frame, ref Double3 position, ref ulong frameKey)
         {
             if (frameKey == 0) return false;
             if (frame.IsDynamic)
             {
                 if (!_entities.TryGetValue(frame.NetId, out var carrier)) return false;
-                var local = carrier.LastSpawn.LocalPosition + carrier.LastSpawn.LocalRotation * Vector3.Scale(carrier.LastSpawn.LocalScale, position);
+                // Frame-local, so small: a float holds it.
+                var local = carrier.LastSpawn.LocalPosition + carrier.LastSpawn.LocalRotation * Vector3.Scale(carrier.LastSpawn.LocalScale, position.ToVector3());
                 position = RegionSpaceOf(carrier.Container, local, out frameKey);
                 frame = FrameOfRecordSpace(carrier.Container, frameKey);
                 return true;
             }
             var c = ContainerRegistry.Resolve(frame);
             if (c == null) return false;
-            position = AbsoluteOf(c, position);
+            position = AbsoluteOf(c, position.ToVector3());
             frameKey = 0;
             frame = ContainerRef.None;
             return true;
@@ -1745,7 +1774,7 @@ namespace Nebula
             if (c.PawnNetId == 0 || !_entities.TryGetValue(c.PawnNetId, out var rec)) return false;
             var root = RootOf(rec);
             // In the scope's own space: a pawn on a planet with regions of its own has planet-local Abs coordinates.
-            position = root.FrameKey == 0 ? new Vector3((float)root.AbsX, (float)root.AbsY, (float)root.AbsZ) : WorldPosition(root.Container, root.LastSpawn.LocalPosition);
+            position = root.FrameKey == 0 ? new Vector3((float)root.AbsX, (float)root.AbsY, (float)root.AbsZ) : WorldPosition(root.Container, root.LastSpawn.LocalPosition).ToVector3();
             return true;
         }
 
@@ -1763,7 +1792,7 @@ namespace Nebula
         /// Iterative, so a corrupt chain costs a loop rather than the stack.
         /// </para>
         /// </summary>
-        private Vector3 WorldPosition(ContainerRef container, Vector3 local)
+        private Double3 WorldPosition(ContainerRef container, Vector3 local)
         {
             for (int hops = 0; TryCarrierOf(container, out ulong carrierNetId, out var offset); hops++)
             {
@@ -1818,7 +1847,7 @@ namespace Nebula
         /// carriers are collected outwards and then applied inwards, which is the same order the recursion it
         /// replaces unwound in, with the same unbounded depth and the same records-held bound.
         /// </summary>
-        private Vector3 ContainerPosition(ContainerRef container, Vector3 world)
+        private Vector3 ContainerPosition(ContainerRef container, Double3 world)
         {
             _carrierChain.Clear();
             _carrierOffsets.Clear();
@@ -1839,7 +1868,7 @@ namespace Nebula
                 _carrierOffsets.Add(offset);
                 at = carrier.Container;
             }
-            Vector3 local = world;
+            Vector3 local = world.ToVector3();
             if (!broken)
             {
                 var c = ContainerRegistry.Resolve(at);

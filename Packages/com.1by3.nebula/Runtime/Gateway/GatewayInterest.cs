@@ -542,9 +542,9 @@ namespace Nebula
         {
             // In its region space: absolute in the scope, or frame-local on a planet with regions of its own (D18).
             var position = RegionSpaceOf(rec.Container, rec.LastSpawn.LocalPosition, out ulong frameKey);
-            rec.AbsX = position.x;
-            rec.AbsY = position.y;
-            rec.AbsZ = position.z;
+            rec.AbsX = position.X;
+            rec.AbsY = position.Y;
+            rec.AbsZ = position.Z;
             rec.FrameKey = frameKey;
         }
 
@@ -961,13 +961,13 @@ namespace Nebula
             var root = RootOf(pawn);
             ulong key = root.FrameKey;
             var frame = FrameOfRecordSpace(root.Container, key);
-            var position = new Vector3((float)root.AbsX, (float)root.AbsY, (float)root.AbsZ);
+            var position = new Double3(root.AbsX, root.AbsY, root.AbsZ);
             for (int hops = 0; hops < 8 && TryLiftOut(ref frame, ref position, ref key); hops++)
-                query.AddFocus(InterestFocus.Point(position.x, position.y, position.z, 1f, client.PawnNetId, key));
+                query.AddFocus(InterestFocus.Point(position.X, position.Y, position.Z, 1f, client.PawnNetId, key));
         }
 
         private readonly ulong[] _chainKeys = new ulong[10];
-        private readonly Vector3[] _chainPositions = new Vector3[10];
+        private readonly Double3[] _chainPositions = new Double3[10];
         /// <summary>The box (frame-local min and max) of each frame with regions of its own, by frame key; see <see cref="FrameExtent"/>.</summary>
         private readonly Dictionary<ulong, (Vector3 Min, Vector3 Max)> _frameExtents = new Dictionary<ulong, (Vector3, Vector3)>();
 
@@ -990,7 +990,7 @@ namespace Nebula
             var root = RootOf(pawn);
             ulong key = root.FrameKey;
             var space = FrameOfRecordSpace(root.Container, key);
-            var position = new Vector3((float)root.AbsX, (float)root.AbsY, (float)root.AbsZ);
+            var position = new Double3(root.AbsX, root.AbsY, root.AbsZ);
             int levels = 0;
             _chainKeys[levels] = key; _chainPositions[levels++] = position;
             for (int hops = 0; hops < 8 && TryLiftOut(ref space, ref position, ref key); hops++)
@@ -1011,7 +1011,7 @@ namespace Nebula
                 for (int i = 0; i < levels && inside < 0; i++) if (_chainKeys[i] == frameKey) inside = i;
                 if (inside >= 0) { client.ApproachFrames.Remove(frameKey); continue; }
                 // Where the frame is in the space around it, and which of the pawn's spaces that is.
-                var origin = Vector3.zero;
+                var origin = Double3.Zero;
                 ulong outerKey = frameKey;
                 var lifted = frame;
                 if (!TryLiftOut(ref lifted, ref origin, ref outerKey)) continue;
@@ -1023,22 +1023,14 @@ namespace Nebula
                 if (frame.IsDynamic) { if (_entities.TryGetValue(frame.NetId, out var carrier)) frameInstance = InstanceOf(carrier); }
                 else { var fixedBox = ContainerRegistry.Resolve(frame); if (fixedBox != null) frameInstance = fixedBox.InstanceId; }
                 if (frameInstance != instance) continue;
-                // The frame's axes in that space: a point maps to origin + M * point, and the pawn is mapped back by the inverse.
-                // Sampled over a long step, so float rounding at a planet's distance from the origin stays negligible.
-                const float Step = 1024f;
-                if (!LiftPoint(frame, frameKey, new Vector3(Step, 0f, 0f), out var ex)
-                    || !LiftPoint(frame, frameKey, new Vector3(0f, Step, 0f), out var ey)
-                    || !LiftPoint(frame, frameKey, new Vector3(0f, 0f, Step), out var ez)) continue;
-                var map = Matrix4x4.identity;
-                map.SetColumn(0, (ex - origin) / Step);
-                map.SetColumn(1, (ey - origin) / Step);
-                map.SetColumn(2, (ez - origin) / Step);
-                map.SetColumn(3, new Vector4(origin.x, origin.y, origin.z, 1f));
-                if (Mathf.Abs(map.determinant) < 1e-9f) continue;
-                var inFrame = map.inverse.MultiplyPoint3x4(_chainPositions[level]);
+                // The frame's axes in that space: a point maps to origin + M * point, and the pawn is mapped back by the inverse. The origin
+                // stays in double and only offsets from it are floats: a planet stands 10^8 m out, where a float is 8 m apart.
+                if (!FrameAxes(frame, frameKey, origin, out var map)) continue;
+                var relative = (_chainPositions[level] - origin).ToVector3();
+                var inFrame = map.inverse.MultiplyPoint3x4(relative);
                 FrameExtent(frame, frameKey, out var min, out var max);
                 var nearest = Vector3.Max(min, Vector3.Min(max, inFrame));
-                float distance = Vector3.Distance(_chainPositions[level], map.MultiplyPoint3x4(nearest));
+                float distance = Vector3.Distance(relative, map.MultiplyPoint3x4(nearest));
                 bool held = client.ApproachFrames.Contains(frameKey);
                 if (distance > (held ? margin + Math.Max(_interest.ExitMargin, margin * 0.1f) : margin)) { client.ApproachFrames.Remove(frameKey); continue; }
                 client.ApproachFrames.Add(frameKey);
@@ -1055,10 +1047,27 @@ namespace Nebula
         }
 
         /// <summary>A point of a frame in the region space around it (<see cref="TryLiftOut"/> for one point).</summary>
-        private bool LiftPoint(ContainerRef frame, ulong frameKey, Vector3 local, out Vector3 outer)
+        private bool LiftPoint(ContainerRef frame, ulong frameKey, Vector3 local, out Double3 outer)
         {
-            outer = local;
+            outer = Double3.From(local);
             return TryLiftOut(ref frame, ref outer, ref frameKey);
+        }
+
+        /// <summary>
+        /// A frame's axes in the region space around it, as a matrix with no translation: a frame-local point p is <paramref name="origin"/> + M p
+        /// there. Sampled over a long step, so float rounding stays negligible; the origin is kept apart, in double. False for a degenerate frame.
+        /// </summary>
+        private bool FrameAxes(ContainerRef frame, ulong frameKey, Double3 origin, out Matrix4x4 map)
+        {
+            const float Step = 1024f;
+            map = Matrix4x4.identity;
+            if (!LiftPoint(frame, frameKey, new Vector3(Step, 0f, 0f), out var ex)
+                || !LiftPoint(frame, frameKey, new Vector3(0f, Step, 0f), out var ey)
+                || !LiftPoint(frame, frameKey, new Vector3(0f, 0f, Step), out var ez)) return false;
+            map.SetColumn(0, (ex - origin).ToVector3() / Step);
+            map.SetColumn(1, (ey - origin).ToVector3() / Step);
+            map.SetColumn(2, (ez - origin).ToVector3() / Step);
+            return Mathf.Abs(map.determinant) >= 1e-9f;
         }
 
         /// <summary>
@@ -1836,7 +1845,7 @@ namespace Nebula
                 if (root.FrameKey != 0)
                 {
                     var world = WorldPosition(root.Container, root.LastSpawn.LocalPosition);
-                    px = world.x; py = world.y; pz = world.z;
+                    px = world.X; py = world.Y; pz = world.Z;
                 }
                 AddWindow(px, py, pz, 0, 0, 0, reach);
                 // And in the frame it stands in, when that frame has regions of its own (a planet that is a carrier):
@@ -1942,9 +1951,9 @@ namespace Nebula
             void AddWindowRows(ulong windowScope, double x, double y, double z, double halfX, double halfY, double halfZ, float window)
             {
                 if (budget <= 0) { truncated = true; return; }
-                var box = new Bounds(new Vector3((float)x, (float)y, (float)z),
-                    new Vector3((float)(2 * (halfX + window)), (float)(2 * (halfY + window)), (float)(2 * (halfZ + window))));
-                ContainerRegistry.Overlapping(InRegistryFrame(box, windowScope), _containerScratch, windowScope);
+                var box = InRegistryFrame(new Double3(x, y, z),
+                    new Vector3((float)(2 * (halfX + window)), (float)(2 * (halfY + window)), (float)(2 * (halfZ + window))), windowScope);
+                ContainerRegistry.Overlapping(box, _containerScratch, windowScope);
                 for (int i = 0; i < _containerScratch.Count; i++)
                 {
                     if (budget <= 0) { truncated = true; return; }

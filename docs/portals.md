@@ -434,7 +434,12 @@ read from the world root, about 1.2 km off).
 > a state entry, the reconcile path). A window whose ground is a frame with regions of its own (a planet that is a carrier, its ground a grid hosted in it) is also a box in that frame's coordinates (`ClientConn.FrameWindows`,
 > `CollectFrameWindows`): a focus in the frame's region space finds what stands on the ground, the ground's rows are found from their placements in the frame, and the carrier they are fixed in is kept in the client's set.
 > The frames are the lease rows that say so (`OwnPhysicsFrame` with `FrameInterestMode.OwnRegions`), a carried one known by its dynamic id: a network gateway that shares its process with a worker (the Editor's Multiplayer
-> Play Mode loop) also has the carrier's box in its registry, and is no different for it (NEB-431 fix, `NebulaGateway.IndexLeases`, `PortalWindowSharedProcessTests`). A frame nested in another frame is not followed.
+> Play Mode loop) also has the carrier's box in its registry, and is no different for it (NEB-431 fix, `NebulaGateway.IndexLeases`, `PortalWindowSharedProcessTests`).
+> **A window decides on a place in double.** The point a window tests (`ScopePointOf`: the record's `AbsX/Y/Z`, or a frame-local record composed out through its frame) is composed in double end to end:
+> a root runtime container (an instance's part, a scoped grid's chunk) from its lease row's absolute centre, any other through its transform and the scope's frame origin (`AbsoluteOf`), and a frame's origin
+> is kept apart in double when a window or a focus is carried into the frame (`FrameAxes`). Composed in `Vector3`, a door 10⁸ m out in a star system (8 m between floats) read a player 0.3 m inside its far face
+> as 1.6 m behind it, outside the window, until it was 2.3 m in (NEB-431 fix; `ConformanceFramedPortalTests`, on a planet turned 54.7° 10⁸ m out, and `PortalWindowFrameTests`). A template's far face is in the
+> far scope's own upright space (D5), whatever frame the near face is read out of: the far scope is posed by the near face's rotation, and the window, the crossing, the drawn pose and the instance's pose agree on it. A frame nested in another frame is not followed.
 
 **D21 The network gateway authorises it in `CanObserve`, from link records only.** One rule is added after the existing
 ones: an entity in scope T is observable by a client in scope S when an Open or Closing link joins S and T, the client is

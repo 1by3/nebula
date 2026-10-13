@@ -77,8 +77,7 @@ namespace Nebula
         {
             var root = RootOf(rec);
             if (root.FrameKey == 0) return new Double3(root.AbsX, root.AbsY, root.AbsZ);
-            var world = WorldPosition(root.Container, root.LastSpawn.LocalPosition);
-            return new Double3(world.x, world.y, world.z);
+            return WorldPosition(root.Container, root.LastSpawn.LocalPosition);
         }
 
         /// <summary>
@@ -149,17 +148,17 @@ namespace Nebula
         private void CollectWindowCarriers(ClientConn client, in PortalWindow window)
         {
             window.Bounds(out var min, out var max);
-            var box = new Bounds(new Vector3((float)((min.X + max.X) * 0.5), (float)((min.Y + max.Y) * 0.5), (float)((min.Z + max.Z) * 0.5)),
-                new Vector3((float)(max.X - min.X), (float)(max.Y - min.Y), (float)(max.Z - min.Z)));
-            ContainerRegistry.Overlapping(InRegistryFrame(box, window.Scope), _windowContainerScratch, window.Scope);
+            var box = InRegistryFrame(new Double3((min.X + max.X) * 0.5, (min.Y + max.Y) * 0.5, (min.Z + max.Z) * 0.5),
+                new Vector3((float)(max.X - min.X), (float)(max.Y - min.Y), (float)(max.Z - min.Z)), window.Scope);
+            ContainerRegistry.Overlapping(box, _windowContainerScratch, window.Scope);
             for (int i = 0; i < _windowContainerScratch.Count; i++) CollectCarriersOfRow(client, _windowContainerScratch[i].ContainerId);
             _windowContainerScratch.Clear();
         }
 
         /// <summary>
         /// A window onto ground that is a frame with regions of its own (a planet that is a carrier): what stands on that ground is bucketed in the
-        /// frame's coordinates, so the window is also a box there. The frame's map is sampled as <see cref="AddFrameApproachFoci"/> does, over a long
-        /// step so float rounding at a planet's distance stays negligible, and the window's corners are carried into the frame with its inverse. Only
+        /// frame's coordinates, so the window is also a box there. The frame's axes are sampled as <see cref="AddFrameApproachFoci"/> does
+        /// (<see cref="FrameAxes"/>), and the window's corners are carried into the frame by their inverse, as offsets from the frame's origin taken in double. Only
         /// frames in the window's scope that stand directly in its space are used; a frame nested in another is not followed.
         /// </summary>
         private void CollectFrameWindows(ClientConn client, in PortalWindow other, bool carriers)
@@ -182,28 +181,20 @@ namespace Nebula
 
         private void AddFrameWindow(ClientConn client, ContainerRef frame, in PortalWindow other, bool carriers)
         {
-            const float Step = 1024f;
             ulong frameKey = RegionKeys.FrameKeyOf(frame);
-            var origin = Vector3.zero;
+            var origin = Double3.Zero;
             ulong outerKey = frameKey;
             var lifted = frame;
             if (!TryLiftOut(ref lifted, ref origin, ref outerKey) || outerKey != 0) return;
-            if (!LiftPoint(frame, frameKey, new Vector3(Step, 0f, 0f), out var ex)
-                || !LiftPoint(frame, frameKey, new Vector3(0f, Step, 0f), out var ey)
-                || !LiftPoint(frame, frameKey, new Vector3(0f, 0f, Step), out var ez)) return;
-            var map = Matrix4x4.identity;
-            map.SetColumn(0, (ex - origin) / Step);
-            map.SetColumn(1, (ey - origin) / Step);
-            map.SetColumn(2, (ez - origin) / Step);
-            map.SetColumn(3, new Vector4(origin.x, origin.y, origin.z, 1f));
-            if (Mathf.Abs(map.determinant) < 1e-9f) return;
+            if (!FrameAxes(frame, frameKey, origin, out var map)) return;
             var inverse = map.inverse;
             other.Bounds(out var min, out var max);
             var low = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
             var high = new Vector3(float.MinValue, float.MinValue, float.MinValue);
             for (int i = 0; i < 8; i++)
             {
-                var corner = inverse.MultiplyPoint3x4(new Vector3((float)((i & 1) == 0 ? min.X : max.X), (float)((i & 2) == 0 ? min.Y : max.Y), (float)((i & 4) == 0 ? min.Z : max.Z)));
+                // An offset from the frame's origin, taken in double: the corner and the origin are both 10^8 m out in a star system.
+                var corner = inverse.MultiplyPoint3x4((new Double3((i & 1) == 0 ? min.X : max.X, (i & 2) == 0 ? min.Y : max.Y, (i & 4) == 0 ? min.Z : max.Z) - origin).ToVector3());
                 low = Vector3.Min(low, corner);
                 high = Vector3.Max(high, corner);
             }
