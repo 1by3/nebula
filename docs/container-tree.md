@@ -267,6 +267,13 @@ The rules that keep it invisible to everything else:
 - `BeginSimulation` ends any drawing shift and puts the pivot at the identity before it sets the root's simulation
   pose, so a prediction step runs bit for bit as it did, never through a turned pivot; `EndSimulation` poses the frame
   again. A frame that is simulating is never shifted for drawing.
+- Moving a frame moves every collider in it, and the next `Physics.SyncTransforms` rewrites each one: a dense frame (a
+  generated town, 8,000 colliders) cost about 2 ms a move (NEB-445). So a pose is written only where it differs, and
+  `EndSimulation(hold: true)` leaves the frame at its simulation pose for the next step: `NebulaClient` holds it across
+  the steps of a `FixedUpdate`, across the frame's fixed steps (`HoldThroughFixedSteps`, released as `PreUpdate`
+  starts), and across corrections that arrive back to back in one poll (released by any other message, and after the
+  poll). `InSimulationPose` is true while a frame is held, so every conversion reads it where it stands; drawing and
+  `PoseForRender` release it. The simulation pose itself is unchanged: the same root pose, origin and order of steps.
 - A frame whose content stays near its own origin (a ship's) never gets one while the anchor is aboard; a frame inside
   another (a ship on a planet) is posed from its carrier as drawn through the outer frame's render origin, outermost
   first.

@@ -211,7 +211,7 @@ The collider a frame's interior copy was made from (D12): a raycast inside a fra
 public static bool InSimulationPose(Container space);
 ```
 
-Whether `space`'s frame root is at its simulation pose right now (the identity less the frame's floating origin, [`PhysicsFrame.LocalToSimulation`](/docs/reference/containers/physics-frame#localtosimulation)): always on a worker, and on a client during a prediction step ([`BeginSimulation`](#beginsimulation)). False for the scope's own space.
+Whether `space`'s frame root is at its simulation pose right now (the identity less the frame's floating origin, [`PhysicsFrame.LocalToSimulation`](/docs/reference/containers/physics-frame#localtosimulation)): always on a worker, and on a client during a prediction step ([`BeginSimulation`](#beginsimulation)) and while the frame is held at that pose between steps ([`EndSimulation(true)`](#endsimulation)). False for the scope's own space.
 
 ### PoseForRender [#poseforrender]
 
@@ -219,7 +219,7 @@ Whether `space`'s frame root is at its simulation pose right now (the identity l
 public static void PoseForRender();
 ```
 
-Client: put every frame root at its frame's world pose, outermost frames first, so the camera sees one world. Called by [`NebulaClient`](/docs/reference/client/nebula-client) every rendered frame after remote entities were interpolated, and after every origin shift of the scope (`RuntimeGrid.ShiftOrigin`, `RuntimeGrid.ShiftOriginTo`), so what stands in a frame moves with the origin at once. A frame that is simulating (a prediction step) is left at its simulation pose. A frame drawn far from its own origin is posed about a render origin (D25).
+Client: put every frame root at its frame's world pose, outermost frames first, so the camera sees one world. Called by [`NebulaClient`](/docs/reference/client/nebula-client) every rendered frame after remote entities were interpolated, and after every origin shift of the scope (`RuntimeGrid.ShiftOrigin`, `RuntimeGrid.ShiftOriginTo`), so what stands in a frame moves with the origin at once. A frame that is simulating (a prediction step) is left at its simulation pose; a frame only held there since its last step goes back to its render pose. A frame drawn far from its own origin is posed about a render origin (D25). A transform already at its pose is not written: any write, even of the same value, marks every collider under it as moved, and the next `Physics.SyncTransforms` rewrites them all.
 
 ### BeginSimulation [#beginsimulation]
 
@@ -230,10 +230,29 @@ public static void BeginSimulation(Container space, Transform predicted);
 
 Client: put `space`'s frame root at its simulation pose for a prediction step, so the predicted pawn simulates exactly as its worker does (D11): the identity less the frame's floating origin. Pair with [`EndSimulation`](#endsimulation). [`BeginSimulation`](#beginsimulation) first moves that origin near what is predicted.
 
+Moving a frame's root moves every collider under it, and the sync that follows rewrites each one, so the cost grows with everything loaded in the frame. A frame still at its simulation pose for the same origin, held there by `EndSimulation(true)`, is not moved again.
+
 ### EndSimulation [#endsimulation]
 
 ```csharp
 public static void EndSimulation();
+public static void EndSimulation(bool hold);
 ```
 
-Client: the prediction step is over; the frame goes back to its render pose.
+Client: the prediction step is over; the frame goes back to its render pose. With `hold` true it stays at its simulation pose, and [`InSimulationPose`](#insimulationpose) stays true for it, until [`ReleaseSimulationPose`](#releasesimulationpose), [`PoseForRender`](#poseforrender), drawing, a step in another frame, or the start of the next `PreUpdate` ([`HoldThroughFixedSteps`](#holdthroughfixedsteps)) puts it back. A client predicting several steps, or replaying several corrections, in a row holds the frame between them, so the frame moves once for the batch instead of twice a step. `NebulaClient` does this for its prediction steps and for corrections that arrive back to back.
+
+### ReleaseSimulationPose [#releasesimulationpose]
+
+```csharp
+public static void ReleaseSimulationPose();
+```
+
+Client: put a frame held at its simulation pose ([`EndSimulation(true)`](#endsimulation)) back at its render pose. Does nothing when no frame is held.
+
+### HoldThroughFixedSteps [#holdthroughfixedsteps]
+
+```csharp
+public static bool HoldThroughFixedSteps = true;
+```
+
+Client: whether a frame held by a prediction step in `FixedUpdate` stays at its simulation pose through the frame's other fixed steps, and goes back once, as `PreUpdate` starts. A client whose frame rate is below its tick rate runs several fixed steps a frame, and each moved the frame twice. While it is held, scripts' `FixedUpdate` see the predicting frame at its simulation pose (`InSimulationPose` is true for it): what they read and cast in the frame through its own objects agrees, but a ray from the camera does not meet the frame where it is drawn. Turn it off if your game casts into a frame in render coordinates during `FixedUpdate`; the frame then goes back after each `NebulaClient.FixedUpdate`. `Update`, `LateUpdate` and drawing see every frame at its render pose either way.
