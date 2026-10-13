@@ -68,6 +68,13 @@ namespace Nebula.Tests
                     h.Door.Close(PortalHarness.Owner);
                     h.Ticks(2);
                     break;
+                case PortalWait.CloseHold:
+                    h.Door.CloseHoldSeconds = 1f;
+                    link = h.OpenDoor();
+                    h.Player.transform.position = PortalHarness.At(0f, -6f); // out of the band
+                    h.Door.Close(PortalHarness.Owner);
+                    h.Ticks(2);
+                    break;
                 case PortalWait.FarScopeRetired:
                     link = h.OpenDoor();
                     h.Plane.FindScope("vault/" + PortalHarness.Owner).State = ScopeState.Retiring;
