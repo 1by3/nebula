@@ -28,30 +28,6 @@ public string Kind = ScopeKind.Parts;
 public List<ScopePart> Parts = new List<ScopePart>();
 ```
 
-### ObservePublic [#observepublic]
-
-```csharp
-public bool ObservePublic;
-```
-
-Occupants may receive public entities inside [`ObservationCenter`](#observationcenter)/[`ObservationSize`](#observationsize).
-
-### ObservationCenter, ObservationSize [#observationcenter-observationsize]
-
-```csharp
-public Vector3 ObservationCenter, ObservationSize;
-```
-
-The outward view box, in absolute world coordinates.
-
-### ObserveHost [#observehost]
-
-```csharp
-public bool ObserveHost;
-```
-
-Occupants keep the scope they came from loaded while they are inside: the gateway keeps sending a client the container rows of that scope around the place its pawn left it, so the client keeps those containers and their content resident, hidden, and nothing has to be rebuilt when the pawn goes back. Only the scope the pawn came from immediately before is kept, and none of its entities. False, the default, drops the rows shortly after the pawn leaves. See `docs/scope-activation.md` §12.
-
 ### Payload [#payload]
 
 ```csharp
@@ -59,6 +35,30 @@ public string Payload = "";
 ```
 
 An opaque blob the game or a later milestone attaches to the definition. Never parsed by Nebula.
+
+### HasPose [#haspose]
+
+```csharp
+public bool HasPose;
+```
+
+Whether the scope's own space is turned against the host it is entered from ([`InstanceContainerInfo.HasPose`](/docs/reference/protocol/instance-container-info#haspose), `docs/scope-frames.md` D12). Copied to every part's lease row. Written only when set, so a definition without it compares equal to one written before it existed.
+
+### PoseOrigin [#poseorigin]
+
+```csharp
+public Double3 PoseOrigin;
+```
+
+The point the scope's space and its host's share, absolute.
+
+### PoseRotation [#poserotation]
+
+```csharp
+public Quaternion PoseRotation = Quaternion.identity;
+```
+
+The scope's axes in its host's.
 
 ## Methods
 

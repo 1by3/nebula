@@ -1,6 +1,6 @@
 {
   "name": "Nebula.Tests.PlayMode",
-  "references": ["Nebula.Runtime", "UnityEngine.TestRunner"],
+  "references": ["Nebula.Runtime", "Nebula.World", "Nebula.Tests.Shared", "UnityEngine.TestRunner"],
   "overrideReferences": true,
   "precompiledReferences": ["nunit.framework.dll"],
   "autoReferenced": false,

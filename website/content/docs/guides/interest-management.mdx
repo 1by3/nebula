@@ -49,7 +49,6 @@ Every field lives on `NebulaConfig` (`Resources/NebulaConfig.asset`), with a mat
 | `InterestMaxRadius` | 1,024 m | Ceiling on a prefab's `RelevanceRadius`, and the farthest a wide entity (one whose radius exceeds `InterestRadius`) may reach. It is a cost and security boundary, so it is never uncapped: setting it to 0 or less is reported and falls back to `InterestRadius`. |
 | `InterestMaxFoci` | 8 | Most foci one client may have at once. Extra foci from a policy are dropped. |
 | `InterestHintMaxDistance` | 60 m | How far a client's focus hint may sit from its pawn before it is clamped. |
-| `InterestFrameApproachMargin` | 4,000 m | How close a client's pawn must be to the box of a framed container with regions of its own (a planet, a station) to also look into it, from the point of its box nearest the pawn. `0` turns it off. |
 | `InterestHintMaxHz` | 5 | Most focus hints accepted from one client per second. |
 | `InterestMaxExplicitPerClient` | 16 | Most entities one client's policy may subscribe to by ID (party members, quest targets). |
 | `InterestFarMaxEntities` | 64 | Most entities one client holds in the [far tier](#see-ships-and-outposts-from-far-away) at once, nearest first. `0` turns the far tier off. |
@@ -339,7 +338,7 @@ A hint that only moves within the same region waits for the client's next schedu
 Interest management preserves the security properties of [instancing](/docs/guides/instancing) and [dynamic containers](/docs/guides/dynamic-containers):
 
 - **Private-instance isolation** is checked first, before any spatial test: authorization for an unknown container is always denied, then `policy.Authorize` runs. A client never sees into an instance it has not entered.
-- **`ObservePublic` windows** keep working as an additional focus box: an instance occupant with the window enabled receives public entities inside its configured bounds, on top of its normal interest set.
+- **A portal's windows** are an additional focus box: a client that may look through an open link and stands in the window of its own side receives what stands in the other side's window, on top of its normal interest set (see [Look through a portal](/docs/guides/instancing#look-through-a-portal)). They are the only way a client is sent another scope's entities, and they are checked on link records, not on the entity's distance.
 - **Unknown containers are never public.** An entity in a container a client has not been told about is never added to that client's set, whatever its distance.
 - **A client's own pawn is always in its set**, at full update rate, regardless of distance rules — an owned entity is a standing reason for the gateway to hold its worker link.
 - **Spatial and targeted RPCs respect the set.** A broadcast RPC declared with a radius reaches only clients whose pawn is within that distance. A targeted `ClientRpc` or `OwnerRpc` reaches only the named client.

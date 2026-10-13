@@ -241,6 +241,12 @@ namespace Nebula
         [Tooltip("How many times an AuthorityRpc may be forwarded after the target entity changes worker before it is rejected with RejectedHopLimit. Also the number of authority changes a call's epoch may lag behind the entity before it is rejected as stale. -nebula-authority-call-hops overrides.")]
         public int AuthorityCallMaxHops = 3;
 
+        [Header("Portals")]
+        [Tooltip("The physics layer Nebula puts a portal's proxies and aperture colliders on (docs/portals.md D26 to D28). Keep it free of your own objects and out of the layer masks of your own raycasts, and let it collide with whatever bodies collide with in the layer collision matrix. 31 by default.")]
+        [Range(0, 31)] public int PortalProxyLayer = 31;
+        [Tooltip("Rendering-layer bits (a mask) a client reserves for drawn scopes, one per scope drawn at once (docs/portals.md D42): the view, the scopes it looks through, the public world and every scope kept drawn. Nebula stamps a scope's bit, and only that bit, on its static content, its chunks' content and its entities' renderers; the game uses the bits in its light and portal masks. 0 turns slots off; eight bits allow eight drawn scopes. Read the bit with Portals.RenderingLayerOf.")]
+        public uint ScopeRenderingLayers = 0;
+
         [Header("Persistence")]
         [Tooltip("Where entities carrying a PersistentEntity are stored: 'auto' (the orchestrator uses its database, a worker asks the orchestrator, a single-process run uses a local file), 'database', 'remote', 'local' (a file next to the process), 'memory' or 'off'. -nebula-persistence-mode overrides.")]
         public string PersistenceMode = "auto";
@@ -287,8 +293,6 @@ namespace Nebula
         public int InterestMaxFoci = 8;
         [Tooltip("How far a client's focus hint may sit from its pawn, in metres. A further hint is clamped to this distance; a hint is an input, never authority.")]
         public float InterestHintMaxDistance = 60f;
-        [Tooltip("How close a client's pawn must be to the box of a framed container with regions of its own (a planet, a station) for the client to also look into it, in metres. Inside the margin the client gets a focus at the pawn's place in the frame, so it sees what stands on the planet below it; beyond it the frame's regions are not subscribed. A frame whose box is unknown to the gateway is measured from the box of its lease rows, else from its origin. 0 turns it off.")]
-        public float InterestFrameApproachMargin = 4000f;
         [Tooltip("Most focus hints accepted from one client per second. The rest are dropped.")]
         public float InterestHintMaxHz = 5f;
         [Tooltip("Most entities one client's policy may subscribe by id (party members, quest targets).")]

@@ -44,6 +44,14 @@ public static Double3 From(Vector3 v);
 
 Widen a float vector.
 
+### implicit operator Double3 [#implicit-operator-double3]
+
+```csharp
+public static implicit operator Double3(Vector3 v);
+```
+
+Widening is exact, so a float vector converts implicitly (a [`ScopePart`](/docs/reference/control-plane/scope-part) written with a `Vector3` centre keeps compiling).
+
 ### ToVector3 [#tovector3]
 
 ```csharp

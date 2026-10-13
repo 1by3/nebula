@@ -497,6 +497,12 @@ namespace Nebula
         /// <summary>Authored into a scene rather than spawned from a prefab: the object belongs to its scene and is bound, never instantiated or destroyed, by the network (see <see cref="SceneEntities"/>).</summary>
         public bool IsSceneEntity => SceneId != 0;
 
+        /// <summary>
+        /// A worker holds this ghost only to pose a proxy of it through a portal (<c>docs/portals.md</c> D29): its colliders are off, so it is no body in its
+        /// scope's physics scene on this worker, and <see cref="PortalProxy"/>s of it stand in the scene of the side the worker holds.
+        /// </summary>
+        public bool IsPortalGhost { get; internal set; }
+
         public ulong NetId { get; internal set; }
         public ulong OwnerClientId { get; internal set; }
         /// <summary>
@@ -590,7 +596,7 @@ namespace Nebula
         public Container Container { get; internal set; }
         /// <summary>
         /// The entity is fixed to <see cref="Container"/> (<see cref="FrameAttachment"/>): its authority's tick does not
-        /// re-resolve its container from its position, and no <see cref="InstanceBoundary"/> moves it. The owner check
+        /// re-resolve its container from its position, and no <see cref="Portal"/> moves it. The owner check
         /// still runs, so it is handed to whichever worker owns the container. Local to the authority; a handover or a
         /// restore sets it again (<c>docs/frame-bodies.md</c> D8).
         /// </summary>
@@ -894,7 +900,9 @@ namespace Nebula
             if (entry.NetId != NetId) return false;
             if (entry.Epoch < Epoch || (entry.Epoch == Epoch && HasStateTick && tick <= LastStateTick)) return false;
             var container = ContainerRegistry.Resolve(entry.Container);
-            if (container == null && entry.Container.MayArriveLater)
+            // Held for a container this process cannot resolve, whatever its kind: placing the entity at the world root with coordinates local to it
+            // would be about 1.2 km off for a crate that crossed out of an instance (docs/portals.md D20).
+            if (container == null && entry.Container.NamesAContainer)
             {
                 if (!_hasPendingState || entry.Epoch > _pendingState.Epoch || (entry.Epoch == _pendingState.Epoch && tick > _pendingStateTick))
                 { _pendingState = entry; _pendingStateTick = tick; _pendingStateWorker = worker; _hasPendingState = true; }
@@ -1787,8 +1795,23 @@ namespace Nebula
                 return;
             }
             _carrierCycleWarned = false;
-            if (container != null && container.InstanceId != 0 && !InstanceScenes.Prepare(container))
+            if (container != null && container.InstanceId != 0 && !InstanceScenes.Complete(container))
                 throw new InvalidOperationException("Instance content is unavailable: " + container.ContainerId);
+            // A copy this process does not simulate changing scope through a portal: its pose, velocity and history go through the link
+            // with the container change, in this step (docs/portals.md D18). The authority carries them itself, at the commit.
+            bool carrying = false;
+            PortalMap carryMap = default;
+            Double3 carryAbsolute = default;
+            Quaternion carryRotation = default;
+            Vector3 carryVelocity = default;
+            if (reparent && !HasAuthority && !IsSceneEntity && previous != null && container != null && previous.InstanceId != container.InstanceId &&
+                Portals.TryCarryReplica(this, previous, container, out carryMap, out carryAbsolute))
+            {
+                carrying = true;
+                var space = previous.InnerSpace;
+                carryRotation = PhysicsFrames.InSimulationPose(space) ? PhysicsFrames.Convert(transform.rotation, space, null) : transform.rotation;
+                carryVelocity = PhysicsFrames.InSimulationPose(space) ? PhysicsFrames.ConvertVelocity(Motion.Velocity, transform.position, space, null) : Motion.Velocity;
+            }
             // Changing space (into or out of a physics frame, docs/container-tree.md §3): the pose and velocity are
             // converted through the frames' current poses. Only where frames are simulated at the identity pose (a
             // worker); a client renders every frame at its world pose, so a world pose there needs no conversion.
@@ -1834,9 +1857,122 @@ namespace Nebula
                 }
                 if (convert) transform.SetPositionAndRotation(position, rotation);
             }
+            if (carrying) CarryReplicaThroughPortal(previous, container, in carryMap, carryAbsolute, carryRotation, carryVelocity);
             foreach (var b in Behaviours) b.OnContainerChanged(previous, container);
             ContainerChanged?.Invoke(previous, container);
             if (IsLocalPlayer) InstanceScenes.SetView(InstanceId);
+            if (ScopeLayers.Enabled && (_layerRenderers == null || (previous != null ? previous.InstanceId : 0UL) != InstanceId)) StampRenderingLayer(refresh: false);
+        }
+
+        // ---- rendering-layer slots (docs/portals.md D42)
+
+        /// <summary>This entity's renderers, found when it spawned (or first stamped) and kept; null before.</summary>
+        private Renderer[] _layerRenderers;
+
+        /// <summary>Stamp the entity's renderers with its scope's slot bit (<see cref="ScopeLayers"/>); <paramref name="refresh"/> finds the renderers again first.</summary>
+        internal void StampRenderingLayer(bool refresh)
+        {
+            uint reserved = ScopeLayers.Mask;
+            if (reserved == 0) return;
+            if (refresh) _layerRenderers = null;
+            StampRenderingLayer(ScopeLayers.BitOf(InstanceId), reserved);
+        }
+
+        /// <summary>Set the renderers' bits of <paramref name="reserved"/> to <paramref name="bit"/>, nothing else.</summary>
+        internal void StampRenderingLayer(uint bit, uint reserved)
+        {
+            if (_layerRenderers == null) _layerRenderers = GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < _layerRenderers.Length; i++) ScopeLayers.Stamp(_layerRenderers[i], bit, reserved);
+        }
+
+        // ---- portals (docs/portals.md D18): what an entity carries in time goes through the link with it
+
+        /// <summary>An entity's pose and velocities in its scope's own axes, read before a portal moves it (and before its carrier does).</summary>
+        internal struct PortalCarry
+        {
+            /// <summary>The root, absolute in the scope it is leaving.</summary>
+            public Double3 Absolute;
+            public Quaternion Rotation;
+            public Vector3 MotionVelocity;
+            /// <summary>The entity's dynamic body, or null (a kinematic body is moved by its pose alone).</summary>
+            public Rigidbody Body;
+            public Vector3 BodyVelocity, BodyAngular;
+        }
+
+        internal PortalCarry CapturePortalState()
+        {
+            var space = Space;
+            bool framed = PhysicsFrames.InSimulationPose(space);
+            var t = transform;
+            var carry = new PortalCarry
+            {
+                Absolute = ContainerRegistry.ToAbsolutePrecise(ScopePositionPrecise, InstanceId),
+                Rotation = framed ? PhysicsFrames.Convert(t.rotation, space, null) : t.rotation,
+                MotionVelocity = framed ? PhysicsFrames.ConvertVelocity(Motion.Velocity, t.position, space, null) : Motion.Velocity,
+            };
+            var body = GetComponent<Rigidbody>();
+            if (body != null && !body.isKinematic)
+            {
+                carry.Body = body;
+                carry.BodyVelocity = framed ? PhysicsFrames.ConvertVelocity(body.linearVelocity, t.position, space, null) : body.linearVelocity;
+                carry.BodyAngular = framed ? PhysicsFrames.Convert(Quaternion.identity, space, null) * body.angularVelocity : body.angularVelocity;
+            }
+            return carry;
+        }
+
+        /// <summary>Authority: put the entity into <paramref name="destination"/> at the pose it captured, carried through the link, in double.</summary>
+        internal void MoveThroughPortal(Container destination, in PortalMap map, in PortalCarry carry)
+        {
+            SetContainer(destination);
+            var origin = ContainerRegistry.ToAbsolutePrecise(Double3.Zero, map.ToScope);
+            SetFramePose(null, map.Point(carry.Absolute) - origin, map.Rotation(carry.Rotation));
+        }
+
+        /// <summary>
+        /// Authority: the entity is in its destination (it moved there, or rides in a carrier that did). Its velocities, its recorded history
+        /// and its epoch go through the link; every copy takes the next state as a location.
+        /// </summary>
+        internal void FinishThroughPortal(in PortalMap map, in PortalCarry carry)
+        {
+            var space = Space;
+            bool framed = PhysicsFrames.InSimulationPose(space);
+            var scopePosition = PhysicsFrames.ToScope(transform.position, space);
+            var turn = map.Turn;
+            Vector3 Velocity(Vector3 scopeVelocity)
+            {
+                var turned = turn * scopeVelocity;
+                return framed ? PhysicsFrames.ConvertVelocity(turned, scopePosition, null, space) : turned;
+            }
+            Motion.Velocity = Velocity(carry.MotionVelocity);
+            if (carry.Body != null)
+            {
+                carry.Body.linearVelocity = Velocity(carry.BodyVelocity);
+                var angular = map.Direction(carry.BodyAngular);
+                carry.Body.angularVelocity = framed ? PhysicsFrames.Convert(Quaternion.identity, null, space) * angular : angular;
+            }
+            _history?.CarryThroughPortal(in map, Container, everything: true);
+            Epoch++;
+            HasStateTick = false;
+        }
+
+        /// <summary>
+        /// A copy this process does not simulate has changed scope through a portal (<see cref="SetContainer"/>): put it at the pose carried
+        /// through the link in the same step as the container change, turn its velocity, and rewrite what it buffered in time (the
+        /// interpolation buffer, the prediction history, a ghost's recorded history) into the destination's space and container.
+        /// </summary>
+        private void CarryReplicaThroughPortal(Container from, Container to, in PortalMap map, Double3 absolute, Quaternion rotation, Vector3 velocity)
+        {
+            var origin = ContainerRegistry.ToAbsolutePrecise(Double3.Zero, map.ToScope);
+            SetFramePose(null, map.Point(absolute) - origin, map.Rotation(rotation));
+            var turned = map.Direction(velocity);
+            var space = Space;
+            Motion.Velocity = PhysicsFrames.InSimulationPose(space)
+                ? PhysicsFrames.ConvertVelocity(turned, PhysicsFrames.ToScope(transform.position, space), null, space)
+                : turned;
+            Interpolator?.CarryThroughPortal(in map, to);
+            Predicted?.CarryThroughPortal(in map, to);
+            if (NebulaRuntime.IsServer) _history?.CarryThroughPortal(in map, to, everything: false);
+            Portals.RaiseCrossed(this, map.PortalId, map.FromScope, map.ToScope);
         }
 
         internal void InvokeSpawn()
@@ -1845,6 +1981,7 @@ namespace Nebula
             // The carried box registers once the entity is placed in the container around it (SetContainer runs before
             // the spawn), and before any behaviour hears of the spawn, so a behaviour's OnNetworkSpawn finds it.
             RegisterCarried();
+            if (ScopeLayers.Enabled) StampRenderingLayer(refresh: true);
             foreach (var b in Behaviours) b.OnNetworkSpawn();
         }
 

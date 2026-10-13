@@ -59,7 +59,7 @@ namespace Nebula.Tests
         private static LeaseInfo[] Leases() => new[]
         {
             new LeaseInfo { ContainerId = ContainerRegistry.RuntimeContainerId(PrivateRuntimeId), HasBounds = true, BoundsCenter = new Vector3(500, 0, 0), BoundsSize = new Vector3(10, 10, 10), WorkerId = "w1", Epoch = 3, State = LeaseState.Active,
-                Instance = new InstanceContainerInfo { InstanceId = ScopeId, ScopeKey = Scope, ObservationSize = new Vector3(30, 30, 30) } },
+                Instance = new InstanceContainerInfo { InstanceId = ScopeId, ScopeKey = Scope } },
             new LeaseInfo { ContainerId = ContainerRegistry.RuntimeContainerId(PublicRuntimeId), HasBounds = true, BoundsCenter = new Vector3(600, 0, 0), BoundsSize = new Vector3(10, 10, 10), WorkerId = "w2", Epoch = 5, State = LeaseState.Active },
         };
 
@@ -292,15 +292,15 @@ namespace Nebula.Tests
         [Test]
         public void TheLeaseRowCarriesTheScopeKeyAndAnOlderRowReadsAsUnkeyed()
         {
-            var info = new InstanceContainerInfo { InstanceId = ScopeId, ContentResource = "interior", ScopeKey = Scope, ObservePublic = true, ObservationCenter = new Vector3(1, 2, 3), ObservationSize = new Vector3(4, 5, 6) };
+            var info = new InstanceContainerInfo { InstanceId = ScopeId, ContentResource = "interior", ScopeKey = Scope };
             var copy = InstanceContainerInfo.Decode(InstanceContainerInfo.Encode(info));
             Assert.That(copy.ScopeKey, Is.EqualTo(Scope));
             Assert.That(copy.InstanceId, Is.EqualTo(ScopeId));
             Assert.That(copy.ContentResource, Is.EqualTo("interior"));
 
-            // A row encoded before the key was recorded stops after the observation box.
+            // A row encoded before the key was recorded stops after the content resource.
             var w = new NetworkWriter();
-            w.WriteULong(ScopeId); w.WriteString("interior"); w.WriteBool(true); w.WriteVector3(new Vector3(1, 2, 3)); w.WriteVector3(new Vector3(4, 5, 6));
+            w.WriteULong(ScopeId); w.WriteString("interior");
             var old = InstanceContainerInfo.Decode(Convert.ToBase64String(w.ToArray()));
             Assert.That(old.ScopeKey, Is.EqualTo(""));
             Assert.That(old.InstanceId, Is.EqualTo(ScopeId));

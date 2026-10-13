@@ -673,7 +673,7 @@ public class InterestTests
     }
 
     [Test]
-    public void InstanceIsolationAndObservePublicSurviveInterestManagement()
+    public void InstanceIsolationSurvivesInterestManagement()
     {
         // The invariants InstanceTests pins, but over the wire and with distance in play: a private entity is
         // not sent to the public world however near it is.

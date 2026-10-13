@@ -228,6 +228,14 @@ public static void ParseHolds(string json, List<KeyValuePair<string, float>> res
 
 Pull the `"holds"` array out of a worker document: `[{"id":"arena","seconds":4.2},...]`, as [`WorkerTelemetry`](/docs/reference/worker/worker-telemetry) writes it before the container counts and the entity list.
 
+### ParsePortalLinks [#parseportallinks]
+
+```csharp
+public static void ParsePortalLinks(string json, List<PortalLinkSpan> result);
+```
+
+Pull the `"portalLinks"` array out of a worker document: `[{"id":"1f","portal":"door","state":"Open","wait":"None","split":0,"in":["a","b"]},...]` (`docs/portals.md` D34). The containers are under `"in"` for the reason [`ParseCohesion`](#parsecohesion) gives.
+
 ### ParseCohesion [#parsecohesion]
 
 ```csharp
@@ -342,6 +350,66 @@ public int Members;
 ```csharp
 public List<string> Containers;
 ```
+
+##### WorkerId [#workerid]
+
+```csharp
+public string WorkerId;
+```
+
+##### ReceivedAt [#receivedat]
+
+```csharp
+public double ReceivedAt;
+```
+
+### PortalLinkSpan [#portallinkspan]
+
+```csharp
+public struct PortalLinkSpan
+```
+
+One portal link that was not closed in a worker's latest document (`docs/portals.md` D34, D36).
+
+#### Fields
+
+##### LinkId [#linkid]
+
+```csharp
+public string LinkId;
+```
+
+##### Portal [#portal]
+
+```csharp
+public string Portal;
+```
+
+##### State [#state]
+
+```csharp
+public string State;
+```
+
+##### Wait [#wait]
+
+```csharp
+public string Wait;
+```
+
+##### Split [#split]
+
+```csharp
+public bool Split;
+```
+
+##### Containers [#containers]
+
+```csharp
+public List<string> Containers;
+```
+
+The near face's container, then the far containers its window touches.
 
 ##### WorkerId [#workerid]
 

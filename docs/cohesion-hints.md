@@ -86,6 +86,13 @@ worker, and one entry in the change list per container.
 
 A group whose members are all in one container binds nothing: it is already on one worker.
 
+> **Portal links bind containers the same way (NEB-434, `docs/portals.md` D34).** The same telemetry document carries a second array beside `"cohesion"`,
+> `"portalLinks"`: one row for each link of a portal that is not closed, `{"id", "portal", "state", "wait", "split", "in": [the near face's container, the
+> containers of the far window]}` (again `"in"`, never `"containers"`). `MeshTelemetry.CopyCohesion` hands each row to the planner as a `CohesionGroupInfo`
+> with a `Label` (`portal door 1f2e`) in place of a group number, so the union-find, the holds (D8), the oversize report (D9) and the dashboard treat a link
+> exactly like a group of containers; the row's `Detail` is its state and wait. A link binds while it is preparing, open or closing and not after, so the
+> bindings follow the doors in use. The game declares nothing: opening the portal is the declaration.
+
 **D8. A hold is reported as seconds remaining and expires on the orchestrator's clock.** `NebulaWorker.HoldContainer(container, seconds)` records a deadline on the worker's own
 `Time.unscaledTime`, clamped to `MaxHoldSeconds` (120); repeating the call extends but never shortens it, and zero
 seconds releases it. What goes on the wire is the *remaining seconds*, in the telemetry document the worker already

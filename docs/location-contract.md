@@ -77,7 +77,7 @@ There are two scopes today:
 - The **public world**: `ScopeKey == ""` (`EntityLocation.PublicScope`). Every static container, every public runtime
   container, and every entity in no container is in it. `InstanceId == 0`.
 - An **instance**: `ScopeKey == TemplateId + "/" + key`, the exact string `NebulaWorker.PrepareInstance(template, key,
-  origin)` builds and hashes today (`InstanceBoundary` builds it the same way). `InstanceId == InstanceKey(ScopeKey)`.
+  origin)` builds and hashes today (`Portal` builds it the same way: `PrepareInstance(template, key, face origin, rotation)`). `InstanceId == InstanceKey(ScopeKey)`.
 
 **D5** The scope key of an instance *is* the existing prefix string, unchanged, not a new identifier. Nothing a game
 already does to name instances changes; games that put a run id or a party id into `key` get it back in

@@ -1,0 +1,27 @@
+---
+title: "PortalWait"
+description: "Why a link is not PortalState.Open (docs/portals.md D9)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs)</div>
+
+```csharp
+public enum PortalWait : byte
+```
+
+Why a link is not [`PortalState.Open`](/docs/reference/protocol/portal-state#open) (`docs/portals.md` D9). `None` for an open link.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` | `0` | Nothing: the link is open, or closed on purpose. |
+| <span id="farscopeactivating"></span>`FarScopeActivating` | `1` | The far scope is not active yet, or its entry container has no owning lease. |
+| <span id="farworkercontent"></span>`FarWorkerContent` | `2` | The far container's content is still loading on the worker that owns it ([`IInstanceContentLoader`](/docs/reference/containers/i-instance-content-loader)), or failed. |
+| <span id="farentitiesrestoring"></span>`FarEntitiesRestoring` | `3` | The far scope is restoring its persisted entities. |
+| <span id="clientwarming"></span>`ClientWarming` | `4` | A member client has not said it holds the far window ([`PortalLink.WaitClient`](/docs/reference/containers/portal-link#waitclient)). |
+| <span id="farworkerhandshake"></span>`FarWorkerHandshake` | `5` | The far container belongs to another worker, which has not answered the preparation yet. |
+| <span id="bandoccupied"></span>`BandOccupied` | `6` | The link is closing and a body still stands in the band. |
+| <span id="farscoperetired"></span>`FarScopeRetired` | `7` | The far scope is retiring or retired, so the link reads closed. |
+| <span id="nearcontainermoving"></span>`NearContainerMoving` | `8` | The near container is being reassigned to another worker. |
+| <span id="closehold"></span>`CloseHold` | `9` | The link is closing with its band empty and holds a moment longer ([`Portal.CloseHoldSeconds`](/docs/reference/containers/portal#closeholdseconds)), still observed. |

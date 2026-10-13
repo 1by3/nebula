@@ -11,7 +11,17 @@ public static class ScopeFrames
 
 The origin frames this process holds, one per scope. The public world's frame always exists and is [`WorldOrigin`](/docs/reference/world/world-origin); a scope gets one the first time this process names it, which on a worker is the first time one of its containers turns up here (`docs/scoped-chunk-grids.md` D7).
 
-A container or an entity whose scope has **no** frame here is in the public frame. A scoped chunk grid takes a frame of its own (`Ensure`), and an instance scope (a room, a dungeon, an interior) takes a pinned one near its origin when its first container is registered here (`Pin`), so an instance far from the public origin is still simulated near Unity's origin (`docs/scope-frames.md` D11).
+A container or an entity whose scope has **no** frame here is in the public frame. A scoped chunk grid takes a frame of its own ([`Ensure`](#ensure)), and an instance scope (a room, a dungeon) a pinned one near its origin ([`Pin`](#pin), `docs/scope-frames.md` D11).
+
+## Fields
+
+### PinnedCellSize [#pinnedcellsize]
+
+```csharp
+public const float PinnedCellSize = 1024f;
+```
+
+The cell size of an instance scope's pinned frame when the public world has no definition to borrow one from. Any value works; this one keeps the instance within about 900 m of Unity's origin.
 
 ## Properties
 
@@ -59,6 +69,32 @@ public static bool HasFrame(ulong instanceId);
 
 Whether `instanceId` has a frame of its own here (false for the public world and for any scope that shares it).
 
+### Resolve [#resolve]
+
+```csharp
+public static ulong Resolve(ulong instanceId);
+```
+
+The scope whose frame `instanceId` lives in: itself, or the host it shares a frame with.
+
+### IsShared [#isshared]
+
+```csharp
+public static bool IsShared(ulong instanceId);
+```
+
+Whether `instanceId` shares the frame of the scope it was entered from ([`Share`](#share)).
+
+### Share [#share]
+
+```csharp
+public static void Share(ulong instanceId, ulong hostInstanceId);
+```
+
+Make an instance scope live in `hostInstanceId`'s frame (0: the public frame), and move with it, as every instance did before NEB-426. A client does this for an instance entered from a scope it is in, so the instance is drawn exactly where it is relative to that world (a doorway looks through to the right place, both ways) and a crossing does not move the pawn in Unity; the client keeps that frame's origin near its pawn, so it stays precise (`docs/scope-frames.md` D11). Ignored for a scope that already has or shares a frame.
+
+NEB-438: it shares the frame of the scope that owns it ([`Resolve`](#resolve) of the host), not the host itself, so an instance entered from an instance entered from a world keeps the world's frame when the instance between them leaves this process: a chain of shares would stop at the one that left, which has no frame, and put the rest in the public one.
+
 ### Of [#of]
 
 ```csharp
@@ -82,7 +118,7 @@ The id of the frame a scope's containers move with: the scope's own id when it h
 public static ScopeFrame Ensure(string scopeKey, ulong instanceId, Vector3 cellSize);
 ```
 
-Give a scope a frame of its own, or return the one it has. The public world's is [`Public`](#public) and is never created here. The cell size is the scope's grid's; a later call with a different one updates it (a definition is validated once at activation, so this only ever refines a frame made from an inference). An instance scope's pinned frame gives way to the grid's.
+Give a scope a frame of its own, or return the one it has. The public world's is [`Public`](#public) and is never created here. The cell size is the scope's grid's; a later call with a different one updates it (a definition is validated once at activation, so this only ever refines a frame made from an inference).
 
 ### Pin [#pin]
 
@@ -90,7 +126,7 @@ Give a scope a frame of its own, or return the one it has. The public world's is
 public static ScopeFrame Pin(string scopeKey, ulong instanceId, double x, double y, double z);
 ```
 
-Give an instance scope a frame of its own, pinned so that the absolute point (x, y, z) sits near Unity's origin, or return the frame it already has. The pin is the nearest cell of the public world's lattice (its cell size, or `PinnedCellSize`, 1,024 m, without a world definition), so while the public origin is at that cell the two frames coincide. A pinned frame (`ScopeFrame.IsPinned`) never shifts. `ContainerRegistry.RegisterRuntime` calls it for an instance scope's first root container; a game rarely needs to.
+Give an instance scope (a room, a dungeon, an interior: anything that is not a scoped grid) a frame of its own, pinned so that the absolute point (`x`, `y`, `z`), in double, sits near Unity's origin, or return the frame it already has (`docs/scope-frames.md` D11). The pin is a cell of the public world's lattice (its cell size, or [`PinnedCellSize`](#pinnedcellsize) without a world definition), rounded to the nearest: so while this process's public origin is at that same cell, the instance's frame and the public one coincide exactly and nothing about where the instance appears relative to the public world changes. A pinned frame never shifts. Frames are local to a process, so a worker and a client may pin the same instance differently and still agree on every absolute coordinate (D4).
 
 ### Unpin [#unpin]
 
@@ -98,7 +134,7 @@ Give an instance scope a frame of its own, pinned so that the absolute point (x,
 public static void Unpin(ulong instanceId);
 ```
 
-Forget an instance scope's pinned frame. The registry calls it when the scope's last container here goes away. Any other frame is left alone.
+Forget an instance scope's pinned frame (its last container here went away). Any other frame is left alone.
 
 ### Remove [#remove]
 

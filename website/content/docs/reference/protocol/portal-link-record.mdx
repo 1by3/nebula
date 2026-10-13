@@ -1,0 +1,136 @@
+---
+title: "PortalLinkRecord"
+description: "One party's link through a portal, as the network gateway and a client learn it (MsgId.PortalLinks)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs)</div>
+
+```csharp
+public struct PortalLinkRecord
+```
+
+One party's link through a portal, as the network gateway and a client learn it ([`MsgId.PortalLinks`](/docs/reference/protocol/msg-id#portallinks)). Toward the network gateway it carries the members and the observers; toward a client both lists are empty and [`Flags`](#flags) says whether this client is a member and whether it is an observer.
+
+## Fields
+
+### LinkId [#linkid]
+
+```csharp
+public ulong LinkId;
+```
+
+### PortalId [#portalid]
+
+```csharp
+public ulong PortalId;
+```
+
+### PartyHash [#partyhash]
+
+```csharp
+public ulong PartyHash;
+```
+
+The party as [`PortalIds.PartyHash`](/docs/reference/protocol/portal-ids#partyhash).
+
+### FarScope [#farscope]
+
+```csharp
+public ulong FarScope;
+```
+
+The far scope's id and the container a crossing enters (the far window of this version, `docs/portals.md` D10).
+
+### FarEntryId [#farentryid]
+
+```csharp
+public string FarEntryId;
+```
+
+### FarEntry [#farentry]
+
+```csharp
+public ContainerRef FarEntry;
+```
+
+### State [#state]
+
+```csharp
+public PortalState State;
+```
+
+### Wait [#wait]
+
+```csharp
+public PortalWait Wait;
+```
+
+### WaitClient [#waitclient]
+
+```csharp
+public ulong WaitClient;
+```
+
+The member client the link waits for, when [`Wait`](#wait) is [`PortalWait.ClientWarming`](/docs/reference/protocol/portal-wait#clientwarming); else 0.
+
+### Progress [#progress]
+
+```csharp
+public byte Progress;
+```
+
+How ready the link is, 0 (nothing) to 255 (everything); [`PortalLink.Progress`](/docs/reference/containers/portal-link#progress) is this over 255.
+
+### Generation [#generation]
+
+```csharp
+public uint Generation;
+```
+
+Counts the link's openings, so a client's [`MsgId.PortalWarm`](/docs/reference/protocol/msg-id#portalwarm) for an earlier opening is recognised as stale.
+
+### Flags [#flags]
+
+```csharp
+public PortalLinkFlags Flags;
+```
+
+### FarRowIds [#farrowids]
+
+```csharp
+public List<string> FarRowIds;
+```
+
+The containers of the far scope the far window touches that a member must hold and prepare before the link opens, the entry first (`docs/portals.md` D10, D16), by id (how the network gateway pins their rows) and by reference (how a client resolves them). Empty before the far scope's rows are known.
+
+### FarRows [#farrows]
+
+```csharp
+public List<ContainerRef> FarRows;
+```
+
+### Members [#members]
+
+```csharp
+public List<ulong> Members;
+```
+
+Toward the network gateway only: the clients that must be warm.
+
+### Observers [#observers]
+
+```csharp
+public List<ulong> Observers;
+```
+
+Toward the network gateway only: the clients that may look through (empty with [`PortalLinkFlags.ObserverAnyone`](/docs/reference/protocol/portal-link-flags#observeranyone)).
+
+## Properties
+
+### IsObserver [#isobserver]
+
+```csharp
+public bool IsObserver { get; }
+```
+
+Whether a client with these flags may look through the link.

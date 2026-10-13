@@ -49,6 +49,13 @@ namespace Nebula
         /// </summary>
         public bool MayArriveLater => Index == DynamicIndex || Index == RuntimeIndex;
 
+        /// <summary>
+        /// The reference names a container (it is not <see cref="None"/>). A client that cannot resolve one holds the update that names it, whatever
+        /// the container's kind, instead of placing the entity in the public world, where its container-local coordinates would be read from the
+        /// world root (<c>docs/portals.md</c> D20). Only <see cref="None"/> means "no container".
+        /// </summary>
+        public bool NamesAContainer => Index != NoneIndex;
+
         /// <summary>The reference for <paramref name="container"/> (<see cref="None"/> for null).</summary>
         public static ContainerRef Of(Container container)
         {

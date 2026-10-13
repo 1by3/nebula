@@ -74,6 +74,8 @@ public sealed class FakeWorker : IDisposable
     public readonly List<DriveInputMsg> DriveInputs = new();
     /// <summary>Every <see cref="MsgId.InstanceReady"/> a gateway relayed back from a client, in order.</summary>
     public readonly List<InstancePreparationMsg> ReadyAnswers = new();
+    /// <summary>Every <see cref="MsgId.PortalWarm"/> a gateway forwarded from a member client, in order (client id stamped by the gateway).</summary>
+    public readonly List<PortalWarmMsg> PortalWarms = new();
     /// <summary>Spawns, forgets and resyncs this worker has sent, by gateway id: what the subscription tests assert on.</summary>
     public readonly Dictionary<string, int> SpawnsSent = new(), ForgetsSent = new(), ResyncsSent = new();
     /// <summary>
@@ -245,6 +247,33 @@ public sealed class FakeWorker : IDisposable
             _w.Reset();
             new InstancePreparationMsg { RequestId = requestId, EntityId = netId, Destination = destination, SourceWorker = Index, LeaseEpoch = leaseEpoch }
                 .Write(_w, MsgId.InstancePrepare);
+            Transport.Send(link.PeerId, Delivery.ReliableOrdered, _w.ToSegment());
+        }
+        Transport.Flush();
+    }
+
+    /// <summary>
+    /// Publish portals to every linked gateway, as <c>NebulaWorker.UpdatePortals</c> does (<c>docs/portals.md</c> D45): the records first,
+    /// so a link never arrives before the portal it belongs to.
+    /// </summary>
+    public void PublishPortals(IList<PortalRecord> portals, IList<ulong>? removes = null)
+    {
+        foreach (var link in _links.Values)
+        {
+            _w.Reset();
+            PortalsMsg.Write(_w, portals, removes ?? Array.Empty<ulong>());
+            Transport.Send(link.PeerId, Delivery.ReliableOrdered, _w.ToSegment());
+        }
+        Transport.Flush();
+    }
+
+    /// <summary>Publish the state of portal links, with their members and observers, to every linked gateway.</summary>
+    public void PublishPortalLinks(IList<PortalLinkRecord> links, IList<ulong>? removes = null)
+    {
+        foreach (var link in _links.Values)
+        {
+            _w.Reset();
+            PortalLinksMsg.Write(_w, links, removes ?? Array.Empty<ulong>());
             Transport.Send(link.PeerId, Delivery.ReliableOrdered, _w.ToSegment());
         }
         Transport.Flush();
@@ -890,6 +919,7 @@ public sealed class FakeWorker : IDisposable
             }
             case MsgId.DespawnPlayer: Despawns.Add(DespawnPlayerMsg.Read(r)); break;
             case MsgId.InstanceReady: ReadyAnswers.Add(InstancePreparationMsg.Read(r)); break;
+            case MsgId.PortalWarm: PortalWarms.Add(PortalWarmMsg.Read(r)); break;
             case MsgId.ClientInput: Inputs.Add(ClientInputMsg.Read(r)); break;
             case MsgId.DriveInput: DriveInputs.Add(DriveInputMsg.Read(r)); break;
         }
@@ -1176,6 +1206,17 @@ public sealed class FakeClient : IDisposable
     /// arrives, the entity with it. The gateway's rule is a row before (or with) the first message that names it.
     /// </summary>
     public readonly List<string> UnresolvableNames = new();
+    /// <summary>The portals this client currently holds (<see cref="MsgId.Portals"/>), by derived id.</summary>
+    public readonly Dictionary<ulong, PortalRecord> Portals = new();
+    /// <summary>The portal links this client currently holds (<see cref="MsgId.PortalLinks"/>), by link id: the newest record of each.</summary>
+    public readonly Dictionary<ulong, PortalLinkRecord> Links = new();
+    /// <summary>Every link record received, in order, so a test can read the states a client was told of.</summary>
+    public readonly List<PortalLinkRecord> LinkHistory = new();
+    /// <summary>
+    /// Acknowledge a link this client is a member of the way <c>NebulaClient</c> does once the far window is ready: a
+    /// <see cref="MsgId.PortalWarm"/> for the link's generation, if it holds the far container's row.
+    /// </summary>
+    public bool AutoWarm;
     /// <summary>Every preparation this client was asked for, and whether it held the destination's row when asked.</summary>
     public readonly List<(InstancePreparationMsg Request, bool HadRow)> Preparations = new();
     /// <summary>The newest container each entity was placed in by a spawn or a state entry.</summary>
@@ -1363,6 +1404,34 @@ public sealed class FakeClient : IDisposable
                 Transport.Send(_peer, Delivery.ReliableOrdered, w.ToSegment());
                 break;
             }
+            case MsgId.Portals:
+            {
+                var update = PortalsMsg.Read(r);
+                foreach (var record in update.Upserts) { Portals[record.PortalId] = record; Wire.Add("portal+ " + record.Id); }
+                foreach (ulong gone in update.Removes)
+                {
+                    Portals.Remove(gone);
+                    foreach (var linkId in Links.Where(kv => kv.Value.PortalId == gone).Select(kv => kv.Key).ToList()) Links.Remove(linkId);
+                    Wire.Add("portal- " + gone);
+                }
+                break;
+            }
+            case MsgId.PortalLinks:
+            {
+                var update = PortalLinksMsg.Read(r);
+                foreach (var record in update.Upserts)
+                {
+                    Links[record.LinkId] = record;
+                    LinkHistory.Add(record);
+                    Wire.Add($"link {record.State} {record.Wait}");
+                    // The far container's row is ahead of the link: a member prepares it, and says so.
+                    bool holdsFar = string.IsNullOrEmpty(record.FarEntryId) || Containers.Contains(record.FarEntryId);
+                    if (AutoWarm && (record.Flags & PortalLinkFlags.Member) != 0 && record.State != PortalState.Closed && holdsFar) SendPortalWarm(record.LinkId, record.Generation);
+                    else if ((record.Flags & PortalLinkFlags.Member) != 0 && !holdsFar) UnresolvableNames.Add($"link {record.LinkId} names {record.FarEntryId}");
+                }
+                foreach (ulong gone in update.Removes) { Links.Remove(gone); Wire.Add("link- " + gone); }
+                break;
+            }
             case MsgId.FarEntities:
             {
                 FarEntitiesMsg.Read(r, _farIn);
@@ -1488,6 +1557,16 @@ public sealed class FakeClient : IDisposable
     }
 
     public void Disconnect() => Transport.Disconnect(_peer);
+
+    /// <summary>Tell the gateway this client holds a link's far window (<see cref="MsgId.PortalWarm"/>).</summary>
+    public void SendPortalWarm(ulong linkId, uint generation)
+    {
+        var w = new NetworkWriter();
+        new PortalWarmMsg { LinkId = linkId, Generation = generation }.Write(w);
+        Record?.Add((true, w.ToSegment().ToArray()));
+        Transport.Send(_peer, Delivery.ReliableOrdered, w.ToSegment());
+        Transport.Flush();
+    }
 
     /// <summary>Say goodbye, as <c>NebulaClient.Leave</c> does, and keep the link open for the gateway to close.</summary>
     public void SendGoodbye()

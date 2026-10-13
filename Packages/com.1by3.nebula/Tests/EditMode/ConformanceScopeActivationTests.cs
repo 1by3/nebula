@@ -58,9 +58,6 @@ namespace Nebula.Tests
             return new ScopeDefinition
             {
                 Kind = ScopeKind.Parts,
-                ObservePublic = true,
-                ObservationCenter = new Vector3(x, 0, 0),
-                ObservationSize = new Vector3(60, 30, 60),
                 Payload = "",
                 Parts =
                 {

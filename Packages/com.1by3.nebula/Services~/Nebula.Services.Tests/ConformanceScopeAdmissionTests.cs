@@ -47,7 +47,6 @@ public class ConformanceScopeAdmissionTests
     private static ScopeDefinition Room() => new()
     {
         Kind = ScopeKind.Parts,
-        ObservePublic = false,
         Parts = { new ScopePart { PartId = Part, Center = new(500, 0, 0), Size = new(40, 40, 40) } },
     };
 

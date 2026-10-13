@@ -250,6 +250,47 @@ namespace Nebula
             return false;
         }
 
+        /// <summary>
+        /// The entity went through a portal (<c>docs/portals.md</c> D18): every entry recorded so far is a pose in the scope it left, in
+        /// the space it was recorded in. It is rewritten into the space of <paramref name="destination"/>, in the scope it entered, and
+        /// filed under that container, as <c>docs/scope-frames.md</c> D8 rewrites them on an origin shift, so a lag-compensated read across the
+        /// crossing tick finds one space and the read path keeps no branch. A pose goes through the link about its faces and in double; it is then
+        /// narrowed to the float an entry holds, near the new scope's origin. <paramref name="everything"/> is the authority's: every entry it holds
+        /// was recorded before the commit; otherwise only the entries recorded in the scope the entity left.
+        /// </summary>
+        internal void CarryThroughPortal(in PortalMap map, Container destination, bool everything)
+        {
+            if (!_any) return;
+            var toSpace = SpaceOf(destination);
+            bool toFramed = PhysicsFrames.InSimulationPose(toSpace);
+            for (int i = 0; i < _ring.Length; i++)
+            {
+                ref var e = ref _ring[i];
+                if (!e.Valid) continue;
+                // The authority rewrites everything it recorded: it recorded all of it before the commit. A copy it did not simulate may
+                // hold entries from both sides, and rewrites those recorded in the scope the entity left.
+                if (!everything && (e.Container != null ? e.Container.InstanceId : 0UL) != map.FromScope) continue;
+                var fromSpace = SpaceOf(e.Container);
+                bool fromFramed = PhysicsFrames.InSimulationPose(fromSpace);
+                var position = fromFramed ? PhysicsFrames.Convert(e.Position, fromSpace, null) : e.Position;
+                var rotation = fromFramed ? PhysicsFrames.Convert(e.Rotation, fromSpace, null) : e.Rotation;
+                var velocity = fromFramed ? PhysicsFrames.Convert(Quaternion.identity, fromSpace, null) * e.Velocity : e.Velocity;
+                position = ContainerRegistry.ToFrame(map.Point(ContainerRegistry.ToAbsolutePrecise(position, map.FromScope)), map.ToScope);
+                rotation = map.Rotation(rotation);
+                velocity = map.Direction(velocity);
+                if (toFramed)
+                {
+                    position = PhysicsFrames.Convert(position, null, toSpace);
+                    rotation = PhysicsFrames.Convert(rotation, null, toSpace);
+                    velocity = PhysicsFrames.Convert(Quaternion.identity, null, toSpace) * velocity;
+                }
+                e.Position = position;
+                e.Rotation = rotation;
+                e.Velocity = velocity;
+                e.Container = destination;
+            }
+        }
+
         private bool TryRead(uint tick, out HistoricalState state)
         {
             int slot = (int)(tick % (uint)_ring.Length);

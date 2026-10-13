@@ -461,6 +461,7 @@ namespace Nebula.World
             if (grid == null) return;
             var ctx = ContextFor(c, grid);
             _loaded?.Invoke(in ctx);
+            if (NebulaRuntime.IsClient) ScopeLayers.StampTree(ctx.Root, c.InstanceId);
             if (_hasView && !grid.IsPublic && NebulaRuntime.IsClient) ApplyView(c.RuntimeId, ctx.Root);
         }
 
@@ -476,8 +477,8 @@ namespace Nebula.World
         /// <summary>
         /// Whether a chunk's content is drawn on this client: false for a chunk of a scoped grid while the local pawn
         /// is in another scope that is not kept drawn (<see cref="InstanceScenes.KeepDrawn"/>), true otherwise. A
-        /// client is told about another scope's chunks while its pawn is in an instance that keeps its host loaded
-        /// (<see cref="ScopeDefinition.ObserveHost"/>), or while it prepares to cross into another scope. Content a
+        /// client is told about another scope's chunks while its pawn stands in the window of an open portal link
+        /// (<c>docs/portals.md</c> D20), or while it prepares to cross into another scope. Content a
         /// game adds to a chunk after <see cref="Loaded"/> should start hidden when this is false; the public world's
         /// chunks are always drawn, as they always were.
         /// </summary>
@@ -507,7 +508,7 @@ namespace Nebula.World
             var container = ContainerRegistry.GetRuntime(id);
             if (container == null || root == null) return;
             ulong scope = container.InstanceId;
-            bool hide = scope != 0 && scope != _view && !InstanceScenes.IsKeptDrawn(scope);
+            bool hide = scope != 0 && scope != _view && !InstanceScenes.IsAlsoDrawn(scope);
             // Hiding runs again on every view change, so renderers the game added since are hidden too.
             if (hide) HiddenRenderers.Hide(Hidden, id, root);
             else HiddenRenderers.Show(Hidden, id);
@@ -530,6 +531,17 @@ namespace Nebula.World
                     ApplyView(ViewScratch[i], root);
             }
             ViewScratch.Clear();
+        }
+
+        /// <summary>Stamp the content under every chunk root of a scope with its slot's bit (<see cref="ScopeLayers"/>).</summary>
+        internal static void StampRoots(ulong scope, uint bit, uint reserved)
+        {
+            foreach (var pair in Roots)
+            {
+                if (pair.Value == null) continue;
+                var container = ContainerRegistry.GetRuntime(pair.Key);
+                if (container != null && container.InstanceId == scope) ScopeLayers.StampTree(pair.Value, bit, reserved);
+            }
         }
 
         private static void OnUnregistering(Container c)

@@ -26,7 +26,7 @@ Two locations are equal when both strings match exactly (ordinal comparison, cas
 Nebula treats the scope key as opaque bytes. It never splits, orders, hashes, or otherwise interprets it, and neither should your code beyond comparing it. Today there are two kinds of scope:
 
 - **The public world.** `ScopeKey` is `""`. Every scene container, every public runtime container, and every entity outside a container is in it.
-- **An instance.** `ScopeKey` is the instance key your game passed when it prepared the instance: `TemplateId` + `/` + `key`, the same string [`NebulaWorker.PrepareInstance`](/docs/reference/worker/nebula-worker) and [`InstanceBoundary`](/docs/reference/containers/instance-boundary) build. Nebula carries this string on the instance container's lease row, so every process reports it without recomputing it. See [Instancing](/docs/guides/instancing).
+- **An instance.** `ScopeKey` is the instance key your game passed when it prepared the instance: `TemplateId` + `/` + `key`, the same string [`NebulaWorker.PrepareInstance`](/docs/reference/worker/nebula-worker) and [`Portal`](/docs/reference/containers/portal) build. Nebula carries this string on the instance container's lease row, so every process reports it without recomputing it. A portal with a template far side builds `TemplateId` + `/` + the party that opened the link. A portal with a fixed far side names a scope key that exists anyway, and entities that cross it report that key. See [Instancing](/docs/guides/instancing).
 
 `NetworkIdentity.InstanceId`, the 64-bit hash Nebula uses for scope isolation, is derived from the scope key and travels beside it. It is not part of the contract.
 

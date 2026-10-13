@@ -42,6 +42,8 @@
     <Compile Include="../../Tests/EditMode/ConformanceScopeLifecycleTests.cs" />
     <!-- The cohesion hints (docs/cohesion-hints.md): the planner and the telemetry parsing are pure C#. -->
     <Compile Include="../../Tests/EditMode/ConformanceCohesionTests.cs" />
+    <!-- Portal links bind the containers they join (docs/portals.md D34): the telemetry rows and the planner are pure C#. -->
+    <Compile Include="../../Tests/EditMode/ConformancePortalCohesionTests.cs" />
     <Compile Include="../../Tests/EditMode/ConformanceRebalanceTests.cs" />
     <!-- Per-scope origin frames (docs/scope-frames.md): the scaler's dry run and the scope-salted region ids are pure C#. -->
     <Compile Include="../../Tests/EditMode/ConformanceScopeFrameTests.cs" />
@@ -51,6 +53,8 @@
     <Compile Include="../../Runtime/Client/ReconnectBackoff.cs;../../Tests/EditMode/ReconnectBackoffTests.cs" />
     <!-- Deliberate session endings on the wire (NEB-354): goodbye, kick, shutdown notice, an ended session. -->
     <Compile Include="../../Tests/EditMode/SessionEndingWireTests.cs" />
+    <!-- Portals on the wire (NEB-428): the three messages of protocol 28, the link id on a preparation, the derived ids. -->
+    <Compile Include="../../Tests/EditMode/PortalWireTests.cs" />
     <!-- The scale and failure suite (docs/scale-suite.md) is the synthetic layer: it drives the fake mesh at
          scale and kills parts of it. Tagged `Scale` so the conformance runner never picks it up. -->
     <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />

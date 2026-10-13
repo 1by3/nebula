@@ -4,8 +4,8 @@ using System.Collections.Generic;
 namespace Nebula
 {
     /// <summary>
-    /// One place a client is interested in: a point (the usual case, its pawn) or a box (an <c>ObservePublic</c>
-    /// window, an RTS selection). Positions are absolute world coordinates in double, like every other interest
+    /// One place a client is interested in: a point (the usual case, its pawn) or a box (a portal's window, an RTS
+    /// selection). Positions are absolute world coordinates in double, like every other interest
     /// input, so a floating-origin shift changes nothing.
     /// </summary>
     public struct InterestFocus
@@ -23,8 +23,24 @@ namespace Nebula
         /// are then in. A focus only sees entities of its own space (<c>docs/container-tree.md</c> D18).
         /// </summary>
         public ulong Space;
+        /// <summary>
+        /// The scope the focus is in when that is not the client's own (<see cref="HasScope"/>): a portal's window onto another scope, whose
+        /// regions are salted with that scope (<c>docs/portals.md</c> D23). A focus with a scope sees only the entities of that scope.
+        /// </summary>
+        public ulong Scope;
+        /// <summary>Whether <see cref="Scope"/> is set. A focus without one is in the client's own scope, and the public world is scope 0.</summary>
+        public bool HasScope;
 
         public bool IsBox => HalfX > 0 || HalfY > 0 || HalfZ > 0;
+
+        /// <summary>This focus, placed in scope <paramref name="scope"/> instead of the client's own (a portal's window onto it).</summary>
+        public InterestFocus InScope(ulong scope)
+        {
+            var focus = this;
+            focus.Scope = scope;
+            focus.HasScope = true;
+            return focus;
+        }
 
         public static InterestFocus Point(double x, double y, double z, float radiusScale = 1f, ulong sourceNetId = 0, ulong space = 0) =>
             new InterestFocus { X = x, Y = y, Z = z, RadiusScale = radiusScale <= 0 ? 1f : radiusScale, SourceNetId = sourceNetId, Space = space };
@@ -160,6 +176,11 @@ namespace Nebula
         public double HintX, HintY, HintZ;
         /// <summary>What the server allows this client's hint to do (<c>gateway.SetClientFocusMode</c>).</summary>
         public FocusMode FocusMode;
+        /// <summary>
+        /// How many portal windows the client is looking through right now (<c>docs/portals.md</c> D22): the other sides of the open links it stands
+        /// in the window of and may look through, at most <c>NebulaGateway.MaxPortalWindows</c>. 0 for a client that sees nothing through a portal.
+        /// </summary>
+        public int PortalWindows;
         /// <summary>Shorthand for <see cref="FocusMode"/> being <see cref="Nebula.FocusMode.Free"/>: the hint was not clamped to the pawn.</summary>
         public bool FreeHint => FocusMode == Nebula.FocusMode.Free;
     }

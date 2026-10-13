@@ -19,7 +19,7 @@ namespace Nebula.Tests
     /// <para>
     /// Tier B: one real <see cref="NebulaWorker"/> on the <see cref="ConformanceMesh"/>, a <see cref="LocalControlPlane"/>
     /// for the scopes and the lease rows, and preview scenes for the frames, as in
-    /// <see cref="ConformanceFramedInstanceBoundaryTests"/>.
+    /// <see cref="ConformanceFramedPortalTests"/>.
     /// </para>
     /// </summary>
     [Category("Conformance")]
@@ -69,7 +69,6 @@ namespace Nebula.Tests
             _template = ScriptableObject.CreateInstance<InstanceTemplate>();
             _template.TemplateId = "hangar";
             _template.Parts = new[] { new InstanceTemplate.Part { Id = "hall", Bounds = new Bounds(new Vector3(0f, 2f, 0f), new Vector3(16f, 4f, 16f)) } };
-            _template.ObservePublic = false;
 
             var planet = new GameObject("planet-prefab");
             planet.AddComponent<NetworkIdentity>();

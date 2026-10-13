@@ -429,7 +429,7 @@ client is refused with its range instead of being admitted into a world it would
 
 **D23 A client outside a framed container's box looks into it while it is near (NEB-386).** D18's enclosing foci look
 outward from a frame; this is the mirror, inward. A pawn in the space around a frame with regions of its own (a
-planet, a station) that is within `InterestFrameApproachMargin` (default 4,000 m, 0 turns it off) of the frame's box
+planet, a station) that is within the frame's own `Container.FrameApproachMargin` (metres; 0, the default, turns it off, NEB-408) of the frame's box
 gets one more focus, in that frame's region space (`InterestFocus.Space`), so `ClientInterest` scans the frame's
 buckets with it: a pilot over a planet sees the outposts, ships and players standing on it, and the same rule serves a
 ship looking at a station or a fighter at a capital ship's deck. The gateway adds it beside the enclosing foci
@@ -490,9 +490,8 @@ enough, and no wire change was made:
   not depend on float precision.
 - *The gateway's record* (`EntityRecord.AbsX/AbsY/AbsZ`, with `FrameKey`) is stored in double, and an entity in a frame with regions of
   its own is filed in that frame's space, so its numbers are the frame-local wire numbers and no 10,000 km offset
-  enters. It is filled from `RegionSpaceOf`, which composes in `Vector3`: for an entity standing in the scope itself
-  (key 0) a long way from the origin the value therefore carries a float's resolution there (about a metre at 10,000 km).
-  Interest is bucketed in tens to hundreds of metres, so nothing decides on it; it is a limit to know, not changed here.
+  enters. It is filled from `RegionSpaceOf`, which composes in double since NEB-431 (a portal's window decides on it,
+  `docs/portals.md` D20): an entity standing in the scope itself (key 0) a long way from the origin is filed to the millimetre.
 
 A game that needs better than 1.6 cm for something large in a very big frame keeps it in a chunk, or in a framed
 carrier of its own (a ship's frame is local to the ship). Scenario 45 pins the numbers.
@@ -507,7 +506,7 @@ carrier of its own (a ship's frame is local to the ship). Scenario 45 pins the n
 | 23 | A planet with its own frame and eight octants leased to two workers with a base leased on its own; a ship flies in and lands in the other worker's octant without error; rotation changes neither local positions nor region keys; the ship leaves through the planet's pose owner; a frame's origin follows its worker; a ship at 1 km/s with a leased engine room, crew walking between the two workers and leaving through an airlock policy | `ConformanceFramedWorldTests`, plus `FrameRegionSpaceTests` for the region keys and per-space foci |
 | 45 | Wire precision in a large frame: an entity in a hosted chunk of a 500 km planet is near-exact, an entity directly in the frame at 100 km and 250 km from its origin is within half the float spacing (1.6 cm at 250 km) of where it stands, none of it depends on the scope being 10,000 km out, and the gateway's absolute records are double fields filed in the frame's own space | `ConformanceFramePrecisionTests` |
 | 41 | A planet's ground as a grid hosted by the planet (D22), nothing leased statically: allocated around a ground pawn on one worker, a second pawn on the other and a ship flying scenario 40's lap at 300 m/s; the ship never stands in the box outside a leased chunk, each chunk it enters was leased ahead of it, the ground behind it retires, and a restart brings back a crate standing in a hosted chunk under the planet's own restored container | `ConformanceCarrierHostedGridTests`, plus `HostedChunkGridTests` |
-| 43 | An `InstanceBoundary` in a chunk hosted by a framed carrier (NEB-394): its position is read out of the carrier's frame, as an entity's is, so the instance is prepared at the door; a player on the planet enters it and leaves back into the planet's chunk, in its frame | `ConformanceFramedInstanceBoundaryTests` |
+| 43 | A `Portal` (an `InstanceBoundary` until NEB-428) in a chunk hosted by a framed carrier (NEB-394): its face is read out of the carrier's frame, as an entity's is, so the instance is prepared at the door; a player on the planet enters it and leaves back into the planet's chunk, in its frame | `ConformanceFramedPortalTests` |
 | 49 | A large frame on a client (D11, D19, D25): a scope's origin shift poses the frames at once, so `KeepOriginNear` on a pawn on a framed planet run after a game's own rule never shifts back over 1,000 frames; a scope's shift leaves the history of what stands in a frame alone; ground 205 km out on a planet turning at 8.5e-4 rad/s holds within a millimetre against the camera over 1,000 frames under a render origin (about 3 cm without); the frame's world pose is unchanged; prediction runs bit for bit at the simulation pose; a ship on the planet is drawn through the planet's render origin and needs none of its own; a body moving at 100 m/s in a chunk 205 km out, with a camera riding it and the scene's origin kept within 1 km of the camera, holds within half a millimetre a frame while cameras draw (about 14 mm a frame with -O left on the root); drawing puts every root and child back exactly and never overlaps a prediction step; a tool 0.4 m in front of a camera 20 km from Unity's origin, through the turning frame, holds within 0.05 mm a frame under the scene render origin (about 4 mm without) | `ConformanceFrameRenderOriginTests` |
 
 Tier limit (B, `ConformanceMesh`): the container registry is process-wide, so of two workers' copies of one carrier
@@ -517,7 +516,7 @@ only the last registered owns the box and its frame. Scenario 21's two-worker ca
 
 - Every process that holds a framed container holds its frame scene.
 - Raycasts do not pass from one frame into another; the game casts again in the space around a frame.
-- An `InstanceBoundary` reads its own position and an entity's in the scope's own space, out of any physics frame (NEB-394), and leaves an occupant into the deepest container holding the point, descending into frames (`InstanceBoundary.FindDestination`). Its `Interior` is an oriented box: the boundary's rotation, read in the scope's own space like its position, turns the box, so a door on sloping or curved ground has a crossing volume that follows it. A boundary on a frame that is turning still sweeps its box with the frame: keep doors on frames that turn off. A client in the instance is not sent the carrier (`docs/scope-activation.md` D24: rows only, no host entities), so the chunks under it are held for their parent there: a crossing into one is acknowledged by the client all the same (`ContainerRegistry.IsHeldForCarrier`), and the carrier and its ground arrive with the scope; but an `ObserveHost` window over a carrier's ground keeps rows the client cannot register, so the ground behind an open door on a framed planet is not drawn.
+- A `Portal` (which replaced `InstanceBoundary`, NEB-428) reads its own face and an entity's position in the scope's own space, out of any physics frame (NEB-394), and leaves an occupant into the deepest container holding the point, descending into frames (`Portal.FindDestination`). Its aperture is a rectangle on the face's z = 0 plane, in the face's own axes: the portal's rotation, read in the scope's own space like its position, turns the plane, so a door on sloping or curved ground has a crossing plane that follows it. A boundary on a frame that is turning still sweeps its box with the frame: keep doors on frames that turn off. A client in the instance is not sent the carrier (`docs/scope-activation.md` D24: rows only, no host entities), so the chunks under it are held for their parent there: a crossing into one is acknowledged by the client all the same (`ContainerRegistry.IsHeldForCarrier`), and the carrier and its ground arrive with the scope; but an `ObserveHost` window over a carrier's ground keeps rows the client cannot register, so the ground behind an open door on a framed planet is not drawn.
 - A client predicts in the frame of its own player only.
 - Runtime containers inside a frame are scanned linearly, not hashed per frame.
 - A hosted grid's chunks are runtime containers inside its host's frame, so the line above bounds them too: keep a
@@ -529,7 +528,7 @@ only the last registered owns the box and its frame. Scenario 21's two-worker ca
   box's hysteresis.
 - `grid.Frame.OriginOffset` of a hosted grid converts in simulation space only. A client draws the host posed (D11):
   convert a host-local point for rendering with `PhysicsFrame.ToParent`.
-- A client outside a planet's box sees what stands on it only within `InterestFrameApproachMargin` of the box, and from the box's face, not from where it is (D23). A gateway of its own knows a carried planet's box only from its chunks' leases.
+- A client outside a planet's box sees what stands on it only within the planet's `FrameApproachMargin` of the box, when it set one, and from the box's face, not from where it is (D23). A gateway of its own knows a carried planet's box only from its chunks' leases.
 - The planet → space → planet lap runs in one process as scenario 40 (`ConformanceFramedPlanetLapTests`, two workers
   and a gateway, no client process; the sample `Samples~/FramedPlanetLap`) over ground leased statically, and as
   scenario 41 over a hosted grid streamed around players (D22). Not yet on a live mesh. What it found

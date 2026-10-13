@@ -4,6 +4,9 @@ using Nebula.Editor;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+#if UNITY_6000_6_OR_NEWER
+using Unity.PlayMode.Editor;
+#endif
 
 namespace Nebula.Tests
 {
@@ -105,7 +108,16 @@ namespace Nebula.Tests
                 Assert.AreEqual(1, DevLoopScenarioRules.ServerInstance(instances));
                 Assert.AreEqual(1, instances[1].PlayerIndex, "Player 2");
                 Assert.IsFalse(instances[1].ManualControl, "Scenario Control: Play starts it");
-                Assert.AreEqual(path, DevLoopScenario.FindDevLoopScenario(out _), "found among the project's scenarios");
+                // A project that already has server scenarios of its own (a game's "Nebula Dev Loop (2 Players)", which sorts before this
+                // one) is entitled to have one of them chosen, with a warning; what must hold is that the Editor finds one that hosts a server.
+                string found = DevLoopScenario.FindDevLoopScenario(out var warning);
+                Assert.IsNotNull(found, "a scenario with a server instance is found among the project's scenarios");
+                if (found != path)
+                {
+                    Assert.IsNotNull(warning, "another scenario was chosen over the new one, and the Editor says there are several");
+                    var chosen = DevLoopScenario.ReadEditorInstances(AssetDatabase.LoadAssetAtPath<PlayModeScenario>(found));
+                    Assert.GreaterOrEqual(DevLoopScenarioRules.ServerInstance(chosen), 0, "and it hosts a server");
+                }
             }
             finally
             {

@@ -126,6 +126,11 @@ namespace Nebula
         public bool OwnPhysicsFrame;
         /// <summary>How a framed container's contents are bucketed for interest (<see cref="FrameInterestMode"/>).</summary>
         public FrameInterestMode FrameInterest;
+        /// <summary>
+        /// For a frame with <see cref="FrameInterestMode.OwnRegions"/>: metres from its box within which a client in the
+        /// space around it also looks into it (<see cref="Container.FrameApproachMargin"/>). 0 is off.
+        /// </summary>
+        public float FrameApproachMargin;
 
         /// <summary>No parent: the box is placed in its scope.</summary>
         public bool IsRoot => string.IsNullOrEmpty(ParentId);
@@ -145,11 +150,12 @@ namespace Nebula
             new ContainerPlacement { ParentId = parentId ?? "", Center = Double3.From(localCenter), Size = size, Authority = authority };
 
         /// <summary>The same placement with its own physics frame.</summary>
-        public ContainerPlacement WithPhysicsFrame(FrameInterestMode interest = FrameInterestMode.WithCarrier)
+        public ContainerPlacement WithPhysicsFrame(FrameInterestMode interest = FrameInterestMode.WithCarrier, float approachMargin = 0f)
         {
             var p = this;
             p.OwnPhysicsFrame = true;
             p.FrameInterest = interest;
+            p.FrameApproachMargin = approachMargin;
             return p;
         }
 

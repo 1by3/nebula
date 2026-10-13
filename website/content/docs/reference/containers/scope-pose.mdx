@@ -1,0 +1,104 @@
+---
+title: "ScopePose"
+description: "Where a drawn scope stands against the anchor, the scope whose frame the local view's frame resolves to (docs/portals.md D40, Portals.Anchor): the composition, in double and about the faces, of the link poses along the portals from the a..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/ScopePose.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/ScopePose.cs)</div>
+
+```csharp
+public readonly struct ScopePose
+```
+
+Where a drawn scope stands against the **anchor**, the scope whose frame the local view's frame resolves to (`docs/portals.md` D40, [`Portals.Anchor`](/docs/reference/containers/portals#anchor)): the composition, in double and about the faces, of the link poses along the portals from the anchor to the scope. A point of the scope's own upright space is `ToOrigin + Turn × (p − FromOrigin)` in the anchor's. Used to draw only: simulation, prediction and every pose a game reads stay in each scope's own space.
+
+## Constructors
+
+### ScopePose [#scopepose]
+
+```csharp
+public ScopePose(ulong scope, ulong anchor, Double3 fromOrigin, Double3 toOrigin, Quaternion turn);
+```
+
+A pose.
+
+## Properties
+
+### Scope [#scope]
+
+```csharp
+public ulong Scope { get; }
+```
+
+The scope this is the pose of.
+
+### Anchor [#anchor]
+
+```csharp
+public ulong Anchor { get; }
+```
+
+The anchor it is measured against.
+
+### FromOrigin [#fromorigin]
+
+```csharp
+public Double3 FromOrigin { get; }
+```
+
+The point of the scope (absolute in the scope) the pose turns about.
+
+### ToOrigin [#toorigin]
+
+```csharp
+public Double3 ToOrigin { get; }
+```
+
+The same point in the anchor (absolute in the anchor).
+
+### Turn [#turn]
+
+```csharp
+public Quaternion Turn { get; }
+```
+
+What turns a rotation or direction of the scope's axes into the anchor's.
+
+### IsIdentity [#isidentity]
+
+```csharp
+public bool IsIdentity { get; }
+```
+
+Whether drawing the scope needs no posing: it is not turned (within the pose epsilon) and not moved (within a millimetre).
+
+## Methods
+
+### Identity [#identity]
+
+```csharp
+public static ScopePose Identity(ulong scope, ulong anchor);
+```
+
+The pose of a scope that stands as the anchor does: nothing moves, nothing turns.
+
+### Point [#point]
+
+```csharp
+public Double3 Point(Double3 absolute);
+```
+
+A point of the scope (absolute) in the anchor (absolute), about the faces and in double.
+
+### Rotation [#rotation]
+
+```csharp
+public Quaternion Rotation(Quaternion rotation);
+```
+
+A rotation of the scope's axes in the anchor's.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

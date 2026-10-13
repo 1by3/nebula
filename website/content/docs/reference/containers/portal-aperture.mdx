@@ -1,0 +1,63 @@
+---
+title: "PortalAperture"
+description: "The opening of a portal, on its face's z = 0 plane (docs/portals.md D3): an oriented box centred on the face's origin."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PortalTypes.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PortalTypes.cs)</div>
+
+```csharp
+[Serializable]
+public struct PortalAperture
+```
+
+The opening of a portal, on its face's z = 0 plane (`docs/portals.md` D3): an oriented box centred on the face's origin. Any convex shape is a later [`Kind`](#kind) with the same contract, a cross-section test and a bounding box.
+
+## Fields
+
+### Kind [#kind]
+
+```csharp
+public PortalApertureKind Kind;
+```
+
+The shape. [`PortalApertureKind.Box`](/docs/reference/protocol/portal-aperture-kind#box) today.
+
+### HalfWidth [#halfwidth]
+
+```csharp
+public float HalfWidth;
+```
+
+Half the opening's width, along the face's x axis.
+
+### HalfHeight [#halfheight]
+
+```csharp
+public float HalfHeight;
+```
+
+Half the opening's height, along the face's y axis.
+
+## Methods
+
+### Box [#box]
+
+```csharp
+public static PortalAperture Box(float halfWidth, float halfHeight);
+```
+
+A rectangular opening `2 × halfWidth` wide and `2 × halfHeight` high.
+
+### Contains [#contains]
+
+```csharp
+public bool Contains(double x, double y, float margin = 0f);
+```
+
+Whether the point (`x`, `y`) of the face's plane is in the opening, widened by `margin` on every side.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

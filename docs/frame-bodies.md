@@ -99,7 +99,7 @@ read-only property over a private network variable, so game code cannot set the 
 
 **D8 An attached entity's container is pinned.** `NetworkIdentity.ContainerPinned` (internal) makes the worker's
 tick skip re-resolving the entity's container: it is not moved into a neighbouring chunk, out of a frame, or
-across an `InstanceBoundary`. The owner check still runs, so an entity attached to a container another worker owns
+across a `Portal` (an `InstanceBoundary` before NEB-428). The owner check still runs, so an entity attached to a container another worker owns
 is handed to that worker on the next tick, and a re-deal of the container takes the entity with it.
 
 **D9 A held body is kinematic for a second reason.** `NetworkRigidbody.Held` (internal) sits next to `Simulate`:

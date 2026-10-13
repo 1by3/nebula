@@ -1,0 +1,69 @@
+---
+title: "HistoryRewind"
+description: "A scene put back as it was at a past server tick, for as long as it is held (docs/portals.md D33; the history is docs/state-history.md)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/HistoryRewind.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/HistoryRewind.cs)</div>
+
+```csharp
+public struct HistoryRewind : IDisposable
+```
+
+A scene put back as it was at a past server tick, for as long as it is held (`docs/portals.md` D33; the history is `docs/state-history.md`). Dispose it to put everything back. Make it for the scope a query is about to look at, run any physics query in that scope's scene (`Physics` or a [`PortalQueries`](/docs/reference/containers/portal-queries) call), and dispose it in a `finally` or a `using`.
+
+For each entity of the scope that keeps history and that has an entry for the tick: its colliders move to the pose it had ([`StateHistory`](/docs/reference/core/state-history)), and are moved back afterwards; an entity with no entry (no history, too young, outside the window) stays where it is. Because the history ring is rewritten when an entity crosses a portal (D18), every entry is in the space of the scope the entity is in now, so the helper also looks at the faces of the scope: an entity of this scope whose pose at the tick lay on the other side of a face, within the distance a body is followed to a face ([`Portal.ApproachDistance`](/docs/reference/containers/portal#approachdistance)), was in the other scope then and its colliders are switched off; an entity of the other scope whose pose at the tick, carried through the link, lay on this side was here, and a shape of it is stood in this scope's scene for the length of the query. Nothing is replicated and nothing the game owns is changed for good.
+
+Not for use from another thread, and not while the scene steps.
+
+## Properties
+
+### Posed [#posed]
+
+```csharp
+public int Posed { get; }
+```
+
+How many entities were moved to their pose at the tick.
+
+### Hidden [#hidden]
+
+```csharp
+public int Hidden { get; }
+```
+
+How many entities that were in another scope at the tick were switched off for the length of the rewind.
+
+### Shadowed [#shadowed]
+
+```csharp
+public int Shadowed { get; }
+```
+
+How many entities of another scope were stood in this one, as shapes, because they were here at the tick.
+
+## Methods
+
+### Begin [#begin]
+
+```csharp
+public static HistoryRewind Begin(NebulaWorker worker, ulong scope, uint tick, Bounds? area = null, NetworkIdentity exclude = null, Container space = null);
+```
+
+Rewind `scope`'s scene on `worker` to `tick`. Everything the scope holds is looked at; give a `area` to look only at what could be inside a box (in the scene's own coordinates), which is what a single cast needs.
+
+| Parameter | Description |
+| --- | --- |
+| `worker` | The worker that keeps the history. |
+| `scope` | The scope whose scene is to be rewound (0 is the public world). |
+| `tick` | The server tick to look at. |
+| `area` | Only entities that were or are in this box (grown by their own reach) are moved; null for all of them. |
+| `exclude` | An entity to leave alone: the asker, whose own colliders a query skips anyway. |
+| `space` | The physics frame the scene is the simulation space of, or null for the scope's own scene. |
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+
+Put everything back.

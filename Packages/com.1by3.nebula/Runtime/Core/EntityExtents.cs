@@ -47,7 +47,7 @@ namespace Nebula
         }
 
         /// <summary>The corners of a box around the collider's shape, in the root's local space. Returns how many were written.</summary>
-        private static int ShapeCorners(Collider c, Matrix4x4 rootFromWorld, Vector3[] corners)
+        internal static int ShapeCorners(Collider c, Matrix4x4 rootFromWorld, Vector3[] corners)
         {
             var t = c.transform;
             var rootFromCollider = rootFromWorld * t.localToWorldMatrix;

@@ -490,7 +490,7 @@ namespace Nebula.Tests
 
         // ------------------------------------------------------------------------------------ hooks (D16)
 
-        private sealed class Portal : IFrameCrossingPolicy
+        private sealed class VetoPolicy : IFrameCrossingPolicy
         {
             public FrameCrossing Answer = FrameCrossing.Veto;
             public int Asked;
@@ -509,20 +509,20 @@ namespace Nebula.Tests
             MeshWith(1);
             var ship = W1.SpawnServerDriven(_shipPrefab, _yard, new Vector3(40f, 0f, 0f), Quaternion.identity);
             var crew = W1.SpawnServerDriven(_crewPrefab, _yard, new Vector3(40f, 1f, 3f), Quaternion.identity);
-            var portal = new Portal { Answer = FrameCrossing.Veto };
-            PhysicsFrames.CrossingPolicy = portal;
+            var policy = new VetoPolicy { Answer = FrameCrossing.Veto };
+            PhysicsFrames.CrossingPolicy = policy;
 
             W1.Tick(1);
             Assert.AreSame(_yard, crew.Container, "vetoed: it stays outside");
-            Assert.AreEqual(1, portal.Asked);
-            Assert.IsFalse(portal.LastLeaving);
+            Assert.AreEqual(1, policy.Asked);
+            Assert.IsFalse(policy.LastLeaving);
 
-            portal.Answer = FrameCrossing.Defer;
+            policy.Answer = FrameCrossing.Defer;
             W1.Tick(2);
             Assert.AreSame(_yard, crew.Container, "deferred: not yet");
-            Assert.AreEqual(2, portal.Asked, "asked again the next tick");
+            Assert.AreEqual(2, policy.Asked, "asked again the next tick");
 
-            portal.Answer = FrameCrossing.Allow;
+            policy.Answer = FrameCrossing.Allow;
             W1.Tick(3);
             Assert.AreSame(ship.Carried, crew.Container);
         }

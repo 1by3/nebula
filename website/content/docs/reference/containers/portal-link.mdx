@@ -1,0 +1,214 @@
+---
+title: "PortalLink"
+description: "One party's link through a Portal (docs/portals.md D8, D9): the far scope, the state the link is in and, when it is not open, what it waits for."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PortalTypes.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PortalTypes.cs)</div>
+
+```csharp
+public sealed class PortalLink
+```
+
+One party's link through a [`Portal`](/docs/reference/containers/portal) (`docs/portals.md` D8, D9): the far scope, the state the link is in and, when it is not open, what it waits for. Created by [`Portal.Open`](/docs/reference/containers/portal#open); the worker that owns the portal drives it Closed → Preparing → Open → Closing → Closed. Read it from the worker that owns the portal.
+
+## Properties
+
+### Portal [#portal]
+
+```csharp
+public Portal Portal { get; }
+```
+
+The portal this link goes through.
+
+### Party [#party]
+
+```csharp
+public string Party { get; }
+```
+
+The party it is for: an opaque string the game chose (`docs/portals.md` D8).
+
+### Id [#id]
+
+```csharp
+public ulong Id { get; }
+```
+
+The link's id ([`PortalIds.Link`](/docs/reference/protocol/portal-ids#link)).
+
+### State [#state]
+
+```csharp
+public PortalState State { get; }
+```
+
+Where the link stands.
+
+### Wait [#wait]
+
+```csharp
+public PortalWait Wait { get; }
+```
+
+Why the link is not open; [`PortalWait.None`](/docs/reference/protocol/portal-wait#none) when it is.
+
+### WaitClient [#waitclient]
+
+```csharp
+public ulong WaitClient { get; }
+```
+
+The member client the link waits for while [`Wait`](#wait) is [`PortalWait.ClientWarming`](/docs/reference/protocol/portal-wait#clientwarming); else 0.
+
+### Progress [#progress]
+
+```csharp
+public float Progress { get; }
+```
+
+How ready the link is, from 0 to 1: something for a door's UI to show while it opens. 1 once open.
+
+### Error [#error]
+
+```csharp
+public string Error { get; }
+```
+
+Why the far content failed to load, when it did; else null.
+
+### Generation [#generation]
+
+```csharp
+public uint Generation { get; }
+```
+
+Counts the link's openings (see [`PortalLinkRecord.Generation`](/docs/reference/protocol/portal-link-record#generation)).
+
+### FarScope [#farscope]
+
+```csharp
+public ulong FarScope { get; }
+```
+
+The far scope (0 until it is known).
+
+### FarScopeKey [#farscopekey]
+
+```csharp
+public string FarScopeKey { get; } = "";
+```
+
+The far scope's key.
+
+### FarFace [#farface]
+
+```csharp
+public PortalFace FarFace { get; }
+```
+
+The far face. Its scope is [`FarScope`](#farscope); for a template far side it is the near face read in the instance's own upright space (`docs/portals.md` D5).
+
+### FarEntry [#farentry]
+
+```csharp
+public Container FarEntry { get; }
+```
+
+The far container a crossing enters, once the far scope's rows are here; else null.
+
+### NearFace [#nearface]
+
+```csharp
+public PortalFace NearFace { get; }
+```
+
+The near face.
+
+### IsOpen [#isopen]
+
+```csharp
+public bool IsOpen { get; }
+```
+
+Whether the link is [`PortalState.Open`](/docs/reference/protocol/portal-state#open).
+
+### Members [#members]
+
+```csharp
+public IReadOnlyCollection<ulong> Members { get; }
+```
+
+The clients that must be warm before the link opens (`docs/portals.md` D13).
+
+### Observers [#observers]
+
+```csharp
+public IReadOnlyCollection<ulong> Observers { get; }
+```
+
+The clients that may look through the link (`docs/portals.md` D11).
+
+### ObserverAnyone [#observeranyone]
+
+```csharp
+public bool ObserverAnyone { get; }
+```
+
+Whether anyone may look through the link, not only its observers.
+
+### Turn [#turn]
+
+```csharp
+public Quaternion Turn { get; }
+```
+
+What turns a rotation or direction of the far scope's space into the near scope's: the near face's rotation times the far face's inverse (`docs/portals.md` D4). For a coincident portal it is the pure turn about the door.
+
+## Methods
+
+### IsMember [#ismember]
+
+```csharp
+public bool IsMember(ulong clientId);
+```
+
+Whether `clientId` is a member.
+
+### IsWarm [#iswarm]
+
+```csharp
+public bool IsWarm(ulong clientId);
+```
+
+Whether `clientId` has said it holds the far window ([`MsgId.PortalWarm`](/docs/reference/protocol/msg-id#portalwarm)).
+
+### IsObserver [#isobserver]
+
+```csharp
+public bool IsObserver(ulong clientId);
+```
+
+Whether `clientId` may look through the link.
+
+### ToNear [#tonear]
+
+```csharp
+public Double3 ToNear(Double3 farPoint);
+```
+
+A point of the far scope (absolute) in the near scope: `N.Origin + (N.Rotation × F.Rotation⁻¹) × (p − F.Origin)`, applied about the faces and in double (`docs/portals.md` D4, D37).
+
+### ToFar [#tofar]
+
+```csharp
+public Double3 ToFar(Double3 nearPoint);
+```
+
+The inverse of [`ToNear`](#tonear): a point of the near scope in the far scope.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

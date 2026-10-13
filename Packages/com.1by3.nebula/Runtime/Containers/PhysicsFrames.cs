@@ -1372,8 +1372,8 @@ namespace Nebula
             bool withCameras = cameras != null && cameras.Count > 0;
             if (withCameras) SceneRenderOrigin.Begin(cameras, Frames, _simulating);
             if (ShiftChildrenWhileDrawing) ShiftChildren();
-            // A turned instance and the world around its door, each drawn standing as the other sees it (scope-frames D12).
-            InstanceViews.Begin(cameras, SceneRenderOrigin.Offset);
+            // Every drawn scope that is not the anchor posed against it, and the cameras when the view is not the anchor (portals D41).
+            DrawnScopes.Begin(cameras, SceneRenderOrigin.Offset);
             if (withCameras) SceneRenderOrigin.RaiseDrawing();
         }
 
@@ -1406,7 +1406,7 @@ namespace Nebula
         {
             if (!_drawing) return;
             _drawing = false;
-            InstanceViews.End();
+            DrawnScopes.End();
             for (int i = _drawn.Count - 1; i >= 0; i--)
                 if (_drawn[i].Transform != null) _drawn[i].Transform.localPosition = _drawn[i].Local;
             _drawn.Clear();
@@ -1418,20 +1418,7 @@ namespace Nebula
         /// <paramref name="v"/> turned by the float rotation <paramref name="q"/>, in double. The quaternion is normalised
         /// in double first: a float one is a few 1e-8 off unit length, which would scale 200 km by a centimetre.
         /// </summary>
-        internal static Double3 Rotate(Quaternion q, Double3 v)
-        {
-            double qx = q.x, qy = q.y, qz = q.z, qw = q.w;
-            double n = Math.Sqrt(qx * qx + qy * qy + qz * qz + qw * qw);
-            if (n > 0.0 && n != 1.0) { qx /= n; qy /= n; qz /= n; qw /= n; }
-            // t = 2 (q x v); v' = v + w t + q x t
-            double tx = 2.0 * (qy * v.Z - qz * v.Y);
-            double ty = 2.0 * (qz * v.X - qx * v.Z);
-            double tz = 2.0 * (qx * v.Y - qy * v.X);
-            return new Double3(
-                v.X + qw * tx + (qy * tz - qz * ty),
-                v.Y + qw * ty + (qz * tx - qx * tz),
-                v.Z + qw * tz + (qx * ty - qy * tx));
-        }
+        internal static Double3 Rotate(Quaternion q, Double3 v) => PortalGeometry.Rotate(q, v);
 
         /// <summary>
         /// Client: put <paramref name="space"/>'s frame root at its simulation pose for a prediction step, so the

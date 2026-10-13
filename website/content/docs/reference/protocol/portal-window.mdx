@@ -1,0 +1,136 @@
+---
+title: "PortalWindow"
+description: "One side's window of a portal (docs/portals.md D3, D20): the cross-section of the aperture grown by the portal's WindowMargin sideways and extruded WindowDepth into that side, an oriented box in the face's axes."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalWindow.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalWindow.cs)</div>
+
+```csharp
+public readonly struct PortalWindow
+```
+
+One side's window of a portal (`docs/portals.md` D3, D20): the cross-section of the aperture grown by the portal's `WindowMargin` sideways and extruded `WindowDepth` into that side, an oriented box in the face's axes. The near side's window is the part of the face's axes with z \< 0, the far side's the part with z ≥ 0 (D2). Pure geometry, in double, built from a [`PortalRecord`](/docs/reference/protocol/portal-record) alone so the network gateway, which runs no game code, can decide who may look through a link (D21) and a client can learn what it was sent.
+
+## Constructors
+
+### PortalWindow [#portalwindow]
+
+```csharp
+public PortalWindow(ulong scope, Double3 origin, Quaternion rotation, float halfWidth, float halfHeight, float depth, bool isNearSide);
+```
+
+A window.
+
+## Properties
+
+### Scope [#scope]
+
+```csharp
+public ulong Scope { get; }
+```
+
+The scope this window is in: the scope its face is in.
+
+### Origin [#origin]
+
+```csharp
+public Double3 Origin { get; }
+```
+
+The face's origin, absolute in [`Scope`](#scope).
+
+### Rotation [#rotation]
+
+```csharp
+public Quaternion Rotation { get; }
+```
+
+The face's axes in [`Scope`](#scope).
+
+### HalfWidth [#halfwidth]
+
+```csharp
+public float HalfWidth { get; }
+```
+
+Half the window's width in the face's x axis: the aperture's plus the margin.
+
+### HalfHeight [#halfheight]
+
+```csharp
+public float HalfHeight { get; }
+```
+
+Half the window's height in the face's y axis: the aperture's plus the margin.
+
+### Depth [#depth]
+
+```csharp
+public float Depth { get; }
+```
+
+How far the window reaches into its side, in meters.
+
+### IsNearSide [#isnearside]
+
+```csharp
+public bool IsNearSide { get; }
+```
+
+True for the near side, whose window is z ∈ \[−[`Depth`](#depth), 0\] in the face's axes; false for the far side, z ∈ \[0, [`Depth`](#depth)\].
+
+### IsEmpty [#isempty]
+
+```csharp
+public bool IsEmpty { get; }
+```
+
+Whether the window has any volume. A portal whose depth is zero has no window and nobody looks through it.
+
+### Forward [#forward]
+
+```csharp
+public Vector3 Forward { get; }
+```
+
+The face's +z axis in the scope's axes: the way from the near side into the far one.
+
+## Methods
+
+### ToLocal [#tolocal]
+
+```csharp
+public Double3 ToLocal(Double3 absolute);
+```
+
+A point of the scope (absolute) in the face's axes, in double.
+
+### ToAbsolute [#toabsolute]
+
+```csharp
+public Double3 ToAbsolute(Double3 local);
+```
+
+A point in the face's axes as an absolute point of the scope.
+
+### Contains [#contains]
+
+```csharp
+public bool Contains(Double3 absolute);
+```
+
+Whether an absolute point of [`Scope`](#scope) is inside the window. The box is closed: a point on its boundary is inside.
+
+### Bounds [#bounds]
+
+```csharp
+public void Bounds(out Double3 min, out Double3 max);
+```
+
+The smallest axis-aligned box of [`Scope`](#scope)'s space that holds the window: what a region subscription and a container query are asked.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

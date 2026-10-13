@@ -67,13 +67,14 @@ namespace Nebula
         internal static void Learn(InstanceContainerInfo info)
         {
             if (info == null || info.InstanceId == 0) return;
-            if (!info.HasPose) { Poses.Remove(info.InstanceId); return; }
+            if (!info.HasPose) { if (Poses.Remove(info.InstanceId)) DrawnScopes.MarkDirty(); return; }
+            DrawnScopes.MarkDirty();
             Poses[info.InstanceId] = new Pose { Origin = info.PoseOrigin, Rotation = Normalized(info.PoseRotation) };
         }
 
-        internal static void Forget(ulong instanceId) => Poses.Remove(instanceId);
+        internal static void Forget(ulong instanceId) { if (Poses.Remove(instanceId)) DrawnScopes.MarkDirty(); }
 
-        internal static void Clear() => Poses.Clear();
+        internal static void Clear() { Poses.Clear(); DrawnScopes.MarkDirty(); }
 
         private static Quaternion Normalized(Quaternion q)
         {

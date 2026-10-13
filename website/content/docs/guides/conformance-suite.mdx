@@ -32,7 +32,8 @@ Every conformance test is an NUnit test tagged with the category `Conformance`. 
 | Tier | Where the tests are | How the script runs them |
 | --- | --- | --- |
 | Pure C# | `Packages/com.1by3.nebula/Services~/Nebula.Services.Tests` | `dotnet test --filter "TestCategory=Conformance"` |
-| Unity | `Packages/com.1by3.nebula/Tests/EditMode` | the Editor in batch mode with `-testCategory Conformance` |
+| Unity, EditMode | `Packages/com.1by3.nebula/Tests/EditMode` | the Editor in batch mode with `-testCategory Conformance` |
+| Unity, PlayMode | `Packages/com.1by3.nebula/Tests/PlayMode` | the same, with `-testPlatform PlayMode`: the scenarios that need physics scenes, which only exist in play mode |
 
 The Unity tier stands up two real workers (the `NebulaWorker` component) in one Editor process. Each worker writes to a recording transport instead of a socket, and the test delivers the recorded bytes into the other worker's message handler. A handover in this tier is built, serialized, parsed, and applied by the same code a live mesh runs. What this tier does not include: a gateway, the orchestrator, leases, and the fixed-tick loop. A test either triggers a handover directly or runs one whole worker tick when it needs one. In that tick, the worker places each entity in a container itself and hands it over when the container belongs to another worker.
 
@@ -93,9 +94,43 @@ Scenario 7 is covered by `ConformanceCohesionTests` (both tiers: the assignment 
 
 Scenario 8 is covered by `ConformanceHandoverStateTests` (Unity tier) and `ConformanceHandoverWireTests` (both tiers), plus two older tests that check the handover-state format and a persistent entity's key crossing a handover. See [Physics and handover state](/docs/guides/physics-and-handover-state) for how to write handover state in your own behaviors.
 
+### Portal scenarios
+
+These scenarios check the [portals](/docs/guides/instancing) that join two scopes. This page lists scenarios 1 to 28 and 50 to 76. Scenarios 29 to 49, which cover frames, far relevance and the dev loop, are listed in `docs/conformance-suite.md` in the Nebula repository.
+
+| # | Guarantee | Status |
+| --- | --- | --- |
+| 50 | A portal's record and each party's link state reach the clients that hold the container row of either face, and only those. A client that is not a member gets no observer permission it was not given. | Available |
+| 51 | A link walks its state machine (`Closed`, `Preparing`, `Open`, `Closing`) through every wait reason in order, and a player's pawn crosses an open link. | Available |
+| 52 | Any entity crosses an open link on its own: a server-owned crate, a vehicle with its riders and a projectile. An entity beside the opening, or one that jumped across without being near, does not cross. | Available |
+| 53 | What an entity carries in time goes through the link with it at a door that is turned and tilted: its history, its body's velocities, and the contents it carries. | Available |
+| 54 | A link is applied about the faces in double precision. A door on a planet 50,000 km out, turned about two axes, lands a crossing to the millimeter in both directions. | Available |
+| 55 | A client that may look through an open link sees the other side's window, both ways, decided from link records alone. A client the link does not list is sent nothing. | Available |
+| 56 | A crate thrown through an open portal stays with its thrower and is lost by an onlooker who may not look through. | Available |
+| 57 | A client holds an update that names a container it cannot resolve, whatever the container's kind, until the container's row arrives. | Available |
+| 58 | Physics across an open face on one worker: a crate resting across the face rests on its own side, has one proxy in the other scene and sleeps; a crate pushed through keeps its speed; a refused body bounces off the door. | Available |
+| 59 | Proxies across workers: a body in the band is held on the other worker as a proxy only, and nothing outside the band is ghosted across a portal. | Available |
+| 60 | A client predicts its pawn against the same proxies, throat and aperture collider that the worker builds. | Available |
+| 61 | A body is in a band by its extent, by its colliders' shapes when it has no extent, and by its root when it has neither. | Available |
+| 62 | The same physics across the face of a door on a planet that is a carrier, wherever the planet is in its scope and however it is turned. | Available |
+| 63 | A side in a physics frame works across workers and on a client. | Available |
+| 64 | A raycast, sweep or overlap continues through an open aperture and reports the far scope's hit; through a closed door it hits the door. | Available |
+| 65 | A query through a portal can be lag-compensated: the far scope is posed at the tick the shooter rendered, and put back afterward. | Available |
+| 66 | A query whose far side is on another worker, or is a second portal, ends at the edge of what the worker knows and says so. | Available |
+| 67 | A query from a planet's ground, and from a client, goes through a door in a frame. | Available |
+| 68 | Scopes joined by a link that is not closed are one planner item and stay on one worker. | Available |
+| 69 | When the far scope is on another worker, a crossing is one handover on the tick it commits, and nothing is held at the face. | Available |
+| 70 | A link readies the whole far window, and a crossing lands in the deepest container that holds the arrival point. | Available |
+| 71 | A planned reassignment of the container a portal stands in keeps its links. | Available |
+| 72 | Every wait reason is reported by the link and in telemetry, and each one can be reached. | Available |
+| 73 | A crossing between workers with real physics moves a pawn and a thrown crate each tick and never puts them back. | Available |
+| 74 | A client draws several scopes at once, each at its pose against the anchor scope. | Available |
+| 75 | Each drawn scope holds a rendering-layer slot, and Nebula stamps only the reserved bits. | Available |
+| 76 | A client that rejoins in the same process gets a physics scene for each scope again, and holds a scope's empty root container in that scope's scene as soon as it exists. | Available |
+
 ## Read a failure
 
-A failed row names the test. Open the test file under `Packages/com.1by3.nebula/Tests/EditMode/` to read the assertion; each assertion message says which field or step it checks. For the Unity tier, `Logs/conformance/unity.log` holds the Editor log and `Logs/conformance/editmode.xml` the full result, including the messages Nebula logged during the test. For the pure C# tier, the TRX file under `Logs/conformance/dotnet/` holds the same for `dotnet test`.
+A failed row names the test. Open the test file under `Packages/com.1by3.nebula/Tests/EditMode/` to read the assertion; each assertion message says which field or step it checks. For the Unity tier, `Logs/conformance/unity.log` holds the Editor log and `Logs/conformance/editmode.xml` the full result (`playmode.log` and `playmode.xml` for the PlayMode run), including the messages Nebula logged during the test. For the pure C# tier, the TRX file under `Logs/conformance/dotnet/` holds the same for `dotnet test`.
 
 If the Unity tier reports `not run`, the summary says why: the Editor was not found, the project is open in an Editor, or the Editor produced no result file. The last case usually means a compile error; the Editor log names it.
 

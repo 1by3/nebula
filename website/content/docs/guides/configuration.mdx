@@ -109,6 +109,8 @@ autoscaling grow it towards `B`.
 | `GhostBandMargin` | `4` m | Create a ghost copy when an entity comes within this distance of a neighboring container. |
 | `HandoverHysteresis` | `0.35` m | Require an entity to move this far into a new container before transferring authority. |
 | `GhostLingerSeconds` | `2` | Keep a ghost copy for this long after it leaves the ghost band. |
+| `ScopeRenderingLayers` | `0` | A mask of rendering-layer bits a client reserves for drawn scopes, one per scope drawn at once. Nebula stamps a scope's bit, and only that bit, on its static content, its chunks' content and its entities' renderers. `0` turns slots off; eight bits allow eight scopes. See [Draw what is through a portal](/docs/guides/instancing#draw-what-is-through-a-portal). |
+| `PortalProxyLayer` | `31` | The physics layer Nebula puts a portal's proxies and aperture colliders on. Keep it free of your own objects and out of your own layer masks. See [Collide across a portal](/docs/guides/instancing#collide-across-a-portal). |
 | `StateHistoryTicks` | `32` | Ticks of pose and `[SyncHistory]` state each worker keeps per entity, for `NetworkIdentity.StateAt`. About half a second at 60 Hz. `0` turns recording off. See [Lag compensation](/docs/guides/lag-compensation). |
 
 ### Persistence
@@ -143,7 +145,6 @@ Entities carrying a `PersistentEntity` component are saved and restored. See [Pe
 | `InterestMaxRadius` | `1024` m | Ceiling on a prefab's `RelevanceRadius`, and the farthest a wide entity may reach. Never uncapped: a value of 0 or less is reported and replaced with `InterestRadius`. |
 | `InterestMaxFoci` | `8` | Most foci one client may have at once. |
 | `InterestHintMaxDistance` | `60` m | How far a client's focus hint may sit from its pawn before it is clamped. |
-| `InterestFrameApproachMargin` | `4000` m | How close a client's pawn must be to the box of a framed container with regions of its own (a planet, a station) to also look into it. `0` disables it. |
 | `InterestHintMaxHz` | `5` | Most focus hints accepted from one client per second. |
 | `InterestMaxExplicitPerClient` | `16` | Most entities one client's policy may subscribe to by ID. |
 | `InterestFarMaxEntities` | `64` | Most entities one client holds in the far tier at once, nearest first. `0` turns the far tier off. |

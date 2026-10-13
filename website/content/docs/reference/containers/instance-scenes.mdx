@@ -9,7 +9,7 @@ description: "Loads instance geometry into separate physics scenes."
 public static class InstanceScenes
 ```
 
-Loads instance geometry into separate physics scenes. Query an entity's PhysicsScene for gameplay collision tests.
+Loads instance geometry into separate physics scenes. Query an entity's PhysicsScene for gameplay collision tests. Creating the geometry is asynchronous in play mode ([`Prepare`](#prepare), [`ContentState`](#contentstate)).
 
 ## Methods
 
@@ -27,9 +27,17 @@ The physics scene for a loaded scope. An unknown private scope returns an invali
 public static bool Prepare(Container container);
 ```
 
-Load this container's geometry. Returns false when its resource is missing or contains network identities.
+Start creating this container's geometry. Returns false when its resource is missing or contains network identities, or when an earlier attempt failed.
 
-True means the content was created, not that it has finished loading: content with an [`IInstanceContentLoader`](/docs/reference/containers/i-instance-content-loader) may still be building. [`ContentState`](#contentstate) reports that.
+True means the content exists or is on its way, not that it has finished loading. In play mode the scope's physics scene is created and the container moved into it at once (a quick step, done while a portal prepares and not while an entity crosses), but the prefab is loaded and instantiated asynchronously, one step each time [`ContentState`](#contentstate) is asked, so a large interior never costs a tick its budget (`docs/portals.md` §14, item 3). A missing resource is then discovered when the load finishes, and [`ContentState`](#contentstate) reports [`InstanceContentState.Failed`](/docs/reference/containers/instance-content-state#failed). Content with an [`IInstanceContentLoader`](/docs/reference/containers/i-instance-content-loader) may still be building after that; [`ContentState`](#contentstate) reports that too. Outside play mode the content is not created at all, and the resource is checked at once.
+
+### Complete [#complete]
+
+```csharp
+public static bool Complete(Container container);
+```
+
+Finish creating this container's content now, blocking if it has to: the guarantee an entity moved into an instance has always had, that the geometry it stands on exists. A portal never needs it, because its far side is ready before it opens (`docs/portals.md` D10); this is the fallback for a placement that was not prepared for (a restored entity, a transfer into a container nobody warmed). Returns false when the content cannot be created.
 
 ### ContentState [#contentstate]
 

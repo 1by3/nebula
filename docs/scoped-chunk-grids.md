@@ -157,7 +157,8 @@ scoped client is never told the public world's unless its scope looks out at it.
 either half. One exception is made on an authority's word: the destination of a crossing a worker has prepared for the
 client's own pawn is sent to that client, and only to it (`docs/scope-activation.md` §11, D14). A second is made on the
 scope's own definition: an occupant of a scope with `ObserveHost` keeps the rows of the scope its pawn came from, around
-the place it left it, and no other scope's (`docs/scope-activation.md` §12, NEB-369).
+the place it left it, and no other scope's (`docs/scope-activation.md` §12, NEB-369). *NEB-431 replaced both of those with the window of an open portal link: a scoped client is told another scope's rows only inside a
+window it looks through (`docs/portals.md` D20), and `ObservePublic` and `ObserveHost` are gone.*
 
 **D11 Ghosting and adjacency needed nothing: they were already scope-qualified.** `ContainerRegistry.Link` refuses
 to make neighbours of containers with different `InstanceId`s, and every neighbour query filters the same way. Two

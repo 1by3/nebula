@@ -136,6 +136,8 @@ namespace Nebula
         public bool OwnPhysicsFrame;
         /// <summary>How a framed container's contents are bucketed for interest.</summary>
         public FrameInterestMode FrameInterest;
+        /// <summary>Metres from the box within which a client in the space around a frame with its own regions also looks into it (<see cref="Container.FrameApproachMargin"/>); 0 is off.</summary>
+        public float FrameApproachMargin;
         /// <summary><see cref="Center"/> narrowed to float, for callers that only ever held small boxes.</summary>
         public Vector3 BoundsCenter
         {
@@ -150,7 +152,7 @@ namespace Nebula
         public ContainerPlacement Placement => new ContainerPlacement
         {
             ParentId = ParentId ?? "", Center = Center, Size = BoundsSize, Authority = Authority,
-            OwnPhysicsFrame = OwnPhysicsFrame, FrameInterest = FrameInterest,
+            OwnPhysicsFrame = OwnPhysicsFrame, FrameInterest = FrameInterest, FrameApproachMargin = FrameApproachMargin,
         };
         /// <summary>
         /// A balancing hint was set for this container while the mesh runs (<see cref="IControlPlane.SetContainerHint"/>).
@@ -413,7 +415,7 @@ namespace Nebula
         /// frame flags tell every gateway that a carried container has a physics frame of its own and how its contents
         /// are bucketed for interest (D18).
         /// </summary>
-        void EnsureContainer(string containerId, ContainerAuthority authority = ContainerAuthority.Auto, bool ownPhysicsFrame = false, FrameInterestMode frameInterest = FrameInterestMode.WithCarrier);
+        void EnsureContainer(string containerId, ContainerAuthority authority = ContainerAuthority.Auto, bool ownPhysicsFrame = false, FrameInterestMode frameInterest = FrameInterestMode.WithCarrier, float frameApproachMargin = 0f);
         /// <summary>
         /// Make sure a lease row exists for a runtime container, carrying its placement (a root's absolute box, or a
         /// child's parent id and parent-local box; a <c>Bounds</c> converts to a root) and, when

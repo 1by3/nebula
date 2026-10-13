@@ -1,0 +1,75 @@
+---
+title: "PortalProxy"
+description: "Marks a collider Nebula made to carry one side of a portal into the other (docs/portals.md §6): a kinematic copy of a body that touches an open link's band (D26), a static copy of the other side's geometry in the throat (D27), or ghost h..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PortalProxy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PortalProxy.cs)</div>
+
+```csharp
+[DisallowMultipleComponent]
+public sealed class PortalProxy : MonoBehaviour
+```
+
+Marks a collider Nebula made to carry one side of a portal into the other (`docs/portals.md` §6): a kinematic copy of a body that touches an open link's band (D26), a static copy of the other side's geometry in the throat (D27), or ghost held only as a proxy on a worker that does not simulate its scope (D29). It lives on [`NebulaConfig.PortalProxyLayer`](/docs/reference/core/nebula-config#portalproxylayer) and names the entity it stands for, so a hit can be attributed and a query or a game's trigger can skip it ([`Is`](#is)). The aperture colliders (D28) carry it too, with no authority.
+
+A proxy is not an entity and is not replicated; it exists on the process that built it, in the physics scene of the side it was built for. A game must keep [`NebulaConfig.PortalProxyLayer`](/docs/reference/core/nebula-config#portalproxylayer) free of its own objects and out of its own layer masks (raycasts that should not hit a copy of a crate on the far side of a wall), and let the layer collide with whatever bodies collide with.
+
+## Properties
+
+### Authority [#authority]
+
+```csharp
+public NetworkIdentity Authority { get; }
+```
+
+The entity this copies: the authority's body, or, on a worker holding only a ghost of an entity across a portal, that ghost; null for a static copy of geometry and for an aperture collider.
+
+### LinkId [#linkid]
+
+```csharp
+public ulong LinkId { get; }
+```
+
+The id of the link ([`PortalLink.Id`](/docs/reference/containers/portal-link#id)) the proxy belongs to.
+
+### Source [#source]
+
+```csharp
+public Collider Source { get; }
+```
+
+The collider this copies: the authority's or the other side's static one. Null for an aperture collider.
+
+### IsStatic [#isstatic]
+
+```csharp
+public bool IsStatic { get; }
+```
+
+True for a copy of static geometry (the throat, D27) and for an aperture collider (D28); false for a copy of a body.
+
+### IsAperture [#isaperture]
+
+```csharp
+public bool IsAperture { get; }
+```
+
+True for a link's aperture collider (D28), the thin box over the cross-section.
+
+## Methods
+
+### Is [#is]
+
+```csharp
+public static bool Is(Collider collider);
+```
+
+Whether `collider` is one of Nebula's portal proxies or aperture colliders.
+
+### Of [#of]
+
+```csharp
+public static PortalProxy Of(Collider collider);
+```
+
+The proxy component of `collider`, or null.

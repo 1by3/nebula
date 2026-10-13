@@ -1,0 +1,126 @@
+---
+title: "PortalHit"
+description: "One thing a portal query found (docs/portals.md D32): the scope it is in, the collider and the entity, how far along the cast it is, and its point in both the asker's space and the hit scope's."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PortalQueryTypes.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PortalQueryTypes.cs)</div>
+
+```csharp
+public readonly struct PortalHit
+```
+
+One thing a portal query found (`docs/portals.md` D32): the scope it is in, the collider and the entity, how far along the cast it is, and its point in both the asker's space and the hit scope's. Spaces are the physics scenes' own coordinates (the scope's scene, or its physics frame's simulation space), in float and small by construction: a point is a face-relative offset carried through the link about the faces, never a bare translation (D37).
+
+## Properties
+
+### Scope [#scope]
+
+```csharp
+public ulong Scope { get; }
+```
+
+The scope the hit is in: the scope the cast started in, or the far scope of the link it went through.
+
+### Collider [#collider]
+
+```csharp
+public Collider Collider { get; }
+```
+
+The collider hit; the aperture collider for [`PortalHitFlags.Aperture`](/docs/reference/containers/portal-hit-flags#aperture); null for [`PortalHitFlags.Truncated`](/docs/reference/containers/portal-hit-flags#truncated). Never a portal proxy.
+
+### Entity [#entity]
+
+```csharp
+public NetworkIdentity Entity { get; }
+```
+
+The entity the collider belongs to (the nearest [`NetworkIdentity`](/docs/reference/core/network-identity) above it), or null.
+
+### Distance [#distance]
+
+```csharp
+public float Distance { get; }
+```
+
+How far along the cast the hit is, in meters, summed over the legs (zero for an overlap).
+
+### PointInAskerSpace [#pointinaskerspace]
+
+```csharp
+public Vector3 PointInAskerSpace { get; }
+```
+
+The point in the asker's space: the scene the cast started in, as if the link were not there (a straight continuation).
+
+### PointInScope [#pointinscope]
+
+```csharp
+public Vector3 PointInScope { get; }
+```
+
+The point in [`Scope`](#scope)'s own space.
+
+### Normal [#normal]
+
+```csharp
+public Vector3 Normal { get; }
+```
+
+The surface normal in [`Scope`](#scope)'s space.
+
+### NormalInAskerSpace [#normalinaskerspace]
+
+```csharp
+public Vector3 NormalInAskerSpace { get; }
+```
+
+The surface normal in the asker's space.
+
+### Flags [#flags]
+
+```csharp
+public PortalHitFlags Flags { get; }
+```
+
+What kind of hit.
+
+### LinkId [#linkid]
+
+```csharp
+public ulong LinkId { get; }
+```
+
+The id of the link the cast went through, or the one whose aperture it met; 0 for a hit that touched no portal.
+
+### IsAperture [#isaperture]
+
+```csharp
+public bool IsAperture { get; }
+```
+
+True for a hit on an aperture plane.
+
+### IsTruncated [#istruncated]
+
+```csharp
+public bool IsTruncated { get; }
+```
+
+True when the cast left the band of a link whose far scope is on another worker.
+
+### IsThroughPortal [#isthroughportal]
+
+```csharp
+public bool IsThroughPortal { get; }
+```
+
+True when the hit is in the far scope of a link.
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

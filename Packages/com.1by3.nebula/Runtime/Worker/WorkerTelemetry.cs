@@ -85,6 +85,7 @@ namespace Nebula
         private readonly List<NetworkIdentity> _points = new List<NetworkIdentity>();
         private readonly List<NebulaWorker.ContainerHold> _holds = new List<NebulaWorker.ContainerHold>();
         private readonly List<NebulaWorker.CohesionSpan> _cohesion = new List<NebulaWorker.CohesionSpan>();
+        private readonly List<NebulaWorker.PortalBinding> _portals = new List<NebulaWorker.PortalBinding>();
         private float _next;
         private int _inFlight;
         private volatile bool _detail;
@@ -139,6 +140,7 @@ namespace Nebula
             // The cohesion hints are read here, on the main thread, and written into the document below.
             worker.CopyHolds(_holds);
             worker.CopyCohesion(_cohesion);
+            worker.CopyPortalBindings(_portals);
             // Close the cost window on the same beat as the document, so a row's ms/tick and bytes/s cover exactly
             // the interval between two documents (docs/cost-telemetry.md).
             worker.CostMeter.Sample(now);
@@ -253,6 +255,26 @@ namespace Nebula
                 w.Key("in");
                 w.BeginArray();
                 if (span.Containers != null) for (int j = 0; j < span.Containers.Count; j++) w.Value(span.Containers[j]);
+                w.EndArray();
+                w.EndObject();
+            }
+            w.EndArray();
+
+            // The portal links that are not closed (docs/portals.md D34, D36): the containers each binds, and what it waits for.
+            w.Key("portalLinks");
+            w.BeginArray();
+            for (int i = 0; i < _portals.Count; i++)
+            {
+                var link = _portals[i];
+                w.BeginObject();
+                w.Prop("id", link.LinkId.ToString("x"));
+                w.Prop("portal", link.Portal ?? "");
+                w.Prop("state", link.State.ToString());
+                w.Prop("wait", link.Wait.ToString());
+                w.Prop("split", link.Split ? 1 : 0);
+                w.Key("in");
+                w.BeginArray();
+                if (link.Containers != null) for (int j = 0; j < link.Containers.Count; j++) w.Value(link.Containers[j]);
                 w.EndArray();
                 w.EndObject();
             }

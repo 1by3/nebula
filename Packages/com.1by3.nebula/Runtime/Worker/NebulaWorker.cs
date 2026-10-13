@@ -300,6 +300,8 @@ namespace Nebula
         /// </summary>
         public ContainerCostMeter CostMeter => _costMeter;
         public IEnumerable<NetworkIdentity> Entities => _entities.Values;
+        /// <summary>The entities as the dictionary's own collection, which enumerates without allocating (a query walks them).</summary>
+        internal Dictionary<ulong, NetworkIdentity>.ValueCollection EntityValues => _entities.Values;
         public IReadOnlyList<NetworkIdentity> Authoritative => _authoritative;
 
         public event Action<NetworkIdentity> EntitySpawned;
@@ -509,7 +511,7 @@ namespace Nebula
                 bool leased = carried.Authority == ContainerAuthority.Leased;
                 if (lease == null)
                 {
-                    ControlPlane.EnsureContainer(carried.ContainerId, carried.Authority, carried.OwnPhysicsFrame, carried.FrameInterest);
+                    ControlPlane.EnsureContainer(carried.ContainerId, carried.Authority, carried.OwnPhysicsFrame, carried.FrameInterest, carried.FrameApproachMargin);
                     if (leased) ControlPlane.PinContainer(carried.ContainerId, WorkerId);
                     else ControlPlane.AssignContainer(carried.ContainerId, WorkerId);
                     continue;
@@ -790,6 +792,7 @@ namespace Nebula
         private void OnDestroy()
         {
             _pendingPlayerSpawns.Clear();
+            _portalPhysics?.Dispose();
             _entityRequests?.Dispose();
             _chunkStates?.Dispose();
             // Save what we own before anything is torn down; the records stay, the entities come back elsewhere.
@@ -1191,6 +1194,7 @@ namespace Nebula
             DormantCount = dormant;
             UpdateInstancePreparations();
             ContainerRegistry.RefreshCaches();
+            UpdatePortals();
             // Interior colliders of every physics frame follow their sources (a ramp lowering, a door opening).
             PhysicsFrames.SyncAllContent();
             ProfBegin.End();
@@ -1254,6 +1258,8 @@ namespace Nebula
             }
             ProfSimulate.End();
             ProfFrameSim.Begin();
+            // Proxies across portals are posed before the scenes step (docs/portals.md D26), so contacts get their velocity.
+            if (_portalPhysics != null || Portals.All.Count > 0) PortalPhysics.Step(tick);
             InstanceScenes.Simulate(dt);
             // Every physics frame is its own scene, still in its own coordinates; and every frame's motion is sampled
             // once the carriers have moved this tick (docs/container-tree.md D14).
@@ -1314,7 +1320,7 @@ namespace Nebula
                 _passDue++;
                 ts = System.Diagnostics.Stopwatch.GetTimestamp();
                 _gameMode?.PrepareSpatialFrame(e);
-                InstanceBoundary.Tick(this, e);
+                Portals.Tick(this, e);
                 tBoundary += System.Diagnostics.Stopwatch.GetTimestamp() - ts;
                 // A carrier never resolves into a container it carries: its own box (its origin is inside it), nor
                 // the box of another carrier riding inside it, which is how two overlapping ships would each end up
@@ -1702,6 +1708,7 @@ namespace Nebula
         {
             _entities.Remove(identity.NetId);
             _authoritative.Remove(identity);
+            if (identity.IsPortalGhost) { _portalGhosts.Remove(identity); _portalGhostColliders.Remove(identity.NetId); }
             EvacuateCarried(identity);
             InterestRemove(identity.NetId);
             _handedOff.Remove(identity.NetId);
@@ -1822,6 +1829,9 @@ namespace Nebula
                         if (SeamDistance(c, pos, n) > margin) continue;
                         Ghost(e, owner, ref targets, now);
                     }
+                    // A body in the band of a portal face is ghosted to the worker that owns the other side, to be held there as a proxy only
+                    // (docs/portals.md D29, D30). Never a neighbour in the registry's sense: the relation is the portal's.
+                    if (_portalPhysics != null) GhostAcrossPortals(e, ref targets, now);
                     // A large entity is measured by its body too: ghosted wherever its extent comes within the margin
                     // of a container another worker owns, in addition to wherever its root does (docs/entity-extents.md).
                     if (e.TryGetExtentForBand(tick, out var extent)) GhostByExtent(e, c, extent, margin, ref targets, now);
@@ -2161,7 +2171,7 @@ namespace Nebula
             !authoritative || !peerKnown || now - lastSeen > lingerSeconds;
 
         /// <summary>Make sure <paramref name="owner"/> holds a ghost of <paramref name="e"/> and refresh its band timestamp.</summary>
-        private void Ghost(NetworkIdentity e, string owner, ref Dictionary<string, float> targets, float now)
+        private void Ghost(NetworkIdentity e, string owner, ref Dictionary<string, float> targets, float now, bool viaPortal = false)
         {
             if (!_workerPeersById.TryGetValue(owner, out var peer) || !peer.HelloReceived) return;
             if (targets == null && !_ghostTargets.TryGetValue(e.NetId, out targets))
@@ -2171,9 +2181,11 @@ namespace Nebula
             }
             if (!targets.ContainsKey(owner))
             {
-                SendSpawn(peer, EntitySpawnMsg.From(e, _scratch), MsgId.GhostSpawn);
+                var spawn = EntitySpawnMsg.From(e, _scratch);
+                if (viaPortal) spawn.Flags |= EntityFlags.PortalGhost;
+                SendSpawn(peer, spawn, MsgId.GhostSpawn);
                 GhostsSent++;
-                NebulaLog.Debugf($"ghost {e} -> {owner}");
+                NebulaLog.Debugf($"ghost {e} -> {owner}{(viaPortal ? " (across a portal)" : "")}");
             }
             targets[owner] = now;
         }
@@ -2525,8 +2537,10 @@ namespace Nebula
         }
 
         /// <summary>Fallback for a bare Rigidbody with no <see cref="NetworkRigidbody"/> (which does this itself, plus velocity).</summary>
-        private static void SetGhostPhysics(NetworkIdentity e, bool ghost)
+        private void SetGhostPhysics(NetworkIdentity e, bool ghost)
         {
+            // A ghost held across a portal is no body here; once it is this worker's own it is one again.
+            if (!ghost && e.IsPortalGhost) ReleaseFromPortalProxy(e);
             if (e.GetComponent<NetworkRigidbody>() != null) return;
             var rb = e.GetComponent<Rigidbody>();
             if (rb != null) rb.isKinematic = ghost;
@@ -2604,6 +2618,7 @@ namespace Nebula
             ApplySpawnData(identity, msg, msg.Epoch);
             EnsureInterpolator(identity).Push(CurrentTick, identity.Container, identity.LocalPosition, identity.LocalRotation, identity.Motion.Velocity);
             SetGhostPhysics(identity, true);
+            if ((msg.Flags & EntityFlags.PortalGhost) != 0) HoldAsPortalProxy(identity);
             _entities[identity.NetId] = identity;
             if (msg.OwnerClientId != 0 && !_players.ContainsKey(msg.OwnerClientId)) _players[msg.OwnerClientId] = identity;
             identity.gameObject.SetActive(true);
@@ -3793,6 +3808,9 @@ namespace Nebula
                 case MsgId.SpawnPlayer: OnSpawnPlayer(peer, SpawnPlayerMsg.Read(r)); break;
                 case MsgId.InstancePrepare: OnInstancePrepare(peer, InstancePreparationMsg.Read(r)); break;
                 case MsgId.InstanceReady: OnInstanceReady(peer, InstancePreparationMsg.Read(r)); break;
+                case MsgId.PortalWarm: OnPortalWarm(peer, PortalWarmMsg.Read(r)); break;
+                case MsgId.PortalAdjacency: OnPortalAdjacency(peer, PortalAdjacencyMsg.Read(r)); break;
+                case MsgId.PortalHandoff: OnPortalHandoff(peer, PortalHandoffMsg.Read(r)); break;
                 case MsgId.DespawnPlayer: OnDespawnPlayer(peer, DespawnPlayerMsg.Read(r)); break;
                 case MsgId.ClientInput:
                 case MsgId.ForwardInput: OnClientInput(peer, ClientInputMsg.Read(r)); break;

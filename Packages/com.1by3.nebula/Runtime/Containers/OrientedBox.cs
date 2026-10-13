@@ -3,9 +3,9 @@ using System;
 namespace Nebula
 {
     /// <summary>
-    /// A box turned by a rotation, tested without Unity types so the plain .NET test runner covers it. An
-    /// <see cref="InstanceBoundary"/> uses it for its crossing volume: the box's local extents, turned with the
-    /// boundary, so a doorway tilted by sloping or curved ground has a volume that follows it.
+    /// A box turned by a rotation, tested without Unity types so the plain .NET test runner covers it. It was the crossing volume of the
+    /// instance boundary that <see cref="Portal"/> replaced; the portal tests its aperture in the face's own axes
+    /// (<c>docs/portals.md</c> D38), and this stays the pure-C# oriented-box primitive that the face-relative tests of the later milestones build on.
     /// </summary>
     internal static class OrientedBox
     {

@@ -332,87 +332,6 @@ namespace Nebula
             return client.LastScope;
         }
 
-        // ------------------------------------------------------------------------------------------- host views
-
-        /// <summary>
-        /// Most scopes a client's pawn has left that the gateway remembers where it stood in. Only the last one is ever
-        /// observed; the earlier ones are what lets the scope before it be observed again after the pawn goes back
-        /// (an instance entered from another instance, and left again).
-        /// </summary>
-        public const int MaxHostViews = 4;
-
-        /// <summary>A scope a pawn stood in and where, in absolute coordinates of that scope.</summary>
-        private struct HostView
-        {
-            public ulong Scope;
-            public double X, Y, Z;
-            /// <summary>The frame with regions of its own the pawn stood in (a planet that is a carrier), 0 for none, and where in it.</summary>
-            public ulong FrameKey;
-            public double FX, FY, FZ;
-        }
-
-        /// <summary>
-        /// Record where the pawn stands, and when its scope has changed since the last record, where it stood before
-        /// (docs/scope-activation.md D22). Going back to a scope the client left drops that scope and every one it went
-        /// on to from there, so the views always read as the path back the way it came. Runs on every collection,
-        /// whatever any scope's options, and sends nothing.
-        /// </summary>
-        private static void TrackHostViews(ClientConn client, ulong scope, double x, double y, double z, ulong frameKey = 0, double fx = 0, double fy = 0, double fz = 0)
-        {
-            if (client.HasPlaced && client.Placed.Scope != scope)
-            {
-                var views = client.HostViews;
-                int back = -1;
-                for (int i = views.Count - 1; i >= 0; i--)
-                    if (views[i].Scope == scope) { back = i; break; }
-                if (back >= 0) views.RemoveRange(back, views.Count - back);
-                else
-                {
-                    if (views.Count >= MaxHostViews) views.RemoveAt(0);
-                    views.Add(client.Placed);
-                }
-            }
-            client.HasPlaced = true;
-            client.Placed = new HostView { Scope = scope, X = x, Y = y, Z = z, FrameKey = frameKey, FX = fx, FY = fy, FZ = fz };
-        }
-
-        /// <summary>
-        /// The host whose rows this client keeps: the scope its pawn came from immediately before this one, when this
-        /// scope is an <see cref="InstanceContainerInfo.ObserveHost"/> scope. False for any other scope, for a scope
-        /// that cannot be described, and for a client that has not come from anywhere on this connection.
-        /// </summary>
-        private static bool TryGetObservedHost(ClientConn client, Container scope, out HostView host)
-        {
-            host = default;
-            if (scope == null || scope.Instance == null || !scope.Instance.ObserveHost || client.HostViews.Count == 0) return false;
-            host = client.HostViews[client.HostViews.Count - 1];
-            return host.Scope != scope.InstanceId;
-        }
-
-        /// <summary>
-        /// The carrier a host row is fixed in (its parent chain ends in a carried container's box), and that carrier's
-        /// own carriers out to the root, into <see cref="ClientConn.HostCarriers"/> (NEB-426). A root row has none.
-        /// </summary>
-        private void CollectHostCarriers(ClientConn client, string rowId)
-        {
-            string id = rowId;
-            for (int up = 0; up <= _ownershipById.Count && _ownershipById.TryGetValue(id, out var row); up++)
-            {
-                if (!row.HasPlacement || row.Placement.IsRoot) return;
-                if (ContainerRegistry.IsDynamicId(row.Placement.ParentId))
-                {
-                    ulong carrier = ContainerRegistry.CarrierNetIdOf(row.Placement.ParentId);
-                    for (int hops = 0; carrier != 0 && hops <= _entities.Count && client.HostCarriers.Add(carrier); hops++)
-                    {
-                        if (!_entities.TryGetValue(carrier, out var rec) || !TryCarrierOf(rec.Container, out ulong next, out _)) return;
-                        carrier = next;
-                    }
-                    return;
-                }
-                id = row.Placement.ParentId;
-            }
-        }
-
         private readonly List<ClientConn> _scopeRevokeScratch = new List<ClientConn>();
 
         /// <summary>
@@ -420,7 +339,8 @@ namespace Nebula
         /// see it in its new scope lose it (and whatever rides in it) before this entity's next message is relayed,
         /// and before the destination container's row is sent to anyone — an onlooker watching a ship leave the
         /// planet is never told which chunk of space it went to (D13). The ones that may (its crew, whose own scope
-        /// follows the ship) keep it with no despawn at all.
+        /// follows the ship, and a client looking through the portal it went through from inside the near window,
+        /// <c>docs/portals.md</c> D19) keep it with no despawn at all.
         /// </summary>
         private void RevokeAcrossScope(EntityRecord rec)
         {

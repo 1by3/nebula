@@ -174,13 +174,14 @@ namespace Nebula.Tests
         }
 
         [Test]
-        public void TheClientDrawsATurnedInstanceTurnedBehindItsDoorAndTheWorldTurnedBackFromInside()
+        public void TheClientDrawsATurnedInstanceTurnedBehindItsDoorAndFromInsideItAndTheCameraAreTurnedNotTheWorld()
         {
             var pawn = PawnAtTheDoor(out var chunk);
             var hall = TurnedHall();
             Assert.IsTrue(InstancePoses.TryGet(hall.InstanceId, out _, out _), "the client learned the pose");
             var door = ContainerRegistry.ToFrame(Door, _space.InstanceId);
             var hallAt = hall.transform.position;
+            InstanceScenes.SetView(_space.InstanceId); // the pawn stands in the world
             InstanceScenes.KeepDrawn(hall.InstanceId);
             try
             {
@@ -195,24 +196,31 @@ namespace Nebula.Tests
                 Assert.AreEqual(hallAt, hall.transform.position, "put back after drawing");
                 Assert.AreEqual(Quaternion.identity, hall.transform.rotation);
 
-                // From inside: the view is the instance; the world outside is drawn turned back about the door.
+                // From inside: the view is the instance, so the instance is drawn turned about its door and the camera with it; the world
+                // outside is the anchor and is not moved at all (docs/portals.md D41), so its sky and sun stay upright to it.
                 pawn.SetContainer(hall, reparent: false);
                 InstanceScenes.SetView(hall.InstanceId);
-                var outsidePoint = new GameObject("outside marker");
-                outsidePoint.transform.SetParent(chunk.transform, false);
-                outsidePoint.transform.position = door + Turned * new Vector3(0f, 0f, 5f); // 5 m out of the door, in the door's axes
+                Assert.AreEqual(_space.InstanceId, Portals.Anchor, "the anchor is the world the pawn walked in from");
+                var camera = new GameObject("camera").AddComponent<Camera>();
+                _objects.Add(camera.gameObject);
+                var cameraAt = door + new Vector3(0f, 0f, 5f); // 5 m along the instance's own +z from the door, in its upright space
+                camera.transform.SetPositionAndRotation(cameraAt, Quaternion.identity);
+                var chunkAt = chunk.transform.position;
+                var cameras = new List<Camera> { camera };
+                DrawnScopes.Begin(cameras, Vector3.zero);
                 try
                 {
-                    var chunkAt = chunk.transform.position;
-                    PhysicsFramesDraw(() =>
-                    {
-                        Assert.Less((outsidePoint.transform.position - (door + new Vector3(0f, 0f, 5f))).magnitude, 2e-3f,
-                            "5 m out of the door is drawn 5 m along the instance's own +z from it");
-                        Assert.AreEqual(hallAt, hall.transform.position, "the instance itself is drawn as it is");
-                    });
-                    Assert.AreEqual(chunkAt, chunk.transform.position, "put back after drawing");
+                    Assert.AreEqual(chunkAt, chunk.transform.position, "the anchor's roots are never moved");
+                    Assert.Less((hall.transform.position - (door + Turned * (hallAt - door))).magnitude, 1e-3f, "the instance is drawn turned about its door");
+                    Assert.Less((camera.transform.position - (door + Turned * new Vector3(0f, 0f, 5f))).magnitude, 2e-3f,
+                        "5 m along the instance's +z from the door is 5 m out of the door in the world's axes");
+                    Assert.Less(Quaternion.Angle(Turned, camera.transform.rotation), 0.01f, "and the camera looks the way the instance does");
                 }
-                finally { Object.DestroyImmediate(outsidePoint); }
+                finally { DrawnScopes.End(); }
+                Assert.AreEqual(chunkAt, chunk.transform.position, "put back after drawing");
+                Assert.AreEqual(hallAt, hall.transform.position);
+                Assert.AreEqual(cameraAt, camera.transform.position);
+                Assert.AreEqual(Quaternion.identity, camera.transform.rotation);
             }
             finally
             {
@@ -224,9 +232,9 @@ namespace Nebula.Tests
         /// <summary>The client's drawing pass around <paramref name="check"/>, as cameras drawing run it.</summary>
         private static void PhysicsFramesDraw(Action check)
         {
-            InstanceViews.Begin(null, Vector3.zero);
+            DrawnScopes.Begin(null, Vector3.zero);
             try { check(); }
-            finally { InstanceViews.End(); }
+            finally { DrawnScopes.End(); }
         }
     }
 }

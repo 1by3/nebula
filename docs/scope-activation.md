@@ -9,7 +9,7 @@ transfers across scopes (§11, no wire change). Decisions made without asking ar
 ## 0. Problem
 
 Before this item there was exactly one way to bring a private world into being: a `NebulaWorker` had to call
-`PrepareInstance(template, key, origin)` while a player was already standing next to an `InstanceBoundary` in the
+`PrepareInstance(template, key, origin)` while a player was already standing next to an `InstanceBoundary` (a `Portal` since NEB-428) in the
 public world. That shape rules out everything that decides where a player should go *before* the player is anywhere:
 
 - a matchmaking service that wants the raid instance to exist before it tells four clients to connect;
@@ -17,7 +17,7 @@ public world. That shape rules out everything that decides where a player should
 - a login flow that must put a returning player back in the scope their last save names;
 - a second gateway that must send its player to the *same* world the first gateway's player went to.
 
-`InstanceBoundary` also hard-codes the policy (a trigger volume, a key from the owner's identity) into the mechanism
+`InstanceBoundary` (since NEB-428: `Portal`, whose party, admission and observation hooks keep the policy out of the mechanism) also hard-codes the policy (a trigger volume, a key from the owner's identity) into the mechanism
 (make the containers exist). The mechanism is what other things need.
 
 The location contract (`docs/location-contract.md`) already gave a scope a name that every role agrees on: the
@@ -75,8 +75,6 @@ Unity.
 ```csharp
 new ScopeDefinition {
     Kind = ScopeKind.Parts,
-    ObservePublic = true,
-    ObservationCenter = new Vector3(500, 0, 0), ObservationSize = new Vector3(60, 30, 60),
     Parts = {
         new ScopePart { PartId = "interior", Center = new Vector3(500, 0, 0), Size = new Vector3(20, 10, 20),
                         ContentResource = "Instances/Room" },
@@ -226,7 +224,7 @@ whole HTTP surface. No new endpoint, no new authentication path:
 curl -X POST http://orchestrator:7080/api/control-plane \
   -H 'X-Nebula-Token: <mesh token>' -H 'Content-Type: application/json' \
   -d '{"ops":[{"op":"ActivateScope","scopeKey":"raid/molten-core#run-4812","workerId":"","requester":"matchmaker",
-       "definition":"{\"kind\":\"parts\",\"parts\":[{\"partId\":\"interior\",\"center\":[500,0,0],\"size\":[20,10,20],\"content\":\"Instances/Room\"}],\"observePublic\":false,\"observationCenter\":[0,0,0],\"observationSize\":[0,0,0],\"payload\":\"\"}"}]}'
+       "definition":"{\"kind\":\"parts\",\"parts\":[{\"partId\":\"interior\",\"center\":[500,0,0],\"size\":[20,10,20],\"content\":\"Instances/Room\"}],\"payload\":\"\"}"}]}'
 ```
 
 The definition travels as a JSON document inside a JSON string, for the same reason `InstanceContainerInfo` travels
@@ -413,8 +411,8 @@ clients follow it. Both are tested.
 **Superseded by `docs/portals.md` (NEB-427).** `ObserveHost` and the per-connection host history (`HostViews`) are
 replaced by a portal's windows: the near side's window of an open link keeps the host's rows and entities around
 the door, from link records rather than connection history, so the limits in §12.3 (a reconnect inside, entities not
-sent) go (portals D20, D24). NEB-431 maps `ObserveHost` onto that window; NEB-436 removes this path. The section is
-kept as the record of what shipped.
+sent) go (portals D20, D24). **Removed in NEB-431:** `ObserveHost`, `ObservePublic`, `HostViews`, `HostCarriers` and the observation box of a scope definition no longer exist, with no mapping; a game that
+kept its host loaded declares its portal's observers instead (the window brings the host's rows and entities, and the host's carriers). The section is kept as the record of what shipped.
 
 ### 12.1 What went wrong
 
@@ -438,7 +436,7 @@ bookkeeping runs for every client, sends nothing, and changes nothing unless the
 
 **D23 The window is the one the pawn had at the boundary.** While the pawn's scope has `ObserveHost`, the gateway adds
 one window to the client's rows: the pawn's own window (`NearCells` x cell size on each side), centred on the last
-host-side position, queried in the host's scope only. An `InstanceBoundary` crossing keeps the absolute pose, so that
+host-side position, queried in the host's scope only. A `Portal` crossing (an `InstanceBoundary` crossing before NEB-428) keeps the absolute pose, so that
 is the boundary. It does not follow the occupant through the instance, so its cost is fixed at what the client already
 held when it crossed, at most one window's rows. It is collected after the client's own windows and foci and counts
 against the same `MaxContainerRows` budget, so exhausting the budget can only withhold host ground, never the rows the
@@ -494,7 +492,7 @@ off, every lease row, scope definition and client message is byte-identical to b
 
 D27 draws exactly one private scope on a client: the local pawn's. `InstanceScenes.SetView` hides the static content
 of every other prepared instance part, and `NebulaChunks.SetView` the chunks of every other scoped grid. A player at
-an open `InstanceBoundary` therefore sees only their own side. The other side is prepared and resident (the crossing's
+an open `Portal` therefore sees only their own side until windows land (NEB-431, `docs/portals.md` D20). The other side is prepared and resident (the crossing's
 destination, or the host kept by `ObserveHost`), but not drawn, and the crossing visibly swaps one scene for the other.
 
 ### 13.2 Decisions
@@ -506,7 +504,7 @@ others. A withdrawal with no request returns false and changes nothing. `Instanc
 for the public world (always), the pawn's scope, and kept scopes. The requests live in `InstanceScenes`, which already
 owns the view, and `NebulaChunks` reads them: one rule decides both kinds of content.
 
-**D30 The view is the union.** A scope is drawn when it is the public world, the pawn's scope, or kept. `SetView`
+**D30 The view is the union.** A scope is drawn when it is the public world, the pawn's scope, or kept (*since NEB-435, also when the client looks through an open link into it: `docs/portals.md` D40*). `SetView`
 applies that to static content and chunks alike; the first and last request apply it to that scope's content at once.
 Content created while a scope is kept starts drawn, by the same rule, in `Prepare` and in `NebulaChunks` after
 `Loaded`. When the pawn changes scope, the scope it left stays drawn if it is kept, so a doorway looks the same from both

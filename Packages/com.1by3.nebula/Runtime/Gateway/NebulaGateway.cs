@@ -67,9 +67,12 @@ namespace Nebula
             public readonly Dictionary<ulong, ushort> ViewSeq = new Dictionary<ulong, ushort>();
             /// <summary>Container rows this client has been sent, so ownership travels as a delta and not as the lease table.</summary>
             public readonly HashSet<string> KnownContainers = new HashSet<string>();
+            /// <summary>The portals and links this client has been sent, with the version of the record it holds (<c>docs/portals.md</c> D45).</summary>
+            public readonly Dictionary<ulong, int> KnownPortals = new Dictionary<ulong, int>();
+            public readonly Dictionary<ulong, int> KnownPortalLinks = new Dictionary<ulong, int>();
             /// <summary>An interest limit this client ran into (foci, box size, container rows) has been reported; said once, not four times a second.</summary>
             public bool InterestLimitWarned;
-            /// <summary>Frames (<see cref="RegionKeys.FrameKeyOf"/>) this client is looking into from outside their box, held until it is a little further than <see cref="InterestSettings.FrameApproachMargin"/>, so a pawn hovering at the margin does not flap.</summary>
+            /// <summary>Frames (<see cref="RegionKeys.FrameKeyOf"/>) this client is looking into from outside their box, held until it is a little further than the frame's <see cref="Container.FrameApproachMargin"/>, so a pawn hovering at the margin does not flap.</summary>
             public readonly HashSet<ulong> ApproachFrames = new HashSet<ulong>();
             /// <summary>The far tier (NEB-388): entities this client sees as markers beyond the normal radius, never also in <see cref="Visible"/>.</summary>
             public readonly HashSet<ulong> FarHeld = new HashSet<ulong>();
@@ -140,21 +143,18 @@ namespace Nebula
             /// </summary>
             public readonly Dictionary<string, double> RowsLeaving = new Dictionary<string, double>();
             /// <summary>
-            /// The scopes this client's pawn has left, with where it last stood in each, oldest first and at most
-            /// <see cref="NebulaGateway.MaxHostViews"/>. Going back to one of them drops it and every later one. The
-            /// last is the host an <see cref="InstanceContainerInfo.ObserveHost"/> scope keeps in the client's view
-            /// (docs/scope-activation.md §12).
+            /// The windows this client is looking through right now (<c>docs/portals.md</c> D20, D22): the other side of each open or closing
+            /// link it may look through and stands in the window of, nearest first, at most <see cref="NebulaGateway.MaxPortalWindows"/>.
+            /// Recomputed from the link records at every evaluation and whenever a link changes, so a reconnect needs no history.
             /// </summary>
-            public readonly List<HostView> HostViews = new List<HostView>();
+            public readonly List<ClientWindow> Windows = new List<ClientWindow>();
             /// <summary>
-            /// The carriers the observed host's rows are fixed in, out to their root (a planet whose ground holds the
-            /// door): kept in this client's set while it observes the host, so those rows can be built (NEB-426).
+            /// The carriers the container rows of those windows are fixed in, out to the root of their chain (a planet whose ground holds the
+            /// door), kept in this client's set while it looks through the windows, so those rows can be built (NEB-426, <c>docs/portals.md</c> D20).
             /// </summary>
-            public readonly HashSet<ulong> HostCarriers = new HashSet<ulong>();
-            /// <summary>Whether <see cref="Placed"/> has been recorded.</summary>
-            public bool HasPlaced;
-            /// <summary>The pawn's scope and absolute position the last time its scope resolved: what a scope change pushes onto <see cref="HostViews"/>.</summary>
-            public HostView Placed;
+            public readonly HashSet<ulong> WindowCarriers = new HashSet<ulong>();
+            /// <summary>The same windows as boxes in the frame of a planet they reach into, where the ground's entities are bucketed (<see cref="FrameWindow"/>).</summary>
+            public readonly List<FrameWindow> FrameWindows = new List<FrameWindow>();
             /// <summary>
             /// The accepted version from this connection's Hello, echoed in the welcome.
             /// The gateway accepts protocol 18 only.
@@ -487,6 +487,8 @@ namespace Nebula
         private readonly HashSet<string> _ownRegionFrames = new HashSet<string>(StringComparer.Ordinal);
         /// <summary>Carrier net ids whose box is a physics frame with regions of its own (a planet).</summary>
         private readonly HashSet<ulong> _ownRegionCarriers = new HashSet<ulong>();
+        /// <summary>The approach margin (<see cref="ContainerPlacement.FrameApproachMargin"/>) each lease row names, for the frames in <see cref="_ownRegionFrames"/> that opted in.</summary>
+        private readonly Dictionary<string, float> _approachMargins = new Dictionary<string, float>(StringComparer.Ordinal);
 
         /// <summary>Whether a reference names a physics frame with regions of its own (<see cref="FrameInterestMode.OwnRegions"/>).</summary>
         internal bool IsOwnRegionsFrame(ContainerRef reference)
@@ -537,9 +539,10 @@ namespace Nebula
         /// Where a position of <paramref name="container"/> is for interest management, and in which region space: the
         /// innermost physics frame with regions of its own it stands in (frame-local coordinates, its key in
         /// <paramref name="frameKey"/>), or its scope (absolute coordinates, key 0). Carriers on the way out are
-        /// composed as <see cref="WorldPosition"/> composes them.
+        /// composed as <see cref="WorldPosition"/> composes them. In double: a scope's absolute coordinates are 10⁸ m out in a
+        /// star system, where a float is 8 m apart (<see cref="AbsoluteOf"/>).
         /// </summary>
-        internal Vector3 RegionSpaceOf(ContainerRef container, Vector3 local, out ulong frameKey)
+        internal Double3 RegionSpaceOf(ContainerRef container, Vector3 local, out ulong frameKey)
         {
             frameKey = 0;
             for (int hops = 0; hops <= _entities.Count + _ownershipById.Count; hops++)
@@ -566,13 +569,37 @@ namespace Nebula
         /// shifted frame, so the frame's origin is added back here, exactly as the worker does. On a gateway of its
         /// own the frame never moves and this is the container's world position (NEB-337).
         /// </para>
+        /// <para>
+        /// Kept in double. A root runtime container (an instance's part, a scoped grid's chunk) is placed from its lease row's absolute centre,
+        /// so the point is that centre plus the local offset, composed in double; a float is 8 m apart 10⁸ m out, and a point narrowed there
+        /// put a player 1.6 m inside a door on the wrong side of a window's face (<c>docs/portals.md</c> D20, as built). Any other container goes
+        /// through its transform as before, which is precise where a worker in the same process keeps its frame near it.
+        /// </para>
         /// </summary>
-        private static Vector3 AbsoluteOf(Container c, Vector3 local) =>
-            ContainerRegistry.ToAbsolutePrecise(c.ToWorld(local), c.InstanceId).ToVector3();
+        private Double3 AbsoluteOf(Container c, Vector3 local) =>
+            TryRootCenter(c, out var center) ? center + c.Rotation * local : ContainerRegistry.ToAbsolutePrecise(c.ToWorld(local), c.InstanceId);
 
         /// <summary>The inverse of <see cref="AbsoluteOf"/>: an absolute position of the container's scope in its local space.</summary>
-        private static Vector3 LocalOf(Container c, Vector3 absolute) =>
-            c.ToLocal(ContainerRegistry.ToFrame(Double3.From(absolute), c.InstanceId));
+        private Vector3 LocalOf(Container c, Double3 absolute) =>
+            TryRootCenter(c, out var center) ? Quaternion.Inverse(c.Rotation) * (absolute - center).ToVector3() : c.ToLocal(ContainerRegistry.ToFrame(absolute, c.InstanceId));
+
+        /// <summary>
+        /// A root runtime container's absolute centre, in double, from its lease row: the placement's centre when the row carries one, else its box's
+        /// (a float carries that one exactly, or the row would carry a placement). The container's transform stands there, so a local position is an offset from it.
+        /// </summary>
+        private bool TryRootCenter(Container c, out Double3 center)
+        {
+            center = default;
+            if (c == null || !c.IsRuntime || !_ownershipById.TryGetValue(c.ContainerId, out var row) || !row.HasBounds) return false;
+            if (row.HasPlacement)
+            {
+                if (!row.Placement.IsRoot) return false;
+                center = row.Placement.Center;
+                return true;
+            }
+            center = Double3.From(row.BoundsCenter);
+            return true;
+        }
 
         /// <summary>
         /// An absolute box of a scope in the frame the container registry holds that scope's boxes in, for a registry
@@ -581,24 +608,28 @@ namespace Nebula
         /// </summary>
         private static Bounds InRegistryFrame(Bounds absolute, ulong instanceId) => ContainerRegistry.ToFrame(absolute, instanceId);
 
+        /// <summary><see cref="InRegistryFrame(Bounds, ulong)"/> for a box whose absolute centre is held in double, which is narrowed only once it is in the registry's frame.</summary>
+        private static Bounds InRegistryFrame(Double3 center, Vector3 size, ulong instanceId) => new Bounds(ContainerRegistry.ToFrame(center, instanceId), size);
+
         /// <summary>
         /// The same point one region space further out: from a frame with regions of its own to the space around it,
         /// through the carrier that drives it (or the fixed frame's own placement). False in the scope's own space.
         /// </summary>
-        private bool TryLiftOut(ref ContainerRef frame, ref Vector3 position, ref ulong frameKey)
+        private bool TryLiftOut(ref ContainerRef frame, ref Double3 position, ref ulong frameKey)
         {
             if (frameKey == 0) return false;
             if (frame.IsDynamic)
             {
                 if (!_entities.TryGetValue(frame.NetId, out var carrier)) return false;
-                var local = carrier.LastSpawn.LocalPosition + carrier.LastSpawn.LocalRotation * Vector3.Scale(carrier.LastSpawn.LocalScale, position);
+                // Frame-local, so small: a float holds it.
+                var local = carrier.LastSpawn.LocalPosition + carrier.LastSpawn.LocalRotation * Vector3.Scale(carrier.LastSpawn.LocalScale, position.ToVector3());
                 position = RegionSpaceOf(carrier.Container, local, out frameKey);
                 frame = FrameOfRecordSpace(carrier.Container, frameKey);
                 return true;
             }
             var c = ContainerRegistry.Resolve(frame);
             if (c == null) return false;
-            position = AbsoluteOf(c, position);
+            position = AbsoluteOf(c, position.ToVector3());
             frameKey = 0;
             frame = ContainerRef.None;
             return true;
@@ -649,21 +680,19 @@ namespace Nebula
         {
             if (!client.Welcomed) return false;
             if (entity.NetId == client.PawnNetId) return true;
-            // A carrier the observed host's rows are fixed in (NEB-426): the client may hold those rows, so it may hold
-            // the body they are fixed in. Nothing it carries comes with it.
-            if (client.HostCarriers.Count > 0 && client.HostCarriers.Contains(entity.NetId)) return true;
+            // A carrier the rows of a window the client looks through are fixed in (NEB-426): the client may hold those rows, so it may
+            // hold the body they are fixed in. Nothing it carries comes with it.
+            if (client.WindowCarriers.Count > 0 && client.WindowCarriers.Contains(entity.NetId)) return true;
             var target = ScopeContainer(entity.Container);
             // Unknown runtime containers must never fall back to public visibility.
             if (target == null && !entity.Container.IsNone) return false;
-            var source = _entities.TryGetValue(client.PawnNetId, out var pawn) ? ScopeContainer(pawn.Container) : null;
             // The client's scope, which stays the last one it was known to be in while its pawn's carrier chain is
             // being re-resolved, rather than becoming the public world (docs/scope-activation.md D16).
             ulong scope = ScopeOfClient(client);
-            if ((target?.InstanceId ?? 0) == scope) return true;
-            if (target != null && target.InstanceId != 0) return false;
-            var view = source?.Instance;
-            return view != null && view.ObservePublic && new Bounds(view.ObservationCenter, view.ObservationSize)
-                .Contains(WorldPosition(entity.Container, entity.LastSpawn.LocalPosition));
+            ulong targetScope = target?.InstanceId ?? 0;
+            if (targetScope == scope) return true;
+            // Another scope: only through a window of an open link, decided from the link records alone (docs/portals.md D21).
+            return client.Windows.Count > 0 && ObservableThroughWindow(client, entity, targetScope);
         }
 
         /// <summary>
@@ -1128,20 +1157,39 @@ namespace Nebula
             _roster.Observe(ControlPlane, _declaredDead);
             for (int i = 0; i < _declaredDead.Count; i++) DropDeclaredDeadWorker(_declaredDead[i]);
 
-            ContainerRegistry.SyncRuntime(ControlPlane.Leases);
+            IndexLeases(ControlPlane.Leases);
+            // Ownership is a per-client delta now (design §8): only the rows a client already holds are refreshed,
+            // and a client learns of a new container when something it can see needs it.
+            RefreshOwnership();
+            // Leases moved, so a region may belong to a different worker: re-resolve, and let the subscription
+            // pass link the new owner before the link linger lets the old one go.
+            _regionWorkers.Clear();
+            _subscriptionsDirty = true;
+        }
+
+        /// <summary>
+        /// Mirror the lease rows: the runtime containers they describe, each row's owner, and the frames with regions of their own
+        /// (<c>docs/container-tree.md</c> D18). A carried frame (a planet that is a carrier) is known by its dynamic id whether or not
+        /// this process's registry also holds its box: a network gateway of its own never does, but one that shares a process with a
+        /// worker (the Editor's Multiplayer Play Mode loop, any in-process host) does, and must still treat it as the frame it is.
+        /// </summary>
+        private void IndexLeases(IReadOnlyList<LeaseInfo> leases)
+        {
+            ContainerRegistry.SyncRuntime(leases);
             _ownership.Clear();
             _ownershipById.Clear();
             _ownRegionFrames.Clear();
             _ownRegionCarriers.Clear();
+            _approachMargins.Clear();
             _frameExtents.Clear();
-            foreach (var lease in ControlPlane.Leases)
+            foreach (var lease in leases)
             {
-                // Dynamic containers have no registry entry here (the gateway holds no entities); their leases are
+                // Dynamic containers have no registry entry on a gateway of its own (it holds no entities); their leases are
                 // still relayed so clients that do hold the carrier can show who is pinned to it.
                 var c = ContainerRegistry.FindById(lease.ContainerId);
-                bool dynamic = c == null && ContainerRegistry.IsDynamicId(lease.ContainerId);
-                if (c == null && !dynamic) continue;
-                var w = ControlPlane.FindWorker(lease.WorkerId);
+                bool carried = ContainerRegistry.IsDynamicId(lease.ContainerId);
+                if (c == null && !carried) continue;
+                var w = ControlPlane?.FindWorker(lease.WorkerId);
                 ushort idx = w != null ? (ushort)w.WorkerIndex : ushort.MaxValue;
                 string owner = LeaseState.IsOwning(lease.State) ? lease.WorkerId : "";
                 if (c != null) ContainerRegistry.ApplyLease(lease.ContainerId, owner, idx, lease.Epoch, lease.State);
@@ -1150,18 +1198,15 @@ namespace Nebula
                 if (lease.OwnPhysicsFrame && lease.FrameInterest == FrameInterestMode.OwnRegions)
                 {
                     _ownRegionFrames.Add(lease.ContainerId);
-                    if (dynamic) _ownRegionCarriers.Add(ContainerRegistry.CarrierNetIdOf(lease.ContainerId));
+                    if (lease.FrameApproachMargin > 0f) _approachMargins[lease.ContainerId] = lease.FrameApproachMargin;
+                    // By its id, not by whether the registry here resolves it: in a shared process it does, and a planet left out of
+                    // this set would be an ordinary carrier to interest, its ground's windows would find no frame and a client looking
+                    // out through a door on it would be sent none of it (NEB-431).
+                    if (carried) _ownRegionCarriers.Add(ContainerRegistry.CarrierNetIdOf(lease.ContainerId));
                 }
                 _ownership.Add(entry);
                 if (!string.IsNullOrEmpty(entry.ContainerId)) _ownershipById[entry.ContainerId] = entry;
             }
-            // Ownership is a per-client delta now (design §8): only the rows a client already holds are refreshed,
-            // and a client learns of a new container when something it can see needs it.
-            RefreshOwnership();
-            // Leases moved, so a region may belong to a different worker: re-resolve, and let the subscription
-            // pass link the new owner before the link linger lets the old one go.
-            _regionWorkers.Clear();
-            _subscriptionsDirty = true;
         }
 
         // ---------------------------------------------------------------------------------------- transport
@@ -1252,6 +1297,8 @@ namespace Nebula
                 case MsgId.EntityForget: OnEntityForget(w, EntityForgetMsg.Read(r)); break;
                 case MsgId.EntityRedirect: OnEntityRedirect(w, EntityRedirectMsg.Read(r)); break;
                 case MsgId.SyncAudience: OnSyncAudience(w, SyncAudienceMsg.Read(r)); break;
+                case MsgId.Portals: OnPortals(w, PortalsMsg.Read(r)); break;
+                case MsgId.PortalLinks: OnPortalLinks(w, PortalLinksMsg.Read(r)); break;
                 default: NebulaLog.Warn($"gateway got unexpected {id} from worker {w.WorkerId}"); break;
             }
         }
@@ -1285,6 +1332,7 @@ namespace Nebula
                 _dialing.Remove(w.WorkerId);
             }
             NebulaLog.Warn($"worker {w.WorkerId} disconnected; dropping its entities");
+            DropWorkerPortals(w.Index);
             _scratchIds.Clear();
             foreach (var rec in _entities.Values) if (rec.OwnerWorkerIndex == w.Index) _scratchIds.Add(rec.NetId);
             foreach (var netId in _scratchIds)
@@ -1609,6 +1657,8 @@ namespace Nebula
             // A scope or carrier change invalidates a decision that was made on the old one; a plain move only
             // has to be rebucketed, and only when its region key actually changed.
             if (changedCarrier) RelinkCarrier(rec);
+            // Where it is now, in its new scope's space, before anybody is asked: a window decides on the record's place (docs/portals.md D21).
+            if (changedScope) RefreshAbsolute(rec);
             // Another scope: the observers that may no longer see it (an onlooker on the planet a ship just left)
             // lose it now, before anything about the destination is sent, so none of them is ever told the other
             // scope's container exists. The ones that stay (the ship's own crew) are re-authorized in the new
@@ -1724,7 +1774,7 @@ namespace Nebula
             if (c.PawnNetId == 0 || !_entities.TryGetValue(c.PawnNetId, out var rec)) return false;
             var root = RootOf(rec);
             // In the scope's own space: a pawn on a planet with regions of its own has planet-local Abs coordinates.
-            position = root.FrameKey == 0 ? new Vector3((float)root.AbsX, (float)root.AbsY, (float)root.AbsZ) : WorldPosition(root.Container, root.LastSpawn.LocalPosition);
+            position = root.FrameKey == 0 ? new Vector3((float)root.AbsX, (float)root.AbsY, (float)root.AbsZ) : WorldPosition(root.Container, root.LastSpawn.LocalPosition).ToVector3();
             return true;
         }
 
@@ -1742,7 +1792,7 @@ namespace Nebula
         /// Iterative, so a corrupt chain costs a loop rather than the stack.
         /// </para>
         /// </summary>
-        private Vector3 WorldPosition(ContainerRef container, Vector3 local)
+        private Double3 WorldPosition(ContainerRef container, Vector3 local)
         {
             for (int hops = 0; TryCarrierOf(container, out ulong carrierNetId, out var offset); hops++)
             {
@@ -1797,7 +1847,7 @@ namespace Nebula
         /// carriers are collected outwards and then applied inwards, which is the same order the recursion it
         /// replaces unwound in, with the same unbounded depth and the same records-held bound.
         /// </summary>
-        private Vector3 ContainerPosition(ContainerRef container, Vector3 world)
+        private Vector3 ContainerPosition(ContainerRef container, Double3 world)
         {
             _carrierChain.Clear();
             _carrierOffsets.Clear();
@@ -1818,7 +1868,7 @@ namespace Nebula
                 _carrierOffsets.Add(offset);
                 at = carrier.Container;
             }
-            Vector3 local = world;
+            Vector3 local = world.ToVector3();
             if (!broken)
             {
                 var c = ContainerRegistry.Resolve(at);
@@ -1975,6 +2025,7 @@ namespace Nebula
                     Send(w.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
                     break;
                 }
+                case MsgId.PortalWarm: OnPortalWarm(c, PortalWarmMsg.Read(r)); break;
                 case MsgId.ClientFocusHint: OnClientFocusHint(c, ClientFocusHintMsg.Read(r)); break;
                 case MsgId.Goodbye: OnGoodbye(c); break;
                 case MsgId.Ping:

@@ -1,0 +1,174 @@
+---
+title: "PortalRecord"
+description: "A portal as the network gateway and a client learn it (MsgId.Portals, protocol 28): the near face, the far side, the aperture and the sizes of the regions derived from it."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs)</div>
+
+```csharp
+public struct PortalRecord
+```
+
+A portal as the network gateway and a client learn it ([`MsgId.Portals`](/docs/reference/protocol/msg-id#portals), protocol 28): the near face, the far side, the aperture and the sizes of the regions derived from it. The record is the portal's definition only; the state of each party's link travels separately ([`PortalLinkRecord`](/docs/reference/protocol/portal-link-record)).
+
+## Fields
+
+### PortalId [#portalid]
+
+```csharp
+public ulong PortalId;
+```
+
+The derived id ([`PortalIds.Of`](/docs/reference/protocol/portal-ids#of)).
+
+### Id [#id]
+
+```csharp
+public string Id;
+```
+
+The authored id, unique within the near container.
+
+### NearScope [#nearscope]
+
+```csharp
+public ulong NearScope;
+```
+
+The near face's scope.
+
+### NearContainerId [#nearcontainerid]
+
+```csharp
+public string NearContainerId;
+```
+
+The container the near face is fixed in, by id (how a gateway matches the rows a client holds) and by reference.
+
+### NearContainer [#nearcontainer]
+
+```csharp
+public ContainerRef NearContainer;
+```
+
+### NearOrigin [#nearorigin]
+
+```csharp
+public Double3 NearOrigin;
+```
+
+The near face, absolute in its scope.
+
+### NearRotation [#nearrotation]
+
+```csharp
+public Quaternion NearRotation;
+```
+
+### FarKind [#farkind]
+
+```csharp
+public PortalFarKind FarKind;
+```
+
+### FarScope [#farscope]
+
+```csharp
+public ulong FarScope;
+```
+
+A fixed far side's scope; 0 for a template, whose far scope belongs to each link.
+
+### FarOrigin [#farorigin]
+
+```csharp
+public Double3 FarOrigin;
+```
+
+The far face, absolute in the far scope. A template's far face is the near face's origin read in the instance's own upright space, with the identity rotation, or the near face's when the portal does not turn with its face (`docs/portals.md` D5), so it is the same for every party's far scope and the network gateway can place the far window without a link's help (D21).
+
+### FarRotation [#farrotation]
+
+```csharp
+public Quaternion FarRotation;
+```
+
+### TemplateId [#templateid]
+
+```csharp
+public string TemplateId;
+```
+
+A template far side's template id; empty for a fixed one.
+
+### ApertureKind [#aperturekind]
+
+```csharp
+public PortalApertureKind ApertureKind;
+```
+
+### HalfWidth, HalfHeight [#halfwidth-halfheight]
+
+```csharp
+public float HalfWidth, HalfHeight;
+```
+
+### BandMargin, BandDepth [#bandmargin-banddepth]
+
+```csharp
+public float BandMargin, BandDepth;
+```
+
+The band: the cross-section grown sideways by [`BandMargin`](#bandmargin), `|z| ≤ BandDepth`.
+
+### WindowMargin, WindowDepth [#windowmargin-windowdepth]
+
+```csharp
+public float WindowMargin, WindowDepth;
+```
+
+The window, per side: the cross-section grown by [`WindowMargin`](#windowmargin), extruded [`WindowDepth`](#windowdepth) into that side.
+
+### Flags [#flags]
+
+```csharp
+public byte Flags;
+```
+
+Flags: [`ObservationOnlyFlag`](#observationonlyflag) (`docs/portals.md` §17).
+
+### ObservationOnlyFlag [#observationonlyflag]
+
+```csharp
+public const byte ObservationOnlyFlag = 1;
+```
+
+The portal is a window in a wall: it admits nothing and its aperture collider is solid for everyone (`docs/portals.md` D28).
+
+## Properties
+
+### ObservationOnly [#observationonly]
+
+```csharp
+public bool ObservationOnly { get; }
+```
+
+Whether the portal admits nothing ([`ObservationOnlyFlag`](#observationonlyflag)).
+
+### NearWindow [#nearwindow]
+
+```csharp
+public PortalWindow NearWindow { get; }
+```
+
+The near side's window: the aperture grown by [`WindowMargin`](#windowmargin) sideways and [`WindowDepth`](#windowdepth) deep into the near scope (`docs/portals.md` D3).
+
+## Methods
+
+### FarWindow [#farwindow]
+
+```csharp
+public PortalWindow FarWindow(ulong farScope = 0UL);
+```
+
+The far side's window in `farScope` (a link's far scope; a fixed far side's own when 0): the aperture grown by [`WindowMargin`](#windowmargin) sideways and [`WindowDepth`](#windowdepth) deep into the far scope, in the far face's axes.

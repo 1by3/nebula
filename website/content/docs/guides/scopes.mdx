@@ -19,7 +19,6 @@ controlPlane.ActivateScope(new ScopeActivationRequest
     Definition = new ScopeDefinition
     {
         Kind = ScopeKind.Parts,
-        ObservePublic = false,
         Parts =
         {
             new ScopePart
@@ -36,7 +35,7 @@ controlPlane.ActivateScope(new ScopeActivationRequest
 
 Each part becomes one [runtime container](/docs/guides/runtime-containers) with a lease row the orchestrator can deal out. The call is available on any `IControlPlane`: a worker, a gateway, the orchestrator, or a standalone service holding a `RemoteControlPlane`. **Nothing has to be running inside the scope**, and no player has to be standing anywhere.
 
-The bounds are absolute world coordinates, the same frame the control plane's lease rows use. `ObservePublic` and the observation box let the scope's occupants receive public entities within a box, exactly as an instance template's `PublicView` does.
+The bounds are absolute world coordinates, the same frame the control plane's lease rows use. What a scope's occupants see of the world around it is decided by the [portals](/docs/guides/instancing#look-through-a-portal) that lead into it, not by the definition: an open portal shows each side's window to the other.
 
 ### Asking twice is safe
 
@@ -169,7 +168,7 @@ worker.TryCommitTransfer(transfer, planet, localPosition, localRotation);
 
 `localPosition` is a `Double3` in the frame's own coordinates. Pass `null` as the frame to give a world pose in double precision.
 
-[`InstanceBoundary`](/docs/guides/instancing) is this path driven by a trigger volume. `PrepareInstance` now activates a scope like any other caller, so an instance a boundary created and a scope a matchmaker created are the same thing.
+[`Portal`](/docs/guides/instancing) is this path driven by your game opening a door for a party. `PrepareInstance` activates a scope like any other caller, so an instance a portal created and a scope a matchmaker created are the same thing.
 
 The destination can be in another scope, including a chunk of another [scoped world](#a-scope-can-be-a-whole-world). The player's client does not need to know about the destination beforehand: the gateway sends it the destination container's description together with the preparation request, and tells no other client.
 
@@ -212,7 +211,7 @@ curl -X POST http://orchestrator:7080/api/control-plane \
   -H 'X-Nebula-Token: <mesh token>' \
   -H 'Content-Type: application/json' \
   -d '{"ops":[{"op":"ActivateScope","scopeKey":"raid/molten-core#run-4812","workerId":"","requester":"matchmaker",
-       "definition":"{\"kind\":\"parts\",\"parts\":[{\"partId\":\"interior\",\"center\":[2000,0,0],\"size\":[120,40,120],\"content\":\"Instances/MoltenCore\"}],\"observePublic\":false,\"observationCenter\":[0,0,0],\"observationSize\":[0,0,0],\"payload\":\"\"}"}]}'
+       "definition":"{\"kind\":\"parts\",\"parts\":[{\"partId\":\"interior\",\"center\":[2000,0,0],\"size\":[120,40,120],\"content\":\"Instances/MoltenCore\"}],\"payload\":\"\"}"}]}'
 ```
 
 The definition travels as a JSON document inside a JSON string. Read the result back from `GET /api/control-plane`, whose document carries a `scopes` array.
@@ -375,7 +374,7 @@ This drops the scope row, releases the claim on the key and removes the lease ro
 
 - A `ScopeKind.Parts` definition lists its parts up front. A world whose chunks are decided at runtime is a `ScopeKind.Grid` scope instead, which lists only its anchor.
 - Each scope has its own origin frame and physics scene, but *within* one scope there is still a single frame per worker: two players thousands of kilometres apart in the same world share an origin, and the far one loses float precision. Spread that world over more workers rather than expecting more frames.
-- An **instance** scope (a room, a dungeon — a `ScopeKind.Parts` scope) shares the public world's origin frame. Only a scope that is a whole world (`ScopeKind.Grid`) takes a frame of its own, because only a whole world can be millions of metres from the public one.
+- An **instance** scope (a room, a dungeon — a `ScopeKind.Parts` scope) has an origin frame of its own too, not the public world's. It is pinned near its first container in each process that holds it and never moves, so a dungeon built 100,000 km from the public origin is still simulated near Unity's origin; a whole world (`ScopeKind.Grid`) takes a frame that follows its players. A client that will enter an instance from the scope it stands in shares that scope's frame while it draws both, so the room appears exactly behind its door.
 - `IsScopeReady` says a worker holds the leases, not that content is loaded. Whether a restore has finished is the scope's state: it is `active` only once every part has reported in.
 - Capacity is measured per container from what a worker reports, so it lags real load by one telemetry interval (about a second), and a container no worker has reported is never at capacity.
 - A retire loses whatever in the scope was not persistent. That is why a worker keeps a part busy while it holds any; a game that rebuilds some of its transient contents by itself says so through `NebulaLifecycle.DiscardOnRetire`.

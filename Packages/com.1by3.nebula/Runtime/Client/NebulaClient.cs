@@ -9,7 +9,7 @@ namespace Nebula
     /// predicts its own player. It is never a party to the handover protocol: which worker produced a snapshot is
     /// metadata used for epoch filtering and the debug overlay, nothing else.
     /// </summary>
-    public sealed class NebulaClient : MonoBehaviour, IRpcSink
+    public sealed partial class NebulaClient : MonoBehaviour, IRpcSink
     {
         public enum State { Disconnected, Connecting, Connected, InGame }
 
@@ -520,6 +520,7 @@ namespace Nebula
             SceneEntities.Unregistering += OnSceneEntityUnregistering;
             ContainerRegistry.DynamicRegistered += OnLateContainerRegistered;
             ContainerRegistry.RuntimeRegistered += OnLateContainerRegistered;
+            ContainerRegistry.Rebuilt += ReleaseResolvedHolds;
             if (connectNow) Connect();
         }
 
@@ -752,6 +753,8 @@ namespace Nebula
             SceneEntities.Unregistering -= OnSceneEntityUnregistering;
             ContainerRegistry.DynamicRegistered -= OnLateContainerRegistered;
             ContainerRegistry.RuntimeRegistered -= OnLateContainerRegistered;
+            ContainerRegistry.Rebuilt -= ReleaseResolvedHolds;
+            _portalPhysics.Dispose();
             _transport?.Dispose();
             _transport = null;
         }
@@ -922,6 +925,7 @@ namespace Nebula
             TickConnection();
             TickStallWatch();
             TickInstancePreparations();
+            TickPortalWarm();
             if (ConnectionState == State.Disconnected || ConnectionState == State.Connecting) return;
             _frames++;
             float frameMs = Time.unscaledDeltaTime * 1000f;
@@ -1092,6 +1096,8 @@ namespace Nebula
             // not seen that yet (transforms reach it at the physics step, after this): bring it up to date, as the
             // worker does between a carrier's tick and its contents', or the deck is a frame behind under the pawn.
             if (ContainerRegistry.Dynamic.Count > 0) Physics.SyncTransforms();
+            // The pawn predicts against what the worker has: the throat, the aperture colliders and proxies of the replicas in the band (docs/portals.md D25).
+            if (pawn && (Portals.Known.Count > 0 || _portalPhysics.HasRigs)) _portalPhysics.StepClient(LocalPlayer, _entities.Values, first);
 
             for (int i = 0; i < steps; i++)
             {
@@ -1554,6 +1560,8 @@ namespace Nebula
                 case MsgId.EntityState: OnEntityState(EntitySyncMsg.Read(r)); break;
                 case MsgId.OwnerState: OnOwnerState(OwnerStateMsg.Read(r)); break;
                 case MsgId.FarEntities: OnFarEntities(r); break;
+                case MsgId.Portals: Portals.ApplyRecords(PortalsMsg.Read(r)); break;
+                case MsgId.PortalLinks: OnPortalLinks(PortalLinksMsg.Read(r)); break;
                 default: NebulaLog.Warn($"client got unexpected {id}"); break;
             }
         }
@@ -1652,7 +1660,9 @@ namespace Nebula
                 if (msg.ViewSeq > held) { _viewSeq[msg.NetId] = msg.ViewSeq; SpawnsReceived++; }
             }
             var container = ContainerRegistry.Resolve(msg.Container);
-            if (container == null && msg.Container.MayArriveLater)
+            // A container this client cannot resolve holds the spawn, whatever the container's kind: an entity placed in the public world with
+            // coordinates local to a container it does not have would be drawn about 1.2 km off (docs/portals.md D20, §18).
+            if (container == null && msg.Container.NamesAContainer)
             {
                 if (_entities.ContainsKey(msg.NetId))
                 {
@@ -1905,6 +1915,24 @@ namespace Nebula
             foreach (var msg in list) OnEntitySpawn(msg);
         }
 
+        private readonly List<ContainerRef> _releaseScratch = new List<ContainerRef>();
+
+        /// <summary>The baked containers were collected again (a scene loaded): a spawn held for one that is here now binds (<c>docs/portals.md</c> D20).</summary>
+        private void ReleaseResolvedHolds()
+        {
+            if (_pendingByCarrier.Count == 0) return;
+            _releaseScratch.Clear();
+            foreach (var kv in _pendingByCarrier) if (kv.Key.IsStatic && ContainerRegistry.Resolve(kv.Key) != null) _releaseScratch.Add(kv.Key);
+            for (int i = 0; i < _releaseScratch.Count; i++)
+            {
+                var key = _releaseScratch[i];
+                if (!_pendingByCarrier.TryGetValue(key, out var list)) continue;
+                _pendingByCarrier.Remove(key);
+                foreach (var msg in list) OnEntitySpawn(msg);
+            }
+            _releaseScratch.Clear();
+        }
+
         private void HoldSceneSpawn(EntitySpawnMsg msg)
         {
             if (_pendingScene.TryGetValue(msg.SceneId, out var held))
@@ -2045,7 +2073,7 @@ namespace Nebula
             // The state is in the worker's container frame for that tick; move there first, or a seam crossing
             // would reconcile against the wrong origin for a tick and snap the pawn across the map.
             var container = ContainerRegistry.Resolve(msg.Container);
-            if (container == null && msg.Container.MayArriveLater) return; // the container is not here yet; the next report will do
+            if (container == null && msg.Container.NamesAContainer) return; // the container is not here yet (of any kind); the next report will do
             if (container != target.Container) target.SetContainer(container);
             _reader.Set(new ArraySegment<byte>(msg.State));
             // A correction replays inputs, which is simulation: in the pawn's frame at its simulation pose (D11).
@@ -2136,8 +2164,19 @@ namespace Nebula
             _farGone.Clear();
         }
 
+        private readonly PortalPhysics _portalPhysics = new PortalPhysics(null);
+        private PortalQueries _portalQueries;
+
+        /// <summary>
+        /// Raycasts, sweeps and overlaps that continue through an open portal, for prediction and aim (<c>docs/portals.md</c> D32). A client queries
+        /// the scenes it holds, in the frame each scope shares (<see cref="ScopeFrames.Resolve"/>), against the replicas as they stand; it keeps no
+        /// state history, so a tick in the options has no effect here.
+        /// </summary>
+        public PortalQueries PortalQueries => _portalQueries ??= new PortalQueries(_portalPhysics, null);
+
         private void ClearWorld()
         {
+            _portalPhysics.Clear();
             foreach (var e in _entities.Values)
             {
                 if (e == null) continue;
@@ -2156,6 +2195,8 @@ namespace Nebula
             _driven.Clear();
             _drivenInputs.Clear();
             ClearFar();
+            _warming.Clear();
+            Portals.ResetClient();
             _hasRenderOffset = false;
             _hasServerState = false;
             EndStall();

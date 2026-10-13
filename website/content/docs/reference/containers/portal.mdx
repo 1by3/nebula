@@ -1,0 +1,410 @@
+---
+title: "Portal"
+description: "A way between two scopes: an opening in a wall, a hatch, a gate, a door to a room of its own (docs/portals.md)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/Portal.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/Portal.cs)</div>
+
+```csharp
+[DisallowMultipleComponent]
+public sealed partial class Portal : MonoBehaviour
+```
+
+A way between two scopes: an opening in a wall, a hatch, a gate, a door to a room of its own (`docs/portals.md`). It stands in the near side's content, at a [`NearFace`](#nearface) fixed in a container, and leads to a far side that is a fixed scope ([`SetFixedFarSide`](#setfixedfarside)) or a template, one far scope per party ([`FarTemplate`](#fartemplate)).
+
+The game opens it for a party with [`Open`](#open), naming the clients that will cross (its members), and closes it with [`Close`](#close). Each party has its own [`PortalLink`](/docs/reference/containers/portal-link) with a state and, while it is not open, the reason ([`PortalLink.Wait`](/docs/reference/containers/portal-link#wait)). A link is open once the far scope is active and its content loaded on the worker that owns it, and every member's client holds the far window and has said so: readiness is standing, held for as long as the link is open, so crossing loads nothing and holds nothing at the face. Everything runs on the worker that owns the portal's container.
+
+An entity crosses when it passes through the aperture, the opening on the face's z = 0 plane: anything simulated here (a player's pawn, a crate, a projectile, a vehicle with its passengers) goes through an open link on the tick its root ends [`CrossDepth`](#crossdepth) beyond the plane, or, for a body that moves further than that in a step, on the tick before the step that would carry it through. It keeps its identity and carries its pose, its velocities and its history, turned by the link when the faces are turned against each other. One the link does not let through is stopped at the face ([`Refused`](#refused)). [`ResolveCompanions`](#resolvecompanions) names entities that cross with it. The hooks [`PartyOf`](#partyof), [`CanEnter`](#canenter) and [`CanObserve`](#canobserve) are the game's policy.
+
+## Fields
+
+### Id [#id]
+
+```csharp
+public string Id = "";
+```
+
+The portal's id, unique within the container it stands in (`docs/portals.md` D6). Together with that container's id it derives [`PortalId`](#portalid), which every worker, network gateway and client computes the same. A second portal in the same container with the same id is ignored and logged. An empty id is the object's name.
+
+### FarTemplate [#fartemplate]
+
+```csharp
+public InstanceTemplate FarTemplate;
+```
+
+A template far side (`docs/portals.md` D5): one far scope per party, whose key is `TemplateId + "/" + party`, prepared at the near face's origin and turned with it. Must be available on workers.
+
+### Aperture [#aperture]
+
+```csharp
+public PortalAperture Aperture = PortalAperture.Box(1f, 2f);
+```
+
+The opening, centred on the near face's origin, on its z = 0 plane. Its half extents are measured in the face's axes.
+
+### TurnWithFace [#turnwithface]
+
+```csharp
+public bool TurnWithFace = true;
+```
+
+Whether a template far scope turns with this face: its interior is built in the face's own axes (its forward is the way in) and stands behind the face however the face is turned. On by default; off keeps the far scope in the near scope's axes.
+
+### BandMargin [#bandmargin]
+
+```csharp
+public float BandMargin = 0.5f;
+```
+
+The band is the aperture grown sideways by this many meters, [`BandDepth`](#banddepth) deep on either side of the face.
+
+### WindowMargin [#windowmargin]
+
+```csharp
+public float WindowMargin = 8f;
+```
+
+A window is the aperture grown sideways by this many meters (`docs/portals.md` D3).
+
+### WindowDepth [#windowdepth]
+
+```csharp
+public float WindowDepth = 48f;
+```
+
+A window reaches this many meters into each side.
+
+### BandDepth [#banddepth]
+
+```csharp
+public const float BandDepth = 2f;
+```
+
+How deep the band reaches on each side of the face, in meters.
+
+### CrossDepth [#crossdepth]
+
+```csharp
+public const float CrossDepth = 0.05f;
+```
+
+How far beyond the face's plane a root must end to cross, in meters, and how far short of it to cross back: the hysteresis that keeps an entity standing at the face from crossing and returning on every tick.
+
+### CloseTimeoutSeconds [#closetimeoutseconds]
+
+```csharp
+public const float CloseTimeoutSeconds = 5f;
+```
+
+How long a closing link waits for the band to empty before it closes anyway, in seconds.
+
+### CloseHoldSeconds [#closeholdseconds]
+
+```csharp
+[Min(0f)]
+public float CloseHoldSeconds;
+```
+
+How long a link stays [`PortalState.Closing`](/docs/reference/protocol/portal-state#closing) at least once [`Close`](#close) is called, in seconds, even with its band empty (`docs/portals.md` D9). A closing link is still observed, so every observer keeps drawing its far side (D40): this is the time a game needs for whatever it shows closing over the aperture (a door's leaves sliding shut, a shutter, a fade) to finish while the far side is still there to be seen behind it. Nothing enters a closing link meanwhile; bodies already straddling finish as usual. 0, the default, closes on the first tick the band is empty. Kept below [`CloseTimeoutSeconds`](#closetimeoutseconds).
+
+### ApproachDistance [#approachdistance]
+
+```csharp
+public const float ApproachDistance = 8f;
+```
+
+How far from the face, in meters, an entity is tracked for a crossing and its companions are asked for.
+
+### OriginResolution [#originresolution]
+
+```csharp
+public const double OriginResolution = 0.001;
+```
+
+The face's origin is its position in absolute coordinates rounded to this many meters, so every worker and every origin frame names the same far scope, however the transform's float numbers came out.
+
+### ObserveAnyone [#observeanyone]
+
+```csharp
+public bool ObserveAnyone;
+```
+
+Whether anyone may look through this portal's links, not only their observers (`docs/portals.md` D11).
+
+### ObservationOnly [#observationonly]
+
+```csharp
+public bool ObservationOnly;
+```
+
+A window in a wall rather than a way through (`docs/portals.md` §17): links are observed as usual, but nothing is admitted. The aperture collider stays solid for everyone (D28), a body or a mover that reaches the face is refused with [`PortalRefusal.NotAdmitted`](/docs/reference/containers/portal-refusal#notadmitted).
+
+### MaxProxiesPerPortal [#maxproxiesperportal]
+
+```csharp
+[Min(0)]
+public int MaxProxiesPerPortal = 64;
+```
+
+The most body proxies this portal builds in physics scenes at once, over all its links (`docs/portals.md` D26). A body in a band past the bound gets none (the bodies that came first keep theirs) and [`NebulaDiagnostics.PortalProxiesDropped`](/docs/reference/core/nebula-diagnostics#portalproxiesdropped) counts it.
+
+### PartyOf [#partyof]
+
+```csharp
+public Func<NetworkIdentity, string> PartyOf;
+```
+
+Server-side: the party an entity belongs to (`docs/portals.md` D11), an opaque string of the game's choosing, or null for none. When unset: the owner's identity ([`NetworkIdentity.OwnerIdentity`](/docs/reference/core/network-identity#owneridentity)) for an entity with an owner, null for a server-owned entity. An entity crosses through the link of its party; with no party it uses the face's one open link, when there is exactly one (`docs/portals.md` D12).
+
+### CanEnter [#canenter]
+
+```csharp
+public Func<NetworkIdentity, PortalLink, bool> CanEnter;
+```
+
+Server-side admission into a link's far scope (`docs/portals.md` D11). When unset: a server-owned entity is admitted, and an owned one when its client is a member of the link and warm. Leaving is not checked.
+
+### CanObserve [#canobserve]
+
+```csharp
+public Func<ulong, PortalLink, bool> CanObserve;
+```
+
+Server-side: whether a client may look through a link (`docs/portals.md` D11), asked when it becomes a member. When unset every member may. The answer is published to the network gateways as the link's observer list, which they enforce without running game code.
+
+### ResolveCompanions [#resolvecompanions]
+
+```csharp
+public Action<NetworkIdentity, List<NetworkIdentity>> ResolveCompanions;
+```
+
+Server-side: fill the list with the entities that must cross together with the one crossing, its companions: an item it holds, a pet, a cart it tows, an escort (`docs/portals.md` D14). Called on the worker that simulates the crossing entity, once a tick while it is near the face, with an empty list. A companion moves with its leader and does not cross on its own while it is one. The group commits in one step on the tick the leader crosses, each member keeping its identity and arriving at its own pose mapped through the link. A companion that cannot cross is left behind ([`CompanionLeftBehind`](#companionleftbehind)); with the far side warm, a companion never waits for a preparation of its own.
+
+## Properties
+
+### ProxyCount [#proxycount]
+
+```csharp
+public int ProxyCount { get; }
+```
+
+How many body proxies this portal has standing right now, over all its links ([`MaxProxiesPerPortal`](#maxproxiesperportal)).
+
+### FixedFarScopeKey [#fixedfarscopekey]
+
+```csharp
+public string FixedFarScopeKey { get; }
+```
+
+The scope key of a fixed far side; empty for a template far side ([`SetFixedFarSide`](#setfixedfarside)).
+
+### HasFixedFarSide [#hasfixedfarside]
+
+```csharp
+public bool HasFixedFarSide { get; }
+```
+
+Whether the far side is a fixed scope rather than a template.
+
+### AuthoredId [#authoredid]
+
+```csharp
+public string AuthoredId { get; }
+```
+
+The authored [`Id`](#id), or the object's name when it has none: the id a portal is derived and looked up by.
+
+### NearContainer [#nearcontainer]
+
+```csharp
+public Container NearContainer { get; }
+```
+
+The container the near face is fixed in: the nearest [`Container`](/docs/reference/containers/container) among the portal's parents (a scoped grid's chunk, an instance part, a carrier), or, for content in the shared scene, the container that holds its position. Null while none does.
+
+### NearScope [#nearscope]
+
+```csharp
+public ulong NearScope { get; }
+```
+
+The scope the near face is in: the scope of [`NearContainer`](#nearcontainer)'s ancestors, or 0, the public world, when it stands in none.
+
+### PortalId [#portalid]
+
+```csharp
+public ulong PortalId { get; }
+```
+
+The portal's derived id (`docs/portals.md` D6): the hash of its container's id and its [`AuthoredId`](#authoredid).
+
+### NearFace [#nearface]
+
+```csharp
+public PortalFace NearFace { get; }
+```
+
+The near face: where this component stands, read out of any physics frame it is in, through its scope's origin frame, in double, with its origin rounded to [`OriginResolution`](#originresolution) and its rotation normalised and rounded to 10⁻⁶ so one door always prepares one definition (`docs/portals.md` D2, D37). Its +z axis, the transform's forward, is the way in.
+
+### PoseRotation [#poserotation]
+
+```csharp
+public Quaternion PoseRotation { get; }
+```
+
+The rotation a template far scope is prepared with (`docs/scope-frames.md` D12): the near face's, so an interior built upright in its own space stands behind a face that is not upright in its scope; the identity when [`TurnWithFace`](#turnwithface) is off.
+
+### Links [#links]
+
+```csharp
+public IEnumerable<PortalLink> Links { get; }
+```
+
+The links this portal has, one per party that ever opened it, whatever their state.
+
+### LinkCount [#linkcount]
+
+```csharp
+public int LinkCount { get; }
+```
+
+How many parties have a link here.
+
+### IsIgnored [#isignored]
+
+```csharp
+public bool IsIgnored { get; }
+```
+
+Whether this component lost its id to another portal in the same container (`docs/portals.md` D6): it is ignored and does nothing.
+
+## Events
+
+### CompanionLeftBehind [#companionleftbehind]
+
+```csharp
+public event Action<NetworkIdentity, NetworkIdentity, PortalRefusal> CompanionLeftBehind;
+```
+
+Raised on this worker when a crossing entity committed without one of its companions: the crossing entity, the companion, and why. The companion stays where it was. Handlers run inside the worker's tick and must not throw.
+
+### Crossed [#crossed]
+
+```csharp
+public event Action<NetworkIdentity, Portal, ulong, ulong> Crossed;
+```
+
+Raised after an entity crossed through this portal, on the worker that committed it and on every client that holds the entity when its container change arrives: the entity, this portal, the scope it left and the scope it entered (so `to` is the far scope when it went in and the near scope when it came out). A game's own heading bookkeeping turns with [`Portals.Turn`](/docs/reference/containers/portals#turn)`(from, to)` here. On a client the event is raised only where this component exists; [`Portals.Crossed`](/docs/reference/containers/portals#crossed) is raised wherever the crossing is seen. Handlers run inside the worker's tick (or the client's frame) and must not throw.
+
+### Refused [#refused]
+
+```csharp
+public event Action<NetworkIdentity, PortalLink, PortalRefusal> Refused;
+```
+
+Raised on this worker every time an entity reached the aperture and was not let through (`docs/portals.md` D17): the entity, the link it was refused by (null when it has no link here: its party never opened one, or the face has several parties' links open and nothing says whose it is, [`PortalRefusal.AmbiguousParty`](/docs/reference/containers/portal-refusal#ambiguousparty)), and why. The entity has been stopped at the face already: its root put back [`CrossDepth`](#crossdepth) short of the plane and the part of its velocity that pointed through removed, so a game can bounce, drop or destroy it. A body that keeps pushing against the aperture is refused on every tick it reaches it. Handlers run inside the worker's tick and must not throw.
+
+### LinkChanged [#linkchanged]
+
+```csharp
+public event Action<PortalLink> LinkChanged;
+```
+
+Raised on this worker when a link's state, wait, members or observers changed. Handlers run inside the worker's tick and must not throw.
+
+## Methods
+
+### SetFixedFarSide [#setfixedfarside]
+
+```csharp
+public void SetFixedFarSide(string scopeKey, Double3 origin, Quaternion rotation);
+```
+
+Make the far side a scope that exists anyway (`docs/portals.md` D5): `origin` and `rotation` are the far face's pose in that scope, absolute. When the two faces' origins differ, the portal is an offset portal and the link carries a translation as well as a turn. The scope must be active before a link can open; Nebula never activates it.
+
+### TryGetLink [#trygetlink]
+
+```csharp
+public bool TryGetLink(string party, out PortalLink link);
+```
+
+The party's link, or false when it was never opened (a party without a link is closed).
+
+### StateOf [#stateof]
+
+```csharp
+public PortalState StateOf(string party);
+```
+
+The state of a party's link: [`PortalState.Closed`](/docs/reference/protocol/portal-state#closed) when it has none.
+
+### Open [#open]
+
+```csharp
+public PortalLink Open(string party, IEnumerable<ulong> members = null);
+```
+
+Open the portal for `party`: the link goes to [`PortalState.Preparing`](/docs/reference/protocol/portal-state#preparing) and the worker that owns the portal prepares the far scope and its content, asks the members' clients to hold the far window, and turns the link [`PortalState.Open`](/docs/reference/protocol/portal-state#open) when every condition holds (`docs/portals.md` D10). Call it on that worker. Opening a link that is already live adds the members; one that is closing opens again.
+
+| Parameter | Description |
+| --- | --- |
+| `party` | The party the far scope belongs to (D8). A fixed far side usually has one party, the empty string. |
+| `members` | The client ids that will cross, and must be warm before the link opens. None is fine for a link only server-owned entities use. |
+
+**Returns:** The party's link.
+
+### Close [#close]
+
+```csharp
+public bool Close(string party);
+```
+
+Close the portal for `party`: the link goes to [`PortalState.Closing`](/docs/reference/protocol/portal-state#closing), waits for the band to be empty (at most [`CloseTimeoutSeconds`](#closetimeoutseconds)), and then turns [`PortalState.Closed`](/docs/reference/protocol/portal-state#closed). False when it has no live link.
+
+### AddMember [#addmember]
+
+```csharp
+public bool AddMember(string party, ulong clientId);
+```
+
+Add a client to a live link's members (`docs/portals.md` D13). It warms on its own, without closing the link for the others: its wait is [`PortalWait.ClientWarming`](/docs/reference/protocol/portal-wait#clientwarming), and its own entities are refused at the aperture until it is warm.
+
+### AddObserver [#addobserver]
+
+```csharp
+public bool AddObserver(string party, ulong clientId);
+```
+
+Let a client look through a party's link without being a member (`docs/portals.md` D11, D20): a bystander at a door, a friend watching a room. While the link is open and the client stands inside the near window it is sent the far window; when it stands in the far window it is sent the near one. It is not held to warm the far window, so the link never waits for it, and its own entities are not admitted by the default [`CanEnter`](#canenter). Members are observers already unless [`CanObserve`](#canobserve) says otherwise.
+
+**Returns:** True when the client was not an observer of a live link before.
+
+### RemoveObserver [#removeobserver]
+
+```csharp
+public bool RemoveObserver(string party, ulong clientId);
+```
+
+Stop a client looking through a party's link. A member keeps its part in readiness; it just no longer sees through.
+
+### RemoveMember [#removemember]
+
+```csharp
+public bool RemoveMember(string party, ulong clientId);
+```
+
+Remove a client from a link's members; it no longer holds the link back and no longer looks through it.
+
+### Validate [#validate]
+
+```csharp
+public bool Validate(List<Collider> blockers = null);
+```
+
+Check that this side's own static colliders leave the cross-section clear for [`BandDepth`](#banddepth) beyond the face (`docs/portals.md` D27): the tunnel mouth a game builds so that a body straddling the face is not pushed out of the doorway by the mass behind it. Run it in the Editor (a portal validates itself when it is edited) and by hand; a link also checks both of its sides when it starts preparing. Whatever is in the way is logged. In play mode it checks the near side and, for each link whose far container this process holds, the far side; in the Editor, the near side in the open scene.
+
+| Parameter | Description |
+| --- | --- |
+| `blockers` | When given, filled with the colliders in the way. |
+
+**Returns:** True when the cross-section is clear.

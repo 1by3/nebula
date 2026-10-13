@@ -1,0 +1,26 @@
+---
+title: "PortalLinksUpdate"
+description: "A change to the links a receiver knows (MsgId.PortalLinks)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs)</div>
+
+```csharp
+public sealed class PortalLinksUpdate
+```
+
+A change to the links a receiver knows ([`MsgId.PortalLinks`](/docs/reference/protocol/msg-id#portallinks)).
+
+## Fields
+
+### Upserts [#upserts]
+
+```csharp
+public List<PortalLinkRecord> Upserts = new List<PortalLinkRecord>();
+```
+
+### Removes [#removes]
+
+```csharp
+public List<ulong> Removes = new List<ulong>();
+```

@@ -1,0 +1,64 @@
+---
+title: "PortalAsker"
+description: "Who is asking a portal query (docs/portals.md D12, D32): the entity whose own colliders the cast skips, and the party whose link it goes through."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PortalQueryTypes.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PortalQueryTypes.cs)</div>
+
+```csharp
+public readonly struct PortalAsker
+```
+
+Who is asking a portal query (`docs/portals.md` D12, D32): the entity whose own colliders the cast skips, and the party whose link it goes through. A face with several parties' links casts into the asker's party's far scope. With no party named, the entity's party is its [`Portal.PartyOf`](/docs/reference/containers/portal#partyof) (by default its owner's identity); with neither, the face's one open link, when there is exactly one.
+
+## Properties
+
+### Entity [#entity]
+
+```csharp
+public NetworkIdentity Entity { get; }
+```
+
+The asking entity, whose colliders a cast does not hit; null for none.
+
+### Party [#party]
+
+```csharp
+public string Party { get; }
+```
+
+The party named explicitly; null when it is to be derived from [`Entity`](#entity).
+
+### HasParty [#hasparty]
+
+```csharp
+public bool HasParty { get; }
+```
+
+Whether a party was named.
+
+### None [#none]
+
+```csharp
+public static PortalAsker None { get; }
+```
+
+Nobody in particular: the face's one open link, when there is exactly one.
+
+## Methods
+
+### Of [#of]
+
+```csharp
+public static PortalAsker Of(NetworkIdentity entity);
+```
+
+An entity asking: its colliders are skipped and its party chooses the link.
+
+### OfParty [#ofparty]
+
+```csharp
+public static PortalAsker OfParty(string party, NetworkIdentity entity = null);
+```
+
+A party asking, whether or not an entity is behind it (a turret, a spell, a sound): `entity`, when given, is the one whose colliders are skipped.

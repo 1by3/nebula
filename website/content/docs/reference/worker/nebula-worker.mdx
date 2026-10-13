@@ -45,6 +45,14 @@ public const int MaxCatchUpTicks = 2;
 
 Most ticks the loop is allowed to simulate in one FixedUpdate to catch up with the wall clock. Beyond this the missing tick numbers are skipped (everything runs a little slow for a moment) rather than simulated back-to-back, which would only push the next frame further behind.
 
+### PoseAngleEpsilon [#poseangleepsilon]
+
+```csharp
+public const float PoseAngleEpsilon = 0.01f;
+```
+
+Degrees below which an instance's rotation counts as none: it shares its host's axes.
+
 ### MaxHoldSeconds [#maxholdseconds]
 
 ```csharp
@@ -358,6 +366,14 @@ public bool IsFenced { get; }
 ```
 
 This worker cannot currently prove it is alive to the control plane: its own row, as its mirror shows it, has had no heartbeat for more than [`NebulaConfig.WorkerTimeoutSeconds`](/docs/reference/core/nebula-config#workertimeoutseconds), or the row is gone because the orchestrator declared it dead. The orchestrator applies the same test before it deals a worker's containers to someone else, so while this is true those containers may already be restored on another worker. A fenced worker keeps simulating, but it saves nothing, restores nothing and hands no entity over, so it cannot overwrite or duplicate the new owner's copy; it is unfenced when its next heartbeat lands. See `docs/persistence-durability.md` D8.
+
+### PortalQueries [#portalqueries]
+
+```csharp
+public PortalQueries PortalQueries { get; }
+```
+
+Raycasts, sweeps and overlaps that continue through an open portal, on this worker, with an optional rewind of the history it keeps (`docs/portals.md` D32, D33).
 
 ### HeldContainers [#heldcontainers]
 
@@ -676,6 +692,7 @@ The derivation itself is [`ScopeKeys.Hash`](/docs/reference/control-plane/scope-
 ```csharp
 public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Vector3 origin);
 public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Double3 absoluteOrigin);
+public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Double3 absoluteOrigin, Quaternion rotation);
 ```
 
 Create or find stable instance container leases. Resolve the returned references after the control-plane update. This does not automatically persist entity state.
@@ -801,6 +818,60 @@ public readonly float SecondsRemaining;
 ```
 
 Seconds still to run when the hold was read. Always greater than zero.
+
+### PortalBinding [#portalbinding]
+
+```csharp
+public struct PortalBinding
+```
+
+One portal link that is not closed, as the worker reports it in the cohesion block of its telemetry (`docs/portals.md` D34, D36): the near face's container and the far containers its window touches, which the planner deals as one item, and the link's state and wait for the dashboard.
+
+#### Fields
+
+##### LinkId [#linkid]
+
+```csharp
+public ulong LinkId;
+```
+
+The link's id ([`PortalLink.Id`](/docs/reference/containers/portal-link#id)).
+
+##### Portal [#portal]
+
+```csharp
+public string Portal;
+```
+
+The portal's authored id, for the dashboard. Never the party: a party can be a player's identity.
+
+##### State [#state]
+
+```csharp
+public PortalState State;
+```
+
+##### Wait [#wait]
+
+```csharp
+public PortalWait Wait;
+```
+
+##### Split [#split]
+
+```csharp
+public bool Split;
+```
+
+Some of the link's containers belong to another worker right now (`docs/portals.md` D35).
+
+##### Containers [#containers]
+
+```csharp
+public List<string> Containers;
+```
+
+The near face's container, then the far ones.
 
 ### CohesionSpan [#cohesionspan]
 

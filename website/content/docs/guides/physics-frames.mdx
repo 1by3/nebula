@@ -223,7 +223,7 @@ attachment.Detach();
 
 While the entity is attached:
 
-- It sits in the container it is attached to. Nebula does not move it into a neighboring container, out of a frame, or across an instance boundary, whatever its position. It is still handed to the worker that owns the container, so attaching it to a container another worker owns moves it there on the next tick.
+- It sits in the container it is attached to. Nebula does not move it into a neighboring container, out of a frame, or through a portal into another scope, whatever its position. It is still handed to the worker that owns the container, so attaching it to a container another worker owns moves it there on the next tick.
 - Its body is kinematic on the authority, and Nebula puts it back at the attached pose every tick. Loose crates can rest on it.
 - A handover, a restore from persistence, and a client that joins later all see it attached. With a `PersistentEntity` it comes back attached, even with `PersistPose` off, and attached cargo stowed with `CargoPolicy.Stow` comes back attached aboard its ship.
 
@@ -257,10 +257,11 @@ A change in one part that affects the other, such as an engineer cutting power t
 A planet is a carrier with a physics frame of its own. It can rotate, orbit, or stay still. Give it:
 
 - **Own Physics Frame** on its `Container`;
-- **Frame Interest** set to `OwnRegions`; and
+- **Frame Interest** set to `OwnRegions`;
+- optionally, **Frame Approach Margin**, in metres, so that a pilot above the planet sees what stands on it (see below); and
 - leased runtime children for the areas that different workers simulate, such as eight octants, with bases inside them leased or inherited as your game needs.
 
-With `OwnRegions`, [interest management](/docs/guides/interest-management) buckets what is on the planet by its position in the planet's coordinates. The planet's rotation therefore never moves anything between regions. A client standing on the planet looks at the planet's regions around it and at the space around the planet from the same point, so ships overhead stay in view. A client outside the planet's box sees the planet itself, but not what is on its surface.
+With `OwnRegions`, [interest management](/docs/guides/interest-management) buckets what is on the planet by its position in the planet's coordinates. The planet's rotation therefore never moves anything between regions. A client standing on the planet looks at the planet's regions around it and at the space around the planet from the same point, so ships overhead stay in view. A client outside the planet's box sees the planet itself, but not what is on its surface, unless the planet sets **Frame Approach Margin** (`Container.FrameApproachMargin`, `0` and so off by default). A client in the space around the planet whose pawn is within that many meters of the planet's box then also looks into the planet's regions, from the point of the box nearest the pawn, so a pilot 3 km above the ground sees the outposts and players standing on it. Set it to the distance from which your game needs the ground in view, and no more: every client that comes that near looks into the planet, and a margin on a container that is crowded costs interest work for each of them. The same setting serves a station seen from a ship. Before this setting existed one global value, `InterestFrameApproachMargin`, applied to every framed container; if you used it, set `Frame Approach Margin` on each planet or station that needs it.
 
 If you replace the interest policy, give a focus at the player the space the player is in: `InterestFocus.Point(client.PawnX, client.PawnY, client.PawnZ, 1f, client.PawnNetId, client.PawnSpace)`.
 
@@ -334,6 +335,12 @@ NebulaChunkedWorld.ActivateHostedGrid(worker.ControlPlane, planet.Carried, "plan
 - `grid.Frame.OriginOffset` converts between the planet's coordinates and simulation space. A client draws the planet where it is, so convert a planet point for rendering with `planet.Carried.Frame.ToParent`.
 
 For a grid whose cells are not boxes in a row, such as the six faces of a cube-sphere, implement `IChunkGridGeometry` and return it from `NebulaChunkedWorld.HostedGeometry` on every process. Nebula then asks it which cell a point is in, each cell's box, and each cell's neighbours. A player leases chunks only within `Reach` of the box of the cell below them, so a ship flying high inside a sphere's bounding cube leases no ground until it comes down.
+
+## Put a portal in a framed container
+
+A [portal](/docs/guides/instancing) can stand on a planet that is a carrier, such as a door into a cave or a building built as an instance. The planet's side of the portal simulates in the planet's frame, so everything Nebula builds for that side stands in the frame's physics scene, in the frame's coordinates, wherever the planet is in its scope and however it turns: the thin collider over the opening, the copy of the other side's static geometry in the doorway, and the kinematic proxies of the bodies that straddle the face. A crate resting across such a door sleeps, and a pawn on the planet predicts against the same pieces on a client.
+
+Only one level of frame is supported for each side of a portal. A body in a frame nested inside the planet's, such as a ship parked at the door, is mirrored, but the ship's interior is not part of the doorway's geometry. See [Collide across a portal](/docs/guides/instancing#collide-across-a-portal) for what a game has to do.
 
 ## Limits
 

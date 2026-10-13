@@ -1,6 +1,6 @@
 ---
 title: "InstanceContainerInfo"
-description: "Identifies a private container's simulation scope, content, and optional outward view."
+description: "Identifies a private container's simulation scope and content."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/InstanceContainerInfo.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/InstanceContainerInfo.cs)</div>
@@ -10,7 +10,7 @@ description: "Identifies a private container's simulation scope, content, and op
 public sealed class InstanceContainerInfo
 ```
 
-Identifies a private container's simulation scope, content, and optional outward view.
+Identifies a private container's simulation scope and content. What it looks out at is its portals' windows (`docs/portals.md` D20).
 
 ## Fields
 
@@ -26,24 +26,6 @@ The 64-bit simulation scope ([`NebulaWorker.InstanceKey`](/docs/reference/worker
 
 ```csharp
 public string ContentResource = "";
-```
-
-### ObservePublic [#observepublic]
-
-```csharp
-public bool ObservePublic;
-```
-
-### ObservationCenter [#observationcenter]
-
-```csharp
-public Vector3 ObservationCenter;
-```
-
-### ObservationSize [#observationsize]
-
-```csharp
-public Vector3 ObservationSize;
 ```
 
 ### ScopeKey [#scopekey]
@@ -62,13 +44,29 @@ public string PartId = "";
 
 The scope part this container is ([`ScopePart.PartId`](/docs/reference/control-plane/scope-part#partid)), carried so a role that was handed the row — a client, a gateway — can say *which* part of the scope it holds without inverting the hash that named it. A scoped chunk's part id is its coordinate ([`ChunkKeys.PartId`](/docs/reference/world/chunk-keys#partid)), which is how every role rebuilds the chunk grid's coordinate map from lease rows alone. Empty on a row written before the part id was recorded, and on a public-world container.
 
-### ObserveHost [#observehost]
+### HasPose [#haspose]
 
 ```csharp
-public bool ObserveHost;
+public bool HasPose;
 ```
 
-Occupants keep the container rows of the scope they came from, around where they left it ([`ScopeDefinition.ObserveHost`](/docs/reference/control-plane/scope-definition#observehost)). Only the gateway acts on it: it is stored on the lease row but not written by [`Write`](#write), so what a client is sent is unchanged.
+Whether the instance's own space is turned against its host scope's (NEB-426, `docs/scope-frames.md` D12): an instance entered through a door that is not upright in its host (a door on a sphere) is built upright in its own space and posed at the door. A point p of the instance's space is [`PoseOrigin`](#poseorigin) + [`PoseRotation`](#poserotation) × (p − [`PoseOrigin`](#poseorigin)) in the host's. False for an instance whose axes are its host's, which is every instance prepared without a rotation.
+
+### PoseOrigin [#poseorigin]
+
+```csharp
+public Double3 PoseOrigin;
+```
+
+The point both spaces share, absolute (the door): the instance's origin.
+
+### PoseRotation [#poserotation]
+
+```csharp
+public Quaternion PoseRotation = Quaternion.identity;
+```
+
+The instance's axes in its host scope's.
 
 ## Methods
 

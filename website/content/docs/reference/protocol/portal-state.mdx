@@ -1,0 +1,21 @@
+---
+title: "PortalState"
+description: "Where a party's PortalLink stands (docs/portals.md D9)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PortalMessages.cs)</div>
+
+```csharp
+public enum PortalState : byte
+```
+
+Where a party's [`PortalLink`](/docs/reference/containers/portal-link) stands (`docs/portals.md` D9).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="closed"></span>`Closed` | `0` | Nothing is prepared and nothing crosses. The aperture is solid. |
+| <span id="preparing"></span>`Preparing` | `1` | [`Portal.Open`](/docs/reference/containers/portal#open) was called and the link is getting ready. Nothing crosses yet; [`PortalLink.Wait`](/docs/reference/containers/portal-link#wait) says what it waits for. |
+| <span id="open"></span>`Open` | `2` | Everything the far side needs is standing: entities cross on the tick their root passes the face. |
+| <span id="closing"></span>`Closing` | `3` | [`Portal.Close`](/docs/reference/containers/portal#close) was called and the link waits for the band to empty before it turns solid. |

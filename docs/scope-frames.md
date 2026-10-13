@@ -150,8 +150,8 @@ protocol 27).** A door on a sphere stands along the local up, not the scope's: S
 about x and 180° about y. Its interior is authored in the door's own axes (forward is the way in, up is up), so it can
 only stand behind the door if its space is turned the way the door is.
 
-- *The pose.* `InstanceBoundary.PoseRotation` is the door's rotation in its host scope's space (`ScopeRotation`, rounded
-  to 1e-6, identity within 0.01°; `TurnWithDoor = false` keeps the host's axes). `PrepareInstance(template, key, origin,
+- *The pose.* `Portal.PoseRotation` (`InstanceBoundary.PoseRotation` before NEB-428) is the door's rotation in its host scope's space (`ScopeRotation`, rounded
+  to 1e-6, identity within 0.01°; `TurnWithDoor = false`, `TurnWithFace = false` on a `Portal`, keeps the host's axes). `PrepareInstance(template, key, origin,
   rotation)` records it on the scope definition (`HasPose`, `PoseOrigin`, `PoseRotation`, JSON written only when set) and
   every part's lease row (`InstanceContainerInfo.HasPose`, stored after the row's flags byte). A point p of the instance's
   space is `origin + rotation × (p − origin)` in the host's. The parts' boxes stay upright about the origin, so a worker
@@ -164,21 +164,24 @@ only stand behind the door if its space is turned the way the door is.
   committed in double (`TryCommitTransfer(transfer, null, Double3, rotation)`), so a host scope whose origin is far from the
   door on this worker still lands the entity to the millimetre. `InstancePoses.Turn(from, to)` is the turn a game applies
   to its own heading bookkeeping (a pawn's yaw) when its entity changes scope.
-- *A client draws each side turned for the other, only while cameras draw* (`InstanceViews`, after the scene's render
-  origin and the frames' children are placed): from outside, each drawn turned instance's root containers turn about its
-  door; from inside one, every other scene root (the host world, its frames' pivots, the sun) turns back about the door,
-  except the instance itself and the cameras. Everything is put back exactly when drawing ends, so simulation, prediction
-  and every pose a game reads stay upright.
+- *A client draws each side turned for the other, only while cameras draw* (`DrawnScopes`, after the scene's render
+  origin and the frames' children are placed): each drawn scope that is not the anchor (the scope whose frame the view's
+  frame resolves to) has its root containers posed by its pose against the anchor, and, when the view is not the anchor,
+  the cameras are posed by the view's pose; the anchor's roots are never moved. Everything is put back exactly when
+  drawing ends, so simulation, prediction and every pose a game reads stay upright. *Since NEB-435 (`docs/portals.md`
+  D40, D41) this replaces `InstanceViews`, which turned each turned instance about its door from outside and, from inside
+  one, every other scene root back about it: from inside, the instance and the camera are turned now and the world,
+  its sky and its sun are left as they are. The image is the same.*
 - *Looking out needs the host's ground resident.* A door in a chunk hosted by a framed carrier (a planet) is a row fixed in
   that carrier, held on a client until the carrier is sent (`ContainerRegistry.IsHeldForCarrier`). The host view
   (`ObserveHost`) therefore also queries the frame the pawn stood in where it left the host, and keeps the carriers of
   exactly the host rows it keeps, out to the root of their chain, in the client's set (`ClientConn.HostCarriers`: always
   relevant, authorized by `CanObserve`, followed by name on their workers). Nothing those carriers hold comes with them,
   and the rest of the planet's ground stays out. No protocol change: the carrier arrives as any spawn does.
-  (`InstanceObserveHostTests.AnOccupantKeepsTheCarrierOfTheHostGroundAtTheDoorAndNothingElseOfIt`.)
+  (`InstanceObserveHostTests.AnOccupantKeepsTheCarrierOfTheHostGroundAtTheDoorAndNothingElseOfIt`.) *Since NEB-431 this is a portal's window onto the ground: `ObserveHost` and `HostCarriers` are gone, the carriers are `ClientConn.WindowCarriers` and the test is `PortalWindowFrameTests`.*
 
 Conformance: `ConformanceFarInstanceFrameTests.ATurnedDoorTurnsItsInstanceAndCrossingsTurnWithIt` and
-`ConformanceFarInstanceClientFrameTests.TheClientDrawsATurnedInstanceTurnedBehindItsDoorAndTheWorldTurnedBackFromInside`.
+`ConformanceFarInstanceClientFrameTests.TheClientDrawsATurnedInstanceTurnedBehindItsDoorAndFromInsideItAndTheCameraAreTurnedNotTheWorld`.
 
 ## 3. Interest: scope-salted region ids
 
@@ -284,8 +287,7 @@ container with large local coordinates (a planet 500 km across), wherever its sc
   so simulation precision does not depend on where a planet sits in its system, which may be thousands of kilometres from the origin.
 - The gateway's absolute records (`EntityRecord.AbsX/AbsY/AbsZ` with `FrameKey`) are `double`. An entity in a frame
   with regions of its own is filed in the frame's space (its frame-local numbers); one standing in the scope itself is
-  filed from a position composed in `Vector3`, so far from the origin it carries a float's resolution (about a metre at
-  10,000 km). Region buckets are tens to hundreds of metres wide, so this decides nothing today.
+  filed from a position composed in double (NEB-431: a portal's window decides on it, and a float is 8 m apart 10^8 m out).
 
 Scenario 45 (`ConformanceFramePrecisionTests`) pins these numbers. A scope held by one worker where players are far
 apart on one very large planet is still the existing single-frame trade-off, and the answer to it is more workers, not more frames.

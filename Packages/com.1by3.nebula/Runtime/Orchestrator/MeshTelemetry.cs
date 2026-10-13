@@ -56,6 +56,8 @@ namespace Nebula
         private readonly Dictionary<string, Hold> _holds = new Dictionary<string, Hold>(StringComparer.Ordinal);
         /// <summary>Worker id -> the cohesion groups it last reported owning members of.</summary>
         private readonly Dictionary<string, List<CohesionSpan>> _cohesion = new Dictionary<string, List<CohesionSpan>>(StringComparer.Ordinal);
+        /// <summary>Worker id -> the portal links that are not closed it last reported (docs/portals.md D34, D36).</summary>
+        private readonly Dictionary<string, List<PortalLinkSpan>> _portalLinks = new Dictionary<string, List<PortalLinkSpan>>(StringComparer.Ordinal);
         /// <summary>
         /// The latest cost row per container (docs/cost-telemetry.md): what it costs the worker that leases it, in
         /// simulation, replication and gateway relay. Kept per container - which is per lease, a container has one
@@ -66,6 +68,7 @@ namespace Nebula
         private readonly List<KeyValuePair<string, ContainerLoad>> _parsed = new List<KeyValuePair<string, ContainerLoad>>();
         private readonly List<KeyValuePair<string, float>> _parsedHolds = new List<KeyValuePair<string, float>>();
         private readonly List<CohesionSpan> _parsedCohesion = new List<CohesionSpan>();
+        private readonly List<PortalLinkSpan> _parsedPortalLinks = new List<PortalLinkSpan>();
         private readonly List<ContainerCost> _parsedCost = new List<ContainerCost>();
         private readonly List<string> _expired = new List<string>();
         private readonly StringBuilder _sb = new StringBuilder(1 << 16);
@@ -446,6 +449,7 @@ namespace Nebula
                 _documents.Remove(workerId);
                 _interest.Remove(workerId);
                 _cohesion.Remove(workerId);
+                _portalLinks.Remove(workerId);
                 _expired.Clear();
                 foreach (var kv in _holds) if (kv.Value.WorkerId == workerId) _expired.Add(kv.Key);
                 foreach (var id in _expired) _holds.Remove(id);
@@ -514,6 +518,20 @@ namespace Nebula
             public double ReceivedAt;
         }
 
+        /// <summary>One portal link that was not closed in a worker's latest document (<c>docs/portals.md</c> D34, D36).</summary>
+        public struct PortalLinkSpan
+        {
+            public string LinkId;
+            public string Portal;
+            public string State;
+            public string Wait;
+            public bool Split;
+            /// <summary>The near face's container, then the far containers its window touches.</summary>
+            public List<string> Containers;
+            public string WorkerId;
+            public double ReceivedAt;
+        }
+
         /// <summary>
         /// Replace what <paramref name="workerId"/> last said about holds and cohesion groups. A hold is reported as
         /// the seconds it still has to run and becomes a deadline on the orchestrator's clock here, so the two
@@ -532,6 +550,22 @@ namespace Nebula
             {
                 if (_parsedHolds[i].Value <= 0f) continue;
                 _holds[_parsedHolds[i].Key] = new Hold { WorkerId = workerId, ExpiresAt = now + _parsedHolds[i].Value };
+            }
+
+            _parsedPortalLinks.Clear();
+            ParsePortalLinks(json, _parsedPortalLinks);
+            if (_parsedPortalLinks.Count == 0) _portalLinks.Remove(workerId);
+            else
+            {
+                var links = new List<PortalLinkSpan>(_parsedPortalLinks.Count);
+                for (int i = 0; i < _parsedPortalLinks.Count; i++)
+                {
+                    var link = _parsedPortalLinks[i];
+                    link.WorkerId = workerId;
+                    link.ReceivedAt = now;
+                    links.Add(link);
+                }
+                _portalLinks[workerId] = links;
             }
 
             _parsedCohesion.Clear();
@@ -610,6 +644,32 @@ namespace Nebula
                 }
             }
             result.Sort((a, b) => a.Group.CompareTo(b.Group));
+            // The portal links that are not closed bind the containers they join exactly as a group does (docs/portals.md D34): the planner deals them as one item.
+            lock (_lock)
+            {
+                double now = _now();
+                var links = new List<CohesionGroupInfo>();
+                foreach (var worker in _portalLinks)
+                {
+                    var rows = worker.Value;
+                    for (int i = 0; i < rows.Count; i++)
+                    {
+                        var span = rows[i];
+                        if (now - span.ReceivedAt > ExpireSeconds) continue;
+                        var info = new CohesionGroupInfo
+                        {
+                            Label = "portal " + (span.Portal ?? "") + " " + span.LinkId,
+                            Detail = span.State + (span.Wait != null && span.Wait != "None" ? ", waiting: " + span.Wait : ""),
+                            IsSplitLink = span.Split,
+                        };
+                        info.Workers.Add(span.WorkerId);
+                        if (span.Containers != null) foreach (var c in span.Containers) if (!info.Containers.Contains(c)) info.Containers.Add(c);
+                        links.Add(info);
+                    }
+                }
+                links.Sort((a, b) => string.CompareOrdinal(a.Label, b.Label));
+                result.AddRange(links);
+            }
         }
 
         /// <summary>
@@ -631,6 +691,74 @@ namespace Nebula
                     else if (key == "seconds" && !isString) seconds = (float)number;
                 }
                 if (!string.IsNullOrEmpty(id)) result.Add(new KeyValuePair<string, float>(id, seconds));
+            }
+        }
+
+        /// <summary>
+        /// Pull the <c>"portalLinks"</c> array out of a worker document:
+        /// <c>[{"id":"1f","portal":"door","state":"Open","wait":"None","split":0,"in":["a","b"]},...]</c> (<c>docs/portals.md</c> D34). The containers are
+        /// under <c>"in"</c> for the reason <see cref="ParseCohesion"/> gives.
+        /// </summary>
+        public static void ParsePortalLinks(string json, List<PortalLinkSpan> result)
+        {
+            int at = ArrayStart(json, "\"portalLinks\"");
+            while (at >= 0)
+            {
+                at = ObjectStart(json, at, out bool done);
+                if (done) return;
+                var span = new PortalLinkSpan { Containers = new List<string>(2) };
+                while (true)
+                {
+                    while (at < json.Length && (char.IsWhiteSpace(json[at]) || json[at] == ',')) at++;
+                    if (at >= json.Length) return;
+                    if (json[at] == '}') { at++; break; }
+                    if (json[at] != '"') return;
+                    int keyEnd = json.IndexOf('"', at + 1);
+                    if (keyEnd < 0) return;
+                    string key = json.Substring(at + 1, keyEnd - at - 1);
+                    at = json.IndexOf(':', keyEnd);
+                    if (at < 0) return;
+                    at++;
+                    while (at < json.Length && char.IsWhiteSpace(json[at])) at++;
+                    if (at >= json.Length) return;
+                    if (json[at] == '[')
+                    {
+                        at++;
+                        while (true)
+                        {
+                            while (at < json.Length && (char.IsWhiteSpace(json[at]) || json[at] == ',')) at++;
+                            if (at >= json.Length) return;
+                            if (json[at] == ']') { at++; break; }
+                            if (json[at] != '"') return;
+                            int end = EndOfString(json, at);
+                            if (end < 0) return;
+                            string value = json.Substring(at + 1, end - at - 1);
+                            if (key == "in" && value.Length > 0 && !span.Containers.Contains(value)) span.Containers.Add(value);
+                            at = end + 1;
+                        }
+                    }
+                    else if (json[at] == '"')
+                    {
+                        int end = EndOfString(json, at);
+                        if (end < 0) return;
+                        string value = json.Substring(at + 1, end - at - 1);
+                        if (key == "id") span.LinkId = value;
+                        else if (key == "portal") span.Portal = value;
+                        else if (key == "state") span.State = value;
+                        else if (key == "wait") span.Wait = value;
+                        at = end + 1;
+                    }
+                    else
+                    {
+                        int numEnd = at;
+                        while (numEnd < json.Length && (char.IsDigit(json[numEnd]) || json[numEnd] == '-' || json[numEnd] == '.' || json[numEnd] == 'e' || json[numEnd] == 'E' || json[numEnd] == '+')) numEnd++;
+                        if (numEnd == at) return;
+                        double.TryParse(json.Substring(at, numEnd - at), NumberStyles.Float, CultureInfo.InvariantCulture, out double value);
+                        if (key == "split") span.Split = value != 0.0;
+                        at = numEnd;
+                    }
+                }
+                if (!string.IsNullOrEmpty(span.LinkId)) result.Add(span);
             }
         }
 

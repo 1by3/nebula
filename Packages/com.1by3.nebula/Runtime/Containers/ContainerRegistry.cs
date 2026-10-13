@@ -495,7 +495,7 @@ namespace Nebula
         /// departing box and looking only among the boxes of <paramref name="scope"/>, the departing box's own: the
         /// smallest one holding the entity, or the scope's nearest box when none does. An entity in an instance or a
         /// scoped grid never lands in a public container this way, however close one is; crossing a scope is
-        /// <see cref="InstanceBoundary"/>'s job.
+        /// <see cref="Portal"/>'s job.
         /// </summary>
         private static void EvacuateEntities(Container container, ulong scope)
         {
@@ -671,6 +671,7 @@ namespace Nebula
                 c.Authority = placement.Authority;
                 c.OwnPhysicsFrame = placement.OwnPhysicsFrame;
                 c.FrameInterest = placement.FrameInterest;
+                c.FrameApproachMargin = placement.FrameApproachMargin;
             }
             if (parent != null)
             {
@@ -679,6 +680,9 @@ namespace Nebula
                 if (c.AuthorityDemoted)
                     NebulaLog.Warn($"runtime container {c.ContainerId} is leased but its parent {parent.ContainerId} moves and has no physics frame of its own; it is simulated as inherited (docs/container-tree.md D7)");
             }
+            // A client holds a scope's root container in the scope's physics scene from the moment it exists, empty or not: what a
+            // game builds under it (a chunk's colliders) must not collide with the public world's, which is the default scene (NEB-308).
+            if (parent == null && NebulaRuntime.IsClient) InstanceScenes.Place(c);
             c.RefreshCache();
             if (c.OwnPhysicsFrame) PhysicsFrames.Create(c);
             RuntimeList.Add(c);
@@ -711,6 +715,7 @@ namespace Nebula
                 Authority = c.Authority,
                 OwnPhysicsFrame = c.OwnPhysicsFrame,
                 FrameInterest = c.FrameInterest,
+                FrameApproachMargin = c.FrameApproachMargin,
             };
         }
 
@@ -747,6 +752,7 @@ namespace Nebula
                     Authority = child.Authority,
                     OwnPhysicsFrame = child.OwnPhysicsFrame,
                     FrameInterest = child.FrameInterest,
+                    FrameApproachMargin = child.FrameApproachMargin,
                 };
                 ulong id = child.RuntimeId;
                 var instance = child.Instance?.Copy();
@@ -888,6 +894,16 @@ namespace Nebula
         {
             var origin = OriginOf(instanceId);
             return new Vector3((float)(absolute.X + origin.X), (float)(absolute.Y + origin.Y), (float)(absolute.Z + origin.Z));
+        }
+
+        /// <summary>
+        /// <see cref="ToFrame(Double3, ulong)"/> kept in double: an absolute position as a position of the scope's own space, which a physics frame's
+        /// <see cref="PhysicsFrames.ConvertLocal(Double3, Container, Container)"/> takes without narrowing it to float first.
+        /// </summary>
+        internal static Double3 ToFramePrecise(Double3 absolute, ulong instanceId)
+        {
+            var origin = OriginOf(instanceId);
+            return new Double3(absolute.X + origin.X, absolute.Y + origin.Y, absolute.Z + origin.Z);
         }
 
         /// <summary>The inverse of <see cref="ToFrame(Double3, ulong)"/>: a frame position as an absolute one, in double.</summary>

@@ -1,0 +1,98 @@
+---
+title: "PortalQueries"
+description: "Raycasts, sweeps and overlaps that continue through an open portal (docs/portals.md D32, D33)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PortalQueries.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PortalQueries.cs)</div>
+
+```csharp
+public sealed class PortalQueries
+```
+
+Raycasts, sweeps and overlaps that continue through an open portal (`docs/portals.md` D32, D33). Get it from [`NebulaWorker.PortalQueries`](/docs/reference/worker/nebula-worker#portalqueries) or [`NebulaClient.PortalQueries`](/docs/reference/client/nebula-client#portalqueries): every process keeps its own, because what it can answer is the scenes it holds.
+
+A query names the scope it starts in and who is asking ([`PortalAsker`](/docs/reference/containers/portal-asker)), and runs in that scope's physics scene, ignoring portal proxies. If the cast meets the cross-section of a link that is open for the asker's party before it hits anything, it continues in the far scope's scene from the plane point, carried through the link, for the distance that is left, and stops at the next aperture: one portal deep. A cast that meets a closed aperture hits it on the plane ([`PortalHitFlags.Aperture`](/docs/reference/containers/portal-hit-flags#aperture)). Each [`PortalHit`](/docs/reference/containers/portal-hit) says which scope it is in, and its point in the asker's space and in that scope's.
+
+With a tick in the [`PortalQueryOptions`](/docs/reference/containers/portal-query-options) a worker poses the far scope's entities at the pose they had then for the far leg ([`HistoryRewind`](/docs/reference/containers/history-rewind)), and the near scope's too with [`PortalQueryOptions.RewindNear`](/docs/reference/containers/portal-query-options#rewindnear). When the far scope is on another worker the query tests the part of the far leg that is in the band (the ghost proxies of the far bodies) and a cast that leaves the band is returned [`PortalHitFlags.Truncated`](/docs/reference/containers/portal-hit-flags#truncated). A query allocates nothing beyond the hit buffer the caller provides.
+
+## Methods
+
+### Raycast [#raycast]
+
+```csharp
+public bool Raycast(PortalAsker asker, ulong scope, Vector3 origin, Vector3 direction, float maxDistance, out PortalHit hit, PortalQueryOptions options = null);
+```
+
+The first thing a ray hits, continuing through an open portal (`docs/portals.md` D32).
+
+| Parameter | Description |
+| --- | --- |
+| `asker` | Who is asking: its colliders are skipped and its party chooses the link. |
+| `scope` | The scope the ray starts in (0 is the public world). |
+| `origin` | The start, in the coordinates of the scope's physics scene (the simulation space of [`PortalQueryOptions.Space`](/docs/reference/containers/portal-query-options#space) when that is set). |
+| `direction` | The direction; it need not be normalised. |
+| `maxDistance` | The length of the whole cast, in meters, summed over both legs. |
+| `hit` | The hit: a collider, a closed aperture's plane or a [`PortalHitFlags.Truncated`](/docs/reference/containers/portal-hit-flags#truncated) end. |
+| `options` | Layers, rewind and frame; null for the defaults. |
+
+**Returns:** True when something was hit.
+
+### RaycastAll [#raycastall]
+
+```csharp
+public int RaycastAll(PortalAsker asker, ulong scope, Vector3 origin, Vector3 direction, float maxDistance, PortalHit[] hits, PortalQueryOptions options = null);
+```
+
+Every hit along a ray, nearest first, continuing through an open portal; stops at a closed aperture. At most `hits`.Length are written.
+
+**Returns:** How many hits were written.
+
+### SweepSphere [#sweepsphere]
+
+```csharp
+public bool SweepSphere(PortalAsker asker, ulong scope, Vector3 center, float radius, Vector3 direction, float maxDistance, out PortalHit hit, PortalQueryOptions options = null);
+```
+
+A sphere swept along a direction. The sphere's centre decides where it meets a cross-section; the sphere itself is cast in each scene (see [`Raycast`](#raycast) for the parameters).
+
+### SweepCapsule [#sweepcapsule]
+
+```csharp
+public bool SweepCapsule(PortalAsker asker, ulong scope, Vector3 point1, Vector3 point2, float radius, Vector3 direction, float maxDistance, out PortalHit hit, PortalQueryOptions options = null);
+```
+
+A capsule (the two sphere centres and the radius) swept along a direction; the midpoint of its axis decides where it meets a cross-section.
+
+### SweepBox [#sweepbox]
+
+```csharp
+public bool SweepBox(PortalAsker asker, ulong scope, Vector3 center, Vector3 halfExtents, Quaternion orientation, Vector3 direction, float maxDistance, out PortalHit hit, PortalQueryOptions options = null);
+```
+
+A box swept along a direction; its centre decides where it meets a cross-section. The box is turned by the link as it goes through.
+
+### OverlapSphere [#overlapsphere]
+
+```csharp
+public int OverlapSphere(PortalAsker asker, ulong scope, Vector3 center, float radius, PortalHit[] hits, PortalQueryOptions options = null);
+```
+
+The colliders a sphere overlaps in its own scope, and in the far scope of every open link whose face it reaches through: the part of the sphere beyond the face, mapped through the link (`docs/portals.md` D32). A closed aperture the shape straddles is a hit on the plane. At most `hits`.Length are written.
+
+**Returns:** How many hits were written.
+
+### OverlapCapsule [#overlapcapsule]
+
+```csharp
+public int OverlapCapsule(PortalAsker asker, ulong scope, Vector3 point1, Vector3 point2, float radius, PortalHit[] hits, PortalQueryOptions options = null);
+```
+
+As [`OverlapSphere`](#overlapsphere), for a capsule.
+
+### OverlapBox [#overlapbox]
+
+```csharp
+public int OverlapBox(PortalAsker asker, ulong scope, Vector3 center, Vector3 halfExtents, Quaternion orientation, PortalHit[] hits, PortalQueryOptions options = null);
+```
+
+As [`OverlapSphere`](#overlapsphere), for a box.

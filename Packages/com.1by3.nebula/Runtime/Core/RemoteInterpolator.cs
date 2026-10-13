@@ -92,6 +92,38 @@ namespace Nebula
             _any = false;
         }
 
+        private static ulong ScopeOf(Container container) => container != null ? container.InstanceId : 0UL;
+
+        /// <summary>
+        /// The entity went through a portal (<c>docs/portals.md</c> D18): every buffered sample recorded in the scope it left is rewritten
+        /// into <paramref name="destination"/>, in the scope it entered, through the link's pose, so the buffer holds one space and a
+        /// replica glides across the face. Without it a sample on the old side would be bridged into the new container through the two
+        /// containers' world poses, which differ by the portal's turn: a pop of up to a metre at a turned door.
+        /// </summary>
+        internal void CarryThroughPortal(in PortalMap map, Container destination)
+        {
+            if (!_any) return;
+            for (int i = 0; i < Capacity; i++)
+            {
+                if (!_ring[i].Valid || ScopeOf(_ring[i].Container) != map.FromScope) continue;
+                Portals.CarryLocal(in map, _ring[i].Container, _ring[i].Position, _ring[i].Rotation, _ring[i].Velocity, destination,
+                    out var p, out var r, out var v);
+                _ring[i].Container = destination;
+                _ring[i].Position = p;
+                _ring[i].Rotation = r;
+                _ring[i].Velocity = v;
+            }
+            if (ScopeOf(LatestContainer) == map.FromScope)
+            {
+                Portals.CarryLocal(in map, LatestContainer, LatestLocalPosition, LatestLocalRotation, LatestVelocity, destination,
+                    out var p, out var r, out var v);
+                LatestContainer = destination;
+                LatestLocalPosition = p;
+                LatestLocalRotation = r;
+                LatestVelocity = v;
+            }
+        }
+
         private bool TryGet(uint tick, out PoseSample s)
         {
             s = _ring[tick % Capacity];
