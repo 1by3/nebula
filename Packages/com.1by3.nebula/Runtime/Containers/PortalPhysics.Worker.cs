@@ -415,7 +415,13 @@ namespace Nebula
             for (int n = 0; n < _eligible.Count; n++)
             {
                 var c = info.Colliders[_eligible[n]];
-                if (tracked.Ignored.Contains(c)) continue;
+                // Unity forgets an ignored pair when either collider is deactivated (the aperture back in its pool between a link's close and
+                // its reopening, a body's collider toggled): the list says what was asked for, not what holds, so the pair itself is checked.
+                if (tracked.Ignored.Contains(c))
+                {
+                    if (c != null && !Physics.GetIgnoreCollision(c, aperture.Collider)) IgnoreCollision(c, aperture.Collider, true);
+                    continue;
+                }
                 IgnoreCollision(c, aperture.Collider, true);
                 tracked.Ignored.Add(c);
             }
