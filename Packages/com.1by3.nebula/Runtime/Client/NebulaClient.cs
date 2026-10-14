@@ -345,6 +345,29 @@ namespace Nebula
         private readonly NetworkWriter _writer = new NetworkWriter(2048);
         private readonly NetworkWriter _inputWriter = new NetworkWriter(256);
         private readonly NetworkReader _reader = new NetworkReader();
+
+        /// <summary>A correction of the local pawn received in <c>Update</c>, replayed in the next fixed step (NEB-445).</summary>
+        private struct PendingCorrection
+        {
+            public NetworkIdentity Target;
+            public Container Container;
+            public uint Tick;
+            public uint Epoch;
+            public byte[] State;
+            public int Pawn;
+            public float Received;
+        }
+
+        private readonly List<PendingCorrection> _pendingCorrections = new List<PendingCorrection>();
+        private readonly NetworkReader _correctionReader = new NetworkReader();
+        /// <summary>Counts local pawn spawns, so a correction queued for an earlier pawn (or an earlier prediction of it) is dropped.</summary>
+        private int _pawnGeneration;
+
+        /// <summary>
+        /// How long a queued correction waits for a fixed step before it is replayed in <c>Update</c> anyway (seconds):
+        /// a client that stops predicting (a stall, no pawn) still applies what the worker said.
+        /// </summary>
+        public float PendingCorrectionTimeoutSeconds = 0.25f;
         private readonly NetworkReader _batchReader = new NetworkReader();
         private readonly List<ClientInputMsg.Frame> _recentInputs = new List<ClientInputMsg.Frame>();
         private ClientInputMsg _inputMsg = new ClientInputMsg { Frames = new List<ClientInputMsg.Frame>() };
@@ -921,6 +944,14 @@ namespace Nebula
         {
             if (_transport == null) return; // not initialised (a stray component), or torn down
             _transport.Poll(HandleTransportEvent);
+            // Corrections replayed back to back held the pawn's frame at its simulation pose (NEB-445); it is drawn now.
+            PhysicsFrames.ReleaseSimulationPose();
+            // Corrections queued for the next fixed step (NEB-445) that no fixed step will take: replayed here, as before.
+            if (_pendingCorrections.Count > 0 && !PendingCorrectionsWillReplay())
+            {
+                ReplayPendingCorrections();
+                PhysicsFrames.ReleaseSimulationPose();
+            }
 
             TickConnection();
             TickStallWatch();
@@ -1095,32 +1126,48 @@ namespace Nebula
             // The local pawn casts against the hull it rides. The interpolated hull moved in Update, and PhysX has
             // not seen that yet (transforms reach it at the physics step, after this): bring it up to date, as the
             // worker does between a carrier's tick and its contents', or the deck is a frame behind under the pawn.
-            if (ContainerRegistry.Dynamic.Count > 0) Physics.SyncTransforms();
-            // The pawn predicts against what the worker has: the throat, the aperture colliders and proxies of the replicas in the band (docs/portals.md D25).
-            if (pawn && (Portals.Known.Count > 0 || _portalPhysics.HasRigs)) _portalPhysics.StepClient(LocalPlayer, _entities.Values, first);
-
-            for (int i = 0; i < steps; i++)
+            // On a client that renders frames every prediction step's BeginSimulation syncs before it simulates, so
+            // only the portal step of a pawn outside a frame needs it here. A sync of its own here would also take
+            // everything drawing moved, a whole physics frame's colliders (D25), and the step's move of that frame
+            // would take them all again (NEB-445).
+            bool portalStep = pawn && (Portals.Known.Count > 0 || _portalPhysics.HasRigs);
+            bool pawnFramed = pawn && LocalPlayer.Space != null && LocalPlayer.Space.Frame != null;
+            if (ContainerRegistry.Dynamic.Count > 0 && (!PhysicsFrames.RendersFrames || (portalStep && !pawnFramed))) Physics.SyncTransforms();
+            // Each step holds its frame at its simulation pose for the next (NEB-445): moving a frame moves every
+            // collider in it, so the frame moves there once and back once, whatever the number of steps. It goes back
+            // before Update (PhysicsFrames.HoldThroughFixedSteps), or after this FixedUpdate with that off.
+            try
             {
-                _predictTick = first + (uint)i;
-                NetworkTime.Tick = _predictTick;
-                // What the player drives moves first, as its worker ticks a carrier before what rides in it: a pawn in
-                // the driving seat then predicts against the seat where the vehicle is now (docs/driven-vehicles.md D6).
-                for (int d = 0; d < _driven.Count; d++) PredictDriven(_driven[d]);
-                if (!pawn) continue;
-                if (_driven.Count > 0) Physics.SyncTransforms();
-                // A pawn inside a physics frame predicts in the frame's own coordinates, exactly as its worker simulates
-                // it: the frame root goes to its simulation pose for the step, about an origin near the pawn
-                // (docs/container-tree.md D11, D19).
-                PhysicsFrames.BeginSimulation(LocalPlayer.Container != null ? LocalPlayer.Container.InnerSpace : null, LocalPlayer.transform);
-                try
+                // Corrections received since the last fixed step, replayed in this step's hold, before the step: where
+                // Update would have replayed them, as no step ran in between, without moving the frame for them (NEB-445).
+                if (_pendingCorrections.Count > 0) ReplayPendingCorrections();
+                // The pawn predicts against what the worker has: the throat, the aperture colliders and proxies of the replicas in the band (docs/portals.md D25).
+                if (portalStep) _portalPhysics.StepClient(LocalPlayer, _entities.Values, first, holdFrame: true);
+
+                for (int i = 0; i < steps; i++)
                 {
-                    _inputWriter.Reset();
-                    LocalPlayer.Predicted.ClientPredictTick(_predictTick, _inputWriter);
-                    _recentInputs.Add(new ClientInputMsg.Frame { Tick = _predictTick, Payload = _inputWriter.ToArray() });
-                    while (_recentInputs.Count > 3) _recentInputs.RemoveAt(0);
+                    _predictTick = first + (uint)i;
+                    NetworkTime.Tick = _predictTick;
+                    // What the player drives moves first, as its worker ticks a carrier before what rides in it: a pawn in
+                    // the driving seat then predicts against the seat where the vehicle is now (docs/driven-vehicles.md D6).
+                    for (int d = 0; d < _driven.Count; d++) PredictDriven(_driven[d]);
+                    if (!pawn) continue;
+                    if (_driven.Count > 0) Physics.SyncTransforms();
+                    // A pawn inside a physics frame predicts in the frame's own coordinates, exactly as its worker simulates
+                    // it: the frame root goes to its simulation pose for the step, about an origin near the pawn
+                    // (docs/container-tree.md D11, D19).
+                    PhysicsFrames.BeginSimulation(LocalPlayer.Container != null ? LocalPlayer.Container.InnerSpace : null, LocalPlayer.transform);
+                    try
+                    {
+                        _inputWriter.Reset();
+                        LocalPlayer.Predicted.ClientPredictTick(_predictTick, _inputWriter);
+                        _recentInputs.Add(new ClientInputMsg.Frame { Tick = _predictTick, Payload = _inputWriter.ToArray() });
+                        while (_recentInputs.Count > 3) _recentInputs.RemoveAt(0);
+                    }
+                    finally { PhysicsFrames.EndSimulation(hold: true); }
                 }
-                finally { PhysicsFrames.EndSimulation(); }
             }
+            finally { if (!PhysicsFrames.HoldThroughFixedSteps) PhysicsFrames.ReleaseSimulationPose(); }
 
             if (pawn)
             {
@@ -1159,7 +1206,8 @@ namespace Nebula
                 frames.Add(new ClientInputMsg.Frame { Tick = _predictTick, Payload = _inputWriter.ToArray() });
                 while (frames.Count > 3) frames.RemoveAt(0);
             }
-            finally { PhysicsFrames.EndSimulation(); }
+            // Held for the pawn's step after it (NEB-445), unless the vehicle's box must be read where it is drawn.
+            finally { PhysicsFrames.EndSimulation(hold: e.Carried == null); }
             // A vehicle with a box of its own (seats, a hold): what rides in it is placed through its new pose.
             e.Carried?.RefreshCache();
         }
@@ -1248,6 +1296,7 @@ namespace Nebula
 
         private void HandleTransportEvent(TransportEvent ev)
         {
+            if (ev.Type != TransportEvent.Kind.Data) PhysicsFrames.ReleaseSimulationPose();
             switch (ev.Type)
             {
                 case TransportEvent.Kind.Connected:
@@ -1316,6 +1365,9 @@ namespace Nebula
         private void Dispatch(NetworkReader r)
         {
             var id = (MsgId)r.ReadByte();
+            // Only a correction runs while a frame is held at its simulation pose for the next one (NEB-445): anything
+            // else, and the game code it calls, finds every frame where it is drawn.
+            if (id != MsgId.OwnerState) PhysicsFrames.ReleaseSimulationPose();
             if (IsServerState(id)) NoteServerState();
             switch (id)
             {
@@ -1766,6 +1818,8 @@ namespace Nebula
             if (e.IsLocalPlayer)
             {
                 LocalPlayer = e;
+                _pawnGeneration++;
+                _pendingCorrections.Clear();
                 e.Predicted?.ResetPrediction();
                 _predictTick = 0;
                 LocalPlayerSpawned?.Invoke(e);
@@ -2074,13 +2128,60 @@ namespace Nebula
             // would reconcile against the wrong origin for a tick and snap the pawn across the map.
             var container = ContainerRegistry.Resolve(msg.Container);
             if (container == null && msg.Container.NamesAContainer) return; // the container is not here yet (of any kind); the next report will do
-            if (container != target.Container) target.SetContainer(container);
+            if (container != target.Container)
+            {
+                PhysicsFrames.ReleaseSimulationPose();
+                target.SetContainer(container);
+            }
+            // The pawn's correction in a frame waits for the next fixed step, whose hold has the frame at its simulation
+            // pose already: replaying it here moved the whole frame there and back once more every frame (NEB-445).
+            // No prediction step runs before then, so it replays exactly as it would have here; it is drawn up to one
+            // fixed step later. Corrections already queued keep their order ahead of one replayed now.
+            var space = container != null ? container.InnerSpace : null;
+            if (target == LocalPlayer && PhysicsFrames.HoldThroughFixedSteps && PhysicsFrames.RendersFrames && space != null && space.Frame != null)
+            {
+                _pendingCorrections.Add(new PendingCorrection { Target = target, Container = container, Tick = msg.Tick, Epoch = msg.Epoch, State = msg.State, Pawn = _pawnGeneration, Received = Time.unscaledTime });
+                return;
+            }
+            if (target == LocalPlayer && _pendingCorrections.Count > 0) ReplayPendingCorrections();
             _reader.Set(new ArraySegment<byte>(msg.State));
-            // A correction replays inputs, which is simulation: in the pawn's frame at its simulation pose (D11).
+            // A correction replays inputs, which is simulation: in the pawn's frame at its simulation pose (D11). The
+            // frame is held there for a next correction in the same poll, so a burst of them moves it once (NEB-445);
+            // Update and any other message put it back.
             PhysicsFrames.BeginSimulation(container != null ? container.InnerSpace : null, target.transform);
             try { target.Predicted.ClientReconcile(msg.Tick, _reader); }
-            finally { PhysicsFrames.EndSimulation(); }
-            if (target != LocalPlayer) target.Carried?.RefreshCache();
+            finally { PhysicsFrames.EndSimulation(hold: true); }
+            if (target != LocalPlayer && target.Carried != null)
+            {
+                PhysicsFrames.ReleaseSimulationPose();
+                target.Carried.RefreshCache();
+            }
+        }
+
+        /// <summary>Whether a fixed step will take the queued corrections soon: the client predicts its pawn, and the oldest is recent.</summary>
+        private bool PendingCorrectionsWillReplay() =>
+            ConnectionState == State.InGame && LocalPlayer != null && LocalPlayer.Predicted != null
+            && Time.unscaledTime - _pendingCorrections[0].Received <= PendingCorrectionTimeoutSeconds;
+
+        /// <summary>
+        /// Replay the queued corrections of the local pawn in order, each in its frame at its simulation pose, held for the
+        /// next (NEB-445). One whose pawn, epoch or container changed since it came is dropped: a newer report follows
+        /// every tick, and the state it describes no longer applies to what the client holds.
+        /// </summary>
+        private void ReplayPendingCorrections()
+        {
+            for (int i = 0; i < _pendingCorrections.Count; i++)
+            {
+                var c = _pendingCorrections[i];
+                var target = c.Target;
+                if (target == null || target != LocalPlayer || c.Pawn != _pawnGeneration || target.Predicted == null) continue;
+                if (target.Epoch != c.Epoch || target.Container != c.Container) continue;
+                _correctionReader.Set(new ArraySegment<byte>(c.State));
+                PhysicsFrames.BeginSimulation(c.Container != null ? c.Container.InnerSpace : null, target.transform);
+                try { target.Predicted.ClientReconcile(c.Tick, _correctionReader); }
+                finally { PhysicsFrames.EndSimulation(hold: true); }
+            }
+            _pendingCorrections.Clear();
         }
 
         /// <summary>
