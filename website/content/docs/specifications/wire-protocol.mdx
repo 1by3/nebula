@@ -13,7 +13,7 @@ The current protocol version is `28`. Every `Hello` carries the version its send
 
 A gateway accepts clients of protocol 28 only: `HelloMsg.MinProtocolVersion` and `HelloMsg.ProtocolVersion` are both `28`, and a client of 27 or older is refused with `ProtocolUnsupported` and the gateway's range. Gateway-to-worker and worker-to-worker connections MUST match protocol `28` exactly. Before 1.0 a protocol change may close the client window to the new version; protocols 23 and 28 did, and protocols 24 to 27 did not.
 
-Protocol 28 added [portals](/docs/guides/instancing): three messages, `Portals` (27), `PortalLinks` (28) and `PortalWarm` (29), and a trailing `link_id` on `InstancePreparation`. The bytes alone are additive, but the meaning is not: a protocol-27 client would be sent replicas of scopes it believes hidden, would never draw them posed, and would predict its pawn into an aperture it does not know is solid, so the window closes.
+Protocol 28 added [portals](/docs/guides/instancing): five messages, `Portals` (27), `PortalLinks` (28) and `PortalWarm` (29) for clients and gateways and the worker-to-worker `PortalAdjacency` (51) and `PortalHandoff` (52), the `PortalGhost` entity flag, and a trailing `link_id` on `InstancePreparation`. The bytes alone are additive, but the meaning is not: a protocol-27 client would be sent replicas of scopes it believes hidden, would never draw them posed, and would predict its pawn into an aperture it does not know is solid, so the window closes.
 
 Protocol 26 added the [far relevance tier](/docs/guides/interest-management#see-ships-and-outposts-from-far-away): a new message, `FarEntities`, that a worker sends to gateways and a gateway sends only to clients that negotiated 26. Nothing a protocol-25 client sends or reads changed. The worker heartbeat gains `hasFarEntities`.
 
@@ -138,8 +138,9 @@ Positions and rotations are relative to this container unless a behavior's docum
 | `EntityFlags.OwnerIsBot` | 1 | The owning client is a bot. |
 | `EntityFlags.ServerDriven` | 2 | The entity has no client owner and is driven by a worker. |
 | `EntityFlags.OwnerDisconnected` | 4 | The owning client is disconnected and the worker is keeping the entity for the reclaim grace. The worker announces the entity again, in place, when the bit changes. |
+| `EntityFlags.PortalGhost` | 8 | A ghost spawn only: the sender ghosts the entity because it is in the band of a portal face whose other side the receiver holds. The receiver keeps it as a proxy only, posed through the link in its own scene. |
 
-Unknown flag bits are reserved. A version 24 sender MUST write them as zero.
+Unknown flag bits are reserved. A version 28 sender MUST write them as zero.
 
 ## Message registry
 
@@ -197,6 +198,8 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 48 | `WorkerMessage` | `W-W` | Caller-selected | [`WorkerMessage`](#worker-defined-messages) |
 | 49 | `AuthorityRpcReply` | `W-W` | Reliable ordered | [`AuthorityCallReply`](#authority-calls) |
 | 50 | `GhostMaps` | `W-W` | Reliable ordered | [`EntityMapsBody`](#replicated-maps) |
+| 51 | `PortalAdjacency` | `W-W` | Reliable ordered | [`PortalAdjacency`](#portal-adjacency-and-handoff) |
+| 52 | `PortalHandoff` | `W-W` | Reliable ordered | [`PortalHandoff`](#portal-adjacency-and-handoff) |
 
 IDs not listed in this table are reserved. A version 28 sender MUST NOT use them.
 
@@ -485,10 +488,13 @@ A worker sends `OwnerState` every tick for an entity a client owns, to that clie
 ```text
 ContainerOwnership := u8 flags, u16 entry_count, OwnershipEntry[entry_count],
                       u16 remove_count, string removed_container_id[remove_count],
-                      [u16 placement_count, Placement[placement_count]]
+                      [u16 placement_count, Placement[placement_count],
+                       [u16 posed_count, InstancePose[posed_count]]]
 Placement := u16 entry_index, string parent_id,
              f64 center_x, f64 center_y, f64 center_z,
              u8 authority, u8 placement_flags
+InstancePose := u16 entry_index, f64 origin_x, f64 origin_y, f64 origin_z,
+                f32 rotation_x, f32 rotation_y, f32 rotation_z, f32 rotation_w
 OwnershipEntry :=
   u16 container_index,
   string container_id,
@@ -506,19 +512,18 @@ Message flag bit 0 (`Full`) means the entries are the complete set of containers
 
 Entry flag bit 0 (`Bounds`) marks a runtime container and appends its axis-aligned box. Other bits are reserved.
 
-The trailing placement section is optional; a reader stops when the message ends before it. Each `Placement` completes the runtime entry at `entry_index` in this message: `parent_id` names the container it sits in (empty for a root), and the double-precision centre is local to that parent, or absolute for a root. For such an entry the float `bounds_center` is the same value narrowed and a reader that knows the placement section MUST use the placement instead. `authority` is `0` (default), `1` (leased), or `2` (inherited). `placement_flags` bit 0 means the container has a physics frame of its own and bit 1 that its contents are bucketed in the frame's own regions. A sender writes a placement only for an entry that needs one: a child, a framed container, a non-default authority, or a centre a float cannot hold. An empty `worker_id` represents an unassigned lease. Lease states and transitions are defined by the [control-plane contract](/docs/specifications/control-plane).
+The trailing placement section is optional; a reader stops when the message ends before it. Each `Placement` completes the runtime entry at `entry_index` in this message: `parent_id` names the container it sits in (empty for a root), and the double-precision centre is local to that parent, or absolute for a root. For such an entry the float `bounds_center` is the same value narrowed and a reader that knows the placement section MUST use the placement instead. `authority` is `0` (default), `1` (leased), or `2` (inherited). `placement_flags` bit 0 means the container has a physics frame of its own and bit 1 that its contents are bucketed in the frame's own regions. A sender writes a placement only for an entry that needs one: a child, a framed container, a non-default authority, or a centre a float cannot hold. The trailing instance-pose section follows the placement section (the placement count is then `0` if no entry has a placement). Each `InstancePose` gives the pose of the instance scope's own space against its host scope for the instance entry at `entry_index`: a double-precision origin and a rotation. A reader that predates the section stops before it. An empty `worker_id` represents an unassigned lease. Lease states and transitions are defined by the [control-plane contract](/docs/specifications/control-plane).
 
 ### Instance preparation
 
 ```text
 InstanceContainerInfo := u64 instance_id, string content_resource,
-  bool observe_public, vector3 observation_center, vector3 observation_size,
   string scope_key, string part_id
 InstancePreparation := u32 request_id, u64 entity_id, ContainerRef destination,
   u16 source_worker, u64 lease_epoch, bool success, u64 link_id
 ```
 
-Preparation asks the destination worker and owning client to load content before crossing. `link_id` is a trailing field: nonzero, the preparation readies a portal link (`entity_id` is then 0) and only workers exchange it; zero is one entity's crossing. A body that ends before it reads as zero. The gateway routes requests only for a pawn owned by the sending worker and routes replies only for the sending client's pawn. The source validates the request, destination lease, and authority before committing. Observation bounds are in absolute world coordinates.
+Preparation asks the destination worker and owning client to load content before crossing. `link_id` is a trailing field: nonzero, the preparation readies a portal link (`entity_id` is then 0) and only workers exchange it; zero is one entity's crossing. A body that ends before it reads as zero. The gateway routes requests only for a pawn owned by the sending worker and routes replies only for the sending client's pawn. The source validates the request, destination lease, and authority before committing.
 
 `scope_key` is the opaque instance key the game chose (`TemplateId/key`); `instance_id` is its 64-bit hash. A receiver MUST NOT parse `scope_key`; it is compared with ordinal string equality only. The [entity location contract](/docs/specifications/entity-location) defines how it names an entity's scope. A sender MUST write it on the wire; only the Base64 copy stored on a control-plane lease row written by an earlier release may end before it, in which case it reads as empty.
 
@@ -544,6 +549,26 @@ A portal is a way between two scopes. A worker sends `Portals` for the portals w
 To a gateway a link carries its members (the clients that must be warm) and its observers (the clients that may look through); a gateway keeps them and enforces the observer list without running game code. A gateway sends a client a portal's record and its links on the reliable stream behind the container row of either face, so the receiver already holds the row, and withdraws them when the row is withdrawn or the portal removed. To a client the two lists are empty and `flags` says whether that client is a member and whether it is an observer. A link is sent to a member only once it holds the far entry container's row, which the gateway keeps sent for it while the link is live. A receiver MUST NOT parse a portal's authored id.
 
 A member client prepares the far entry container and, once its content is ready, sends `PortalWarm` with the link's `generation`. The gateway forwards it to the worker that owns the portal only from a member of the link, with `client_id` set to the sending client's id (a client writes 0). The worker ignores a warm whose `generation` is not the link's current one.
+
+### Portal adjacency and handoff
+
+Workers exchange these two messages so that the workers on either side of a portal agree on its links. A client and a gateway never see them.
+
+```text
+PortalAdjacency := u8 removed, u64 link_id,
+  [u32 generation, u8 state, u64 far_scope, PortalRecord portal, ContainerRef near_container,
+   u16 far_container_count, ContainerRef[far_container_count] far_containers,
+   u16 far_row_count, ContainerRef[far_row_count] far_rows when removed is 0]
+PortalHandoff := u64 portal_id, string near_container_id, u16 link_count, HandoffLink[link_count]
+HandoffLink := string party, u32 generation, u8 state,
+  u16 member_count, u64[member_count] members,
+  u16 warm_count, u64[warm_count] warm,
+  u16 observer_count, u64[observer_count] observers
+```
+
+A worker sends `PortalAdjacency` for a link it drives to the workers that own the containers of the far scope the link's band touches. It tells the receiver that a body in the band of a face it does not own is to be ghosted across, and lets the far worker build its side of the aperture before the link opens. `far_containers` are the containers the far band touches; `far_rows` are the other containers the far window touches, which a receiver that owns only those prepares but ghosts nothing for. A message with `removed` set to 1 ends after `link_id` and withdraws the link. A body that ends before `far_row_count` reads it as empty.
+
+A worker sends `PortalHandoff` to the worker that takes a portal's near container on a planned reassignment, together with the release. It carries each party's link state, members, warm clients and observers; everything else is worked out again from the portal's content and the leases. After a crash nothing is sent and the links read closed.
 
 ### Reliable message batch
 

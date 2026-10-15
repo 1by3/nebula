@@ -43,7 +43,7 @@ By default every client stands still. A behaviour decides what a client does onc
 
 ```bash
 dotnet run --project Packages/com.1by3.nebula/Services~/Nebula.LoadGen -- --gateway 127.0.0.1:7000 --clients 200 --seconds 600 \
-  --mix wander:70,travel:20,idle:10 --opt wander.radius=40 --opt travel.every-minutes=2 --opt travel.targets=a|b --seed 7 \
+  --mix wander:70,travel:20,idle:10 --opt wander.radius=40 --opt travel.every-minutes=2 --opt 'travel.targets=a|b' --seed 7 \
   --behaviour-stats results.jsonl
 ```
 
