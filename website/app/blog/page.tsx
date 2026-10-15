@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    href: '/blog/2026-10-15-beta-2',
+    title: 'Nebula 0.1.0-beta.2',
+    description:
+      'The third beta adds portals between scopes, physics and queries that continue through them, tools for planet-sized worlds, driver prediction for server-owned vehicles, and release and IL2CPP server builds.',
+    date: 'October 15, 2026',
+    dateTime: '2026-10-15',
+  },
+  {
     href: '/blog/2026-09-29-beta-1',
     title: 'Nebula 0.1.0-beta.1',
     description:

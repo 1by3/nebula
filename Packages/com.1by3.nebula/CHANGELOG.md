@@ -4,6 +4,8 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-beta.2] - 2026-10-15
+
 Wire protocol 28, and the window is 28..28: the window closes. Protocol 28 (portals, NEB-428) adds three messages (`Portals`, `PortalLinks`, `PortalWarm`) and a trailing link id on `InstancePrepare`/`InstanceReady`, which is additive in bytes but not in meaning: a client of 27 would be sent replicas of scopes it believes hidden, would never draw them posed, and would predict its pawn into an aperture it does not know is solid. So a gateway of this release refuses clients of protocol 27 and older (a client of `0.1.0-beta.1` is protocol 24) with `ProtocolUnsupported`: rebuild clients against this version. Protocols 25, 26 and 27 were never released under a tag. Gateways and workers of a mesh must still run the same build.
 
 ### Added
