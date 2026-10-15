@@ -1,0 +1,78 @@
+---
+title: "PortalCrossing"
+description: "Where a cast went through an open portal (docs/portals.md D32): the link, the scope it left and the scope it entered, how far along it the plane was met, and the cast as it continues on the far side, as a point in the far scope's scene (..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PortalQueryTypes.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PortalQueryTypes.cs)</div>
+
+```csharp
+public readonly struct PortalCrossing
+```
+
+Where a cast went through an open portal (`docs/portals.md` D32): the link, the scope it left and the scope it entered, how far along it the plane was met, and the cast as it continues on the far side, as a point in the far scope's scene (where the cast's reference point crossed the plane) and the direction there. Reported by [`PortalQueries.Raycast`](/docs/reference/containers/portal-queries#raycast).
+
+## Properties
+
+### LinkId [#linkid]
+
+```csharp
+public ulong LinkId { get; }
+```
+
+The id of the link the cast went through; 0 when it went through none.
+
+### FromScope [#fromscope]
+
+```csharp
+public ulong FromScope { get; }
+```
+
+The scope the cast left.
+
+### ToScope [#toscope]
+
+```csharp
+public ulong ToScope { get; }
+```
+
+The scope the cast entered.
+
+### Distance [#distance]
+
+```csharp
+public float Distance { get; }
+```
+
+How far along the cast the plane lay, in meters.
+
+### FarPoint [#farpoint]
+
+```csharp
+public Vector3 FarPoint { get; }
+```
+
+Where the cast met the plane, as a point in [`ToScope`](#toscope)'s scene.
+
+### FarDirection [#fardirection]
+
+```csharp
+public Vector3 FarDirection { get; }
+```
+
+The cast's direction in [`ToScope`](#toscope)'s scene (unit length).
+
+### Crossed [#crossed]
+
+```csharp
+public bool Crossed { get; }
+```
+
+Whether the cast went through a portal.
+
+### None [#none]
+
+```csharp
+public static PortalCrossing None { get; }
+```
+
+The cast went through no portal.

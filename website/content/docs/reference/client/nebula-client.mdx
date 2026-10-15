@@ -13,6 +13,14 @@ The game client. Talks only to the gateway, sends inputs, receives snapshots tag
 
 ## Fields
 
+### PendingCorrectionTimeoutSeconds [#pendingcorrectiontimeoutseconds]
+
+```csharp
+public float PendingCorrectionTimeoutSeconds = 0.25f;
+```
+
+How long a queued correction waits for a fixed step before it is replayed in `Update` anyway (seconds): a client that stops predicting (a stall, no pawn) still applies what the worker said.
+
 ### DefaultLeaveTimeoutSeconds [#defaultleavetimeoutseconds]
 
 ```csharp

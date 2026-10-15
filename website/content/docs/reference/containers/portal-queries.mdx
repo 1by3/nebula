@@ -21,6 +21,7 @@ With a tick in the [`PortalQueryOptions`](/docs/reference/containers/portal-quer
 
 ```csharp
 public bool Raycast(PortalAsker asker, ulong scope, Vector3 origin, Vector3 direction, float maxDistance, out PortalHit hit, PortalQueryOptions options = null);
+public bool Raycast(PortalAsker asker, ulong scope, Vector3 origin, Vector3 direction, float maxDistance, out PortalHit hit, out PortalCrossing crossing, PortalQueryOptions options = null);
 ```
 
 The first thing a ray hits, continuing through an open portal (`docs/portals.md` D32).
