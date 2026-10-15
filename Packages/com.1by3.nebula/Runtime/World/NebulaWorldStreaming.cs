@@ -84,7 +84,7 @@ namespace Nebula
                 var anchor = Client.ActiveContentAnchor;
                 if (anchor != null)
                 {
-                    var cell = WorldOrigin.CellOf(anchor.position);
+                    var cell = WorldOrigin.CellOf(PhysicsFrames.RenderPositionOf(anchor));
                     if (WorldGrid.Rings(cell, WorldOrigin.Cell) > Config.OriginShiftThresholdCells) NebulaWorld.Streamer.ShiftOrigin(cell);
                 }
             }
@@ -134,7 +134,7 @@ namespace Nebula
             // called NebulaClient.SetContentAnchor). The streamer applies its own load/unload hysteresis around
             // whatever this returns, so a camera gets exactly the treatment a pawn does.
             var anchor = Client != null ? Client.ActiveContentAnchor : null;
-            framePosition = anchor != null ? anchor.position : Vector3.zero;
+            framePosition = anchor != null ? PhysicsFrames.RenderPositionOf(anchor) : Vector3.zero;
             return true;
         }
     }

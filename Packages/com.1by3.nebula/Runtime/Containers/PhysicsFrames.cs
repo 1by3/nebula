@@ -417,8 +417,11 @@ namespace Nebula
             CloneSources.Clear();
             _simulating = null;
             _held = false;
+            _anchor = null;
             _releaseHooked = false;
             CrossingPolicy = null;
+            AnchorShifted = null;
+            AnchorChanged = null;
             RenderAnchor = null;
             ContentAnchor = null;
             _drawn.Clear();
@@ -439,6 +442,7 @@ namespace Nebula
             EndDrawing();
             _simulating = null;
             _held = false;
+            _anchor = null;
             RenderAnchor = null;
             ContentAnchor = null;
             SceneRenderOrigin.ResetAfterPlay();
@@ -507,6 +511,7 @@ namespace Nebula
                 _simulating = null;
                 _held = false;
             }
+            if (_anchor == frame) _anchor = null;
             Frames.Remove(frame);
             var owner = frame.Owner;
             if (!ReferenceEquals(owner, null)) owner.Frame = null;
@@ -1138,7 +1143,7 @@ namespace Nebula
         /// during a prediction step (<see cref="BeginSimulation(Container, Transform)"/>) and while the frame is held at that
         /// pose between steps (<see cref="EndSimulation(bool)"/>). False for the scope's own space.
         /// </summary>
-        public static bool InSimulationPose(Container space) => space != null && space.Frame != null && (!RendersFrames || _simulating == space.Frame);
+        public static bool InSimulationPose(Container space) => space != null && space.Frame != null && (!RendersFrames || _simulating == space.Frame || _anchor == space.Frame);
 
         /// <summary>
         /// Ask the crossing policy about one crossing (D16). An exception in the game's policy allows the crossing: a
@@ -1205,8 +1210,11 @@ namespace Nebula
             for (int i = 0; i < Frames.Count; i++)
                 if (Frames[i] != null && Frames[i].Owner != null) PoseOrder.Add(Frames[i]);
             PoseOrder.Sort(ByDepth);
+            // The anchor's render pose first (only its numbers: it stays where it simulates): every other frame's render
+            // origin is worked out from the content anchor's position through it (NEB-446).
+            if (_anchor != null && _anchor.Owner != null) PoseForRender(_anchor);
             for (int i = 0; i < PoseOrder.Count; i++)
-                if (PoseOrder[i] != _simulating) PoseForRender(PoseOrder[i]);
+                if (PoseOrder[i] != _simulating && PoseOrder[i] != _anchor) PoseForRender(PoseOrder[i]);
             PoseOrder.Clear();
             // Queries made while rendering (the crosshair's interaction ray) must meet the frames where they are drawn.
             Physics.SyncTransforms();
@@ -1234,6 +1242,14 @@ namespace Nebula
             frame._renderRotation = rotation;
             frame._renderScale = scale;
             frame._posed = true;
+            if (frame == _anchor)
+            {
+                // The anchor stays at its simulation pose (NEB-446): only its render numbers are kept, for the drawn
+                // positions of what stands in it and for the scene's offset while drawing.
+                frame.RenderOrigin = frame.Origin;
+                frame._pivotScene = frame.LocalToRenderPrecise(Double3.From(frame.Origin));
+                return;
+            }
             var pivot = frame.Pivot;
             if (pivot == null || frame.Root.parent != pivot)
             {
@@ -1284,6 +1300,8 @@ namespace Nebula
             Vector3 local;
             if (IsUnder(anchor, frame.Root))
                 local = frame.Root.InverseTransformPoint(anchor.position); // frame-local at either pose of the root
+            else if (_anchor != null && _anchor._posed && _anchor.Root != null && IsUnder(anchor, _anchor.Root))
+                local = frame.RenderToLocalPrecise(_anchor.LocalToRenderPrecise(LocalIn(anchor, _anchor.Root))).ToVector3();
             else if (_simulating != null && _simulating.Root != null && IsUnder(anchor, _simulating.Root))
                 return frame.RenderOrigin;
             else
@@ -1313,7 +1331,7 @@ namespace Nebula
         {
             var t = owner.transform;
             var outer = owner.Space != null ? owner.Space.Frame : null;
-            if (outer == null || !outer._posed || outer == _simulating || outer.Root == null || !IsUnder(t, outer.Root)) return Double3.From(t.position);
+            if (outer == null || !outer._posed || (outer == _simulating && outer != _anchor) || outer.Root == null || !IsUnder(t, outer.Root)) return Double3.From(t.position);
             return outer.LocalToRenderPrecise(LocalIn(t, outer.Root));
         }
 
@@ -1405,7 +1423,7 @@ namespace Nebula
             _drawing = true;
             // The scene first, so a game placing its camera in SceneRenderOrigin.Shifted still reads frame-local poses.
             bool withCameras = cameras != null && cameras.Count > 0;
-            if (withCameras) SceneRenderOrigin.Begin(cameras, Frames, _simulating);
+            if (withCameras) SceneRenderOrigin.Begin(cameras, Frames, _simulating, _anchor);
             if (ShiftChildrenWhileDrawing) ShiftChildren();
             // Every drawn scope that is not the anchor posed against it, and the cameras when the view is not the anchor (portals D41).
             DrawnScopes.Begin(cameras, SceneRenderOrigin.Offset);
@@ -1421,7 +1439,7 @@ namespace Nebula
                 var frame = Frames[i];
                 var origin = frame.RenderOrigin;
                 var root = frame.Root;
-                if (frame == _simulating || origin == Vector3.zero || root == null || frame.Pivot == null || root.parent != frame.Pivot) continue;
+                if (frame == _simulating || frame == _anchor || origin == Vector3.zero || root == null || frame.Pivot == null || root.parent != frame.Pivot) continue;
                 if (!root.localPosition.Equals(-origin)) continue; // not at the pose PoseForRender gave it: leave it alone
                 _drawn.Add(new Drawn { Transform = root, Local = root.localPosition });
                 for (int c = 0; c < root.childCount; c++)
@@ -1493,6 +1511,7 @@ namespace Nebula
                 Physics.SyncTransforms();
                 return;
             }
+            var before = frame.Origin;
             if (predicted != null && NextOrigin(frame, LocalPositionIn(frame, predicted), out var origin)) frame.Origin = origin;
             if (frame.Pivot != null && frame.Root.parent == frame.Pivot)
             {
@@ -1501,6 +1520,7 @@ namespace Nebula
             }
             else SetPose(frame.Root, -frame.Origin, Quaternion.identity, Vector3.one);
             Physics.SyncTransforms();
+            if (frame == _anchor && !before.Equals(frame.Origin)) RaiseAnchorShifted(before - frame.Origin);
         }
 
         /// <summary>
@@ -1604,8 +1624,124 @@ namespace Nebula
             _simulating = null;
             _held = false;
             if (frame == null) return;
-            PoseForRender(frame);
+            // The anchor never goes back: it is drawn where it simulates (NEB-446).
+            if (frame != _anchor) PoseForRender(frame);
             if (sync) Physics.SyncTransforms();
+        }
+
+        // ------------------------------------------------------------------------------------ the anchor frame (NEB-446)
+
+        /// <summary>
+        /// Experimental, off by default (NEB-446). With it on, a client leaves the physics frame its pawn predicts in (the
+        /// <see cref="Anchor"/>) at its simulation pose for good, instead of moving it to its render pose after every
+        /// prediction step and back before the next: each move rewrites every collider and renderer in the frame, so a
+        /// dense frame (a town on a planet) cost a few milliseconds a frame. The anchor is drawn where it simulates, and
+        /// while cameras draw the rest of the scene is moved into the anchor's space instead
+        /// (<see cref="SceneRenderOrigin"/>, by <see cref="AnchorOffset"/>).
+        /// <para>
+        /// What changes for game code: outside drawing, the transforms of everything in the anchor (the pawn among them)
+        /// are in the <b>anchor's space</b>, which is render space less <see cref="AnchorOffset"/>; everything else stays in
+        /// render space. A camera that follows the pawn through its transform is in the anchor's space, and so is a ray
+        /// cast from it into the anchor's physics scene. Read a drawn position in render space with
+        /// <see cref="RenderPositionOf"/>, and move a render-space position into the anchor's space by subtracting
+        /// <see cref="AnchorOffset"/>. While cameras draw, every position is in the anchor's space. The cameras that draw
+        /// (with the root objects they hang under) are taken to be in the anchor's space and are not moved.
+        /// </para>
+        /// <para>
+        /// Only a frame whose carrier stands in its scope's own space, unturned and unscaled (a planet that does not
+        /// rotate) is anchored: the anchor's space is then render space moved, never turned. A turning carrier (a ship)
+        /// is drawn as before. Precision: Unity composes a transform's world position from its own offset upwards, so a
+        /// body moving in a chunk far from its frame's origin (a chunk 168 km out) is drawn on that distance's float grid
+        /// (about 1.6 cm), as it simulates, where a frame drawn about a render origin (D25) holds it within half a
+        /// millimetre. Prediction is unchanged: the anchor is at exactly the pose
+        /// <see cref="BeginSimulation(Container, Transform)"/> gives it.
+        /// </para>
+        /// </summary>
+        public static bool AnchorPredictedFrame = false;
+
+        private static PhysicsFrame _anchor;
+
+        /// <summary>The frame a client leaves at its simulation pose and draws the rest of the scene about (<see cref="AnchorPredictedFrame"/>); null when none.</summary>
+        public static PhysicsFrame Anchor => _anchor;
+
+        /// <summary>
+        /// The anchor's floating origin moved (<see cref="AnchorPredictedFrame"/>): everything in the anchor, the pawn and a
+        /// camera following it among them, moved by this delta in Unity's coordinates though nothing moved in the world.
+        /// Move anything that caches such a position (a smoothed camera) by the same delta.
+        /// </summary>
+        public static event Action<Vector3> AnchorShifted;
+
+        /// <summary>The anchor changed (another frame, or none): positions of what stands in the old and the new one jumped between spaces.</summary>
+        public static event Action<PhysicsFrame> AnchorChanged;
+
+        /// <summary>
+        /// How far the anchor's space is from render space (<see cref="AnchorPredictedFrame"/>): a render-space position p
+        /// is at p - AnchorOffset in the anchor's space, where the anchor's transforms are. Zero with no anchor.
+        /// </summary>
+        public static Vector3 AnchorOffset => AnchorOffsetPrecise.ToVector3();
+
+        /// <summary><see cref="AnchorOffset"/> in double: the anchor's carrier, as drawn, plus its floating origin.</summary>
+        internal static Double3 AnchorOffsetPrecise =>
+            _anchor != null && _anchor.Owner != null
+                ? (_anchor._posed ? _anchor._renderPositionPrecise : Double3.From(_anchor.Owner.transform.position)) + Double3.From(_anchor.Origin)
+                : Double3.Zero;
+
+        /// <summary>
+        /// Where <paramref name="t"/> is drawn in render space: composed in double through the anchor's render pose when it
+        /// stands in the anchor (<see cref="AnchorPredictedFrame"/>), its own position otherwise.
+        /// </summary>
+        public static Vector3 RenderPositionOf(Transform t)
+        {
+            if (t == null) return Vector3.zero;
+            if (_anchor != null && _anchor._posed && _anchor.Root != null && IsUnder(t, _anchor.Root))
+                return _anchor.LocalToRenderPrecise(LocalIn(t, _anchor.Root)).ToVector3();
+            return t.position;
+        }
+
+        /// <summary>Whether <paramref name="frame"/> can be the anchor: a client asked for one and the frame's carrier stands unturned and unscaled in its scope's own space.</summary>
+        private static bool CanAnchor(PhysicsFrame frame)
+        {
+            if (frame == null || !AnchorPredictedFrame || !SceneRenderOrigin.Enabled || frame.Root == null || frame.Pivot == null || frame.Root.parent != frame.Pivot) return false;
+            var owner = frame.Owner;
+            if (owner == null || owner.Space != null) return false;
+            var t = owner.transform;
+            var r = t.rotation;
+            return r.x == 0f && r.y == 0f && r.z == 0f && t.lossyScale.Equals(Vector3.one);
+        }
+
+        /// <summary>
+        /// Client, every rendered frame before <see cref="PoseForRender()"/>: make the frame of <paramref name="space"/>
+        /// (where <paramref name="predicted"/>, the pawn, predicts) the anchor when it can be one
+        /// (<see cref="AnchorPredictedFrame"/>). Nothing moves while the anchor stays the same; on a change the old anchor
+        /// goes to its render pose and the new one to its simulation pose, once.
+        /// </summary>
+        internal static void UpdateAnchor(Container space, Transform predicted)
+        {
+            if (!RendersFrames) return;
+            var frame = space != null ? space.Frame : null;
+            if (!CanAnchor(frame)) frame = null;
+            if (frame == _anchor) return;
+            EndDrawing();
+            var old = _anchor;
+            _anchor = null;
+            if (_held && _simulating != frame) Unhold(false);
+            if (old != null && old.Root != null && old.Owner != null && old != _simulating) PoseForRender(old);
+            if (frame != null)
+            {
+                if (predicted != null && NextOrigin(frame, LocalPositionIn(frame, predicted), out var origin)) frame.Origin = origin;
+                SetPose(frame.Pivot, Vector3.zero, Quaternion.identity, Vector3.one);
+                SetLocalPose(frame.Root, -frame.Origin, Quaternion.identity, Vector3.one);
+                _anchor = frame;
+            }
+            Physics.SyncTransforms();
+            try { AnchorChanged?.Invoke(frame); }
+            catch (Exception e) { NebulaLog.Error($"PhysicsFrames.AnchorChanged threw: {e}"); }
+        }
+
+        private static void RaiseAnchorShifted(Vector3 delta)
+        {
+            try { AnchorShifted?.Invoke(delta); }
+            catch (Exception e) { NebulaLog.Error($"PhysicsFrames.AnchorShifted threw: {e}"); }
         }
 
         private static readonly Comparison<PhysicsFrame> ByDepth = (a, b) => SpaceDepth(a.Owner).CompareTo(SpaceDepth(b.Owner));

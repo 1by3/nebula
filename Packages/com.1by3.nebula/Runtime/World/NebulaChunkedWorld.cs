@@ -413,7 +413,7 @@ namespace Nebula
             // The pawn is asked by entity, not by position: inside a runtime container its cell is the
             // container's, which is the answer that survives a pose that has not been reconciled yet.
             if (pawn != null && anchor == pawn.transform) grid.KeepOriginNear(pawn, _originRing);
-            else grid.KeepOriginNear(grid.CoordOf(anchor.position), _originRing);
+            else grid.KeepOriginNear(grid.CoordOf(PhysicsFrames.RenderPositionOf(anchor)), _originRing);
         }
 
         /// <summary>

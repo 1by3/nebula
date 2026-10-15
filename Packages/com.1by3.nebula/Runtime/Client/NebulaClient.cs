@@ -1047,6 +1047,9 @@ namespace Nebula
             PhysicsFrames.SyncAllContent();
             PhysicsFrames.ContentAnchor = ActiveContentAnchor;
             PhysicsFrames.InstallDrawHooks();
+            // The frame the pawn predicts in may stay at its simulation pose and anchor what is drawn (NEB-446).
+            bool predicting = LocalPlayer != null && LocalPlayer.Predicted != null;
+            PhysicsFrames.UpdateAnchor(predicting && LocalPlayer.Container != null ? LocalPlayer.Container.InnerSpace : null, predicting ? LocalPlayer.transform : null);
             PhysicsFrames.PoseForRender();
         }
 

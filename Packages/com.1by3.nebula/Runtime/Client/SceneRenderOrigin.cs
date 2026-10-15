@@ -139,23 +139,41 @@ namespace Nebula
         /// Move the scene and <paramref name="cameras"/> for drawing. Called by <see cref="PhysicsFrames"/> as cameras start
         /// drawing, after the frames' children took their render origins. Returns the offset used (zero: nothing moved).
         /// </summary>
-        internal static Vector3 Begin(IReadOnlyList<Camera> cameras, List<PhysicsFrame> frames, PhysicsFrame simulating)
+        /// <remarks>
+        /// With an anchor frame (<see cref="PhysicsFrames.AnchorPredictedFrame"/>, NEB-446) the offset is
+        /// <see cref="PhysicsFrames.AnchorOffset"/> whatever the camera's distance: the scene is moved into the anchor's
+        /// space, where the anchor already is. The anchor and the cameras (with the root objects they hang under), which
+        /// follow the pawn in that space, are not moved.
+        /// </remarks>
+        internal static Vector3 Begin(IReadOnlyList<Camera> cameras, List<PhysicsFrame> frames, PhysicsFrame simulating, PhysicsFrame anchor = null)
         {
             if (_shifted || !Enabled) return Vector3.zero;
-            var lead = Lead(cameras);
-            if (lead == null) return Vector3.zero;
-            var offset = OffsetFor(lead.transform.position);
+            Vector3 offset;
+            if (anchor != null && anchor.Pivot != null) offset = PhysicsFrames.AnchorOffset;
+            else
+            {
+                anchor = null;
+                var lead = Lead(cameras);
+                if (lead == null) return Vector3.zero;
+                offset = OffsetFor(lead.transform.position);
+            }
             if (offset == Vector3.zero) return Vector3.zero;
             _shifted = true;
             Offset = offset;
             MovedRoots.Clear();
+            if (anchor != null)
+            {
+                // Already in the anchor's space: kept out of the move, and not put back (nothing was written).
+                MovedRoots.Add(anchor.Pivot);
+                for (int i = 0; i < cameras.Count; i++) if (cameras[i] != null) MovedRoots.Add(cameras[i].transform.root);
+            }
             // Each frame's top level from its pose in double, so the frame is drawn exactly about the new origin rather
             // than moved from a position that was already rounded kilometres out.
             for (int i = 0; i < frames.Count; i++)
             {
                 var frame = frames[i];
                 var pivot = frame.Pivot;
-                if (pivot == null || frame == simulating || !frame._posed || pivot.parent != null) continue;
+                if (pivot == null || frame == simulating || frame == anchor || !frame._posed || pivot.parent != null) continue;
                 Remember(pivot);
                 pivot.position = (frame._pivotScene - offset).ToVector3();
             }
