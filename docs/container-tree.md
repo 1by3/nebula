@@ -283,6 +283,38 @@ The rules that keep it invisible to everything else:
   for all. A root a game reparented is posed directly, as before.
 - Nothing changes on the wire, in persistence or on a worker.
 
+**D26 (experimental, NEB-446) The frame a client predicts in can stay at its simulation pose and anchor the drawing.**
+D11 moves the frame the pawn predicts in between its two poses: into its simulation pose for each prediction step, back
+to its render pose before `Update`, and every frame its root's children take the render origin for drawing and are put
+back. Each move marks every collider and renderer in the frame as moved, so the cost grows with what the frame holds
+(about 4 ms a frame on a town on a planet, NEB-445 included). With `PhysicsFrames.AnchorPredictedFrame` on:
+
+- the frame of the pawn's space is the **anchor** (`PhysicsFrames.Anchor`) when its carrier stands in the scope's own
+  space, unturned and unscaled; `NebulaClient` picks it before it poses the frames each rendered frame
+  (`UpdateAnchor`). The anchor goes to its simulation pose once (pivot at the identity, root at -origin) and stays
+  there: prediction steps find it there, the release before `Update` and drawing leave it, and `InSimulationPose` is
+  true for it. It moves again only when its floating origin follows the pawn (D19, `AnchorShifted`) or the anchor
+  changes (`AnchorChanged`: the old one goes to its render pose, once);
+- its render pose is still worked out (`RenderPosition`, `LocalToRender`), so a drawn position in render space is
+  composed in double as before, and `RenderPositionOf(transform)` gives one for anything in the anchor;
+- the anchor's space is render space less `AnchorOffset` (the carrier's drawn position plus the anchor's origin). While
+  cameras draw, `SceneRenderOrigin` moves the scene by -`AnchorOffset` instead of by its camera-snapped offset: every
+  root, and every other frame's pivot from its pose in double, lands in the anchor's space, where the anchor already is.
+  The anchor's pivot and the drawing cameras (with the roots they hang under) are not moved: a camera following the
+  pawn is in the anchor's space already;
+- the content anchor's position in render space, which the streamers and the other frames' render origins read, is
+  composed through the anchor's render pose (`RenderPositionOf`).
+
+What it costs a game: outside drawing, what stands in the anchor (the pawn, a camera following it, a ray cast from the
+eyes into the frame's physics scene) is in the anchor's space, and everything else is in render space, so code relating
+the two subtracts `AnchorOffset`, and code that places something in render space from the camera's position (a sky, far
+scenery, a particle field around the camera) is off by it. And precision: Unity composes from the leaf up, so a body
+moving in a chunk C far from the frame's origin is drawn at (h + C) rounded in float, then -origin, which is how it
+simulates: about 1.6 cm steps 168 km out, where D25's shifted children hold it within half a millimetre (scenario 49).
+A real fix for both carries the floating origin on the frame's children (the chunks) on the worker and the client
+alike, so the simulation pose is precise to draw and needs no draw-time shift; that changes the simulation structure
+and is not done. Off by default; a turned carrier (a ship, a rotating planet) is never an anchor.
+
 ## 4. Per-frame-root origins and interest
 
 **D18 A frame root can be a region space.** With `Container.FrameInterest = OwnRegions` (a planet), what stands in the
