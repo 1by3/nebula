@@ -9,7 +9,7 @@
   "licensesUrl": "https://github.com/1by3/nebula/blob/main/LICENSE",
   "author": { "name": "1by3", "url": "https://1by3.co" },
   "keywords": ["multiplayer", "netcode", "dedicated-server", "mesh", "persistence"],
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "dependencies": {},
   "samples": [
     {
