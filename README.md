@@ -41,6 +41,13 @@ compiled, tested and built on its own.
 The ShooterGame demo that exercises all of this is a separate project (it uses licensed art that cannot be
 redistributed); it consumes this repository through the package like any other game.
 
+## License
+
+Nebula is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You can use and modify it for
+any noncommercial purpose (personal projects, research, education, charities and similar organizations) for free.
+Commercial use needs a separate license: contact 1by3 at [1by3.co](https://1by3.co). It is not open source. Vendored
+LiteNetLib (`Packages/com.1by3.nebula/ThirdParty/LiteNetLib`) keeps its own MIT license.
+
 ## Developing
 
 Open this folder in Unity to work on the package; `Tools/typecheck.ps1` compiles everything without the Editor.
