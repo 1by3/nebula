@@ -144,6 +144,27 @@ Use these values to diagnose timing:
 
 See [Debugging](/docs/guides/debugging#use-the-in-game-overlay) for the client-side lead values.
 
+## React to an input when it arrives
+
+An input reaches the worker a few ticks before the tick it belongs to runs. To act on it earlier, such as sending the owner a provisional acknowledgement of a jump, override `OnServerInputReceived`:
+
+```csharp
+protected override void OnServerInputReceived(uint tick, in PlayerInput input)
+{
+    if (input.Jump)
+        SendJumpAcknowledgement(tick); // your own message to the owner; changes no simulated state
+}
+```
+
+The worker with authority calls it once for each input, the first time the input arrives and before `Simulate` runs for that tick. It is not called for:
+
+- A repeat of an input the worker already has, such as a redundant resend.
+- An input that arrives after its tick has run.
+- Inputs that arrive with a handover. The previous worker already received them.
+- A copy of the entity that does not have authority, or on a client.
+
+Treat the hook as read-only. The input has not been simulated yet, so do not change state that `Simulate` reads or that the owner reconciles. Make state changes in `Simulate`. If the override throws, Nebula logs the error and handles the input as usual.
+
 ## Transfer prediction during handover
 
 When an entity moves to another worker, the authority transfer includes the last processed input, future buffered inputs, the previous input used for repetition, and the state `WriteState` writes. The receiving worker applies that state with `ReadState`, so it continues on the next tick from exactly where the previous worker stopped, for example in the middle of a jump, without asking the client to resend its history.

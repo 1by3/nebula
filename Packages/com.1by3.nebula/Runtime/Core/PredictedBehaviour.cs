@@ -105,6 +105,7 @@ namespace Nebula
         private TInput _lastServerInput;
         private bool _hasLastServerInput;
         private uint _newestServerInputTick;
+        private uint _lastTickedServerTick;
         private uint _clientTick;
         private uint _lastReconciledTick;
         /// <summary>Server: the tick of the newest real input from the client in control, or the tick control changed hands.</summary>
@@ -211,6 +212,7 @@ namespace Nebula
             }
             PendingInputCount = (int)Math.Max(0, (long)_newestServerInputTick - tick);
             LastInput = input;
+            _lastTickedServerTick = tick;
             Simulate(tick, in input, deltaTime);
         }
 
@@ -258,11 +260,34 @@ namespace Nebula
             input.Deserialize(payload);
             if (tick <= LastProcessedInputTick && LastProcessedInputTick != 0) return; // already simulated past it
             ref var slot = ref _serverInputs[tick % BufferSize];
+            // A redundant resend of an input still waiting for its tick; one for a tick already run (a missed tick
+            // repeated the last input) is stored as before but is too late to announce.
+            bool announce = Identity.HasAuthority && !(slot.Valid && slot.Tick == tick) && !(_lastTickedServerTick != 0 && tick <= _lastTickedServerTick);
             slot.Tick = tick;
             slot.Input = input;
             slot.Valid = true;
             if (tick > _newestServerInputTick) _newestServerInputTick = tick;
+            if (!announce) return;
+            try { OnServerInputReceived(tick, in input); }
+            catch (Exception ex) { NebulaLog.Error($"OnServerInputReceived of {GetType().Name} on {Identity} threw: {ex}"); }
         }
+
+        /// <summary>
+        /// Authority only: called once for each input from the owner (or driver) the first time it arrives, with the
+        /// tick it belongs to, before that tick is simulated. The input waits in the buffer for its tick, which
+        /// is usually a few ticks after it arrives, so this is the earliest the game can see what the player did.
+        /// <para>
+        /// It is not called for a redundant resend of an input already received, for an input that arrives after its
+        /// tick has run or has been simulated, for inputs carried in a handover from another worker, or on a copy
+        /// without authority. Nothing is called on the client.
+        /// </para>
+        /// <para>
+        /// Read-only: do not change simulated state here, because the input has not been simulated yet and
+        /// <see cref="Simulate"/> is the only place that state may change. Use it for side-channel work such as a
+        /// provisional acknowledgement to the owner. An exception thrown here is logged and does not affect input handling.
+        /// </para>
+        /// </summary>
+        protected virtual void OnServerInputReceived(uint tick, in TInput input) { }
 
         internal sealed override void WriteOwnerState(NetworkWriter writer)
         {

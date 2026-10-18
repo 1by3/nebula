@@ -4,6 +4,10 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- **`PredictedBehaviour<TInput>.OnServerInputReceived`: the authority sees an input when it arrives (NEB-476).** An input waits in the worker's buffer for its tick, usually a few ticks after it arrives, so a game could not act on what the player did until `Simulate` reached it. The new `protected virtual void OnServerInputReceived(uint tick, in TInput input)` is called on the authority once per input, the first time it arrives and before its tick is simulated. It is not called for a redundant resend, for an input that arrives after its tick, for inputs carried in a handover, or on a copy without authority. It is read-only by contract: state changes still belong in `Simulate`. Use it for side-channel work such as a provisional acknowledgement. An exception it throws is logged and does not affect input handling. No wire change. `PredictedServerInputReceivedTests`.
+
 ### Changed
 
 - **Nebula is licensed under the PolyForm Noncommercial License 1.0.0 instead of MIT.** Noncommercial use is free; commercial use needs a license from 1by3 (https://1by3.co). The source is available, not open source. Vendored LiteNetLib keeps its own MIT license.

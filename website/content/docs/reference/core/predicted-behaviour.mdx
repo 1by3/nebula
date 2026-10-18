@@ -112,3 +112,15 @@ The prediction history holds container-local positions, which an origin shift le
 ```csharp
 public sealed override void NetworkTick(uint tick, float deltaTime);
 ```
+
+### OnServerInputReceived [#onserverinputreceived]
+
+```csharp
+protected virtual void OnServerInputReceived(uint tick, in TInput input);
+```
+
+Authority only: called once for each input from the owner (or driver) the first time it arrives, with the tick it belongs to, before that tick is simulated. The input waits in the buffer for its tick, which is usually a few ticks after it arrives, so this is the earliest the game can see what the player did.
+
+It is not called for a redundant resend of an input already received, for an input that arrives after its tick has run or has been simulated, for inputs carried in a handover from another worker, or on a copy without authority. Nothing is called on the client.
+
+Read-only: do not change simulated state here, because the input has not been simulated yet and [`Simulate`](#simulate) is the only place that state may change. Use it for side-channel work such as a provisional acknowledgement to the owner. An exception thrown here is logged and does not affect input handling.
