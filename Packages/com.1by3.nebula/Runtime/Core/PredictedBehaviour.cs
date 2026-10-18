@@ -24,6 +24,193 @@ namespace Nebula
 
         public void ResetCorrectionStats() { Corrections = 0; LastCorrectionMagnitude = 0f; MaxCorrectionMagnitude = 0f; }
 
+        // ---- correction smoothing -----------------------------------------------------------------------------
+
+        /// <summary>
+        /// Owning client: how long a correction takes to fade from the screen, in seconds. When the worker's state
+        /// disagrees with the prediction, the simulated state moves to the corrected one at once (the replay is
+        /// exact), but the entity is <i>drawn</i> at an offset from it that starts at where it was last drawn and
+        /// decays exponentially: the offset falls to 1% of its size after this long. Offsets from corrections that
+        /// arrive faster than they decay add up. Default 0.1 (100 ms); 0 or less turns smoothing off, so the drawn
+        /// pose snaps with the simulated one.
+        /// </summary>
+        protected virtual float CorrectionSmoothingSeconds => 0.1f;
+
+        /// <summary>
+        /// Owning client: a correction that would leave the drawn pose further than this from the simulated one, in meters, is not
+        /// smoothed; the entity teleports (a respawn, a long server-side move). Default 3.
+        /// </summary>
+        protected virtual float CorrectionSnapDistance => 3f;
+
+        // The offset from the simulated pose to the drawn one, in _offsetContainer's local space: drawn position = simulated
+        // position + offset, drawn rotation = rotation offset * simulated rotation. Container-local, so it follows the
+        // container while a ship carries the entity around.
+        private Vector3 _drawnOffset;
+        private Quaternion _drawnRotationOffset = Quaternion.identity;
+        private Container _offsetContainer;
+        private bool _offsetApplied;
+        private bool _offsetFresh;
+        // What ApplyDrawnOffset found and left, so RemoveDrawnOffset can put the simulated pose back bit for bit instead of
+        // subtracting the offset again (the rounding of each frame's add and subtract would otherwise seep into the simulation).
+        private Container _appliedContainer;
+        private Vector3 _simulatedPosition, _drawnPositionLocal;
+        private Quaternion _simulatedRotation, _drawnRotationLocal;
+
+        /// <summary>The decay constant ln(100): <see cref="CorrectionSmoothingSeconds"/> is the time the offset takes to fall to 1%.</summary>
+        private const float DecayLn = 4.60517f;
+        private const float OffsetEpsilonMeters = 0.001f;
+        private const float OffsetEpsilonDegrees = 0.05f;
+
+        /// <summary>Owning client: the offset from the simulated position to the drawn one, in the current container's local space (zero when nothing is being eased).</summary>
+        public Vector3 CorrectionOffset { get { ConvertOffsetToCurrentContainer(); return _drawnOffset; } }
+        /// <summary>Owning client: the rotation that takes the simulated rotation to the drawn one, in the current container's local space.</summary>
+        public Quaternion CorrectionRotationOffset { get { ConvertOffsetToCurrentContainer(); return _drawnRotationOffset; } }
+        /// <summary>Owning client: the size of <see cref="CorrectionOffset"/> in meters, for diagnostics.</summary>
+        public float CorrectionOffsetMeters => CorrectionOffset.magnitude;
+        /// <summary>Owning client: the angle of <see cref="CorrectionRotationOffset"/> in degrees, for diagnostics.</summary>
+        public float CorrectionOffsetDegrees => Quaternion.Angle(Quaternion.identity, CorrectionRotationOffset);
+
+        /// <summary>
+        /// Owning client: the world position the entity is drawn at, which is the simulated position plus the
+        /// correction offset still being eased. Cameras and anything else that follows the entity on screen should
+        /// read this, or <c>transform.position</c> during a frame, where Nebula has already moved the transform to
+        /// the drawn pose (it moves it back before the next <c>Simulate</c>). Equal to <c>transform.position</c> when nothing is being eased.
+        /// </summary>
+        public Vector3 DrawnPosition
+        {
+            get
+            {
+                if (_offsetApplied || !HasCorrectionOffset) return Identity.transform.position;
+                ConvertOffsetToCurrentContainer();
+                var container = Identity.Container;
+                return Identity.transform.position + (container != null ? container.Rotation * _drawnOffset : _drawnOffset);
+            }
+        }
+
+        /// <summary>Owning client: the world rotation the entity is drawn with; see <see cref="DrawnPosition"/>.</summary>
+        public Quaternion DrawnRotation
+        {
+            get
+            {
+                if (_offsetApplied || !HasCorrectionOffset) return Identity.transform.rotation;
+                ConvertOffsetToCurrentContainer();
+                var container = Identity.Container;
+                if (container == null) return _drawnRotationOffset * Identity.transform.rotation;
+                var c = container.Rotation;
+                return c * _drawnRotationOffset * Quaternion.Inverse(c) * Identity.transform.rotation;
+            }
+        }
+
+        private bool HasCorrectionOffset => _drawnOffset.sqrMagnitude > 0f || _drawnRotationOffset != Quaternion.identity;
+
+        private void ConvertOffsetToCurrentContainer()
+        {
+            var to = Identity.Container;
+            if (_offsetContainer == to) return;
+            var from = _offsetContainer;
+            _offsetContainer = to;
+            if (!HasCorrectionOffset) return;
+            var convert = (to != null ? to.InverseRotation : Quaternion.identity) * (from != null ? from.Rotation : Quaternion.identity);
+            _drawnOffset = convert * _drawnOffset;
+            _drawnRotationOffset = convert * _drawnRotationOffset * Quaternion.Inverse(convert);
+        }
+
+        /// <summary>
+        /// Put the entity back at its simulated pose if <see cref="ApplyDrawnOffset"/> moved it to the drawn one. Everything
+        /// that simulates, reconciles or moves the entity calls this first, so <c>Simulate</c> never sees the offset.
+        /// </summary>
+        internal void RemoveDrawnOffset()
+        {
+            if (!_offsetApplied) return;
+            _offsetApplied = false;
+            var container = Identity.Container;
+            var position = Identity.LocalPosition;
+            var rotation = Identity.LocalRotation;
+            if (container == _appliedContainer && position.Equals(_drawnPositionLocal) && rotation.Equals(_drawnRotationLocal))
+            {
+                // Nothing moved it since it was drawn: back to exactly where the simulation left it.
+                Identity.SetLocalPose(container, _simulatedPosition, _simulatedRotation);
+                return;
+            }
+            // Something else moved it in between (or it changed container): take the offset off where it is now.
+            ConvertOffsetToCurrentContainer();
+            Identity.SetLocalPose(container, position - _drawnOffset, Quaternion.Inverse(_drawnRotationOffset) * rotation);
+        }
+
+        /// <summary>
+        /// Once a frame, after the frame's messages and before anything draws: decay the offset by <paramref name="deltaTime"/>
+        /// seconds and move the entity to the simulated pose plus what is left of it. A correction made during this frame is
+        /// drawn in full first and decays from the next frame on.
+        /// </summary>
+        internal void ApplyDrawnOffset(float deltaTime)
+        {
+            RemoveDrawnOffset();
+            if (!HasCorrectionOffset) return;
+            ConvertOffsetToCurrentContainer();
+            float seconds = CorrectionSmoothingSeconds;
+            if (seconds <= 0f) { ClearCorrectionOffset(); return; }
+            if (_offsetFresh) _offsetFresh = false;
+            else
+            {
+                float k = Mathf.Exp(-DecayLn * Mathf.Max(0f, deltaTime) / seconds);
+                _drawnOffset *= k;
+                _drawnRotationOffset = Quaternion.Slerp(Quaternion.identity, _drawnRotationOffset, k);
+            }
+            if (_drawnOffset.sqrMagnitude < OffsetEpsilonMeters * OffsetEpsilonMeters && CorrectionOffsetDegrees < OffsetEpsilonDegrees)
+            {
+                ClearCorrectionOffset();
+                return;
+            }
+            _appliedContainer = Identity.Container;
+            _simulatedPosition = Identity.LocalPosition;
+            _simulatedRotation = Identity.LocalRotation;
+            Identity.SetLocalPose(_appliedContainer, _simulatedPosition + _drawnOffset, _drawnRotationOffset * _simulatedRotation);
+            _drawnPositionLocal = Identity.LocalPosition;
+            _drawnRotationLocal = Identity.LocalRotation;
+            _offsetApplied = true;
+        }
+
+        /// <summary>Owning client: drop the correction offset, so the entity is drawn at its simulated pose from now on (a teleport the game wants shown at once).</summary>
+        public void ClearCorrectionOffset()
+        {
+            RemoveDrawnOffset();
+            _drawnOffset = Vector3.zero;
+            _drawnRotationOffset = Quaternion.identity;
+            _offsetContainer = Identity != null ? Identity.Container : null;
+            _offsetFresh = false;
+        }
+
+        /// <summary>
+        /// A correction moved the simulated pose from (<paramref name="previousPosition"/>, <paramref name="previousRotation"/>), in
+        /// <paramref name="previousContainer"/>, to where it is now. The entity keeps being drawn where it was: the offset becomes
+        /// the old drawn pose minus the new simulated one, on top of whatever was still being eased, unless that is further than
+        /// <see cref="CorrectionSnapDistance"/> (or smoothing is off), when the drawn pose follows at once.
+        /// </summary>
+        internal void NoteCorrection(Container previousContainer, Vector3 previousPosition, Quaternion previousRotation)
+        {
+            RemoveDrawnOffset();
+            var container = Identity.Container;
+            var position = Identity.LocalPosition;
+            var rotation = Identity.LocalRotation;
+            if (previousContainer != container)
+            {
+                var world = previousContainer != null ? previousContainer.ToWorld(previousPosition) : previousPosition;
+                previousPosition = container != null ? container.ToLocal(world) : world;
+                var worldRotation = previousContainer != null ? previousContainer.Rotation * previousRotation : previousRotation;
+                previousRotation = container != null ? container.InverseRotation * worldRotation : worldRotation;
+            }
+            ConvertOffsetToCurrentContainer();
+            var offset = _drawnOffset + (previousPosition - position);
+            if (CorrectionSmoothingSeconds <= 0f || offset.magnitude > CorrectionSnapDistance)
+            {
+                ClearCorrectionOffset();
+                return;
+            }
+            _drawnOffset = offset;
+            _drawnRotationOffset = (_drawnRotationOffset * previousRotation * Quaternion.Inverse(rotation)).normalized;
+            _offsetFresh = true;
+        }
+
         /// <summary>
         /// Server: the smallest input lead (input tick minus the worker's current tick at arrival) seen since the last
         /// <see cref="TakeInputLead"/>. An input only gets simulated when it arrives with a lead of at least 1; the
@@ -219,6 +406,8 @@ namespace Nebula
 
         internal sealed override void CarryThroughPortal(in PortalMap map, Container destination)
         {
+            // A portal is a teleport: nothing is eased across it.
+            ClearCorrectionOffset();
             for (int i = 0; i < BufferSize; i++)
             {
                 if (!_history[i].Valid) continue;
@@ -247,6 +436,7 @@ namespace Nebula
                 // A client that starts or stops predicting it starts from the worker's state, not from an old history.
                 for (int i = 0; i < BufferSize; i++) _history[i].Valid = false;
                 _lastReconciledTick = 0;
+                ClearCorrectionOffset();
             }
             try { OnDriverChanged(previous, current); }
             catch (Exception ex) { NebulaLog.Error($"OnDriverChanged of {GetType().Name} on {Identity} threw: {ex}"); }
@@ -336,6 +526,7 @@ namespace Nebula
 
         internal sealed override void ClientPredictTick(uint tick, NetworkWriter inputOut)
         {
+            RemoveDrawnOffset();
             var input = GatherInput();
             _clientTick = tick;
             input.Serialize(inputOut);
@@ -353,9 +544,13 @@ namespace Nebula
         {
             if (serverTick <= _lastReconciledTick) return;
             _lastReconciledTick = serverTick;
+            // Simulation works on the simulated pose, never the drawn one.
+            RemoveDrawnOffset();
             ref var h = ref _history[serverTick % BufferSize];
             if (!h.Valid || h.Tick != serverTick)
             {
+                // Nothing predicted to compare with, so nothing to ease from.
+                ClearCorrectionOffset();
                 // We have no prediction for that tick (just spawned, just took the wheel of a vehicle, or too old):
                 // adopt the server state, and replay what we did predict after it. Adopting alone threw away every
                 // tick predicted since: a driver taking a moving vehicle's wheel saw it pulled back by the input lead
@@ -364,6 +559,9 @@ namespace Nebula
                 Replay(serverTick);
                 return;
             }
+            var previousContainer = Identity.Container;
+            var previousPosition = Identity.LocalPosition;
+            var previousRotation = Identity.LocalRotation;
             // Peek at the server state without disturbing our own. Everything WriteState covers is saved and put
             // back, not just the pose: a game's extra fields (a weapon cooldown, a trigger counter) belong to the
             // present, and the server's copy describes an older tick. Restoring only the pose used to hand the
@@ -396,6 +594,8 @@ namespace Nebula
             h.Position = serverPos;
             h.Container = Identity.Container;
             Replay(serverTick);
+            // The simulated state is now exact; the drawn pose eases from where it was.
+            NoteCorrection(previousContainer, previousPosition, previousRotation);
             OnCorrected(error);
         }
 
@@ -426,6 +626,7 @@ namespace Nebula
             _lastReconciledTick = 0;
             _hasLastServerInput = false;
             _newestServerInputTick = 0;
+            ClearCorrectionOffset();
         }
     }
 }

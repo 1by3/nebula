@@ -4,6 +4,10 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- **Prediction corrections are eased instead of snapped (NEB-473).** When the worker's state disagrees with an owner's prediction, the simulated state still moves to the corrected one at once and the replay is unchanged, but the entity is drawn at an offset from it that starts at the old drawn pose minus the corrected pose and decays exponentially, position and rotation, in 100 ms by default. Offsets from corrections that come faster than they decay add up, and the offset is stored in the container's local space, so it follows a moving container. A correction that would leave the drawn pose more than 3 m away, and a portal crossing, teleport as before. Nebula moves the transform to the drawn pose at the end of each client frame and back before it simulates or reconciles, so a camera that reads the transform after `NebulaClient.Update` already follows the drawn pose. New: `PredictedBehaviourBase.CorrectionSmoothingSeconds` and `CorrectionSnapDistance` (protected virtual), `CorrectionOffset`, `CorrectionRotationOffset`, `CorrectionOffsetMeters`, `CorrectionOffsetDegrees`, `DrawnPosition`, `DrawnRotation` and `ClearCorrectionOffset()`; the debug overlay shows the current offset. No wire change. Code that runs inside `FixedUpdate` or `Simulate` sees the simulated pose, as before. (NEB-473)
+
 ### Changed
 
 - **Nebula is licensed under the PolyForm Noncommercial License 1.0.0 instead of MIT.** Noncommercial use is free; commercial use needs a license from 1by3 (https://1by3.co). The source is available, not open source. Vendored LiteNetLib keeps its own MIT license.

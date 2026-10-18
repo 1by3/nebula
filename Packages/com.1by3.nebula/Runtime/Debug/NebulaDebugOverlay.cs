@@ -54,7 +54,7 @@ namespace Nebula
                 if (lp != null)
                 {
                     _sb.Append($"me: {(lp.Container != null ? lp.Container.ContainerId : "-")} on worker {WorkerLabel(lp.OwnerWorkerIndex)} epoch={lp.Epoch}");
-                    if (lp.Predicted != null) _sb.Append($" corrections={lp.Predicted.Corrections} last={lp.Predicted.LastCorrectionMagnitude:F2}m max={lp.Predicted.MaxCorrectionMagnitude:F2}m");
+                    if (lp.Predicted != null) _sb.Append($" corrections={lp.Predicted.Corrections} last={lp.Predicted.LastCorrectionMagnitude:F2}m max={lp.Predicted.MaxCorrectionMagnitude:F2}m smoothing offset={lp.Predicted.CorrectionOffsetMeters:F3}m/{lp.Predicted.CorrectionOffsetDegrees:F1}deg");
                     _sb.Append('\n');
                 }
             }

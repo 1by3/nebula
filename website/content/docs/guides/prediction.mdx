@@ -126,6 +126,31 @@ Read fields in the same order and with the same types used to write them. Call t
 
 Override `CorrectionThreshold` to change the position error that triggers a correction. The default is 0.05 meters. Use `OnCorrected(float magnitude)` for diagnostics or a visual response after a correction.
 
+## Smooth corrections
+
+A correction moves the simulated state to the worker's state at once. Without smoothing, the entity would jump on screen by the whole error. A shove from the worker at 100 ms round-trip time (RTT) and 9 m/s is a 0.9 m jump.
+
+Nebula keeps the simulated state exact and draws the entity at an **offset** from it instead. When a correction happens:
+
+- The offset starts as the pose the entity was drawn at, minus the corrected pose, so the entity does not move on screen that frame.
+- The offset shrinks exponentially toward zero. By default it falls to 1% of its size after 0.1 seconds. Position and rotation both ease.
+- A correction that arrives while an offset is still shrinking adds to it.
+- The offset is stored in the local space of the entity's container. It follows a ship or other moving container, and it stays correct if the entity changes container.
+- If the new offset would be longer than 3 meters, or when the entity goes through a portal, the entity teleports and no offset is kept.
+
+Only the drawn pose carries the offset. `Simulate`, `WriteState`, the replay, and the history Nebula keeps never see it, so prediction stays exact. Nebula moves the entity's transform to the drawn pose at the end of each client frame and back to the simulated pose before it simulates or reconciles again. Code that runs later in the frame, such as a camera in `LateUpdate`, therefore reads `transform.position` and `transform.rotation` as the drawn pose.
+
+To read the drawn pose at any time, including from inside `Simulate` or `OnCorrected`, use `PredictedBehaviourBase.DrawnPosition` and `DrawnRotation`. A camera that follows the entity should use one of the two. Do not cache `transform.position` across frames for this.
+
+Override these properties on your behavior to tune the smoothing:
+
+```csharp
+protected override float CorrectionSmoothingSeconds => 0.15f; // 0 turns smoothing off
+protected override float CorrectionSnapDistance => 2f;        // meters
+```
+
+Smoothing applies on the owning client, and on a client that drives a vehicle. It never changes what the worker or other clients see.
+
 ## Understand input timing
 
 The client estimates the worker tick from snapshots and round-trip time. It sends input ahead by half the measured round-trip time, `InputLeadMarginTicks`, and an adaptive adjustment.
@@ -282,7 +307,7 @@ When the driver's session ends, for example because the player left, the worker 
 
 ### Know the limits
 
-- Something only the worker knows about, such as another player's vehicle hitting yours, is corrected in one step by the size of the difference. Use `OnCorrected` if you want to ease that visually.
+- Something only the worker knows about, such as another player's vehicle hitting yours, is corrected in one step by the size of the difference. The driver sees that step eased over about 100 ms (see [Smooth corrections](#smooth-corrections)); it still starts one round trip late.
 - A vehicle that needs PhysX to move cannot be predicted. It still works as a server-owned entity that the worker simulates and every client interpolates, with the delay described above.
 
 ## Perform a lag-compensated query
@@ -302,6 +327,9 @@ Use these properties on `PredictedBehaviourBase`:
 | `Corrections` | Number of client corrections since spawn or reset. |
 | `LastCorrectionMagnitude` | Position error from the latest correction. |
 | `MaxCorrectionMagnitude` | Largest correction since spawn or `ResetCorrectionStats`. |
+| `CorrectionOffset` | The offset between the simulated and drawn position, in meters, in the container's local space. Zero when nothing is being eased. |
+| `CorrectionOffsetMeters` and `CorrectionOffsetDegrees` | The size of the position and rotation offsets. |
+| `DrawnPosition` and `DrawnRotation` | The world pose the entity is drawn at. |
 
 Use `NebulaClient.RttMs`, `InputLeadTicks`, `InputLeadAdjustTicks`, `LastReportedInputLead`, and `InputLeadIncreases` to inspect the network timing that affects prediction.
 
