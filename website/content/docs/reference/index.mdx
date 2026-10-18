@@ -348,6 +348,8 @@ Send reliable ordered or unreliable sequenced messages through LiteNetLib.
 | [LiteNetTransport](/docs/reference/transport/lite-net-transport) | Class. ITransport over LiteNetLib. |
 | [MultiTransport](/docs/reference/transport/multi-transport) | Class. Several transports behind one ITransport, so the gateway accepts native clients over UDP and browsers over WebRTC without caring which link a peer arrived on. |
 | [NebulaCrypto](/docs/reference/transport/nebula-crypto) | Static class. Provides random bytes, SHA-256 hashes, hash-based message authentication codes (HMAC), and key derivation for encrypted transport connections. |
+| [NetworkSimulation](/docs/reference/transport/network-simulation) | Class. Network conditions to simulate on one link, for testing prediction and lag compensation on one machine. |
+| [SimulatedNetworkTransport](/docs/reference/transport/simulated-network-transport) | Class. An ITransport that adds the latency, jitter and packet loss of a NetworkSimulation to every link of another transport, in both directions, without touching the remote side. |
 | [TransportDisconnectReason](/docs/reference/transport/transport-disconnect-reason) | Enum. Why a transport link closed, in terms that do not depend on the transport: carried by a TransportEvent.Kind.Disconnected event in TransportEvent.Reason. |
 | [TransportEvent](/docs/reference/transport/transport-event) | Struct. Stores the values used by transport event. |
 | [TransportIdentity](/docs/reference/transport/transport-identity) | Class. Holds the gateway's X.509 certificate, RSA private signing key, and public-key fingerprint for client pinning. |

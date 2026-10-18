@@ -361,6 +361,21 @@ namespace Nebula
         [Tooltip("Upper bound on the adaptive input lead adjustment, in ticks.")]
         public int InputLeadMaxAdjustTicks = 30;
 
+        [Header("Simulated network (development only)")]
+        /// <summary>
+        /// Round-trip latency, in milliseconds, a client adds to its link to the gateway so prediction and lag compensation
+        /// can be tested on one machine. Half delays what the client sends and half what it receives. Honored only in
+        /// the Editor and in development builds; a release build ignores it. See <see cref="NebulaClient.SetNetworkSimulation"/>.
+        /// </summary>
+        [Tooltip("Development only. Client: round-trip latency in milliseconds added to the link to the gateway (half each way). Ignored in release builds. -nebula-sim-latency overrides.")]
+        public float SimulatedLatencyMs = 0f;
+        /// <summary>Jitter, in milliseconds, of the simulated link: each packet's delay varies by up to half this much either way. Development only.</summary>
+        [Tooltip("Development only. Client: jitter in milliseconds on the simulated link; each packet's delay varies by up to half this much either way. Ignored in release builds. -nebula-sim-jitter overrides.")]
+        public float SimulatedJitterMs = 0f;
+        /// <summary>Percent of packets the simulated link loses in each direction. Development only.</summary>
+        [Tooltip("Development only. Client: percent of packets lost in each direction on the simulated link (0 to 100). Lost reliable packets arrive one round trip late. Ignored in release builds. -nebula-sim-loss overrides.")]
+        public float SimulatedLossPercent = 0f;
+
         [Header("Client reconnection")]
         /// <summary>
         /// Seconds the client waits after its connection drops before the first reconnection attempt. Each later

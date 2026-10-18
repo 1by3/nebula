@@ -256,6 +256,44 @@ static class PackageSetupCheck
 
 `CurrentPlayer` is part of the Editor on Unity 6.6 and later. On earlier versions, it comes from the Multiplayer Play Mode package.
 
+## Test with simulated latency
+
+A local mesh and the Editor loop run at about 0 ms round-trip time (RTT), so prediction and lag compensation never face a real connection. To test them on one machine, make a client behave as if its link to the gateway were slower. The simulation works in the Editor and in development builds. A release build ignores it and logs a warning if a setting is present.
+
+To start a client with 100 ms of added round trip, run:
+
+```bash
+Nebula.exe -nebula-role client -nebula-sim-latency 100
+```
+
+These options apply to one client's link to the gateway:
+
+| Option | `NebulaConfig` field | Effect |
+| --- | --- | --- |
+| `-nebula-sim-latency <ms>` | `SimulatedLatencyMs` | Adds this much to the round trip. Half delays what the client sends and half delays what it receives, so a value of 100 raises `NebulaClient.RttMs` by about 100. |
+| `-nebula-sim-jitter <ms>` | `SimulatedJitterMs` | Varies each packet's delay by up to half this value in either direction. |
+| `-nebula-sim-loss <percent>` | `SimulatedLossPercent` | Loses this percentage of packets in each direction, from 0 to 100. |
+
+A command-line option overrides the `NebulaConfig` field. In the Editor, set the fields on your `NebulaConfig` asset under **Simulated network (development only)**. The client logs the setting once when it starts.
+
+The server and the other clients are not affected. The simulation delays packets in your game's code, so it adds to the link's real latency rather than replacing it. Held packets are released once per tick, so expect the measured RTT to be within one tick (about 17 ms) of the value you set.
+
+Jitter can reorder packets. A sequenced packet, such as a position update, that a newer one overtakes is dropped, as it would be on a real link. Reliable packets stay in order. A lost reliable packet is not dropped for good: it arrives one round trip late, as a retransmission would, and delays the reliable packets behind it.
+
+### Change the simulation while playing
+
+To change the simulation from your game's console, call `NebulaClient.SetNetworkSimulation`:
+
+```csharp
+// 150 ms round trip, 20 ms jitter, 1% loss.
+client.SetNetworkSimulation(150f, 20f, 1f);
+
+// Turn it off.
+client.SetNetworkSimulation(0f, 0f, 0f);
+```
+
+The call returns `false` and changes nothing in a release build and in a web client. Read the current values from `NebulaClient.NetworkSimulation`. While a simulation is on, the title screen and `NebulaDebugOverlay` show it next to the client's RTT.
+
 ## Watch
 
 ```bash

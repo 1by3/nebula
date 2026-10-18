@@ -185,7 +185,7 @@ namespace Nebula
         {
             // The reader is recycled after this call; hand out a view that is valid for the duration of the handler.
             var seg = new ArraySegment<byte>(reader.RawData, reader.Position, reader.AvailableBytes);
-            _handler?.Invoke(new TransportEvent(TransportEvent.Kind.Data, peer.Id, seg));
+            _handler?.Invoke(new TransportEvent(TransportEvent.Kind.Data, peer.Id, seg, deliveryMethod == DeliveryMethod.Sequenced));
         }
 
         void INetEventListener.OnNetworkReceiveUnconnected(IPEndPoint remoteEndPoint, NetPacketReader reader, UnconnectedMessageType messageType) { }
