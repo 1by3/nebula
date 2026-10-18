@@ -14,10 +14,10 @@ namespace Nebula.ServiceTests;
 /// <para>
 /// The replay half is the part that cannot be faked: <c>Fixtures/protocol-28-handshake.json</c> holds the exact
 /// bytes a client sent and a gateway answered, recorded from these fixtures, and the test pushes those bytes at a
-/// gateway built from today's source. The window is 28..28: protocol 28 (portals, <c>docs/portals.md</c> D46) closed it, because
+/// gateway built from today's source. The window is 28..29: protocol 29 (server events on predicted entities) is additive and kept 28; protocol 28 (portals, <c>docs/portals.md</c> D46) closed it, because
 /// the meaning of its messages is not additive even though their bytes are, so a client of 27 is refused, and the protocol-27
 /// recording proves it as the protocol-18 one proved the step from 18. Replaying the protocol-28 recording proves that a change
-/// inside 28 still answers a client of 28 the same way, and it is the recording the next additive bump replays for N-1. The step from 18
+/// inside 29 still answers a client of 28 (N-1) the same way; the protocol-29 recording is the one the next additive bump replays for N-1. The step from 18
 /// was not additive (it renumbered carrier behaviours), so the protocol-18 recording is kept to prove that such a client is
 /// refused with the gateway's range rather than admitted.
 /// </para>
@@ -245,7 +245,7 @@ public class ConformanceProtocolCompatibilityTests
         var fixture = ProtocolFixture.Load(ProtocolFixture.PathFor(27));
         Assert.That(fixture.ProtocolVersion, Is.EqualTo((ushort)27));
         Assert.That(ProtocolCompatibility.ClientProtocolAccepted(fixture.ProtocolVersion), Is.False);
-        Assert.That(HelloMsg.MinProtocolVersion, Is.EqualTo(HelloMsg.ProtocolVersion), "the window is closed to the current protocol");
+        Assert.That(HelloMsg.MinProtocolVersion, Is.EqualTo((ushort)28), "protocol 28 closed the window; 29 is additive and left it there");
 
         using var world = new ScaleWorld(1);
         using var fleet = new Fleet(gateways: 1);
@@ -259,6 +259,36 @@ public class ConformanceProtocolCompatibilityTests
         Assert.That(rejected.SupportedMaxVersion, Is.EqualTo(HelloMsg.ProtocolVersion));
         Assert.That(replayed.Welcome, Is.Null);
         Assert.That(fleet.Worker.Claims, Is.Empty, "a refused client never reaches a worker");
+    }
+
+    /// <summary>
+    /// Protocol 29 (server events on predicted entities) is additive: the worker's owner state for a predicted entity may end
+    /// with a section of events, and the gateway writes it only to a client that negotiated 29. A client of 28 is sent the owner
+    /// state it always was, with the same state bytes; a client of 29 also gets the events.
+    /// </summary>
+    [Test]
+    public void OnlyAProtocol29ClientIsSentTheServerEventsOfItsOwnerState()
+    {
+        using var world = new ScaleWorld(1);
+        using var fleet = new Fleet(gateways: 1);
+        fleet.Worker.SpawnIntoRequestedContainer = true;
+        var old = fleet.Connect(0, "protocol-28");
+        old.AnnounceVersion = 28;
+        var current = fleet.Connect(0, "protocol-29");
+        current.AnnounceVersion = HelloMsg.ServerEventsVersion;
+        Assert.That(fleet.Run(() => old.Join == JoinState.Joined && current.Join == JoinState.Joined
+            && fleet.Worker.Pawns.ContainsKey(old.Welcome!.Value.ClientId) && fleet.Worker.Pawns.ContainsKey(current.Welcome!.Value.ClientId), seconds: 20), Is.True);
+        Assert.That(old.Welcome!.Value.NegotiatedVersion, Is.EqualTo((ushort)28));
+        Assert.That(current.Welcome!.Value.NegotiatedVersion, Is.EqualTo(HelloMsg.ServerEventsVersion));
+
+        var events = new byte[] { 1, 40, 0, 0, 0, 0, 7, 0, 0, 0, 2, 9, 9 };
+        fleet.Worker.SendOwnerState(fleet.Worker.Pawns[old.Welcome.Value.ClientId], old.Welcome.Value.ClientId, 50, events);
+        fleet.Worker.SendOwnerState(fleet.Worker.Pawns[current.Welcome.Value.ClientId], current.Welcome.Value.ClientId, 50, events);
+        Assert.That(fleet.Run(() => old.OwnerStates.Count > 0 && current.OwnerStates.Count > 0, seconds: 10), Is.True);
+        Assert.That(old.OwnerStates[0].State, Is.EqualTo(new byte[] { 1, 2, 3 }), "the state is the same bytes");
+        Assert.That(old.OwnerStates[0].Events, Is.Null.Or.Empty, "a client of 28 is not sent the section");
+        Assert.That(current.OwnerStates[0].State, Is.EqualTo(new byte[] { 1, 2, 3 }));
+        Assert.That(current.OwnerStates[0].Events, Is.EqualTo(events), "a client of 29 is");
     }
 
     /// <summary>

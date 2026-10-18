@@ -238,9 +238,12 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 28;
+        public const ushort ProtocolVersion = 29;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 28, the version itself. Protocol 28 (portals,
+        /// The oldest client protocol the gateway accepts: 28. Protocol 29 (tick-stamped server events on predicted entities,
+        /// the Prediction guide) is additive: <see cref="OwnerStateMsg"/> gains a trailing events section that a gateway
+        /// writes only to clients that negotiated 29 (<see cref="ServerEventsVersion"/>), so a client of 28 is sent exactly the bytes it was and
+        /// predicts without the events. Protocol 28 (portals,
         /// <c>docs/portals.md</c> D45, D46) closes the window: its new messages (<see cref="MsgId.Portals"/>,
         /// <see cref="MsgId.PortalLinks"/>, <see cref="MsgId.PortalWarm"/>) are additive bytes, but their meaning is not. A
         /// client of 27 would be sent replicas of scopes it believes hidden, would never draw them posed, and would predict
@@ -252,6 +255,8 @@ namespace Nebula
         /// <see cref="ProtocolVersion"/> exactly.
         /// </summary>
         public const ushort MinProtocolVersion = 28;
+        /// <summary>The first protocol whose clients are sent the server events trailing <see cref="OwnerStateMsg"/>.</summary>
+        public const ushort ServerEventsVersion = 29;
         /// <summary>The first protocol whose clients are sent <see cref="MsgId.FarEntities"/>.</summary>
         public const ushort FarEntitiesVersion = 26;
         public PeerRole Role;
@@ -1374,10 +1379,19 @@ namespace Nebula
         /// <summary>The container the state's pose is expressed in, so the owner reconciles in the right frame on the tick it crosses a seam.</summary>
         public ContainerRef Container;
         public byte[] State;
+        /// <summary>
+        /// Server events (<see cref="PredictedBehaviourBase.PostServerEvent{TEvent}"/>) that apply on ticks this report knows of, in
+        /// <see cref="PredictedBehaviourBase"/>'s own encoding; null or empty when there are none. Written after <see cref="State"/>, only
+        /// when there are some, and only to a client of protocol <see cref="HelloMsg.ServerEventsVersion"/> or newer.
+        /// </summary>
+        public byte[] Events;
 
         public const sbyte NoInputLead = sbyte.MinValue;
 
-        public void Write(NetworkWriter w)
+        public void Write(NetworkWriter w) => Write(w, true);
+
+        /// <summary>Write the message; <paramref name="includeEvents"/> false leaves out the trailing <see cref="Events"/> section (a client that does not read it).</summary>
+        public void Write(NetworkWriter w, bool includeEvents)
         {
             w.WriteByte((byte)MsgId.OwnerState);
             w.WriteULong(NetId);
@@ -1388,19 +1402,25 @@ namespace Nebula
             w.WriteULong(OwnerClientId);
             Container.Write(w);
             w.WriteBytes(State);
+            if (includeEvents && Events != null && Events.Length > 0) w.WriteBytes(Events);
         }
 
-        public static OwnerStateMsg Read(NetworkReader r) => new OwnerStateMsg
+        public static OwnerStateMsg Read(NetworkReader r)
         {
-            NetId = r.ReadULong(),
-            Epoch = r.ReadUInt(),
-            Tick = r.ReadUInt(),
-            LastInputTick = r.ReadUInt(),
-            InputLead = r.ReadSByte(),
-            OwnerClientId = r.ReadULong(),
-            Container = ContainerRef.Read(r),
-            State = r.ReadBytes(),
-        };
+            var msg = new OwnerStateMsg
+            {
+                NetId = r.ReadULong(),
+                Epoch = r.ReadUInt(),
+                Tick = r.ReadUInt(),
+                LastInputTick = r.ReadUInt(),
+                InputLead = r.ReadSByte(),
+                OwnerClientId = r.ReadULong(),
+                Container = ContainerRef.Read(r),
+                State = r.ReadBytes(),
+            };
+            if (r.Remaining > 0) msg.Events = r.ReadBytes();
+            return msg;
+        }
     }
 
     public struct ContainerOwnershipEntry

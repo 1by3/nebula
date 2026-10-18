@@ -69,6 +69,14 @@ The container the state's pose is expressed in, so the owner reconciles in the r
 public byte[] State;
 ```
 
+### Events [#events]
+
+```csharp
+public byte[] Events;
+```
+
+Server events ([`PredictedBehaviourBase.PostServerEvent<TEvent>`](/docs/reference/core/predicted-behaviour-base#postserverevent)) that apply on ticks this report knows of, in [`PredictedBehaviourBase`](/docs/reference/core/predicted-behaviour-base)'s own encoding; null or empty when there are none. Written after [`State`](#state), only when there are some, and only to a client of protocol [`HelloMsg.ServerEventsVersion`](/docs/reference/protocol/hello-msg#servereventsversion) or newer.
+
 ### NoInputLead [#noinputlead]
 
 ```csharp
@@ -81,7 +89,10 @@ public const sbyte NoInputLead = sbyte.MinValue;
 
 ```csharp
 public void Write(NetworkWriter w);
+public void Write(NetworkWriter w, bool includeEvents);
 ```
+
+Write the message; `includeEvents` false leaves out the trailing [`Events`](#events) section (a client that does not read it).
 
 ### Read [#read]
 

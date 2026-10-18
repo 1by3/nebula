@@ -12,6 +12,24 @@ public abstract class PredictedBehaviourBase : NetworkBehaviour
 
 Non-generic surface Nebula's worker and client drive; game code derives from [`PredictedBehaviour<TInput>`](/docs/reference/core/predicted-behaviour).
 
+## Fields
+
+### MaxServerEventsPerTick [#maxservereventspertick]
+
+```csharp
+public const int MaxServerEventsPerTick = 4;
+```
+
+The most server events that can apply on one tick of one entity. More are refused and counted in [`ServerEventsDropped`](#servereventsdropped).
+
+### ServerEventRepeatTicks [#servereventrepeatticks]
+
+```csharp
+public const int ServerEventRepeatTicks = 30;
+```
+
+For how many ticks after the tick it applies on a server event keeps being sent in the owner's reports, so a lost packet does not lose it. The owner ignores the repeats.
+
 ## Properties
 
 ### LastProcessedInputTick [#lastprocessedinputtick]
@@ -142,6 +160,30 @@ protected virtual int DriverInputTimeoutTicks { get; }
 
 Ticks without any input from the driver after which the worker stops repeating the last one and runs [`PredictedBehaviour<TInput>.GatherServerInput`](/docs/reference/core/predicted-behaviour#gatherserverinput) instead, until the driver's input comes back: a driver whose link drops does not leave the vehicle at full throttle. Default 30 (half a second). The driver keeps the seat; take it with [`NetworkIdentity.ClearDriver`](/docs/reference/core/network-identity#cleardriver) when the player leaves.
 
+### ServerEventsPosted [#servereventsposted]
+
+```csharp
+public int ServerEventsPosted { get; }
+```
+
+Authority: server events accepted by [`PostServerEvent<TEvent>`](#postserverevent) since spawn.
+
+### ServerEventsDropped [#servereventsdropped]
+
+```csharp
+public int ServerEventsDropped { get; }
+```
+
+Authority: server events [`PostServerEvent<TEvent>`](#postserverevent) refused because the tick they would apply on already held [`MaxServerEventsPerTick`](#maxservereventspertick).
+
+### ServerEventReplays [#servereventreplays]
+
+```csharp
+public int ServerEventReplays { get; }
+```
+
+Owning client: times a report made the prediction replay because it carried an event for a tick the client had already simulated without it.
+
 ## Methods
 
 ### ResetCorrectionStats [#resetcorrectionstats]
@@ -165,3 +207,25 @@ protected virtual void OnDriverChanged(ulong previous, ulong current);
 ```
 
 The driver of this entity changed ([`NetworkIdentity.SetDriver`](/docs/reference/core/network-identity#setdriver)): `current` is the new driver's client id, 0 when nobody drives it now. Called on the worker that has authority when the change is made, and on every client that holds the entity when it hears of it, the new and the previous driver's included. Use it for what the seat does (a camera, a HUD, handing the controls back to the worker's own logic); Nebula has already switched the input source and the prediction.
+
+### PostServerEvent [#postserverevent]
+
+```csharp
+public bool PostServerEvent<TEvent>(in TEvent e)
+    where TEvent : struct, INetworkSerializable;
+```
+
+Authority only: attach an event to the next tick this entity simulates, so its `Simulate` sees it there with [`TryGetServerEvent<TEvent>`](#trygetserverevent). The owner's client is sent the event with its state reports and keeps it, so its prediction replays the event on the same tick, and it travels with the entity when another worker takes it over, without applying twice. Use it for what the worker decides and the owner cannot know: a shove, a stun, a forced move.
+
+At most [`MaxServerEventsPerTick`](#maxservereventspertick) events apply on one tick; the next is refused, counted in [`ServerEventsDropped`](#servereventsdropped), and this returns false. It also returns false, with a warning once, on a copy without authority. `TEvent` is identified on the wire by a hash of its full name, so use a distinct struct for each kind of event.
+
+### TryGetServerEvent [#trygetserverevent]
+
+```csharp
+protected bool TryGetServerEvent<TEvent>(out TEvent e)
+    where TEvent : struct, INetworkSerializable;
+protected bool TryGetServerEvent<TEvent>(int index, out TEvent e)
+    where TEvent : struct, INetworkSerializable;
+```
+
+Inside `Simulate`: the server event of type `TEvent` posted for the tick being simulated, if any. It is there on the authoritative worker, in the owner's replay of that tick and in the owner's own simulation of it once its client has heard of the event. Apply it to simulated state (velocity, a stun timer: whatever `WriteState` carries) so that the owner's replay ends where the worker did. Outside `Simulate` it finds nothing.

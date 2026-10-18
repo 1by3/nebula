@@ -1900,7 +1900,8 @@ namespace Nebula
             // a replica. An owned entity is always in its owner's set, so this only ever drops a stale message.
             if (!_clientsById.TryGetValue(msg.OwnerClientId, out var c) || !c.Visible.Contains(msg.NetId)) return;
             _writer.Reset();
-            msg.Write(_writer);
+            // The server events section is for clients that read it (protocol 29); an older client gets the bytes it always did.
+            msg.Write(_writer, c.ProtocolVersion >= HelloMsg.ServerEventsVersion);
             Send(c.PeerId, Delivery.Sequenced, _writer.ToSegment());
         }
 
