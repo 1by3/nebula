@@ -1295,7 +1295,7 @@ namespace Nebula
             return new Vector3(Mathf.Round(local.x / step) * step, Mathf.Round(local.y / step) * step, Mathf.Round(local.z / step) * step);
         }
 
-        private static bool IsUnder(Transform t, Transform root)
+        internal static bool IsUnder(Transform t, Transform root)
         {
             int hops = 0;
             for (var p = t != null ? t.parent : null; p != null && hops < 256; p = p.parent, hops++)
@@ -1315,6 +1315,38 @@ namespace Nebula
             var outer = owner.Space != null ? owner.Space.Frame : null;
             if (outer == null || !outer._posed || outer == _simulating || outer.Root == null || !IsUnder(t, outer.Root)) return Double3.From(t.position);
             return outer.LocalToRenderPrecise(LocalIn(t, outer.Root));
+        }
+
+        /// <summary>
+        /// <paramref name="local"/>, a point in <paramref name="t"/>'s local coordinates, in <paramref name="root"/>'s, composed in
+        /// double from the local poses in between: the same wherever the root stands (posed for drawing or for simulation).
+        /// </summary>
+        internal static Double3 PointIn(Transform t, Vector3 local, Transform root)
+        {
+            var p = Double3.From(local);
+            int hops = 0;
+            for (var x = t; x != null && x != root && hops < 256; x = x.parent, hops++)
+            {
+                var s = x.localScale;
+                p = Rotate(x.localRotation, new Double3(p.X * s.x, p.Y * s.y, p.Z * s.z)) + x.localPosition;
+            }
+            return p;
+        }
+
+        /// <summary>The inverse of <see cref="PointIn"/>: <paramref name="inRoot"/>, a point in <paramref name="root"/>'s local coordinates, in <paramref name="t"/>'s.</summary>
+        internal static Vector3 PointFrom(Double3 inRoot, Transform t, Transform root)
+        {
+            var chain = new List<Transform>(8);
+            for (var x = t; x != null && x != root && chain.Count < 256; x = x.parent) chain.Add(x);
+            var p = inRoot;
+            for (int i = chain.Count - 1; i >= 0; i--)
+            {
+                var x = chain[i];
+                var s = x.localScale;
+                p = Rotate(Quaternion.Inverse(x.localRotation), p - x.localPosition);
+                p = new Double3(p.X / s.x, p.Y / s.y, p.Z / s.z);
+            }
+            return p.ToVector3();
         }
 
         /// <summary><paramref name="t"/>'s position in <paramref name="root"/>'s local coordinates, composed in double from the local poses in between.</summary>

@@ -429,6 +429,8 @@ namespace Nebula
         private int _varsPacketsIn;
         private int _frames;
         private int _lastCorrections;
+        private PredictedBehaviourBase _lastCarrierPredicted;
+        private int _lastCarrierCorrections;
         private double _renderTick;
         private double _renderOffset;
         private bool _hasRenderOffset;
@@ -1321,8 +1323,14 @@ namespace Nebula
             var predicted = LocalPlayer != null ? LocalPlayer.Predicted : null;
             int corrections = predicted != null ? predicted.Corrections - _lastCorrections : 0;
             if (predicted != null) _lastCorrections = predicted.Corrections;
+            // The hull under the pawn predicts on its own (a driven carrier): its corrections are its own, and the pawn riding
+            // container-local inside it never shows them.
+            var carrierPredicted = _carrier != null ? _carrier.Predicted : null;
+            if (carrierPredicted != _lastCarrierPredicted) { _lastCarrierPredicted = carrierPredicted; _lastCarrierCorrections = carrierPredicted != null ? carrierPredicted.Corrections : 0; }
+            int carrierCorrections = carrierPredicted != null ? carrierPredicted.Corrections - _lastCarrierCorrections : 0;
+            if (carrierPredicted != null) _lastCarrierCorrections = carrierPredicted.Corrections;
             float seconds = TelemetryIntervalSeconds;
-            NebulaLog.Info($"client {_frames / seconds:0} fps replicas {_entities.Count} (+{SpawnsReceived / seconds:0.0}/s -{DespawnsReceived / seconds:0.0}/s) entities {_entities.Count} in {_packetsIn / seconds:0} pkt/s {_bytesIn / seconds / 1024f:0.0} KB/s {_stateEntriesIn / seconds:0} states/s (msgs: state {_statePacketsIn / seconds:0} rpc {_rpcPacketsIn / seconds:0} vars {_varsPacketsIn / seconds:0}) rtt {RttMs}ms lead {InputLeadTicks} (adj {InputLeadAdjustTicks}, worker saw {LastReportedInputLead}) corrections {corrections}{(predicted != null && corrections > 0 ? $" last {predicted.LastCorrectionMagnitude:0.00}m" : "")} | full-rate interp: depth {(RemoteInterpolator.Samples > 0 ? RemoteInterpolator.DepthSum / RemoteInterpolator.Samples : 0):0.0} ticks, starved {(RemoteInterpolator.Samples > 0 ? 100.0 * RemoteInterpolator.Starved / RemoteInterpolator.Samples : 0):0.0}% worst +{RemoteInterpolator.MaxOvershoot:0.0} | frame max {_maxFrameMs:0.0}ms fixed/frame max {_maxFixedPerFrame} | gaps>{StateGapThresholdTicks}t {_stateGaps} worst {_worstStateGap}t | render delay {RenderDelayTicks}t (stream lag {StreamLagTicks}t) | snapshot age ms min {(_ageCount > 0 ? _ageMin : 0):0.0} avg {(_ageCount > 0 ? _ageSum / _ageCount : 0):0.0} max {_ageMax:0.0}{(_carrier != null ? $" | carrier hitches {_carrierHitches} worst +{_carrierWorstJump:0.00}m, container changes {_carrierContainerChanges}, epoch changes {_carrierEpochChanges}" : "")}");
+            NebulaLog.Info($"client {_frames / seconds:0} fps replicas {_entities.Count} (+{SpawnsReceived / seconds:0.0}/s -{DespawnsReceived / seconds:0.0}/s) entities {_entities.Count} in {_packetsIn / seconds:0} pkt/s {_bytesIn / seconds / 1024f:0.0} KB/s {_stateEntriesIn / seconds:0} states/s (msgs: state {_statePacketsIn / seconds:0} rpc {_rpcPacketsIn / seconds:0} vars {_varsPacketsIn / seconds:0}) rtt {RttMs}ms lead {InputLeadTicks} (adj {InputLeadAdjustTicks}, worker saw {LastReportedInputLead}) corrections {corrections}{(predicted != null && corrections > 0 ? $" last {predicted.LastCorrectionMagnitude:0.00}m" : "")} | full-rate interp: depth {(RemoteInterpolator.Samples > 0 ? RemoteInterpolator.DepthSum / RemoteInterpolator.Samples : 0):0.0} ticks, starved {(RemoteInterpolator.Samples > 0 ? 100.0 * RemoteInterpolator.Starved / RemoteInterpolator.Samples : 0):0.0}% worst +{RemoteInterpolator.MaxOvershoot:0.0} | frame max {_maxFrameMs:0.0}ms fixed/frame max {_maxFixedPerFrame} | gaps>{StateGapThresholdTicks}t {_stateGaps} worst {_worstStateGap}t | render delay {RenderDelayTicks}t (stream lag {StreamLagTicks}t) | snapshot age ms min {(_ageCount > 0 ? _ageMin : 0):0.0} avg {(_ageCount > 0 ? _ageSum / _ageCount : 0):0.0} max {_ageMax:0.0}{(_carrier != null ? $" | carrier hitches {_carrierHitches} worst +{_carrierWorstJump:0.00}m, container changes {_carrierContainerChanges}, epoch changes {_carrierEpochChanges}{(carrierPredicted != null ? $", corrections {carrierCorrections}{(carrierCorrections > 0 ? $" last {carrierPredicted.LastCorrectionMagnitude:0.00}m" : "")}" : "")}" : "")}");
             SpawnsReceived = DespawnsReceived = 0;
             _carrierHitches = _carrierContainerChanges = _carrierEpochChanges = 0; _carrierWorstJump = 0;
             _ageMin = double.MaxValue; _ageMax = 0; _ageSum = 0; _ageCount = 0;
