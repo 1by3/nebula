@@ -1,0 +1,78 @@
+---
+title: "NebulaSharedCache"
+description: "A cache that every worker of a mesh shares, for data that is expensive to compute and the same every time: baked terrain, path data, generated layouts."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/SharedCache/NebulaSharedCache.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/SharedCache/NebulaSharedCache.cs)</div>
+
+```csharp
+public static class NebulaSharedCache
+```
+
+A cache that every worker of a mesh shares, for data that is expensive to compute and the same every time: baked terrain, path data, generated layouts. A worker that needs such data asks the cache first ([`TryGetAsync`](#trygetasync)) and, when it had to compute the data, stores it ([`PutAsync`](#putasync)) so that no other worker, including a replacement for one that was shut down, has to compute it again.
+
+The cache is content-addressed and write-once. Choose a key that names the exact inputs of the data, such as `terrain.v3.<hash of the seed and settings>`: the same key must always mean the same bytes. A key that is already stored is never replaced, and two workers that store the same key at once both succeed. To change what an existing key stands for, change the key (for example by bumping a version in it).
+
+Both calls are safe from any thread. They return at once, do their work on the thread pool and complete there, so they never block a tick and need no pump on the main thread. They do not throw for a backend failure: a read that cannot be answered gives null, a write that cannot be stored is dropped, and the worker computes the data itself. Treat the cache as an optimization, never as the only copy.
+
+Where the data lives depends on how the process runs, and the choice is made by the bootstrap ([`NebulaConfig.SharedCacheMode`](/docs/reference/core/nebula-config#sharedcachemode)): in the Editor (including Multiplayer Play Mode) and in a single-process run it is a folder on the local disk; in a mesh started with `nebula start` and in Nebula Cloud it is stored by the orchestrator, in its database, and reached over HTTP. The cache is separate from persisted entities: clearing persistence does not clear it.
+
+## Properties
+
+### IsAvailable [#isavailable]
+
+```csharp
+public static bool IsAvailable { get; }
+```
+
+True when this process has a cache. When false, [`TryGetAsync`](#trygetasync) always gives null and [`PutAsync`](#putasync) does nothing.
+
+### Backend [#backend]
+
+```csharp
+public static string Backend { get; }
+```
+
+"folder", "memory", "remote", "sqlite" or "postgres", or "off" when there is no cache.
+
+### Stats [#stats]
+
+```csharp
+public static SharedCacheStats Stats { get; }
+```
+
+The counters of this process's cache client; all zero when there is no cache.
+
+## Methods
+
+### TryGetAsync [#trygetasync]
+
+```csharp
+public static Task<byte[]> TryGetAsync(string key, CancellationToken ct = default);
+```
+
+The object stored under `key`, or null when there is none, the cache is unavailable, the request fails or times out, or `ct` is cancelled. A key must be 1 to [`SharedCacheKey.MaxKeyLength`](/docs/reference/shared-cache/shared-cache-key#maxkeylength) characters from letters, digits and `. _ - :`, starting with a letter or digit; any other key is logged and answered with null.
+
+### PutAsync [#putasync]
+
+```csharp
+public static Task PutAsync(string key, byte[] bytes, CancellationToken ct = default);
+```
+
+Store `bytes` under `key` unless that key is already stored. The task completes when the object is stored, found to be stored already, or given up on; it never faults for a backend failure. Do not change `bytes` until the task completes. An empty object, one over [`NebulaConfig.SharedCacheMaxObjectBytes`](/docs/reference/core/nebula-config#sharedcachemaxobjectbytes), or an invalid key is logged and dropped.
+
+### Install [#install]
+
+```csharp
+public static void Install(ISharedCacheClient client);
+```
+
+Make `client` this process's cache. The bootstrap calls this; call it yourself only to supply your own [`ISharedCacheClient`](/docs/reference/shared-cache/i-shared-cache-client), for example in a test. Pass null to turn the cache off. The previous client is not disposed.
+
+### Uninstall [#uninstall]
+
+```csharp
+public static void Uninstall(ISharedCacheClient client);
+```
+
+Turn the cache off if `client` is the one installed.

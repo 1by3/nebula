@@ -1,0 +1,48 @@
+---
+title: "ISharedCacheClient"
+description: "A worker's way to the shared cache."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/SharedCache/SharedCacheClient.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/SharedCache/SharedCacheClient.cs)</div>
+
+```csharp
+public interface ISharedCacheClient : IDisposable
+```
+
+A worker's way to the shared cache. [`NebulaSharedCache`](/docs/reference/shared-cache/nebula-shared-cache) holds the one a process uses; the bootstrap installs [`LocalSharedCacheClient`](/docs/reference/shared-cache/local-shared-cache-client) or [`RemoteSharedCacheClient`](/docs/reference/shared-cache/remote-shared-cache-client).
+
+## Properties
+
+### Backend [#backend]
+
+```csharp
+string Backend { get; }
+```
+
+"folder", "memory", "remote", "sqlite" or "postgres": where the objects end up.
+
+### Stats [#stats]
+
+```csharp
+SharedCacheStats Stats { get; }
+```
+
+What this client has done so far.
+
+## Methods
+
+### TryGetAsync [#trygetasync]
+
+```csharp
+Task<byte[]> TryGetAsync(string key, CancellationToken ct = default);
+```
+
+The object stored under `key`, or null on a miss, an error, a timeout or a cancelled call.
+
+### PutAsync [#putasync]
+
+```csharp
+Task PutAsync(string key, byte[] bytes, CancellationToken ct = default);
+```
+
+Store `bytes` under `key` unless it is already stored. Never throws for a backend failure.

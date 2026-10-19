@@ -51,6 +51,7 @@
     "guides/orchestrator-and-dashboard",
     "guides/control-plane",
     "guides/persistence",
+    "guides/shared-cache",
     "---Debugging and testing---",
     "guides/debugging",
     "guides/load-testing",

@@ -1,0 +1,74 @@
+---
+title: "ISharedCacheStore"
+description: "Where the shared cache keeps its objects: a folder (FolderSharedCacheStore), the orchestrator's database (SqlSharedCacheStore in the standalone orchestrator), or memory (MemorySharedCacheStore)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/SharedCache/ISharedCacheStore.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/SharedCache/ISharedCacheStore.cs)</div>
+
+```csharp
+public interface ISharedCacheStore : IDisposable
+```
+
+Where the shared cache keeps its objects: a folder ([`FolderSharedCacheStore`](/docs/reference/shared-cache/folder-shared-cache-store)), the orchestrator's database (`SqlSharedCacheStore` in the standalone orchestrator), or memory ([`MemorySharedCacheStore`](/docs/reference/shared-cache/memory-shared-cache-store)).
+
+A store is write-once: [`Put`](#put) never replaces an object that is already there, because a key names its content. Every method is synchronous, safe to call from any thread and may block on disk or the network, so call it from a worker thread, never from a tick. A store throws when its backend fails; the caller ([`SharedCacheHost`](/docs/reference/shared-cache/shared-cache-host) or a client) turns that into a miss or a refused write.
+
+## Properties
+
+### Backend [#backend]
+
+```csharp
+string Backend { get; }
+```
+
+"folder", "memory", "sqlite" or "postgres".
+
+## Methods
+
+### TryGet [#tryget]
+
+```csharp
+bool TryGet(string key, out byte[] bytes, out string checksum);
+```
+
+The object stored under `key`. False on a miss, and also when the stored bytes no longer match their checksum (the entry is removed, so the next put can replace it). Refreshes the entry's last-read time when it is more than [`SharedCacheKey.TouchIntervalSeconds`](/docs/reference/shared-cache/shared-cache-key#touchintervalseconds) old.
+
+### Put [#put]
+
+```csharp
+bool Put(string key, byte[] bytes, string checksum);
+```
+
+Store `bytes` under `key` unless the key is already stored. True when this call wrote it, false when the key was already there (also the answer to a racing put). The caller has verified `checksum` ([`SharedCacheKey.Checksum`](/docs/reference/shared-cache/shared-cache-key#checksum)) against `bytes`.
+
+### RemoveUnreadSince [#removeunreadsince]
+
+```csharp
+int RemoveUnreadSince(DateTime cutoffUtc);
+```
+
+Remove every entry that was last read before `cutoffUtc`. Returns how many were removed.
+
+### Clear [#clear]
+
+```csharp
+int Clear();
+```
+
+Remove every entry. Returns how many were removed. Persisted entities are not affected.
+
+### Count [#count]
+
+```csharp
+long Count();
+```
+
+How many objects the store holds.
+
+### TotalBytes [#totalbytes]
+
+```csharp
+long TotalBytes();
+```
+
+The total size of the objects the store holds, in bytes.

@@ -1,0 +1,149 @@
+---
+title: "SharedCacheHost"
+description: "Serves the orchestrator's ISharedCacheStore to workers (RemoteSharedCacheClient) over the orchestrator's HTTP server, beside PersistenceHost: GET /cache/{key}: the object as application/octet-stream with its SHA-256 in X-Nebula-Checksum;..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/SharedCache/SharedCacheHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/SharedCache/SharedCacheHost.cs)</div>
+
+```csharp
+public sealed class SharedCacheHost
+```
+
+Serves the orchestrator's [`ISharedCacheStore`](/docs/reference/shared-cache/i-shared-cache-store) to workers ([`RemoteSharedCacheClient`](/docs/reference/shared-cache/remote-shared-cache-client)) over the orchestrator's HTTP server, beside [`PersistenceHost`](/docs/reference/persistence/persistence-host):
+
+- `GET /cache/{key}`: the object as `application/octet-stream` with its SHA-256 in `X-Nebula-Checksum`; 404 when there is none
+- `PUT /cache/{key}`: the object as the body, with its SHA-256 in `X-Nebula-Checksum`. 201 when it was stored, 200 when the key was already stored. 400 for a bad key, a missing or wrong checksum, or an empty body; 413 over the size limit
+
+Requests carry the mesh token in `X-Nebula-Token` when the mesh has one. Unlike the persistence endpoints, a request is answered on the HTTP server's own thread and never waits for the orchestrator's main thread, so a worker that is filling a cold cache cannot hold up the control plane. To keep it from starving the control plane of the HTTP server's threads instead, at most [`MaxConcurrent`](#maxconcurrent) requests run at once; the rest get 503 and the worker treats that as a miss.
+
+## Constructors
+
+### SharedCacheHost [#sharedcachehost]
+
+```csharp
+public SharedCacheHost(ISharedCacheStore store, string token, int maxObjectBytes = SharedCacheKey.DefaultMaxObjectBytes, int maxConcurrent = 8, int expiryDays = SharedCacheKey.DefaultExpiryDays);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `store` | Where objects are kept. Owned by the caller. |
+| `token` | The mesh token requests must present; null or empty for none. |
+| `maxObjectBytes` | Largest object accepted, in bytes. |
+| `maxConcurrent` | Most requests served at once. |
+| `expiryDays` | Days an object may go unread before a sweep removes it; 0 or less keeps everything. |
+
+## Fields
+
+### Prefix [#prefix]
+
+```csharp
+public const string Prefix = "/cache";
+```
+
+The path prefix the cache is served under.
+
+### ChecksumHeader [#checksumheader]
+
+```csharp
+public const string ChecksumHeader = "X-Nebula-Checksum";
+```
+
+The header that carries an object's checksum in both directions.
+
+### SweepIntervalSeconds [#sweepintervalseconds]
+
+```csharp
+public const float SweepIntervalSeconds = 3600f;
+```
+
+Seconds between sweeps that remove expired keys.
+
+### FirstSweepSeconds [#firstsweepseconds]
+
+```csharp
+public const float FirstSweepSeconds = 60f;
+```
+
+Seconds after start before the first sweep.
+
+## Properties
+
+### Store [#store]
+
+```csharp
+public ISharedCacheStore Store { get; }
+```
+
+### MaxObjectBytes [#maxobjectbytes]
+
+```csharp
+public int MaxObjectBytes { get; }
+```
+
+Largest object accepted, in bytes.
+
+### MaxConcurrent [#maxconcurrent]
+
+```csharp
+public int MaxConcurrent { get; }
+```
+
+Most requests served at once.
+
+### ExpiryDays [#expirydays]
+
+```csharp
+public int ExpiryDays { get; }
+```
+
+Days an object may go unread before a sweep removes it; 0 or less keeps everything.
+
+### Stats [#stats]
+
+```csharp
+public SharedCacheStats Stats { get; }
+```
+
+What this host has served since it started.
+
+## Methods
+
+### TryHandle [#tryhandle]
+
+```csharp
+public bool TryHandle(OrchestratorHttpServer.Request req, out OrchestratorHttpServer.Response response);
+```
+
+Handle `req` when it addresses the cache. False for any other request. Safe to call from several threads: it blocks only on the store.
+
+### Tick [#tick]
+
+```csharp
+public void Tick(double nowSeconds);
+```
+
+Main thread, every frame: start a sweep when one is due. The sweep runs on the thread pool, first [`FirstSweepSeconds`](#firstsweepseconds) after the first call and then every [`SweepIntervalSeconds`](#sweepintervalseconds).
+
+### Sweep [#sweep]
+
+```csharp
+public int Sweep();
+```
+
+Remove every object that has not been read for [`ExpiryDays`](#expirydays) days. Returns how many were removed. Called by [`Tick`](#tick); call it directly to sweep at once.
+
+### Clear [#clear]
+
+```csharp
+public int Clear();
+```
+
+Remove every object (the dashboard's and the dev reset's way to start over). Persisted entities are not touched.
+
+### Describe [#describe]
+
+```csharp
+public string Describe();
+```
+
+The cache's size, as the dashboard and the status line report it.

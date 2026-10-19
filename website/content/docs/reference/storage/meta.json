@@ -1,4 +1,4 @@
 {
   "title": "Storage",
-  "pages": ["nebula-database", "sql-control-plane-storage", "sql-persistence-store"]
+  "pages": ["nebula-database", "sql-control-plane-storage", "sql-persistence-store", "sql-shared-cache-store"]
 }

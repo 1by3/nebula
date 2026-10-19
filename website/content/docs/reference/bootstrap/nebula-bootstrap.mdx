@@ -67,6 +67,14 @@ public IPersistenceStore PersistenceStore { get; }
 
 Where persistent entities are stored, created for the worker and orchestrator roles from [`NebulaConfig.PersistenceMode`](/docs/reference/core/nebula-config#persistencemode). Null when persistence is off.
 
+### SharedCacheStore [#sharedcachestore]
+
+```csharp
+public ISharedCacheStore SharedCacheStore { get; }
+```
+
+Where the shared cache ([`NebulaSharedCache`](/docs/reference/shared-cache/nebula-shared-cache)) keeps its objects when this process owns them: an orchestrator, or a process that is its own cache (the Editor, a single-process run). Null for a worker that asks the orchestrator, and when the shared cache is off. See [`NebulaConfig.SharedCacheMode`](/docs/reference/core/nebula-config#sharedcachemode).
+
 ### Worker [#worker]
 
 ```csharp

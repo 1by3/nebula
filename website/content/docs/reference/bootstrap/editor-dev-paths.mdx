@@ -53,6 +53,14 @@ public static string DevAuthKey(string projectRoot);
 
 The player signing key of the server a virtual player hosts ([`NebulaGateway.AuthKeyPath`](/docs/reference/gateway/nebula-gateway#authkeypath)): `Library/Nebula/dev-auth.key`. A virtual player's persistent data folder is not the main Editor's, so without this the identity the main Editor saved would be refused once every session. Builds never read it.
 
+### SharedCache [#sharedcache]
+
+```csharp
+public static string SharedCache(string projectRoot);
+```
+
+The local shared cache ([`NebulaSharedCache`](/docs/reference/shared-cache/nebula-shared-cache)) of the dev loop and of the Editor: `Library/Nebula/SharedCache`. It is not part of [`DevSaves`](#devsaves), so `Reset Dev Saves` keeps it; delete the folder to start from a cold cache.
+
 ### DevSaves [#devsaves]
 
 ```csharp

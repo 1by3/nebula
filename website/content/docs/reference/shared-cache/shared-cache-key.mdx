@@ -1,0 +1,72 @@
+---
+title: "SharedCacheKey"
+description: "The rules every part of the shared cache applies to a key and to a stored object: the longest key and object, which characters a key may use, and how an object's checksum is written."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/SharedCache/SharedCacheKey.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/SharedCache/SharedCacheKey.cs)</div>
+
+```csharp
+public static class SharedCacheKey
+```
+
+The rules every part of the shared cache applies to a key and to a stored object: the longest key and object, which characters a key may use, and how an object's checksum is written. A key is chosen by the caller, usually a namespace plus a hash of the inputs that produced the object, such as `terrain.v3.9f2c1a…`.
+
+## Fields
+
+### MaxKeyLength [#maxkeylength]
+
+```csharp
+public const int MaxKeyLength = 200;
+```
+
+Longest key, in characters.
+
+### DefaultMaxObjectBytes [#defaultmaxobjectbytes]
+
+```csharp
+public const int DefaultMaxObjectBytes = 32 * 1024 * 1024;
+```
+
+Largest object a cache accepts by default, in bytes (32 MiB). [`NebulaConfig.SharedCacheMaxObjectBytes`](/docs/reference/core/nebula-config#sharedcachemaxobjectbytes) changes it; set the same value on the orchestrator and on every worker.
+
+### DefaultExpiryDays [#defaultexpirydays]
+
+```csharp
+public const int DefaultExpiryDays = 30;
+```
+
+Days a key may go unread before the orchestrator removes it, by default.
+
+### TouchIntervalSeconds [#touchintervalseconds]
+
+```csharp
+public const int TouchIntervalSeconds = 24 * 60 * 60;
+```
+
+Seconds an entry's last-read time may lag behind the real time before a read refreshes it. Reads inside this window do not write to the store, so a busy key costs no database writes.
+
+## Methods
+
+### TryValidate [#tryvalidate]
+
+```csharp
+public static bool TryValidate(string key, out string error);
+```
+
+True when `key` can be used: 1 to [`MaxKeyLength`](#maxkeylength) characters from `A-Z a-z 0-9 . _ - :`, starting with a letter or digit. Anything else is refused with a reason in `error`.
+
+### Checksum [#checksum]
+
+```csharp
+public static string Checksum(byte[] bytes);
+```
+
+The checksum of `bytes`: SHA-256 as 64 lowercase hexadecimal characters.
+
+### SameChecksum [#samechecksum]
+
+```csharp
+public static bool SameChecksum(string a, string b);
+```
+
+True when the two checksums are the same value, ignoring letter case.

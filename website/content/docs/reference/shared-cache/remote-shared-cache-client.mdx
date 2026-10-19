@@ -1,0 +1,56 @@
+---
+title: "RemoteSharedCacheClient"
+description: "ISharedCacheClient for a worker of a mesh or of Nebula Cloud: GET and PUT /cache/{key} on the orchestrator (SharedCacheHost), over the same address and mesh token that RemotePersistenceStore uses."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/SharedCache/SharedCacheClient.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/SharedCache/SharedCacheClient.cs)</div>
+
+```csharp
+public sealed class RemoteSharedCacheClient : SharedCacheClientBase
+```
+
+[`ISharedCacheClient`](/docs/reference/shared-cache/i-shared-cache-client) for a worker of a mesh or of Nebula Cloud: `GET` and `PUT` `/cache/{key}` on the orchestrator ([`SharedCacheHost`](/docs/reference/shared-cache/shared-cache-host)), over the same address and mesh token that [`RemotePersistenceStore`](/docs/reference/persistence/remote-persistence-store) uses. The body is the raw object. Both ends check it against the SHA-256 in the `X-Nebula-Checksum` header, and a mismatch is a miss on a read and a refused write.
+
+## Constructors
+
+### RemoteSharedCacheClient [#remotesharedcacheclient]
+
+```csharp
+public RemoteSharedCacheClient(string url, string token = null, int maxObjectBytes = SharedCacheKey.DefaultMaxObjectBytes, int maxConcurrent = DefaultMaxConcurrent);
+```
+
+## Properties
+
+### Backend [#backend]
+
+```csharp
+public override string Backend { get; }
+```
+
+### Url [#url]
+
+```csharp
+public string Url { get; }
+```
+
+The orchestrator address this client calls.
+
+## Methods
+
+### GetCoreAsync [#getcoreasync]
+
+```csharp
+protected override async Task<byte[]> GetCoreAsync(string key, CancellationToken ct);
+```
+
+### PutCoreAsync [#putcoreasync]
+
+```csharp
+protected override async Task<bool> PutCoreAsync(string key, byte[] bytes, string checksum, CancellationToken ct);
+```
+
+### Dispose [#dispose]
+
+```csharp
+public override void Dispose();
+```
