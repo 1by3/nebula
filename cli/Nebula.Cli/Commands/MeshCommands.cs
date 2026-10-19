@@ -243,6 +243,12 @@ On Hetzner the CLI reads the files over ssh (no --follow).
         var page = api.Logs(t.Deployment.Id, role, instance, since, lines);
         string? lastAt = null;
         foreach (var l in page.Lines ?? new List<CloudApi.LogLine>()) { PrintLine(l); lastAt = l.At ?? lastAt; }
+        if (page.Lines is not { Count: > 0 })
+        {
+            // Silence is an answer too: a machine that never got as far as starting its log shipper sends nothing (CLOUD-9).
+            string who = instance ?? (role == "all" ? "the deployment" : role);
+            Ui.Hint($"{who} has shipped no log lines{(since is null ? "" : $" since {since.Value.UtcDateTime:yyyy-MM-dd HH:mm:ss} UTC")}; a machine still booting, or one whose bootstrap failed, sends none (`nebula status --cloud` shows its state)");
+        }
         if (!args.Has("follow")) return 0;
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
