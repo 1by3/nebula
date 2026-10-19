@@ -985,6 +985,8 @@ namespace Nebula
         private void Update()
         {
             if (_transport == null) return; // not initialised (a stray component), or torn down
+            // Messages are applied to the simulated pose: the correction offset the last frame drew comes off first.
+            RemoveDrawnOffsets();
             _transport.Poll(HandleTransportEvent);
             // Corrections replayed back to back held the pawn's frame at its simulation pose (NEB-445); it is drawn now.
             PhysicsFrames.ReleaseSimulationPose();
@@ -1090,6 +1092,23 @@ namespace Nebula
             PhysicsFrames.ContentAnchor = ActiveContentAnchor;
             PhysicsFrames.InstallDrawHooks();
             PhysicsFrames.PoseForRender();
+            // Last, so cameras and renderers later in the frame see the drawn pose (docs: prediction, correction smoothing).
+            ApplyDrawnOffsets(Time.unscaledDeltaTime);
+        }
+
+        /// <summary>Put the predicted entities back at their simulated poses; see <see cref="PredictedBehaviourBase.CorrectionOffset"/>.</summary>
+        private void RemoveDrawnOffsets()
+        {
+            if (LocalPlayer != null && LocalPlayer.Predicted != null) LocalPlayer.Predicted.RemoveDrawnOffset();
+            for (int i = 0; i < _driven.Count; i++) if (_driven[i] != null && _driven[i].Predicted != null) _driven[i].Predicted.RemoveDrawnOffset();
+        }
+
+        /// <summary>Move the predicted entities to their drawn poses: the simulated pose plus the correction offset still being eased.</summary>
+        private void ApplyDrawnOffsets(float deltaTime)
+        {
+            if (ConnectionState != State.InGame) return;
+            if (LocalPlayer != null && LocalPlayer.Predicted != null) LocalPlayer.Predicted.ApplyDrawnOffset(deltaTime);
+            for (int i = 0; i < _driven.Count; i++) if (_driven[i] != null && _driven[i].Predicted != null) _driven[i].Predicted.ApplyDrawnOffset(deltaTime);
         }
 
         /// <summary>The scope whose instance content this client last showed.</summary>
@@ -1140,6 +1159,7 @@ namespace Nebula
         {
             _fixedThisFrame++;
             if (_transport == null) return; // torn down (see OnDestroy); Unity can still call FixedUpdate this frame
+            RemoveDrawnOffsets();
             bool pawn = LocalPlayer != null && LocalPlayer.Predicted != null;
             if (ConnectionState != State.InGame || (!pawn && _driven.Count == 0)) return;
 

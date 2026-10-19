@@ -28,6 +28,8 @@ When local movement feels wrong, compare these client values:
 - `worker sees` is the latest input lead reported by the worker.
 - `corrections` counts prediction corrections.
 - `last` is the distance of the latest correction.
+- `max` is the largest correction since spawn.
+- `smoothing offset` is how far the pawn is drawn from its simulated position while a correction eases out (see [Smooth corrections](/docs/guides/prediction#smooth-corrections)).
 
 The overlay does not read input. Set its public `Visible` field from your own input or UI code. Headless processes do not draw it.
 
