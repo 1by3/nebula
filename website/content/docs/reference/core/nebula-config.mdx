@@ -973,6 +973,30 @@ public int InputLeadMaxAdjustTicks = 30;
 
 Upper bound on the adaptive input lead adjustment, in ticks.
 
+### SimulatedLatencyMs [#simulatedlatencyms]
+
+```csharp
+public float SimulatedLatencyMs = 0f;
+```
+
+Development only. Client: round-trip latency in milliseconds added to the link to the gateway (half each way). Ignored in release builds. -nebula-sim-latency overrides.
+
+### SimulatedJitterMs [#simulatedjitterms]
+
+```csharp
+public float SimulatedJitterMs = 0f;
+```
+
+Jitter, in milliseconds, of the simulated link: each packet's delay varies by up to half this much either way. Development only.
+
+### SimulatedLossPercent [#simulatedlosspercent]
+
+```csharp
+public float SimulatedLossPercent = 0f;
+```
+
+Percent of packets the simulated link loses in each direction. Development only.
+
 ### ReconnectFirstDelaySeconds [#reconnectfirstdelayseconds]
 
 ```csharp
