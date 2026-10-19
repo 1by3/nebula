@@ -48,7 +48,7 @@ namespace Nebula
             var client = boot != null ? boot.Client : null;
             if (client != null)
             {
-                _sb.Append($"client {client.ConnectionState} id={client.ClientId} identity={(client.Identity.Length > 12 ? client.Identity.Substring(0, 12) : client.Identity)} rtt={client.RttMs}ms serverTick~{client.EstimatedServerTick:F0} predict={client.PredictedTick} lead={client.InputLeadTicks} (adaptive +{client.InputLeadAdjustTicks}, worker sees {client.LastReportedInputLead})\n");
+                _sb.Append($"client {client.ConnectionState} id={client.ClientId} identity={(client.Identity.Length > 12 ? client.Identity.Substring(0, 12) : client.Identity)} rtt={client.RttMs}ms{(client.NetworkSimulation.Active ? $" <color=#ffb040>(simulated: {client.NetworkSimulation})</color>" : "")} serverTick~{client.EstimatedServerTick:F0} predict={client.PredictedTick} lead={client.InputLeadTicks} (adaptive +{client.InputLeadAdjustTicks}, worker sees {client.LastReportedInputLead})\n");
                 _sb.Append($"replicas={client.ReplicaCount} (+{client.SpawnsReceived} -{client.DespawnsReceived} since the last report) authorityChanges={client.AuthorityChangesSeen}{(client.FocusHint != null ? $" focusHint={client.FocusHint.Value}" : "")}\n");
                 var lp = client.LocalPlayer;
                 if (lp != null)

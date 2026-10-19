@@ -227,7 +227,7 @@ namespace Nebula
                 new ArraySegment<byte>(data.Array, data.Offset + HeaderSize, sealedLength), _header, HeaderSize, _receiveScratch, 0);
             if (length < 0) { _dropped++; return; }                           // forged or corrupted: never reaches the game
             replay.Seen(sequence);
-            _handler?.Invoke(new TransportEvent(TransportEvent.Kind.Data, ev.PeerId, new ArraySegment<byte>(_receiveScratch, 0, length)));
+            _handler?.Invoke(new TransportEvent(TransportEvent.Kind.Data, ev.PeerId, new ArraySegment<byte>(_receiveScratch, 0, length), domain == 0));
         }
 
         private void StartHandshake(int peerId)

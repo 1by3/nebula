@@ -17,10 +17,11 @@ Stores the values used by transport event.
 
 ```csharp
 public TransportEvent(Kind type, int peerId, ArraySegment<byte> data);
-public TransportEvent(Kind type, int peerId, ArraySegment<byte> data, TransportDisconnectReason reason);
+public TransportEvent(Kind type, int peerId, ArraySegment<byte> data, bool sequenced);
+public TransportEvent(Kind type, int peerId, ArraySegment<byte> data, TransportDisconnectReason reason, bool sequenced = false);
 ```
 
-An event that carries why its link closed (`reason`), for `Kind.Disconnected`.
+A `Kind.Data` event that says whether the packet came in on the sequenced channel (`sequenced`).
 
 ## Fields
 
@@ -49,6 +50,14 @@ public readonly TransportDisconnectReason Reason;
 ```
 
 Why the link closed, for a `Kind.Disconnected` event; [`TransportDisconnectReason.Unknown`](/docs/reference/transport/transport-disconnect-reason#unknown) otherwise.
+
+### Sequenced [#sequenced]
+
+```csharp
+public readonly bool Sequenced;
+```
+
+For a `Kind.Data` event: whether the packet arrived on the [`Delivery.Sequenced`](/docs/reference/transport/delivery#sequenced) channel, where a late packet may be lost, instead of the reliable one. False when the transport does not say.
 
 ## Methods
 

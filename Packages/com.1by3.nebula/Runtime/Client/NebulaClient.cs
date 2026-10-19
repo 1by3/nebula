@@ -113,6 +113,35 @@ namespace Nebula
         /// </summary>
         public ushort NegotiatedProtocolVersion { get; private set; }
         public int RttMs { get; private set; } = -1;
+
+        /// <summary>
+        /// The network conditions this client simulates on its link to the gateway, for testing prediction and lag
+        /// compensation on one machine. Read-only here; change them with <see cref="SetNetworkSimulation"/>. Its
+        /// <see cref="Nebula.NetworkSimulation.Active"/> is false when nothing is simulated, always in a release build
+        /// and on a web client.
+        /// </summary>
+        public NetworkSimulation NetworkSimulation { get; private set; } = new NetworkSimulation();
+
+        /// <summary>
+        /// Simulates a slower, less reliable link between this client and the gateway, for example from a game's
+        /// console. <paramref name="latencyMs"/> is the added <b>round trip</b>: half delays what this client sends and
+        /// half what it receives, so <see cref="RttMs"/> rises by that much. <paramref name="jitterMs"/> varies each
+        /// packet's delay by up to half that much either way. <paramref name="lossPercent"/> (0 to 100) is the share of
+        /// packets lost in each direction; a lost reliable packet arrives a round trip late instead. Pass zeros to turn
+        /// it off. The setting is logged when it changes and also shown in <see cref="NebulaDebugOverlay"/>.
+        /// Returns false and changes nothing in a release build and on a web client, where it is not available.
+        /// </summary>
+        public bool SetNetworkSimulation(float latencyMs, float jitterMs, float lossPercent)
+        {
+            if (!NetworkSimulation.IsAvailable || !(_transport is SimulatedNetworkTransport))
+            {
+                NebulaLog.Warn("simulated network is not available in this build");
+                return false;
+            }
+            NetworkSimulation.Set(latencyMs, jitterMs, lossPercent);
+            NebulaLog.Info($"simulated network on the link to the gateway: {NetworkSimulation}");
+            return true;
+        }
         public double EstimatedServerTick => _serverTickEstimate;
         public uint PredictedTick => _predictTick;
         public int InputLeadTicks { get; private set; }
@@ -536,7 +565,20 @@ namespace Nebula
                 Milliseconds(config.ClientPingIntervalSeconds, LiteNetTransport.DefaultPingIntervalMs));
             if (CommandLine.GetBool("nebula-encrypt", config.ClientEncryption))
                 udp = EncryptedTransport.ForClient(udp, new ClientEncryption { Fingerprint = CommandLine.Get("nebula-gateway-fingerprint", config.GatewayFingerprint) });
-            _transport = udp;
+            // Always wrapped, so a game's console can turn the simulation on later; it adds nothing while all three values are 0.
+            var simulation = new NetworkSimulation();
+            if (NetworkSimulation.IsAvailable)
+            {
+                simulation.Set(CommandLine.GetFloat("nebula-sim-latency", config.SimulatedLatencyMs),
+                    CommandLine.GetFloat("nebula-sim-jitter", config.SimulatedJitterMs),
+                    CommandLine.GetFloat("nebula-sim-loss", config.SimulatedLossPercent));
+                if (simulation.Active) NebulaLog.Info($"simulated network on the link to the gateway: {simulation}");
+            }
+            else if (config.SimulatedLatencyMs > 0f || config.SimulatedJitterMs > 0f || config.SimulatedLossPercent > 0f
+                || CommandLine.Has("nebula-sim-latency") || CommandLine.Has("nebula-sim-jitter") || CommandLine.Has("nebula-sim-loss"))
+                NebulaLog.Warn("simulated network settings ignored: this is a release build");
+            NetworkSimulation = simulation;
+            _transport = new SimulatedNetworkTransport(udp, simulation);
 #endif
             _transport.StartClient();
             SceneEntities.Registered += OnSceneEntityRegistered;
