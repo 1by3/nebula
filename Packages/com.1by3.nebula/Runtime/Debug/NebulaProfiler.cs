@@ -17,10 +17,12 @@ namespace Nebula
         /// <summary>Length of the last Begin/End span, so an enclosing section can take a nested one out of its own total.</summary>
         internal long LastSpan;
         private long _start;
+        // The same span in the Unity Profiler, so a capture names it too (development builds; nothing in a release build).
+        private readonly Unity.Profiling.ProfilerMarker _marker;
 
-        internal ProfileSection(string name) { Name = name; }
+        internal ProfileSection(string name) { Name = name; _marker = new Unity.Profiling.ProfilerMarker("nebula." + name); }
 
-        public void Begin() { _start = Stopwatch.GetTimestamp(); }
+        public void Begin() { _marker.Begin(); _start = Stopwatch.GetTimestamp(); }
 
         /// <summary>Count <paramref name="elapsed"/> stopwatch ticks gathered in a local over one pass: a section hit per entity adds once per pass, not per entity.</summary>
         public void Add(long elapsed) { Elapsed += elapsed; Calls++; }
@@ -30,6 +32,7 @@ namespace Nebula
             LastSpan = Stopwatch.GetTimestamp() - _start;
             Elapsed += LastSpan;
             Calls++;
+            _marker.End();
         }
     }
 
