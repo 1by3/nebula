@@ -892,20 +892,33 @@ namespace Nebula
         }
 
         /// <summary>
-        /// <paramref name="local"/>, a position in <paramref name="from"/>'s local space, in <paramref name="to"/>'s. Two boxes in the
-        /// same physics frame (a ship crossing a planet's chunks) are related through the frame's root, in double, from their
-        /// local poses: their cached world matrices may have been taken this frame on either side of the root's move between its
-        /// drawn and simulated poses (D11), and comparing through them read the difference as a correction of metres.
+        /// <paramref name="local"/>, a position in <paramref name="from"/>'s local space, in <paramref name="to"/>'s. Two containers of
+        /// one physics frame (a ship crossing a planet's chunks, or between a chunk and the planet's own container) are related
+        /// through the frame's root, in double, from their local poses: their cached world matrices may have been taken this
+        /// frame on either side of the root's move between its drawn and simulated poses (D11), and comparing through them read
+        /// the difference as a correction of metres (NEB-478).
         /// </summary>
         private static Vector3 Rehome(Container from, Container to, Vector3 local)
         {
-            var space = from != null ? from.Space : null;
-            var root = space != null && space.Frame != null ? space.Frame.Root : null;
-            if (root != null && to != null && to.Space == space && !from.OwnPhysicsFrame && !to.OwnPhysicsFrame
-                && PhysicsFrames.IsUnder(from.transform, root) && PhysicsFrames.IsUnder(to.transform, root))
-                return PhysicsFrames.PointFrom(PhysicsFrames.PointIn(from.transform, local, root), to.transform, root);
+            var root = FrameRootOf(from);
+            if (root != null && FrameRootOf(to) == root)
+            {
+                // What the frame's own container holds hangs under the root: its local position is the root's already.
+                var inRoot = from.OwnPhysicsFrame ? Double3.From(local) : PhysicsFrames.PointIn(from.transform, local, root);
+                return to.OwnPhysicsFrame ? inRoot.ToVector3() : PhysicsFrames.PointFrom(inRoot, to.transform, root);
+            }
             var world = from != null ? from.ToWorld(local) : local;
             return to != null ? to.ToLocal(world) : world;
+        }
+
+        /// <summary>The root of the physics frame what <paramref name="c"/> holds lives in (its own, or its space's), when its transform hangs under it; else null.</summary>
+        private static Transform FrameRootOf(Container c)
+        {
+            if (c == null) return null;
+            if (c.OwnPhysicsFrame) return c.Frame != null ? c.Frame.Root : null;
+            var space = c.Space;
+            var root = space != null && space.Frame != null ? space.Frame.Root : null;
+            return root != null && PhysicsFrames.IsUnder(c.transform, root) ? root : null;
         }
 
         /// <summary>Re-run every predicted tick after <paramref name="serverTick"/> from the state just applied, recording where each ended.</summary>
