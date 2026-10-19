@@ -12,6 +12,24 @@ public abstract class PredictedBehaviourBase : NetworkBehaviour
 
 Non-generic surface Nebula's worker and client drive; game code derives from [`PredictedBehaviour<TInput>`](/docs/reference/core/predicted-behaviour).
 
+## Fields
+
+### MaxServerEventsPerTick [#maxservereventspertick]
+
+```csharp
+public const int MaxServerEventsPerTick = 4;
+```
+
+The most server events that can apply on one tick of one entity. More are refused and counted in [`ServerEventsDropped`](#servereventsdropped).
+
+### ServerEventRepeatTicks [#servereventrepeatticks]
+
+```csharp
+public const int ServerEventRepeatTicks = 30;
+```
+
+For how many ticks after the tick it applies on a server event keeps being sent in the owner's reports, so a lost packet does not lose it. The owner ignores the repeats.
+
 ## Properties
 
 ### LastProcessedInputTick [#lastprocessedinputtick]
@@ -62,6 +80,70 @@ public float MaxCorrectionMagnitude { get; protected set; }
 
 The largest correction since [`ResetCorrectionStats`](#resetcorrectionstats) (or spawn): one big snap hides among many small ones otherwise.
 
+### CorrectionSmoothingSeconds [#correctionsmoothingseconds]
+
+```csharp
+protected virtual float CorrectionSmoothingSeconds { get; }
+```
+
+Owning client: how long a correction takes to fade from the screen, in seconds. When the worker's state disagrees with the prediction, the simulated state moves to the corrected one at once (the replay is exact), but the entity is *drawn* at an offset from it that starts at where it was last drawn and decays exponentially: the offset falls to 1% of its size after this long. Offsets from corrections that arrive faster than they decay add up. Default 0.1 (100 ms); 0 or less turns smoothing off, so the drawn pose snaps with the simulated one.
+
+### CorrectionSnapDistance [#correctionsnapdistance]
+
+```csharp
+protected virtual float CorrectionSnapDistance { get; }
+```
+
+Owning client: a correction that would leave the drawn pose further than this from the simulated one, in meters, is not smoothed; the entity teleports (a respawn, a long server-side move). Default 3.
+
+### CorrectionOffset [#correctionoffset]
+
+```csharp
+public Vector3 CorrectionOffset { get; }
+```
+
+Owning client: the offset from the simulated position to the drawn one, in the current container's local space (zero when nothing is being eased).
+
+### CorrectionRotationOffset [#correctionrotationoffset]
+
+```csharp
+public Quaternion CorrectionRotationOffset { get; }
+```
+
+Owning client: the rotation that takes the simulated rotation to the drawn one, in the current container's local space.
+
+### CorrectionOffsetMeters [#correctionoffsetmeters]
+
+```csharp
+public float CorrectionOffsetMeters { get; }
+```
+
+Owning client: the size of [`CorrectionOffset`](#correctionoffset) in meters, for diagnostics.
+
+### CorrectionOffsetDegrees [#correctionoffsetdegrees]
+
+```csharp
+public float CorrectionOffsetDegrees { get; }
+```
+
+Owning client: the angle of [`CorrectionRotationOffset`](#correctionrotationoffset) in degrees, for diagnostics.
+
+### DrawnPosition [#drawnposition]
+
+```csharp
+public Vector3 DrawnPosition { get; }
+```
+
+Owning client: the world position the entity is drawn at, which is the simulated position plus the correction offset still being eased. Cameras and anything else that follows the entity on screen should read this, or `transform.position` during a frame, where Nebula has already moved the transform to the drawn pose (it moves it back before the next `Simulate`). Equal to `transform.position` when nothing is being eased.
+
+### DrawnRotation [#drawnrotation]
+
+```csharp
+public Quaternion DrawnRotation { get; }
+```
+
+Owning client: the world rotation the entity is drawn with; see [`DrawnPosition`](#drawnposition).
+
 ### InputLeadMin [#inputleadmin]
 
 ```csharp
@@ -78,6 +160,30 @@ protected virtual int DriverInputTimeoutTicks { get; }
 
 Ticks without any input from the driver after which the worker stops repeating the last one and runs [`PredictedBehaviour<TInput>.GatherServerInput`](/docs/reference/core/predicted-behaviour#gatherserverinput) instead, until the driver's input comes back: a driver whose link drops does not leave the vehicle at full throttle. Default 30 (half a second). The driver keeps the seat; take it with [`NetworkIdentity.ClearDriver`](/docs/reference/core/network-identity#cleardriver) when the player leaves.
 
+### ServerEventsPosted [#servereventsposted]
+
+```csharp
+public int ServerEventsPosted { get; }
+```
+
+Authority: server events accepted by [`PostServerEvent<TEvent>`](#postserverevent) since spawn.
+
+### ServerEventsDropped [#servereventsdropped]
+
+```csharp
+public int ServerEventsDropped { get; }
+```
+
+Authority: server events [`PostServerEvent<TEvent>`](#postserverevent) refused because the tick they would apply on already held [`MaxServerEventsPerTick`](#maxservereventspertick).
+
+### ServerEventReplays [#servereventreplays]
+
+```csharp
+public int ServerEventReplays { get; }
+```
+
+Owning client: times a report made the prediction replay because it carried an event for a tick the client had already simulated without it.
+
 ## Methods
 
 ### ResetCorrectionStats [#resetcorrectionstats]
@@ -86,6 +192,14 @@ Ticks without any input from the driver after which the worker stops repeating t
 public void ResetCorrectionStats();
 ```
 
+### ClearCorrectionOffset [#clearcorrectionoffset]
+
+```csharp
+public void ClearCorrectionOffset();
+```
+
+Owning client: drop the correction offset, so the entity is drawn at its simulated pose from now on (a teleport the game wants shown at once).
+
 ### OnDriverChanged [#ondriverchanged]
 
 ```csharp
@@ -93,3 +207,25 @@ protected virtual void OnDriverChanged(ulong previous, ulong current);
 ```
 
 The driver of this entity changed ([`NetworkIdentity.SetDriver`](/docs/reference/core/network-identity#setdriver)): `current` is the new driver's client id, 0 when nobody drives it now. Called on the worker that has authority when the change is made, and on every client that holds the entity when it hears of it, the new and the previous driver's included. Use it for what the seat does (a camera, a HUD, handing the controls back to the worker's own logic); Nebula has already switched the input source and the prediction.
+
+### PostServerEvent [#postserverevent]
+
+```csharp
+public bool PostServerEvent<TEvent>(in TEvent e)
+    where TEvent : struct, INetworkSerializable;
+```
+
+Authority only: attach an event to the next tick this entity simulates, so its `Simulate` sees it there with [`TryGetServerEvent<TEvent>`](#trygetserverevent). The owner's client is sent the event with its state reports and keeps it, so its prediction replays the event on the same tick, and it travels with the entity when another worker takes it over, without applying twice. Use it for what the worker decides and the owner cannot know: a shove, a stun, a forced move.
+
+At most [`MaxServerEventsPerTick`](#maxservereventspertick) events apply on one tick; the next is refused, counted in [`ServerEventsDropped`](#servereventsdropped), and this returns false. It also returns false, with a warning once, on a copy without authority. `TEvent` is identified on the wire by a hash of its full name, so use a distinct struct for each kind of event.
+
+### TryGetServerEvent [#trygetserverevent]
+
+```csharp
+protected bool TryGetServerEvent<TEvent>(out TEvent e)
+    where TEvent : struct, INetworkSerializable;
+protected bool TryGetServerEvent<TEvent>(int index, out TEvent e)
+    where TEvent : struct, INetworkSerializable;
+```
+
+Inside `Simulate`: the server event of type `TEvent` posted for the tick being simulated, if any. It is there on the authoritative worker, in the owner's replay of that tick and in the owner's own simulation of it once its client has heard of the event. Apply it to simulated state (velocity, a stun timer: whatever `WriteState` carries) so that the owner's replay ends where the worker did. Outside `Simulate` it finds nothing.

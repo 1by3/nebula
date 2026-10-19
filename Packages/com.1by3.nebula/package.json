@@ -33,6 +33,11 @@
       "path": "Samples~/DrivenVehicle"
     },
     {
+      "displayName": "Jump pad",
+      "description": "A pad that launches a player pawn with a server event: the worker posts the launch for a tick, the pawn applies it inside Simulate, and the owner replays it on the same tick instead of snapping.",
+      "path": "Samples~/JumpPad"
+    },
+    {
       "displayName": "Framed planet lap",
       "description": "A ship flies from a planet's ground into space and back in one scope: a turning planet with its own physics frame and leased ground, a scripted flight in the planet's coordinates, and a client probe for jumps at frame crossings.",
       "path": "Samples~/FramedPlanetLap"

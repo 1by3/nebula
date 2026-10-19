@@ -929,14 +929,14 @@ public sealed class FakeWorker : IDisposable
     /// Report an entity's state to the client in control of it, as a worker does every tick for a pawn's owner or a
     /// vehicle's driver: sent to every linked gateway, as a worker that does not know the client's session does.
     /// </summary>
-    public void SendOwnerState(ulong netId, ulong clientId, uint tick)
+    public void SendOwnerState(ulong netId, ulong clientId, uint tick, byte[]? events = null)
     {
         if (!_entities.TryGetValue(netId, out var e)) return;
         _w.Reset();
         new OwnerStateMsg
         {
             NetId = netId, Epoch = e.Epoch, Tick = tick, LastInputTick = tick, InputLead = 2, OwnerClientId = clientId,
-            Container = e.Container, State = new byte[] { 1, 2, 3 },
+            Container = e.Container, State = new byte[] { 1, 2, 3 }, Events = events,
         }.Write(_w);
         foreach (var link in _links.Values) Transport.Send(link.PeerId, Delivery.Sequenced, _w.ToSegment());
     }

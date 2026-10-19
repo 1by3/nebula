@@ -1,0 +1,130 @@
+---
+title: "SimulatedNetworkTransport"
+description: "An ITransport that adds the latency, jitter and packet loss of a NetworkSimulation to every link of another transport, in both directions, without touching the remote side."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/SimulatedNetworkTransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/SimulatedNetworkTransport.cs)</div>
+
+```csharp
+public sealed class SimulatedNetworkTransport : ITransport
+```
+
+An [`ITransport`](/docs/reference/transport/i-transport) that adds the latency, jitter and packet loss of a [`NetworkSimulation`](/docs/reference/transport/network-simulation) to every link of another transport, in both directions, without touching the remote side. Wrap a client's transport to see how the game behaves on a slow link while the server runs on the same machine. It does not depend on LiteNetLib's debug-only simulation, so it works in the Editor and in development builds alike.
+
+Outgoing packets are held for half the configured latency before the inner transport sends them; incoming packets are held for the other half before [`Poll`](#poll) delivers them. A request and its reply therefore take the configured latency longer, plus the link's own time. [`RoundTripMs`](#roundtripms) adds the configured latency to the inner link's measurement, because the inner transport's own keep-alive packets never pass through the simulation. Connection and disconnection events are not delayed, so a link opens and closes at its real time. Held packets are released from [`Poll`](#poll) and [`Flush`](#flush), so the effective resolution is how often your game calls them: once per tick.
+
+## Constructors
+
+### SimulatedNetworkTransport [#simulatednetworktransport]
+
+```csharp
+public SimulatedNetworkTransport(ITransport inner, NetworkSimulation settings);
+```
+
+Wraps `inner` so its links obey `settings`, which can be changed while the transport runs.
+
+## Properties
+
+### Settings [#settings]
+
+```csharp
+public NetworkSimulation Settings { get; }
+```
+
+The conditions this transport applies. Change them with [`NetworkSimulation.Set`](/docs/reference/transport/network-simulation#set).
+
+### DroppedPackets [#droppedpackets]
+
+```csharp
+public long DroppedPackets { get; }
+```
+
+Packets dropped by the simulated loss, or overtaken on a sequenced link, since this transport was created.
+
+### Name [#name]
+
+```csharp
+public string Name { get; }
+```
+
+### IsRunning [#isrunning]
+
+```csharp
+public bool IsRunning { get; }
+```
+
+### LocalPort [#localport]
+
+```csharp
+public int LocalPort { get; }
+```
+
+## Methods
+
+### Listen [#listen]
+
+```csharp
+public void Listen(int port);
+```
+
+### StartClient [#startclient]
+
+```csharp
+public void StartClient();
+```
+
+### Connect [#connect]
+
+```csharp
+public int Connect(string host, int port);
+```
+
+### IsConnected [#isconnected]
+
+```csharp
+public bool IsConnected(int peerId);
+```
+
+### Disconnect [#disconnect]
+
+```csharp
+public void Disconnect(int peerId);
+```
+
+### RoundTripMs [#roundtripms]
+
+```csharp
+public int RoundTripMs(int peerId);
+```
+
+The inner link's round trip plus the simulated latency; -1 when the inner transport cannot measure.
+
+### Send [#send]
+
+```csharp
+public void Send(int peerId, Delivery delivery, ArraySegment<byte> payload);
+```
+
+### Poll [#poll]
+
+```csharp
+public void Poll(Action<TransportEvent> handler);
+```
+
+### Flush [#flush]
+
+```csharp
+public void Flush();
+```
+
+### Stop [#stop]
+
+```csharp
+public void Stop();
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```

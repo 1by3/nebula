@@ -390,7 +390,7 @@ void LateUpdate()
 
 Far entities are measured in the scope's own space, outside every [physics frame](/docs/guides/physics-frames). A pilot in orbit sees a ship parked on a planet, and a player on the planet sees ships in orbit. Each client holds at most `InterestFarMaxEntities` far entities, the nearest ones. Your policy's `Authorize` decides about far entities exactly as it does about replicas.
 
-The far tier needs a gateway and clients of protocol 28, the only version a gateway admits; a client built against an older release is refused. Each far entity costs every gateway it reaches about 60 bytes per update, so use it for the entities players must see across the map, not for everything.
+The far tier needs a gateway and clients of protocol 28 or newer, the versions a gateway admits; a client built against an older release is refused. Each far entity costs every gateway it reaches about 60 bytes per update, so use it for the entities players must see across the map, not for everything.
 
 ## Scoped container ownership
 

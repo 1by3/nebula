@@ -4,6 +4,19 @@ using UnityEngine;
 
 namespace Nebula
 {
+    /// <summary>The wire identity of a server event type: a 32-bit FNV-1a hash of its full name, the same in every process of one build.</summary>
+    internal static class ServerEventType<TEvent>
+    {
+        public static readonly uint Id = Hash(typeof(TEvent).FullName ?? typeof(TEvent).Name);
+
+        private static uint Hash(string name)
+        {
+            uint h = 2166136261u;
+            for (int i = 0; i < name.Length; i++) h = (h ^ name[i]) * 16777619u;
+            return h;
+        }
+    }
+
     /// <summary>Marker for the per-tick input struct a predicted entity consumes.</summary>
     public interface INetworkInput : INetworkSerializable { }
 
@@ -23,6 +36,193 @@ namespace Nebula
         public float MaxCorrectionMagnitude { get; protected set; }
 
         public void ResetCorrectionStats() { Corrections = 0; LastCorrectionMagnitude = 0f; MaxCorrectionMagnitude = 0f; }
+
+        // ---- correction smoothing -----------------------------------------------------------------------------
+
+        /// <summary>
+        /// Owning client: how long a correction takes to fade from the screen, in seconds. When the worker's state
+        /// disagrees with the prediction, the simulated state moves to the corrected one at once (the replay is
+        /// exact), but the entity is <i>drawn</i> at an offset from it that starts at where it was last drawn and
+        /// decays exponentially: the offset falls to 1% of its size after this long. Offsets from corrections that
+        /// arrive faster than they decay add up. Default 0.1 (100 ms); 0 or less turns smoothing off, so the drawn
+        /// pose snaps with the simulated one.
+        /// </summary>
+        protected virtual float CorrectionSmoothingSeconds => 0.1f;
+
+        /// <summary>
+        /// Owning client: a correction that would leave the drawn pose further than this from the simulated one, in meters, is not
+        /// smoothed; the entity teleports (a respawn, a long server-side move). Default 3.
+        /// </summary>
+        protected virtual float CorrectionSnapDistance => 3f;
+
+        // The offset from the simulated pose to the drawn one, in _offsetContainer's local space: drawn position = simulated
+        // position + offset, drawn rotation = rotation offset * simulated rotation. Container-local, so it follows the
+        // container while a ship carries the entity around.
+        private Vector3 _drawnOffset;
+        private Quaternion _drawnRotationOffset = Quaternion.identity;
+        private Container _offsetContainer;
+        private bool _offsetApplied;
+        private bool _offsetFresh;
+        // What ApplyDrawnOffset found and left, so RemoveDrawnOffset can put the simulated pose back bit for bit instead of
+        // subtracting the offset again (the rounding of each frame's add and subtract would otherwise seep into the simulation).
+        private Container _appliedContainer;
+        private Vector3 _simulatedPosition, _drawnPositionLocal;
+        private Quaternion _simulatedRotation, _drawnRotationLocal;
+
+        /// <summary>The decay constant ln(100): <see cref="CorrectionSmoothingSeconds"/> is the time the offset takes to fall to 1%.</summary>
+        private const float DecayLn = 4.60517f;
+        private const float OffsetEpsilonMeters = 0.001f;
+        private const float OffsetEpsilonDegrees = 0.05f;
+
+        /// <summary>Owning client: the offset from the simulated position to the drawn one, in the current container's local space (zero when nothing is being eased).</summary>
+        public Vector3 CorrectionOffset { get { ConvertOffsetToCurrentContainer(); return _drawnOffset; } }
+        /// <summary>Owning client: the rotation that takes the simulated rotation to the drawn one, in the current container's local space.</summary>
+        public Quaternion CorrectionRotationOffset { get { ConvertOffsetToCurrentContainer(); return _drawnRotationOffset; } }
+        /// <summary>Owning client: the size of <see cref="CorrectionOffset"/> in meters, for diagnostics.</summary>
+        public float CorrectionOffsetMeters => CorrectionOffset.magnitude;
+        /// <summary>Owning client: the angle of <see cref="CorrectionRotationOffset"/> in degrees, for diagnostics.</summary>
+        public float CorrectionOffsetDegrees => Quaternion.Angle(Quaternion.identity, CorrectionRotationOffset);
+
+        /// <summary>
+        /// Owning client: the world position the entity is drawn at, which is the simulated position plus the
+        /// correction offset still being eased. Cameras and anything else that follows the entity on screen should
+        /// read this, or <c>transform.position</c> during a frame, where Nebula has already moved the transform to
+        /// the drawn pose (it moves it back before the next <c>Simulate</c>). Equal to <c>transform.position</c> when nothing is being eased.
+        /// </summary>
+        public Vector3 DrawnPosition
+        {
+            get
+            {
+                if (_offsetApplied || !HasCorrectionOffset) return Identity.transform.position;
+                ConvertOffsetToCurrentContainer();
+                var container = Identity.Container;
+                return Identity.transform.position + (container != null ? container.Rotation * _drawnOffset : _drawnOffset);
+            }
+        }
+
+        /// <summary>Owning client: the world rotation the entity is drawn with; see <see cref="DrawnPosition"/>.</summary>
+        public Quaternion DrawnRotation
+        {
+            get
+            {
+                if (_offsetApplied || !HasCorrectionOffset) return Identity.transform.rotation;
+                ConvertOffsetToCurrentContainer();
+                var container = Identity.Container;
+                if (container == null) return _drawnRotationOffset * Identity.transform.rotation;
+                var c = container.Rotation;
+                return c * _drawnRotationOffset * Quaternion.Inverse(c) * Identity.transform.rotation;
+            }
+        }
+
+        private bool HasCorrectionOffset => _drawnOffset.sqrMagnitude > 0f || _drawnRotationOffset != Quaternion.identity;
+
+        private void ConvertOffsetToCurrentContainer()
+        {
+            var to = Identity.Container;
+            if (_offsetContainer == to) return;
+            var from = _offsetContainer;
+            _offsetContainer = to;
+            if (!HasCorrectionOffset) return;
+            var convert = (to != null ? to.InverseRotation : Quaternion.identity) * (from != null ? from.Rotation : Quaternion.identity);
+            _drawnOffset = convert * _drawnOffset;
+            _drawnRotationOffset = convert * _drawnRotationOffset * Quaternion.Inverse(convert);
+        }
+
+        /// <summary>
+        /// Put the entity back at its simulated pose if <see cref="ApplyDrawnOffset"/> moved it to the drawn one. Everything
+        /// that simulates, reconciles or moves the entity calls this first, so <c>Simulate</c> never sees the offset.
+        /// </summary>
+        internal void RemoveDrawnOffset()
+        {
+            if (!_offsetApplied) return;
+            _offsetApplied = false;
+            var container = Identity.Container;
+            var position = Identity.LocalPosition;
+            var rotation = Identity.LocalRotation;
+            if (container == _appliedContainer && position.Equals(_drawnPositionLocal) && rotation.Equals(_drawnRotationLocal))
+            {
+                // Nothing moved it since it was drawn: back to exactly where the simulation left it.
+                Identity.SetLocalPose(container, _simulatedPosition, _simulatedRotation);
+                return;
+            }
+            // Something else moved it in between (or it changed container): take the offset off where it is now.
+            ConvertOffsetToCurrentContainer();
+            Identity.SetLocalPose(container, position - _drawnOffset, Quaternion.Inverse(_drawnRotationOffset) * rotation);
+        }
+
+        /// <summary>
+        /// Once a frame, after the frame's messages and before anything draws: decay the offset by <paramref name="deltaTime"/>
+        /// seconds and move the entity to the simulated pose plus what is left of it. A correction made during this frame is
+        /// drawn in full first and decays from the next frame on.
+        /// </summary>
+        internal void ApplyDrawnOffset(float deltaTime)
+        {
+            RemoveDrawnOffset();
+            if (!HasCorrectionOffset) return;
+            ConvertOffsetToCurrentContainer();
+            float seconds = CorrectionSmoothingSeconds;
+            if (seconds <= 0f) { ClearCorrectionOffset(); return; }
+            if (_offsetFresh) _offsetFresh = false;
+            else
+            {
+                float k = Mathf.Exp(-DecayLn * Mathf.Max(0f, deltaTime) / seconds);
+                _drawnOffset *= k;
+                _drawnRotationOffset = Quaternion.Slerp(Quaternion.identity, _drawnRotationOffset, k);
+            }
+            if (_drawnOffset.sqrMagnitude < OffsetEpsilonMeters * OffsetEpsilonMeters && CorrectionOffsetDegrees < OffsetEpsilonDegrees)
+            {
+                ClearCorrectionOffset();
+                return;
+            }
+            _appliedContainer = Identity.Container;
+            _simulatedPosition = Identity.LocalPosition;
+            _simulatedRotation = Identity.LocalRotation;
+            Identity.SetLocalPose(_appliedContainer, _simulatedPosition + _drawnOffset, _drawnRotationOffset * _simulatedRotation);
+            _drawnPositionLocal = Identity.LocalPosition;
+            _drawnRotationLocal = Identity.LocalRotation;
+            _offsetApplied = true;
+        }
+
+        /// <summary>Owning client: drop the correction offset, so the entity is drawn at its simulated pose from now on (a teleport the game wants shown at once).</summary>
+        public void ClearCorrectionOffset()
+        {
+            RemoveDrawnOffset();
+            _drawnOffset = Vector3.zero;
+            _drawnRotationOffset = Quaternion.identity;
+            _offsetContainer = Identity != null ? Identity.Container : null;
+            _offsetFresh = false;
+        }
+
+        /// <summary>
+        /// A correction moved the simulated pose from (<paramref name="previousPosition"/>, <paramref name="previousRotation"/>), in
+        /// <paramref name="previousContainer"/>, to where it is now. The entity keeps being drawn where it was: the offset becomes
+        /// the old drawn pose minus the new simulated one, on top of whatever was still being eased, unless that is further than
+        /// <see cref="CorrectionSnapDistance"/> (or smoothing is off), when the drawn pose follows at once.
+        /// </summary>
+        internal void NoteCorrection(Container previousContainer, Vector3 previousPosition, Quaternion previousRotation)
+        {
+            RemoveDrawnOffset();
+            var container = Identity.Container;
+            var position = Identity.LocalPosition;
+            var rotation = Identity.LocalRotation;
+            if (previousContainer != container)
+            {
+                var world = previousContainer != null ? previousContainer.ToWorld(previousPosition) : previousPosition;
+                previousPosition = container != null ? container.ToLocal(world) : world;
+                var worldRotation = previousContainer != null ? previousContainer.Rotation * previousRotation : previousRotation;
+                previousRotation = container != null ? container.InverseRotation * worldRotation : worldRotation;
+            }
+            ConvertOffsetToCurrentContainer();
+            var offset = _drawnOffset + (previousPosition - position);
+            if (CorrectionSmoothingSeconds <= 0f || offset.magnitude > CorrectionSnapDistance)
+            {
+                ClearCorrectionOffset();
+                return;
+            }
+            _drawnOffset = offset;
+            _drawnRotationOffset = (_drawnRotationOffset * previousRotation * Quaternion.Inverse(rotation)).normalized;
+            _offsetFresh = true;
+        }
 
         /// <summary>
         /// Server: the smallest input lead (input tick minus the worker's current tick at arrival) seen since the last
@@ -63,6 +263,231 @@ namespace Nebula
         protected virtual int DriverInputTimeoutTicks => 30;
 
         internal int DriverTimeoutTicks => DriverInputTimeoutTicks;
+
+        // ---- server events ---------------------------------------------------------------------------------------
+
+        /// <summary>The most server events that can apply on one tick of one entity. More are refused and counted in <see cref="ServerEventsDropped"/>.</summary>
+        public const int MaxServerEventsPerTick = 4;
+
+        /// <summary>
+        /// For how many ticks after the tick it applies on a server event keeps being sent in the owner's reports, so a lost packet does
+        /// not lose it. The owner ignores the repeats.
+        /// </summary>
+        public const int ServerEventRepeatTicks = 30;
+
+        /// <summary>Authority: server events accepted by <see cref="PostServerEvent{TEvent}"/> since spawn.</summary>
+        public int ServerEventsPosted { get; private set; }
+        /// <summary>Authority: server events <see cref="PostServerEvent{TEvent}"/> refused because the tick they would apply on already held <see cref="MaxServerEventsPerTick"/>.</summary>
+        public int ServerEventsDropped { get; private set; }
+        /// <summary>Owning client: times a report made the prediction replay because it carried an event for a tick the client had already simulated without it.</summary>
+        public int ServerEventReplays { get; private protected set; }
+
+        private protected struct ServerEventEntry
+        {
+            public uint Tick;
+            public byte Index;
+            public uint Type;
+            public byte[] Payload;
+            public bool Applied;
+        }
+
+        // The events this copy knows of: on the authority the ones posted and not yet old enough to stop being reported,
+        // on the owning client the ones its reports carried, applied or not.
+        private protected readonly List<ServerEventEntry> _serverEvents = new List<ServerEventEntry>();
+        private static readonly NetworkWriter ServerEventWriter = new NetworkWriter(128);
+        private static readonly NetworkReader ServerEventReader = new NetworkReader();
+        private static readonly NetworkReader ServerEventListReader = new NetworkReader();
+        private protected uint _serverEventTick;
+        private protected bool _serverEventsVisible;
+        // Authority: the newest tick NetworkTick has run. Events stamped at or before it are never shown to Simulate again.
+        private protected uint _lastServerTick;
+        // Owning client: the newest tick reconciled; events much older than it are not kept.
+        private protected uint _serverEventFloor;
+        private bool _warnedPostWithoutAuthority;
+
+        /// <summary>
+        /// Authority only: attach an event to the next tick this entity simulates, so its <c>Simulate</c> sees it there with
+        /// <see cref="TryGetServerEvent{TEvent}(out TEvent)"/>. The owner's client is sent the event with its state reports and keeps it, so
+        /// its prediction replays the event on the same tick, and it travels with the entity when another worker takes it over, without
+        /// applying twice. Use it for what the worker decides and the owner cannot know: a shove, a stun, a forced move.
+        /// <para>
+        /// At most <see cref="MaxServerEventsPerTick"/> events apply on one tick; the next is refused, counted in
+        /// <see cref="ServerEventsDropped"/>, and this returns false. It also returns false, with a warning once, on a copy without authority.
+        /// <typeparamref name="TEvent"/> is identified on the wire by a hash of its full name, so use a distinct struct for each kind of event.
+        /// </para>
+        /// </summary>
+        public bool PostServerEvent<TEvent>(in TEvent e) where TEvent : struct, INetworkSerializable
+        {
+            if (Identity == null || !Identity.HasAuthority)
+            {
+                if (!_warnedPostWithoutAuthority)
+                {
+                    _warnedPostWithoutAuthority = true;
+                    NebulaLog.Warn($"PostServerEvent<{typeof(TEvent).Name}> on {Identity}: only the authoritative worker can post server events; ignored");
+                }
+                return false;
+            }
+            // The next tick this entity simulates: the one in progress when it has not run yet this tick, otherwise the one after.
+            uint tick = Math.Max(_lastServerTick + 1, NetworkTime.Tick);
+            int sameTick = 0;
+            for (int i = 0; i < _serverEvents.Count; i++) if (_serverEvents[i].Tick == tick) sameTick++;
+            if (sameTick >= MaxServerEventsPerTick)
+            {
+                ServerEventsDropped++;
+                return false;
+            }
+            ServerEventWriter.Reset();
+            e.Serialize(ServerEventWriter);
+            _serverEvents.Add(new ServerEventEntry { Tick = tick, Index = (byte)sameTick, Type = ServerEventType<TEvent>.Id, Payload = ServerEventWriter.ToArray() });
+            ServerEventsPosted++;
+            return true;
+        }
+
+        /// <summary>
+        /// Inside <c>Simulate</c>: the server event of type <typeparamref name="TEvent"/> posted for the tick being simulated, if any. It is there
+        /// on the authoritative worker, in the owner's replay of that tick and in the owner's own simulation of it once its client
+        /// has heard of the event. Apply it to simulated state (velocity, a stun timer: whatever <c>WriteState</c> carries) so that the
+        /// owner's replay ends where the worker did. Outside <c>Simulate</c> it finds nothing.
+        /// </summary>
+        protected bool TryGetServerEvent<TEvent>(out TEvent e) where TEvent : struct, INetworkSerializable => TryGetServerEvent(0, out e);
+
+        /// <summary>The <paramref name="index"/>th (from 0, in the order they were posted) server event of type <typeparamref name="TEvent"/> for the tick being simulated; see <see cref="TryGetServerEvent{TEvent}(out TEvent)"/>.</summary>
+        protected bool TryGetServerEvent<TEvent>(int index, out TEvent e) where TEvent : struct, INetworkSerializable
+        {
+            e = default;
+            if (!_serverEventsVisible || _serverEvents.Count == 0 || index < 0) return false;
+            uint type = ServerEventType<TEvent>.Id;
+            int seen = 0;
+            for (int i = 0; i < _serverEvents.Count; i++)
+            {
+                var entry = _serverEvents[i];
+                if (entry.Tick != _serverEventTick || entry.Type != type || seen++ != index) continue;
+                ServerEventReader.Set(new ArraySegment<byte>(entry.Payload));
+                try
+                {
+                    e = new TEvent();
+                    e.Deserialize(ServerEventReader);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    NebulaLog.Error($"{typeof(TEvent).Name} server event on {Identity} could not be read: {ex.Message}");
+                    e = default;
+                    return false;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>The authority is about to simulate <paramref name="tick"/>: show Simulate its events, once, and forget the ones too old to repeat.</summary>
+        private protected void BeginServerEventTick(uint tick)
+        {
+            bool first = tick > _lastServerTick;
+            if (first) _lastServerTick = tick;
+            _serverEventTick = tick;
+            _serverEventsVisible = first && _serverEvents.Count > 0;
+            for (int i = _serverEvents.Count - 1; i >= 0; i--)
+                if (_serverEvents[i].Tick + (uint)ServerEventRepeatTicks < tick) _serverEvents.RemoveAt(i);
+        }
+
+        /// <summary>The client is about to simulate (or replay) <paramref name="tick"/>.</summary>
+        private protected void BeginClientEventTick(uint tick)
+        {
+            _serverEventTick = tick;
+            _serverEventsVisible = _serverEvents.Count > 0;
+        }
+
+        /// <summary>Simulate for <paramref name="tick"/> returned: events at that tick have now been applied here.</summary>
+        private protected void EndEventTick(uint tick)
+        {
+            _serverEventsVisible = false;
+            for (int i = 0; i < _serverEvents.Count; i++)
+            {
+                if (_serverEvents[i].Tick != tick || _serverEvents[i].Applied) continue;
+                var entry = _serverEvents[i];
+                entry.Applied = true;
+                _serverEvents[i] = entry;
+            }
+        }
+
+        /// <summary>Owning client: whether an event the client has not simulated yet falls after <paramref name="serverTick"/> and no later than <paramref name="clientTick"/>.</summary>
+        private protected bool HasUnappliedServerEvents(uint serverTick, uint clientTick)
+        {
+            for (int i = 0; i < _serverEvents.Count; i++)
+            {
+                var entry = _serverEvents[i];
+                if (!entry.Applied && entry.Tick > serverTick && entry.Tick <= clientTick) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Owning client: <paramref name="serverTick"/> has been reconciled; forget the events that no replay can reach any more.</summary>
+        private protected void NoteServerEventsReconciled(uint serverTick)
+        {
+            _serverEventFloor = serverTick;
+            for (int i = _serverEvents.Count - 1; i >= 0; i--)
+                if (_serverEvents[i].Tick + (uint)ServerEventRepeatTicks * 2 < serverTick) _serverEvents.RemoveAt(i);
+        }
+
+        private protected void ClearServerEvents()
+        {
+            _serverEvents.Clear();
+            _serverEventsVisible = false;
+        }
+
+        /// <summary>The events to send with this tick's owner state, or null when there are none. Authority only; see <see cref="OwnerStateMsg.Events"/>.</summary>
+        internal byte[] TakeServerEventsForReport()
+        {
+            if (_serverEvents.Count == 0) return null;
+            ServerEventWriter.Reset();
+            WriteServerEventList(ServerEventWriter);
+            return ServerEventWriter.ToArray();
+        }
+
+        private protected void WriteServerEventList(NetworkWriter writer)
+        {
+            int count = Math.Min(255, _serverEvents.Count);
+            writer.WriteByte((byte)count);
+            for (int i = 0; i < count; i++)
+            {
+                var entry = _serverEvents[i];
+                writer.WriteUInt(entry.Tick);
+                writer.WriteByte(entry.Index);
+                writer.WriteUInt(entry.Type);
+                writer.WriteBytes(entry.Payload);
+            }
+        }
+
+        /// <summary>Add the events of a list written by <see cref="WriteServerEventList"/> that this copy does not hold yet.</summary>
+        private protected void ReadServerEventList(NetworkReader reader)
+        {
+            int count = reader.ReadByte();
+            for (int n = 0; n < count; n++)
+            {
+                uint tick = reader.ReadUInt();
+                byte index = reader.ReadByte();
+                uint type = reader.ReadUInt();
+                var payload = reader.ReadBytes();
+                bool known = false;
+                for (int i = 0; i < _serverEvents.Count && !known; i++) known = _serverEvents[i].Tick == tick && _serverEvents[i].Index == index;
+                // A repeat, an event for a tick no replay can start before, or more than a sender can have held at once.
+                if (known || index >= MaxServerEventsPerTick || tick + (uint)ServerEventRepeatTicks * 2 < _serverEventFloor) continue;
+                if (_serverEvents.Count >= MaxServerEventsPerTick * (ServerEventRepeatTicks * 2 + 8)) continue;
+                _serverEvents.Add(new ServerEventEntry { Tick = tick, Index = index, Type = type, Payload = payload });
+            }
+        }
+
+        /// <summary>
+        /// Owning client: take the server events a report carried (<see cref="OwnerStateMsg.Events"/>) before its state is reconciled, so the replay
+        /// that state starts can apply them on their ticks.
+        /// </summary>
+        internal void ReceiveServerEvents(byte[] events)
+        {
+            if (events == null || events.Length == 0) return;
+            ServerEventListReader.Set(new ArraySegment<byte>(events));
+            try { ReadServerEventList(ServerEventListReader); }
+            catch (Exception ex) { NebulaLog.Error($"server events for {Identity} could not be read: {ex.Message}"); }
+        }
 
         /// <summary>
         /// The entity went through a portal (<c>docs/portals.md</c> D18): the positions the client predicted in the scope it left are
@@ -213,7 +638,9 @@ namespace Nebula
             PendingInputCount = (int)Math.Max(0, (long)_newestServerInputTick - tick);
             LastInput = input;
             _lastTickedServerTick = tick;
-            Simulate(tick, in input, deltaTime);
+            BeginServerEventTick(tick);
+            try { Simulate(tick, in input, deltaTime); }
+            finally { _serverEventsVisible = false; }
         }
 
         /// <summary>A driver sent nothing for this tick and nothing for <see cref="PredictedBehaviourBase.DriverInputTimeoutTicks"/> before it.</summary>
@@ -221,6 +648,8 @@ namespace Nebula
 
         internal sealed override void CarryThroughPortal(in PortalMap map, Container destination)
         {
+            // A portal is a teleport: nothing is eased across it.
+            ClearCorrectionOffset();
             for (int i = 0; i < BufferSize; i++)
             {
                 if (!_history[i].Valid) continue;
@@ -249,6 +678,8 @@ namespace Nebula
                 // A client that starts or stops predicting it starts from the worker's state, not from an old history.
                 for (int i = 0; i < BufferSize; i++) _history[i].Valid = false;
                 _lastReconciledTick = 0;
+                ClearCorrectionOffset();
+                ClearServerEvents();
             }
             try { OnDriverChanged(previous, current); }
             catch (Exception ex) { NebulaLog.Error($"OnDriverChanged of {GetType().Name} on {Identity} threw: {ex}"); }
@@ -320,6 +751,12 @@ namespace Nebula
             int stateStart = writer.Length;
             WriteState(writer);
             writer.PatchUShort(stateAt, (ushort)(writer.Length - stateStart));
+            // Server events not yet worn out go with the entity, with the newest tick shown to Simulate: the next worker applies each once.
+            if (_serverEvents.Count > 0)
+            {
+                writer.WriteUInt(_lastServerTick);
+                WriteServerEventList(writer);
+            }
         }
 
         internal sealed override void ReadPendingInputs(NetworkReader reader)
@@ -349,10 +786,19 @@ namespace Nebula
             // A sender from before the state rode along writes nothing more.
             if (reader.Remaining < 2) return;
             var state = reader.ReadSegment(reader.ReadUShort());
-            if (state.Count == 0) return;
-            HandoverStateReader.Set(state);
-            try { ReadState(HandoverStateReader); }
-            catch (Exception ex) { NebulaLog.Error($"ReadState of {GetType().Name} on {Identity} threw during a handover: {ex.Message}"); }
+            if (state.Count > 0)
+            {
+                HandoverStateReader.Set(state);
+                try { ReadState(HandoverStateReader); }
+                catch (Exception ex) { NebulaLog.Error($"ReadState of {GetType().Name} on {Identity} threw during a handover: {ex.Message}"); }
+            }
+            // A sender without server events to carry writes nothing more.
+            if (reader.Remaining >= 5)
+            {
+                _lastServerTick = Math.Max(_lastServerTick, reader.ReadUInt());
+                try { ReadServerEventList(reader); }
+                catch (Exception ex) { NebulaLog.Error($"server events of {Identity} could not be read during a handover: {ex.Message}"); }
+            }
         }
 
         private static readonly NetworkReader HandoverStateReader = new NetworkReader();
@@ -361,11 +807,14 @@ namespace Nebula
 
         internal sealed override void ClientPredictTick(uint tick, NetworkWriter inputOut)
         {
+            RemoveDrawnOffset();
             var input = GatherInput();
             _clientTick = tick;
             input.Serialize(inputOut);
             LastInput = input;
-            Simulate(tick, in input, NetworkTime.TickInterval);
+            BeginClientEventTick(tick);
+            try { Simulate(tick, in input, NetworkTime.TickInterval); }
+            finally { EndEventTick(tick); }
             ref var h = ref _history[tick % BufferSize];
             h.Tick = tick;
             h.Input = input;
@@ -378,9 +827,14 @@ namespace Nebula
         {
             if (serverTick <= _lastReconciledTick) return;
             _lastReconciledTick = serverTick;
+            NoteServerEventsReconciled(serverTick);
+            // Simulation works on the simulated pose, never the drawn one.
+            RemoveDrawnOffset();
             ref var h = ref _history[serverTick % BufferSize];
             if (!h.Valid || h.Tick != serverTick)
             {
+                // Nothing predicted to compare with, so nothing to ease from.
+                ClearCorrectionOffset();
                 // We have no prediction for that tick (just spawned, just took the wheel of a vehicle, or too old):
                 // adopt the server state, and replay what we did predict after it. Adopting alone threw away every
                 // tick predicted since: a driver taking a moving vehicle's wheel saw it pulled back by the input lead
@@ -389,6 +843,9 @@ namespace Nebula
                 Replay(serverTick);
                 return;
             }
+            var previousContainer = Identity.Container;
+            var previousPosition = Identity.LocalPosition;
+            var previousRotation = Identity.LocalRotation;
             // Peek at the server state without disturbing our own. Everything WriteState covers is saved and put
             // back, not just the pose: a game's extra fields (a weapon cooldown, a trigger counter) belong to the
             // present, and the server's copy describes an older tick. Restoring only the pose used to hand the
@@ -407,10 +864,22 @@ namespace Nebula
                 predicted = Identity.Container != null ? Identity.Container.ToLocal(world) : world;
             }
             float error = (serverPos - predicted).magnitude;
-            if (error <= CorrectionThreshold)
+            // The prediction agrees with the worker, but the report brought an event for a tick already simulated without it: the
+            // worker's state is right, so replay from it, now with the event on its tick, instead of waiting for the error to show.
+            bool eventReplay = error <= CorrectionThreshold && HasUnappliedServerEvents(serverTick, _clientTick);
+            if (error <= CorrectionThreshold && !eventReplay)
             {
                 OwnSnapshotReader.Set(OwnSnapshot.ToSegment());
                 ReadState(OwnSnapshotReader);
+                return;
+            }
+            if (eventReplay)
+            {
+                ServerEventReplays++;
+                h.Position = serverPos;
+                h.Container = Identity.Container;
+                Replay(serverTick);
+                NoteCorrection(previousContainer, previousPosition, previousRotation);
                 return;
             }
             // Snap to the server's state at serverTick (ReadState left us there) and replay every input after it.
@@ -421,6 +890,8 @@ namespace Nebula
             h.Position = serverPos;
             h.Container = Identity.Container;
             Replay(serverTick);
+            // The simulated state is now exact; the drawn pose eases from where it was.
+            NoteCorrection(previousContainer, previousPosition, previousRotation);
             OnCorrected(error);
         }
 
@@ -437,7 +908,9 @@ namespace Nebula
                 {
                     ref var r = ref _history[t % BufferSize];
                     if (!r.Valid || r.Tick != t) continue;
-                    Simulate(t, in r.Input, NetworkTime.TickInterval);
+                    BeginClientEventTick(t);
+                    try { Simulate(t, in r.Input, NetworkTime.TickInterval); }
+                    finally { EndEventTick(t); }
                     r.Position = Identity.LocalPosition;
                     r.Container = Identity.Container;
                 }
@@ -451,6 +924,8 @@ namespace Nebula
             _lastReconciledTick = 0;
             _hasLastServerInput = false;
             _newestServerInputTick = 0;
+            ClearCorrectionOffset();
+            ClearServerEvents();
         }
     }
 }
