@@ -89,6 +89,12 @@ namespace Nebula
         public string PersistenceLocalFile = "";
         public float PersistenceCheckpointSeconds = 5f;
         public float PersistenceRestoreGraceSeconds = 3f;
+        public string SharedCacheMode = "auto";
+        public string SharedCacheLocalFolder = "";
+        public int SharedCacheMaxObjectBytes = 32 * 1024 * 1024;
+        public int SharedCacheExpiryDays = 30;
+        public int SharedCacheHostConcurrency = 8;
+        public int SharedCacheClientConcurrency = 4;
         public float ScopeIdleRetireSeconds = 300f;
         public bool ScopeRetireWithEntities = false;
         public float SceneEntityGraceSeconds = 2f;

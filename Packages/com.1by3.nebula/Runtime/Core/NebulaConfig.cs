@@ -257,6 +257,20 @@ namespace Nebula
         [Tooltip("After gaining a container lease, how long a worker waits before restoring that container's persisted entities. Gives the previous owner's handover time to arrive so nothing comes back twice.")]
         public float PersistenceRestoreGraceSeconds = 3f;
 
+        [Header("Shared cache")]
+        [Tooltip("Where NebulaSharedCache keeps the derived data workers share: 'auto' (the orchestrator uses its database, a worker of a mesh asks the orchestrator, a single-process run and the Editor use a local folder), 'local' (a folder), 'remote', 'database', 'memory' or 'off'. -nebula-shared-cache-mode overrides.")]
+        public string SharedCacheMode = "auto";
+        [Tooltip("Folder the local shared cache writes to. Empty = <project>/Library/Nebula/SharedCache in the Editor, <persistentDataPath>/nebula-shared-cache otherwise. -nebula-shared-cache-folder overrides.")]
+        public string SharedCacheLocalFolder = "";
+        [Tooltip("Largest object the shared cache stores or returns, in bytes. Larger puts are refused (HTTP 413 from the orchestrator). Set the same value on the orchestrator and on every worker. -nebula-shared-cache-max-bytes overrides.")]
+        public int SharedCacheMaxObjectBytes = 32 * 1024 * 1024;
+        [Tooltip("Days a shared cache key may go unread before the orchestrator removes it. 0 keeps everything. -nebula-shared-cache-expiry-days overrides.")]
+        public int SharedCacheExpiryDays = 30;
+        [Tooltip("Most shared cache requests the orchestrator serves at once; more get HTTP 503, which a worker treats as a miss. Keeps workers that fill a cold cache from starving the control plane.")]
+        public int SharedCacheHostConcurrency = 8;
+        [Tooltip("Most shared cache requests one worker has in flight at once; more wait their turn.")]
+        public int SharedCacheClientConcurrency = 4;
+
         [Tooltip("Seconds a shared simulation scope (an instance, a keyed world) may sit with nobody in it before the orchestrator retires it: its persistent entities are checkpointed, its containers are released, and the scope comes back when it is activated again. 0 turns retiring off. Never applies to the public world. -nebula-scope-idle-retire overrides.")]
         public float ScopeIdleRetireSeconds = 300f;
         [Tooltip("Retire an idle scope that nobody is playing in even though it still holds entities, such as saved crates or parked vehicles. Its persistent entities are checkpointed and come back with it. Off: a scope retires only once it holds no entity at all. -nebula-scope-retire-with-entities overrides.")]

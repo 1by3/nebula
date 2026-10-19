@@ -224,6 +224,13 @@ namespace Nebula
         /// </summary>
         public static string DevAuthKey(string projectRoot) => System.IO.Path.Combine(Folder(projectRoot), "dev-auth.key");
 
+        /// <summary>
+        /// The local shared cache (<see cref="NebulaSharedCache"/>) of the dev loop and of the Editor:
+        /// <c>Library/Nebula/SharedCache</c>. It is not part of <see cref="DevSaves"/>, so <c>Reset Dev Saves</c> keeps it;
+        /// delete the folder to start from a cold cache.
+        /// </summary>
+        public static string SharedCache(string projectRoot) => System.IO.Path.Combine(Folder(projectRoot), "SharedCache");
+
         /// <summary>The folder <see cref="DevSaveFile"/> is in.</summary>
         public static string DevSaves(string projectRoot) => System.IO.Path.Combine(Folder(projectRoot), "DevSaves");
 
