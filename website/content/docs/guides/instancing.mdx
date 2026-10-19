@@ -613,7 +613,7 @@ Releasing one part by hand does not retire the others; use the [scope lifecycle]
 
 ## Build and test
 
-Rebuild workers, gateways, and clients together. Portals use wire protocol version `28`, and a client accepts only a gateway on the same version.
+Rebuild workers, gateways, and clients together. Portals need wire protocol version 28 or newer on every client and gateway; a gateway refuses clients of an older version.
 
 Use two clients to check that public observers lose sight of an entering player, occupants see out through the door's window, and different private copies cannot see or hit each other. Test missing content and worker reassignment during preparation: both must leave the source authoritative until a valid transfer can be committed.
 

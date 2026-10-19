@@ -1,0 +1,8 @@
+{
+    "name": "Nebula.Samples.JumpPad.Tests",
+    "references": ["Nebula.Runtime", "Nebula.Samples.JumpPad"],
+    "includePlatforms": ["Editor"],
+    "optionalUnityReferences": ["TestAssemblies"],
+    "autoReferenced": false,
+    "defineConstraints": ["UNITY_INCLUDE_TESTS"]
+}

@@ -2184,6 +2184,8 @@ namespace Nebula
             if (target == null) return;
             if (msg.Epoch < target.Epoch) return;
             target.Epoch = msg.Epoch;
+            // Before the state: the replay it may start applies these on their ticks.
+            if (msg.Events != null) target.Predicted.ReceiveServerEvents(msg.Events);
             if (msg.InputLead != OwnerStateMsg.NoInputLead) NoteInputLead(msg.InputLead);
             if (msg.Tick == 0) return;
             // The state is in the worker's container frame for that tick; move there first, or a seam crossing

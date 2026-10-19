@@ -294,7 +294,7 @@ public class ConformancePortalGatewayTests
         var rejected = old.Rejected!.Value;
         Assert.That(rejected.Code, Is.EqualTo(JoinRejectReason.ProtocolUnsupported));
         Assert.That(rejected.SupportedMinVersion, Is.EqualTo((ushort)28));
-        Assert.That(rejected.SupportedMaxVersion, Is.EqualTo((ushort)28));
+        Assert.That(rejected.SupportedMaxVersion, Is.EqualTo(HelloMsg.ProtocolVersion));
         Assert.That(old.Welcome, Is.Null);
         Assert.That(fleet.Worker.Claims, Is.Empty);
     }

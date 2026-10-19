@@ -1,17 +1,19 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 28, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 29, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 28. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 29. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `28`. Every `Hello` carries the version its sender speaks.
+The current protocol version is `29`. Every `Hello` carries the version its sender speaks.
 
-A gateway accepts clients of protocol 28 only: `HelloMsg.MinProtocolVersion` and `HelloMsg.ProtocolVersion` are both `28`, and a client of 27 or older is refused with `ProtocolUnsupported` and the gateway's range. Gateway-to-worker and worker-to-worker connections MUST match protocol `28` exactly. Before 1.0 a protocol change may close the client window to the new version; protocols 23 and 28 did, and protocols 24 to 27 did not.
+A gateway accepts clients of protocol 28 and 29: `HelloMsg.MinProtocolVersion` is `28` and `HelloMsg.ProtocolVersion` is `29`, and a client of 27 or older is refused with `ProtocolUnsupported` and the gateway's range. Gateway-to-worker and worker-to-worker connections MUST match protocol `29` exactly. Before 1.0 a protocol change may close the client window to the new version; protocols 23 and 28 did, and protocols 24 to 27 and 29 did not.
+
+Protocol 29 added [server events](/docs/guides/prediction#apply-server-events) on predicted entities. `OwnerState` gains a trailing events section, and the `pending_inputs` of `AuthorityTransfer` gains a trailing section after `state`. A gateway sends the `OwnerState` section only to clients that negotiated 29; a client of 28 is sent the message without it and predicts without the events.
 
 Protocol 28 added [portals](/docs/guides/instancing): five messages, `Portals` (27), `PortalLinks` (28) and `PortalWarm` (29) for clients and gateways and the worker-to-worker `PortalAdjacency` (51) and `PortalHandoff` (52), the `PortalGhost` entity flag, and a trailing `link_id` on `InstancePreparation`. The bytes alone are additive, but the meaning is not: a protocol-27 client would be sent replicas of scopes it believes hidden, would never draw them posed, and would predict its pawn into an aperture it does not know is solid, so the window closes.
 
@@ -140,7 +142,7 @@ Positions and rotations are relative to this container unless a behavior's docum
 | `EntityFlags.OwnerDisconnected` | 4 | The owning client is disconnected and the worker is keeping the entity for the reclaim grace. The worker announces the entity again, in place, when the bit changes. |
 | `EntityFlags.PortalGhost` | 8 | A ghost spawn only: the sender ghosts the entity because it is in the band of a portal face whose other side the receiver holds. The receiver keeps it as a proxy only, posed through the link in its own scene. |
 
-Unknown flag bits are reserved. A version 28 sender MUST write them as zero.
+Unknown flag bits are reserved. A version 29 sender MUST write them as zero.
 
 ## Message registry
 
@@ -201,7 +203,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 51 | `PortalAdjacency` | `W-W` | Reliable ordered | [`PortalAdjacency`](#portal-adjacency-and-handoff) |
 | 52 | `PortalHandoff` | `W-W` | Reliable ordered | [`PortalHandoff`](#portal-adjacency-and-handoff) |
 
-IDs not listed in this table are reserved. A version 28 sender MUST NOT use them.
+IDs not listed in this table are reserved. A version 29 sender MUST NOT use them.
 
 ## Message layouts
 
@@ -474,7 +476,11 @@ OwnerState :=
   s8 input_lead,
   u64 owner_client_id,
   ContainerRef container,
-  bytes state
+  bytes state,
+  [bytes events]
+
+ServerEvents := u8 event_count, ServerEvent[event_count]
+ServerEvent  := u32 tick, u8 index, u32 type_id, bytes payload
 ```
 
 `ClientInput` and `ForwardInput` share `ClientInputBody`. A worker accepts `ClientInput` for a session only from the gateway that currently holds that session. The stock client repeats up to its three newest frames to tolerate loss. Each input payload is the exact output of the game's `INetworkInput.Serialize` method.
@@ -482,6 +488,8 @@ OwnerState :=
 `DriveInput` carries the input of the client that drives `net_id`. A client writes `0` as `client_id`. The gateway drops the message unless the entity's latest `EntitySpawn` names the sender in `driver_client_id` and no client owns the entity, and forwards it to the worker it believes owns the entity. The worker runs the frames only when it has authority and the sender is the driver it knows; a worker that has handed the entity over forwards the message to the new owner. It never claims the sender's session.
 
 A worker sends `OwnerState` every tick for an entity a client owns, to that client, and for an entity a client drives, to the driver; `owner_client_id` names that client. A worker that does not know which gateway holds the driver's session sends it to every gateway it links to, and a gateway forwards it only to that client, and only while the client holds the entity. `OwnerState.state` is the exact output of the predicted behavior's `WriteState`. `input_lead` is the smallest observed `input_tick - worker_tick` since the previous report, clamped to `-127` through `127`. `-128` means that no input arrived during the reporting window.
+
+`events` is present only when the worker holds server events for the entity, and a gateway writes it only to a client that negotiated protocol 29. Each `ServerEvent` is one event the game posted with `PostServerEvent`: `tick` is the tick it applies on, `index` orders the events of one tick (at most 4 per tick, so `0` through `3`), `type_id` is the 32-bit FNV-1a hash of the event type's full name, and `payload` is the exact output of the event's `INetworkSerializable.Serialize`. A worker keeps reporting an event in every `OwnerState` for 30 ticks after its `tick`, and a client ignores an event it already holds, identified by `tick` and `index`. A client reads the section before it reconciles `state`, so the replay that `state` starts applies each event on its `tick`.
 
 ### Container ownership
 
@@ -648,11 +656,12 @@ PendingInputs := u32 last_processed_input_tick,
                  PendingInput[input_count],
                  bool has_last_input,
                  [GameInput last_input when has_last_input is true],
-                 [u16 state_length, raw state[state_length]]
+                 [u16 state_length, raw state[state_length]],
+                 [u32 last_event_tick, ServerEvents events]
 PendingInput  := u32 tick, GameInput input
 ```
 
-The stock predicted behavior sends at most 128 pending inputs. `GameInput` is the exact output of the game's `INetworkInput.Serialize` method. The optional trailing `state` is the output of the predicted behavior's `WriteState`: what `Simulate` carries from one tick to the next. The receiving worker applies it with `ReadState`, so the entity continues from the sender's simulation state. A receiver MUST accept `pending_inputs` that end after `last_input`.
+The stock predicted behavior sends at most 128 pending inputs. `GameInput` is the exact output of the game's `INetworkInput.Serialize` method. The optional trailing `state` is the output of the predicted behavior's `WriteState`: what `Simulate` carries from one tick to the next. The receiving worker applies it with `ReadState`, so the entity continues from the sender's simulation state. The optional trailing events are the server events the entity still holds, with `last_event_tick`, the newest tick the sender simulated: the receiver shows `Simulate` an event only for a tick after it, so an event applies once across the handover. A writer includes the events only when it holds some. A receiver MUST accept `pending_inputs` that end after `last_input`, or after `state`.
 
 `handover_state` has this envelope:
 

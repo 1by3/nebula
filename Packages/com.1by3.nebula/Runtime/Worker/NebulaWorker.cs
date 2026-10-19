@@ -2974,6 +2974,7 @@ namespace Nebula
                         OwnerClientId = controller,
                         Container = e.ContainerRef,
                         State = _scratch.ToArray(),
+                        Events = e.Predicted.TakeServerEventsForReport(),
                     }.Write(_writer);
                     // Owner state has exactly one destination client, so it is the gateway's relay cost rather
                     // than replication: it grows with players in the container, not with entities in it.

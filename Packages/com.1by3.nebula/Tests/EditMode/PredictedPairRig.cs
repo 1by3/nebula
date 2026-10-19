@@ -5,6 +5,14 @@ using Object = UnityEngine.Object;
 
 namespace Nebula.Tests
 {
+    /// <summary>A server event for <see cref="PairWalker"/>: an instant change of velocity, in meters per second.</summary>
+    public struct ShoveEvent : INetworkSerializable
+    {
+        public Vector3 Velocity;
+        public void Serialize(NetworkWriter writer) { writer.WriteVector3(Velocity); }
+        public void Deserialize(NetworkReader reader) { Velocity = reader.ReadVector3(); }
+    }
+
     /// <summary>What a <see cref="PairWalker"/> is told each tick: a velocity in meters per second.</summary>
     public struct WalkInput : INetworkInput
     {
@@ -25,6 +33,8 @@ namespace Nebula.Tests
         public float Smoothing = 0.1f;
         public float Snap = 3f;
         public readonly List<Vector3> Observed = new List<Vector3>();
+        /// <summary>Every shove <c>Simulate</c> was shown: the tick and whether it was a replay.</summary>
+        public readonly List<(uint Tick, bool Replaying)> ShovesSeen = new List<(uint, bool)>();
 
         protected override float CorrectionSmoothingSeconds => Smoothing;
         protected override float CorrectionSnapDistance => Snap;
@@ -33,6 +43,11 @@ namespace Nebula.Tests
         protected override void Simulate(uint tick, in WalkInput input, float deltaTime)
         {
             Observed.Add(Identity.LocalPosition);
+            for (int i = 0; TryGetServerEvent<ShoveEvent>(i, out var shove); i++)
+            {
+                Drift += shove.Velocity;
+                ShovesSeen.Add((tick, IsReplaying));
+            }
             Identity.SetLocalPose(Identity.Container, Identity.LocalPosition + (input.Move + Drift) * deltaTime, Identity.LocalRotation);
         }
 
@@ -72,6 +87,14 @@ namespace Nebula.Tests
         private readonly List<GameObject> _objects = new List<GameObject>();
         private readonly Dictionary<uint, byte[]> _inputs = new Dictionary<uint, byte[]>();
         private uint _step;
+        /// <summary>The state bytes the worker reported for each tick it simulated.</summary>
+        public readonly Dictionary<uint, byte[]> States = new Dictionary<uint, byte[]>();
+        /// <summary>The report bytes of the events the worker had for each tick it reported.</summary>
+        public readonly Dictionary<uint, byte[]> EventReports = new Dictionary<uint, byte[]>();
+        /// <summary>Runs after the worker simulated a tick and before it reports it: where game code on the worker posts events.</summary>
+        public Action<uint> AfterWorkerTick;
+        /// <summary>False: the worker simulates and records its reports, but the owner does not hear them.</summary>
+        public bool DeliverReports = true;
 
         public PredictedPairRig(int lag, float smoothing = 0.1f, float snap = 3f)
         {
@@ -79,6 +102,7 @@ namespace Nebula.Tests
             Client = Make("client");
             Worker = Make("worker");
             Worker.Identity.OwnerClientId = 1;
+            Worker.Identity.HasAuthority = true;
             Client.Smoothing = smoothing;
             Client.Snap = snap;
         }
@@ -93,6 +117,9 @@ namespace Nebula.Tests
         }
 
         public uint Step { get { return _step; } }
+
+        /// <summary>Another walker alongside the pair, such as the worker an entity is handed over to.</summary>
+        public PairWalker Extra(string name) { return Make(name); }
 
         /// <summary>The worker's copy is displaced by a server-side event the owner's prediction knows nothing about.</summary>
         public void Shove(Vector3 meters)
@@ -112,10 +139,19 @@ namespace Nebula.Tests
             {
                 uint s = _step - (uint)Lag;
                 Worker.ServerReceiveInput(s, new NetworkReader(_inputs[s]));
+                NetworkTime.Tick = s;
                 Worker.NetworkTick(s, NetworkTime.TickInterval);
+                AfterWorkerTick?.Invoke(s);
                 var state = new NetworkWriter(64);
                 Worker.WriteOwnerState(state);
-                Client.ClientReconcile(s, new NetworkReader(state.ToSegment()));
+                States[s] = state.ToArray();
+                var events = Worker.TakeServerEventsForReport();
+                if (events != null) EventReports[s] = events;
+                if (DeliverReports)
+                {
+                    Client.ReceiveServerEvents(events);
+                    Client.ClientReconcile(s, new NetworkReader(state.ToSegment()));
+                }
             }
             Client.ApplyDrawnOffset(frameSeconds);
         }

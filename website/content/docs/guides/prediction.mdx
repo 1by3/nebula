@@ -151,6 +151,65 @@ protected override float CorrectionSnapDistance => 2f;        // meters
 
 Smoothing applies on the owning client, and on a client that drives a vehicle. It never changes what the worker or other clients see.
 
+## Apply server events
+
+`Simulate` must depend only on the entity's state and its input, because the owning client runs it ahead of the worker and again during a replay. Something only the worker decides, such as a shove, a stun, or a forced move, breaks that rule if you apply it from outside `Simulate`. The owner's replay does not know why the worker's state changed, so any state outside `WriteState` drifts, and a one-time effect cannot tell a replay from the first run.
+
+A **server event** puts that decision inside the simulation. The worker attaches a small struct to a tick of the entity. Nebula shows it to `Simulate` on that tick on the worker, sends it to the owner with the state reports, and shows it again in the owner's replay of the same tick.
+
+Define the event as a struct that implements `INetworkSerializable`:
+
+```csharp title="Impulse.cs"
+using Nebula;
+using UnityEngine;
+
+public struct Impulse : INetworkSerializable
+{
+    public Vector3 Velocity;
+
+    public void Serialize(NetworkWriter writer) => writer.WriteVector3(Velocity);
+    public void Deserialize(NetworkReader reader) => Velocity = reader.ReadVector3();
+}
+```
+
+Read it inside `Simulate` with `TryGetServerEvent`, and apply it to state that `WriteState` carries. This example adds to a velocity field that the controller also writes and reads in `WriteState` and `ReadState`:
+
+```csharp
+protected override void Simulate(uint tick, in PlayerInput input, float deltaTime)
+{
+    if (TryGetServerEvent<Impulse>(out var impulse))
+        _knockback += impulse.Velocity;
+
+    // ... the rest of the movement, using _knockback ...
+}
+```
+
+Post the event on the worker that has authority over the entity. The call is available on every predicted behavior, so code that does not know the controller's type can use `identity.Predicted`:
+
+```csharp
+// On the worker, for example in the code that resolves an explosion.
+pawn.Predicted.PostServerEvent(new Impulse { Velocity = direction * 9f });
+```
+
+`PostServerEvent<TEvent>(in TEvent e)` stamps the event with the next tick the entity simulates and returns `true`. It returns `false` and logs a warning once on a copy without authority.
+
+### Know when an event applies
+
+- The next tick the entity simulates is the tick in progress when the entity has not run yet in this worker tick, and the following tick otherwise. It does not matter whether your code runs before or after the entity's own tick.
+- `TryGetServerEvent<TEvent>(out e)` returns the first event of that type for the tick being simulated. Use `TryGetServerEvent<TEvent>(index, out e)` for the next ones, in posting order. It finds nothing outside `Simulate`.
+- If the worker posts the event after the entity's tick, the report for that tick already carries the event for the next one. The owner then replays from that state with the event on its tick, and its simulated state ends where the worker's does. Nebula counts these replays in `ServerEventReplays` and does not count them as corrections.
+- If the worker posts the event before the entity's tick, the event and its effect arrive together. The owner is corrected once, by the size of the effect over the time the report took to arrive, and [correction smoothing](#smooth-corrections) eases the drawn pose. The simulated state is still exact.
+- A worker keeps reporting an event for 30 ticks (`ServerEventRepeatTicks`) so that a lost packet does not lose it. The owner applies it once.
+- When another worker takes over the entity, the events it has not shown to `Simulate` travel with the pending inputs. The new worker shows each one once.
+
+### Stay within the limits
+
+Each entity accepts at most four events for one tick (`MaxServerEventsPerTick`). `PostServerEvent` refuses the fifth, returns `false`, and adds one to `ServerEventsDropped`. `ServerEventsPosted` counts the accepted ones.
+
+Nebula identifies the event type on the wire by a hash of its full name, so use one struct for each kind of event and do not rename it between builds of a mesh. A server event only changes the entity it is posted to. An entity with no owning client and no driver receives events on the worker, and no client replays them.
+
+A client built against an earlier wire protocol (28) is not sent the events and predicts without them, which gives the correction behavior it had before. See the [wire protocol specification](/docs/specifications/wire-protocol#prediction-messages).
+
 ## Understand input timing
 
 The client estimates the worker tick from snapshots and round-trip time. It sends input ahead by half the measured round-trip time, `InputLeadMarginTicks`, and an adaptive adjustment.
@@ -330,6 +389,8 @@ Use these properties on `PredictedBehaviourBase`:
 | `CorrectionOffset` | The offset between the simulated and drawn position, in meters, in the container's local space. Zero when nothing is being eased. |
 | `CorrectionOffsetMeters` and `CorrectionOffsetDegrees` | The size of the position and rotation offsets. |
 | `DrawnPosition` and `DrawnRotation` | The world pose the entity is drawn at. |
+| `ServerEventsPosted` and `ServerEventsDropped` | On the worker, server events accepted and refused by `PostServerEvent`. |
+| `ServerEventReplays` | On the owning client, replays started because a report carried an event for a tick already simulated. |
 
 Use `NebulaClient.RttMs`, `InputLeadTicks`, `InputLeadAdjustTicks`, `LastReportedInputLead`, and `InputLeadIncreases` to inspect the network timing that affects prediction.
 
