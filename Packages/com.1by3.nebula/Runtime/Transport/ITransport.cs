@@ -47,13 +47,23 @@ namespace Nebula
         public readonly ArraySegment<byte> Data;
         /// <summary>Why the link closed, for a <see cref="Kind.Disconnected"/> event; <see cref="TransportDisconnectReason.Unknown"/> otherwise.</summary>
         public readonly TransportDisconnectReason Reason;
+        /// <summary>
+        /// For a <see cref="Kind.Data"/> event: whether the packet arrived on the <see cref="Delivery.Sequenced"/> channel,
+        /// where a late packet may be lost, instead of the reliable one. False when the transport does not say.
+        /// </summary>
+        public readonly bool Sequenced;
 
         public TransportEvent(Kind type, int peerId, ArraySegment<byte> data)
             : this(type, peerId, data, TransportDisconnectReason.Unknown) { }
 
+        /// <summary>A <see cref="Kind.Data"/> event that says whether the packet came in on the sequenced channel (<paramref name="sequenced"/>).</summary>
+        public TransportEvent(Kind type, int peerId, ArraySegment<byte> data, bool sequenced)
+            : this(type, peerId, data, TransportDisconnectReason.Unknown, sequenced) { }
+
         /// <summary>An event that carries why its link closed (<paramref name="reason"/>), for <see cref="Kind.Disconnected"/>.</summary>
-        public TransportEvent(Kind type, int peerId, ArraySegment<byte> data, TransportDisconnectReason reason)
+        public TransportEvent(Kind type, int peerId, ArraySegment<byte> data, TransportDisconnectReason reason, bool sequenced = false)
         {
+            Sequenced = sequenced;
             Type = type;
             PeerId = peerId;
             Data = data;

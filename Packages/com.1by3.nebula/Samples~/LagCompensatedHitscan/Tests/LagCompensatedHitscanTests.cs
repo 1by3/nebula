@@ -138,6 +138,36 @@ namespace NebulaSamples.Tests
             Assert.AreEqual(100, victim.Health.Value);
         }
 
+        // What a client at a given round trip claims (NEB-472). The client renders remote entities half a round trip plus
+        // InterpolationDelayTicks behind the newest tick, and its shot takes another half round trip to arrive, so the claim is
+        // a whole round trip plus the interpolation delay old when the worker sees it. -nebula-sim-latency <ms> puts that
+        // round trip on a local session; this checks the sample against the same arithmetic.
+        private static uint ClaimAgeTicks(int roundTripMs)
+        {
+            var config = ScriptableObject.CreateInstance<NebulaConfig>();
+            try { return (uint)(Mathf.CeilToInt(roundTripMs / 1000f * NetworkTime.TickRate) + config.InterpolationDelayTicks); }
+            finally { Object.DestroyImmediate(config); }
+        }
+
+        [TestCase(0, true)]
+        [TestCase(100, true)]
+        [TestCase(200, true)]
+        [TestCase(400, false)]
+        public void AShotFromAClientAtSimulatedLatencyHitsWhatStoodThereUnlessTheClaimIsTooOld(int roundTripMs, bool hits)
+        {
+            SetStatic(typeof(StateHistory), "WindowTicks", 32); // StateHistory.DefaultWindowTicks, as NebulaConfig.StateHistoryTicks sets it
+            var (shooter, victim) = ShotScene(false);
+            uint age = ClaimAgeTicks(roundTripMs);
+            uint claimed = 10u;
+            uint now = claimed + age;
+            var record = typeof(NetworkIdentity).GetMethod("RecordAuthoritativeState", Members);
+            // The victim stood at z = 0 at the claimed tick and moved to z = 3 on the next, and stays there until the worker's tick.
+            for (uint tick = 12; tick <= now; tick++) record.Invoke(victim.Identity, new object[] { tick });
+            Set(shooter.Worker, "CurrentTick", now);
+            Shoot(shooter, claimed);
+            Assert.AreEqual(hits ? 90 : 100, victim.Health.Value, $"a claim {age} ticks old ({roundTripMs} ms round trip) against MaxClaimTicks {shooter.MaxClaimTicks}");
+        }
+
         [Test]
         public void AClaimOutsideWhatTheGameAllowsIsRefused()
         {

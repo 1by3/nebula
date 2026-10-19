@@ -4,6 +4,10 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- **Simulated latency, jitter and loss on a client's link to the gateway, for testing prediction and lag compensation on one machine (NEB-472).** `-nebula-sim-latency <ms>`, `-nebula-sim-jitter <ms>` and `-nebula-sim-loss <percent>` (or `NebulaConfig.SimulatedLatencyMs`, `SimulatedJitterMs` and `SimulatedLossPercent`) make a client behave as if its link were slower, and `NebulaClient.SetNetworkSimulation(latencyMs, jitterMs, lossPercent)` changes them while playing, for a game's console. The latency is the added round trip, half in each direction, so `NebulaClient.RttMs` rises by that much. The simulation is a transport wrapper, `SimulatedNetworkTransport`, around the client's UDP transport, so it works in the Editor and in development builds without LiteNetLib's debug-only simulation, which delays only what it receives. It is off in release builds, logged once at start, and shown beside the RTT in the title screen and `NebulaDebugOverlay`. `TransportEvent.Sequenced` tells a wrapper which channel a packet arrived on. See "Test with simulated latency" in the running-locally guide.
+
 ### Changed
 
 - **Nebula is licensed under the PolyForm Noncommercial License 1.0.0 instead of MIT.** Noncommercial use is free; commercial use needs a license from 1by3 (https://1by3.co). The source is available, not open source. Vendored LiteNetLib keeps its own MIT license.

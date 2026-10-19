@@ -187,6 +187,14 @@ The protocol version accepted in the last welcome, or [`HelloMsg.ProtocolVersion
 public int RttMs { get; } = -1;
 ```
 
+### NetworkSimulation [#networksimulation]
+
+```csharp
+public NetworkSimulation NetworkSimulation { get; } = new NetworkSimulation();
+```
+
+The network conditions this client simulates on its link to the gateway, for testing prediction and lag compensation on one machine. Read-only here; change them with [`SetNetworkSimulation`](#setnetworksimulation). Its `Nebula.NetworkSimulation.Active` is false when nothing is simulated, always in a release build and on a web client.
+
 ### EstimatedServerTick [#estimatedservertick]
 
 ```csharp
@@ -574,6 +582,14 @@ public event Action<bool> LeaveFinished;
 A [`Leave`](#leave) is over. True when the gateway confirmed the goodbye (it closed the link) and the session has ended; false when there was no connection to say goodbye on, or the gateway did not answer in time, in which case the server treats the player as disconnected and ends the session after the reclaim grace. Raised on the main thread.
 
 ## Methods
+
+### SetNetworkSimulation [#setnetworksimulation]
+
+```csharp
+public bool SetNetworkSimulation(float latencyMs, float jitterMs, float lossPercent);
+```
+
+Simulates a slower, less reliable link between this client and the gateway, for example from a game's console. `latencyMs` is the added **round trip**: half delays what this client sends and half what it receives, so [`RttMs`](#rttms) rises by that much. `jitterMs` varies each packet's delay by up to half that much either way. `lossPercent` (0 to 100) is the share of packets lost in each direction; a lost reliable packet arrives a round trip late instead. Pass zeros to turn it off. The setting is logged when it changes and also shown in [`NebulaDebugOverlay`](/docs/reference/debug/nebula-debug-overlay). Returns false and changes nothing in a release build and on a web client, where it is not available.
 
 ### ClearFocusHint [#clearfocushint]
 

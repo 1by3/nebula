@@ -1,0 +1,93 @@
+---
+title: "NetworkSimulation"
+description: "Network conditions to simulate on one link, for testing prediction and lag compensation on one machine."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/SimulatedNetworkTransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/SimulatedNetworkTransport.cs)</div>
+
+```csharp
+public sealed class NetworkSimulation
+```
+
+Network conditions to simulate on one link, for testing prediction and lag compensation on one machine. [`LatencyMs`](#latencyms) is the added **round trip**: half of it delays each packet the link sends and the other half delays each packet it receives. All values are clamped to a sensible range on use.
+
+## Constructors
+
+### NetworkSimulation [#networksimulation]
+
+```csharp
+public NetworkSimulation();
+public NetworkSimulation(float latencyMs, float jitterMs, float lossPercent);
+```
+
+A simulation of `latencyMs` of added round trip, `jitterMs` of jitter and `lossPercent` of loss.
+
+## Fields
+
+### MaxMs [#maxms]
+
+```csharp
+public const float MaxMs = 5000f;
+```
+
+The most latency, jitter or loss the simulation accepts: 5 seconds, or 100 percent.
+
+## Properties
+
+### LatencyMs [#latencyms]
+
+```csharp
+public float LatencyMs { get; }
+```
+
+Added round-trip time in milliseconds: `LatencyMs / 2` in each direction. 0 adds none.
+
+### JitterMs [#jitterms]
+
+```csharp
+public float JitterMs { get; }
+```
+
+Jitter in milliseconds: each packet's delay in each direction varies by a random amount between `-JitterMs / 2` and `+JitterMs / 2` around its half of [`LatencyMs`](#latencyms), never below zero. A packet sent after another can therefore arrive first; a [`Delivery.Sequenced`](/docs/reference/transport/delivery#sequenced) packet that is overtaken is dropped, as a real sequenced link does, and reliable packets stay in order.
+
+### LossPercent [#losspercent]
+
+```csharp
+public float LossPercent { get; }
+```
+
+Percent of packets lost in each direction, 0 to 100. A lost [`Delivery.Sequenced`](/docs/reference/transport/delivery#sequenced) packet never arrives. A lost reliable packet arrives one extra round trip late, as a retransmission would, and holds up the reliable packets behind it.
+
+### Active [#active]
+
+```csharp
+public bool Active { get; }
+```
+
+Whether any of the three values would change the link.
+
+### IsAvailable [#isavailable]
+
+```csharp
+public static bool IsAvailable { get; }
+```
+
+Whether this build may simulate network conditions: the Editor and development builds can; release builds cannot.
+
+## Methods
+
+### Set [#set]
+
+```csharp
+public void Set(float latencyMs, float jitterMs, float lossPercent);
+```
+
+Sets all three values. Negative and non-numeric values count as 0; latency and jitter are capped at [`MaxMs`](#maxms) and loss at 100. The change applies to packets sent or received from now on.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+
+A short description for logs and overlays, for example `100 ms round trip, 20 ms jitter, 2% loss`; `off` when inactive.
