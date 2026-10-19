@@ -858,11 +858,7 @@ namespace Nebula
             // the pawn to another (a seam, a ship's door) since. Compare in the worker's frame, or every crossing
             // would look like a snap the size of the distance between the two origins.
             var predicted = h.Position;
-            if (h.Container != Identity.Container)
-            {
-                var world = h.Container != null ? h.Container.ToWorld(predicted) : predicted;
-                predicted = Identity.Container != null ? Identity.Container.ToLocal(world) : world;
-            }
+            if (h.Container != Identity.Container) predicted = Rehome(h.Container, Identity.Container, predicted);
             float error = (serverPos - predicted).magnitude;
             // The prediction agrees with the worker, but the report brought an event for a tick already simulated without it: the
             // worker's state is right, so replay from it, now with the event on its tick, instead of waiting for the error to show.
@@ -893,6 +889,23 @@ namespace Nebula
             // The simulated state is now exact; the drawn pose eases from where it was.
             NoteCorrection(previousContainer, previousPosition, previousRotation);
             OnCorrected(error);
+        }
+
+        /// <summary>
+        /// <paramref name="local"/>, a position in <paramref name="from"/>'s local space, in <paramref name="to"/>'s. Two boxes in the
+        /// same physics frame (a ship crossing a planet's chunks) are related through the frame's root, in double, from their
+        /// local poses: their cached world matrices may have been taken this frame on either side of the root's move between its
+        /// drawn and simulated poses (D11), and comparing through them read the difference as a correction of metres.
+        /// </summary>
+        private static Vector3 Rehome(Container from, Container to, Vector3 local)
+        {
+            var space = from != null ? from.Space : null;
+            var root = space != null && space.Frame != null ? space.Frame.Root : null;
+            if (root != null && to != null && to.Space == space && !from.OwnPhysicsFrame && !to.OwnPhysicsFrame
+                && PhysicsFrames.IsUnder(from.transform, root) && PhysicsFrames.IsUnder(to.transform, root))
+                return PhysicsFrames.PointFrom(PhysicsFrames.PointIn(from.transform, local, root), to.transform, root);
+            var world = from != null ? from.ToWorld(local) : local;
+            return to != null ? to.ToLocal(world) : world;
         }
 
         /// <summary>Re-run every predicted tick after <paramref name="serverTick"/> from the state just applied, recording where each ended.</summary>
