@@ -53,7 +53,7 @@ Use these fields to find a performance problem:
 
 - `ticks` should average 60 per second, and `frames` should stay close to `ticks`.
 - `dup` counts fixed updates that did not advance to a new network tick. An occasional duplicate is expected.
-- `skip` counts ticks discarded after the worker fell more than `NebulaWorker.MaxCatchUpTicks` behind. A value that keeps increasing means the worker cannot maintain the tick rate.
+- `skip` counts ticks discarded after the worker fell more than `NebulaWorker.MaxLagTicks` behind. Each one is a tick a predicting client ran and the worker did not, so its entity is corrected. A value that keeps increasing means the worker cannot maintain the tick rate.
 - `avg` and `max` (before the `|`) report the average and maximum time spent in a Nebula tick.
 - The sections after the first `|` are milliseconds per tick and add up to the tick. `simulate` includes your `NetworkTick` methods. `begin`, `frames.sim` (instance scenes and physics frames) and `replicate` are the passes between the others, and `untimed` is whatever no section covers. `gap` is the time between two ticks.
 - `frame avg`, `p90` and `max` are the wall time of a whole Unity frame, from the start of one frame to the start of the next. A worker holding 60 frames per second averages 16.7 ms; a p90 or max far above it is a stall.

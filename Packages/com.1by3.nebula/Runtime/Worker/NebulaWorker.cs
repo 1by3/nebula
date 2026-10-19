@@ -1081,30 +1081,39 @@ namespace Nebula
         private WorkerStats _lastMemory;
 
         /// <summary>
-        /// Most ticks the loop is allowed to simulate in one FixedUpdate to catch up with the wall clock. Beyond
-        /// this the missing tick numbers are skipped (everything runs a little slow for a moment) rather than
-        /// simulated back-to-back, which would only push the next frame further behind.
+        /// Most ticks the loop simulates in one FixedUpdate to catch up with the wall clock. What is left over is
+        /// simulated by the next FixedUpdates (Unity runs several after a long frame), so a slow frame costs no tick;
+        /// only a worker more than <see cref="MaxLagTicks"/> behind skips tick numbers.
         /// </summary>
         public const int MaxCatchUpTicks = 2;
+
+        /// <summary>
+        /// Most ticks the worker may run behind the wall clock before it skips the missing tick numbers (everything
+        /// runs a little slow for a moment) rather than simulate them back-to-back, which would only push the next
+        /// frame further behind. A skipped tick is one an owner's client predicted and the worker never ran, so its
+        /// entity ends that tick's step short of where its owner has it and is corrected (NEB-479). A quarter of a
+        /// second at 60 Hz.
+        /// </summary>
+        public const int MaxLagTicks = 15;
 
         private void FixedUpdate()
         {
             // The tick number comes from the wall clock, not from counting FixedUpdates (see NetworkTime): every
-            // worker agrees on it with no tick master. So this loop simulates exactly the tick numbers that have
-            // elapsed since the last one, at most MaxCatchUpTicks of them. Unity's own catch-up (several
-            // FixedUpdates after a slow frame) then finds nothing left to do instead of simulating one tick number
-            // twice, which used to move every NPC two steps under one label and push two samples with the same
-            // tick to every ghost.
+            // worker agrees on it with no tick master. So this loop simulates the tick numbers that have elapsed
+            // since the last one, never one twice, which used to move every NPC two steps under one label and push
+            // two samples with the same tick to every ghost: at most MaxCatchUpTicks of them now, the rest on the
+            // next FixedUpdates. NEB-479: dropping the rest here skipped a tick on every 50 ms frame: its first
+            // FixedUpdate saw three ticks elapsed, ran two and dropped the third, and the two after it found nothing.
             uint derived = NetworkTime.DerivedTick;
             if (_lastSimulatedTick == 0) { RunTick(derived); return; }
             if (derived <= _lastSimulatedTick) { _profileDuplicateTicks++; return; }
             uint behind = derived - _lastSimulatedTick;
-            if (behind > MaxCatchUpTicks)
+            if (behind > MaxLagTicks)
             {
-                _profileSkippedTicks += (int)(behind - MaxCatchUpTicks);
-                _lastSimulatedTick = derived - MaxCatchUpTicks;
+                _profileSkippedTicks += (int)(behind - MaxLagTicks);
+                _lastSimulatedTick = derived - MaxLagTicks;
             }
-            while (_lastSimulatedTick < derived) RunTick(_lastSimulatedTick + 1);
+            for (int n = 0; n < MaxCatchUpTicks && _lastSimulatedTick < derived; n++) RunTick(_lastSimulatedTick + 1);
         }
 
         private void RunTick(uint tick)
