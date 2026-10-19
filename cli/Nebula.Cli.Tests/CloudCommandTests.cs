@@ -504,6 +504,7 @@ public class CloudCommandTests
         Assert.That(w.Param("role"), Is.EqualTo("worker"));
         Assert.That(w.Param("instance"), Is.EqualTo("w3"));
         Assert.That(worker.Out, Is.EqualTo(""));
+        Assert.That(worker.Err, Does.Contain("w3 has shipped no log lines"), "an instance that sent nothing is reported, not left blank (CLOUD-9)");
     }
 
     // --- scale / rollback / destroy ----------------------------------------------------------------------------------
