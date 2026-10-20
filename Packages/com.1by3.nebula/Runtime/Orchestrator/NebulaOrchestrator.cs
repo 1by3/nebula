@@ -220,6 +220,15 @@ namespace Nebula
         private readonly Dictionary<string, float> _retiring = new Dictionary<string, float>();
         /// <summary>Recently retired ids -> time; their control-plane row may linger for a pass or two and must not be "declared dead".</summary>
         private readonly Dictionary<string, float> _retired = new Dictionary<string, float>();
+        /// <summary>
+        /// Workers the orchestrator has let go of: killed, released to the host, or dropped from the idle pool. Their
+        /// machine is going (or gone), so a process that still runs on it and registers again is not a worker to
+        /// deal containers to, however long ago it was retired (<see cref="_retired"/> forgets after a few seconds).
+        /// Cleared for an id when a new worker is launched under it (ids are reused with the worker index).
+        /// </summary>
+        private readonly HashSet<string> _released = new HashSet<string>(StringComparer.Ordinal);
+        /// <summary>Released ids whose re-registration has been logged, so a worker that keeps coming back is reported once.</summary>
+        private readonly HashSet<string> _releasedWarned = new HashSet<string>(StringComparer.Ordinal);
         private readonly StringBuilder _json = new StringBuilder(8192);
         private Process _gatewayProcess;
         private OrchestratorHttpServer _http;
@@ -594,9 +603,19 @@ namespace Nebula
             return $"http://{host}:{Config.DashboardPort}/api/telemetry";
         }
 
+        /// <summary>Record that a worker's machine has been let go: it is just retired, and it is never dealt anything again under this launch.</summary>
+        private void MarkReleased(string workerId)
+        {
+            _retired[workerId] = Time.unscaledTime;
+            _released.Add(workerId);
+        }
+
         private void LaunchWorker(uint index)
         {
             string id = $"w{index}";
+            // A new machine under a reused id is a different worker from the one that was released.
+            _released.Remove(id);
+            _releasedWarned.Remove(id);
             var existing = _managed.FirstOrDefault(m => m.Index == index);
             if (existing == null)
             {
@@ -637,6 +656,17 @@ namespace Nebula
             // Forget retirements old enough that their control-plane row is certainly gone.
             foreach (var id in _retired.Where(kv => now - kv.Value > 15f).Select(kv => kv.Key).ToList()) _retired.Remove(id);
 
+            // A worker the orchestrator released whose process is still up registers itself again the moment its row
+            // goes. Take the row away and deal it nothing; its machine is being deleted.
+            foreach (var w in ControlPlane.Workers.ToList())
+            {
+                if (!_released.Contains(w.WorkerId)) continue;
+                if (_releasedWarned.Add(w.WorkerId))
+                    Log("warn", $"worker {w.WorkerId} was released but is registered again; refusing it (its machine is going)");
+                ControlPlane.UnregisterWorker(w.WorkerId);
+                Telemetry.Forget(w.WorkerId);
+                Loads.Forget(w.WorkerId);
+            }
             foreach (var w in ControlPlane.Workers.ToList())
             {
                 if (w.Status == WorkerStatus.Dead || _retired.ContainsKey(w.WorkerId)) continue;
@@ -684,7 +714,7 @@ namespace Nebula
             {
                 // The host dropped it (the paid hour ended) or the machine vanished. Nothing was running on it.
                 _managed.Remove(m);
-                _retired[m.Id] = Time.unscaledTime;
+                MarkReleased(m.Id);
                 ControlPlane.UnregisterWorker(m.Id);
                 Loads.Forget(m.Id);
                 Telemetry.Forget(m.Id);
@@ -696,7 +726,7 @@ namespace Nebula
                 // It was on its way out anyway; its leases are orphaned by the unregister and the next pass deals them out.
                 _managed.Remove(m);
                 _retiring.Remove(m.Id);
-                _retired[m.Id] = Time.unscaledTime;
+                MarkReleased(m.Id);
                 Log("info", $"worker {m.Id} retired (process gone)");
             }
             else
@@ -793,6 +823,25 @@ namespace Nebula
             }
         }
 
+        /// <summary>
+        /// Call off every retirement in progress: the workers stay in service and keep their containers. The desired
+        /// count rises to match the workers now in service, so the reconciler does not begin the same retirement
+        /// again on the next pass.
+        /// </summary>
+        private void CancelRetirements(string reason)
+        {
+            foreach (var id in _retiring.Keys.ToList())
+            {
+                _retiring.Remove(id);
+                var m = _managed.FirstOrDefault(x => x.Id == id);
+                if (m != null) m.Retiring = false;
+                Log("warn", $"cancelling the retirement of worker {id}: {reason}; it stays in service");
+            }
+            int inService = _managed.Count(m => !m.Retiring && !m.Parked);
+            if (inService > DesiredWorkers) DesiredWorkers = Math.Min(inService, MaxWorkers);
+            _nextPass = 0f;
+        }
+
         private void BeginRetire(string workerId, string reason)
         {
             if (_retiring.ContainsKey(workerId)) return;
@@ -843,7 +892,7 @@ namespace Nebula
                     // The host let it go; forget it and let the caller launch something instead.
                     Log("info", $"worker {m.Id} is no longer in the idle pool; launching a new worker instead");
                     _managed.Remove(m);
-                    _retired[m.Id] = Time.unscaledTime;
+                    MarkReleased(m.Id);
                     ControlPlane.UnregisterWorker(m.Id);
                     continue;
                 }
@@ -884,7 +933,7 @@ namespace Nebula
             Log("info", $"deleting parked worker {m.Id} ({(m.Handle != null ? m.Handle.Describe : "no instance")}) from the dashboard");
             if (m.Handle != null) _host.Kill(m.Handle);
             _managed.Remove(m);
-            _retired[m.Id] = Time.unscaledTime;
+            MarkReleased(m.Id);
             ControlPlane.UnregisterWorker(m.Id);
             Loads.Forget(m.Id);
             Telemetry.Forget(m.Id);
@@ -926,7 +975,7 @@ namespace Nebula
                     _managed.Remove(m);
                 }
                 _retiring.Remove(id);
-                if (!parked) _retired[id] = now;
+                if (!parked) MarkReleased(id);
             }
         }
 
@@ -1252,7 +1301,7 @@ namespace Nebula
         private void OnRuntimeContainersChanged(Container c) => _geometryDirty = true;
 
         private List<WorkerInfo> LiveWorkers() =>
-            ControlPlane.Workers.Where(w => w.Status != WorkerStatus.Dead && ControlPlane.IsWorkerAlive(w, Config.WorkerTimeoutSeconds)).ToList();
+            ControlPlane.Workers.Where(w => w.Status != WorkerStatus.Dead && !_released.Contains(w.WorkerId) && ControlPlane.IsWorkerAlive(w, Config.WorkerTimeoutSeconds)).ToList();
 
         private void Rebalance()
         {
@@ -1267,6 +1316,14 @@ namespace Nebula
             var parkedIds = new HashSet<string>(_managed.Where(m => m.Parked).Select(m => m.Id), StringComparer.Ordinal);
             var eligible = EligibleWorkers(live, _retiring.Keys, _retired.Keys, parkedIds);
             var ids = ContainerRegistry.All.Select(c => c.ContainerId).ToList();
+            if (eligible.Count == 0 && _retiring.Count > 0 && DesiredWorkers > 0)
+            {
+                // The retirees are the only workers there are, and the mesh still wants workers (one may be launching):
+                // releasing their leases would leave every container ownerless and then kill the machines under them.
+                // Keep them, and say so; a retire is only carried out once someone can take over.
+                CancelRetirements("no eligible worker to take over their containers");
+                return;
+            }
             if (eligible.Count == 0 && _retiring.Count > 0)
             {
                 // Scaling to zero: there is nobody to hand over to, so the leases are released and the retirees drain by timeout.

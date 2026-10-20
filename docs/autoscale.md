@@ -306,3 +306,18 @@ itself, `MinGain`, `MinGainFloor` and `Threshold` are untouched.
 - **Dedicated is per worker, not per size.** An `AffinityGroup` larger than one worker's budget is
   still dealt to one worker and simply runs hot - it is now reported (`SaturationReport`, the
   addendum above) rather than silent, but nothing makes it smaller. Mixed host sizes are unmodelled.
+
+## Addendum (NEB-482, 2026-10-20): never retire the only live worker
+
+Production lost every worker for about three minutes. w1 was the only live worker and w2, launched 77 s
+earlier by a grow, had not joined. The desired count (2) was over `MinWorkers` (1) and the mean was under the
+scale-in line, but the scaler counted live workers only: with one live worker the dry run at N-1 was a plan for
+none, so w1 was picked and retired. With no eligible receiver the orchestrator then released every lease, killed
+w1 after the drain timeout, and w1's process, still up, registered again and was dealt every container.
+
+| Cause | Fix |
+| --- | --- |
+| The shrink counted live workers only | `WorkerScaler` holds the shrink branch ("not shrinking yet: N worker(s) still launching") while the desired count is above the live count, for up to `LaunchGraceSeconds` (180 s, so a launch that never lands cannot hold it for ever). It also refuses to shrink when the live count is at `MinWorkers`. A cold worker still holds it until its window fills |
+| A retire with no receiver released every lease | `Rebalance` cancels the retirements in progress when no worker is eligible and the desired count is above zero: the workers stay, with a warn-level log, and the desired count rises to match. Scale to zero (desired 0) keeps the old behaviour |
+| A released worker came back | The orchestrator remembers a worker whose machine it has let go of until a new worker is launched under that id. It takes the row of such a worker off the control plane when it registers again, and never deals it containers |
+| No cooldown after a grow | The launch hold above is the cooldown: no shrink until the grown worker has joined and filled its window, or the grace passes |
