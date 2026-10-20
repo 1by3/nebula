@@ -82,6 +82,14 @@ public void MapDirect(string method, string path, Func<Request, Response> handle
 
 Answer `method` `path` on the listener thread instead of queueing it for the main thread ([`Pump`](#pump)). For endpoints that are hit often and touch nothing Unity owns, such as worker telemetry and the World map document; `handler` must be thread-safe.
 
+### MapDirectPrefix [#mapdirectprefix]
+
+```csharp
+public void MapDirectPrefix(string prefix, long maxBodyBytes, Func<Request, Response> handler);
+```
+
+Answer every request whose path starts with `prefix` + "/" on the listener thread, with the body as raw bytes (`Request.BodyBytes`) up to `maxBodyBytes` (larger is answered 413) instead of the general limit. For binary endpoints such as the shared cache; `handler` must be thread-safe and must not touch anything Unity owns.
+
 ### Pump [#pump]
 
 ```csharp
@@ -166,6 +174,22 @@ public string Token = "";
 
 Value of the `X-Nebula-Token` header, or "" (the mesh token workers and gateways present).
 
+##### BodyBytes [#bodybytes]
+
+```csharp
+public byte[] BodyBytes;
+```
+
+The raw request body of a request answered by a prefix handler ([`MapDirectPrefix`](#mapdirectprefix)); null for every other request, whose `Body` is text.
+
+##### Checksum [#checksum]
+
+```csharp
+public string Checksum = "";
+```
+
+Value of the `X-Nebula-Checksum` header, or "" (the shared cache's integrity check).
+
 #### Methods
 
 ##### GetQuery [#getquery]
@@ -212,6 +236,22 @@ public string ContentType;
 public string Body;
 ```
 
+##### Bytes [#bytes]
+
+```csharp
+public byte[] Bytes;
+```
+
+When set, sent as the response body instead of `Body`.
+
+##### Checksum [#checksum]
+
+```csharp
+public string Checksum;
+```
+
+Sent as the `X-Nebula-Checksum` header when set.
+
 #### Properties
 
 ##### Pending [#pending]
@@ -229,6 +269,14 @@ public bool IsPending { get; }
 ```
 
 #### Methods
+
+##### Binary [#binary]
+
+```csharp
+public static Response Binary(int status, byte[] bytes, string checksum);
+```
+
+A binary response (`application/octet-stream`) carrying `checksum` in `X-Nebula-Checksum`.
 
 ##### Json [#json]
 

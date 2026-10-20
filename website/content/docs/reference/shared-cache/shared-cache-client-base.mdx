@@ -1,0 +1,112 @@
+---
+title: "SharedCacheClientBase"
+description: "What every client does around a backend call."
+---
+
+<div className="text-sm text-fd-muted-foreground">Abstract class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/SharedCache/SharedCacheClient.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/SharedCache/SharedCacheClient.cs)</div>
+
+```csharp
+public abstract class SharedCacheClientBase : ISharedCacheClient
+```
+
+What every client does around a backend call. Both calls do their work on the thread pool, so the task completes off the Unity main thread and the call returns before any disk or network work starts. A client lets at most `maxConcurrent` calls run at once (the rest wait), gives each call [`Timeout`](#timeout) to finish, backs off for a few seconds after a failure so a stopped orchestrator does not make every call wait out its timeout, and writes one log line per call.
+
+## Constructors
+
+### SharedCacheClientBase [#sharedcacheclientbase]
+
+```csharp
+protected SharedCacheClientBase(int maxObjectBytes, int maxConcurrent);
+```
+
+## Fields
+
+### DefaultTimeoutSeconds [#defaulttimeoutseconds]
+
+```csharp
+public const float DefaultTimeoutSeconds = 30f;
+```
+
+Seconds a call may run once it has started.
+
+### FailureBackoffSeconds [#failurebackoffseconds]
+
+```csharp
+public const float FailureBackoffSeconds = 5f;
+```
+
+Seconds after a failed call during which calls are answered as errors at once.
+
+### DefaultMaxConcurrent [#defaultmaxconcurrent]
+
+```csharp
+public const int DefaultMaxConcurrent = 4;
+```
+
+Calls a client runs at the same time, by default.
+
+## Properties
+
+### MaxObjectBytes [#maxobjectbytes]
+
+```csharp
+public int MaxObjectBytes { get; }
+```
+
+Largest object this client reads or writes, in bytes.
+
+### Timeout [#timeout]
+
+```csharp
+public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(DefaultTimeoutSeconds);
+```
+
+Longest a call may run once it has started.
+
+### Backend [#backend]
+
+```csharp
+public abstract string Backend { get; }
+```
+
+### Stats [#stats]
+
+```csharp
+public SharedCacheStats Stats { get; }
+```
+
+## Methods
+
+### GetCoreAsync [#getcoreasync]
+
+```csharp
+protected abstract Task<byte[]> GetCoreAsync(string key, CancellationToken ct);
+```
+
+Read the object. Null for a miss; throw for a failure. Runs on the thread pool, inside the concurrency limit.
+
+### PutCoreAsync [#putcoreasync]
+
+```csharp
+protected abstract Task<bool> PutCoreAsync(string key, byte[] bytes, string checksum, CancellationToken ct);
+```
+
+Store the object. True when it was written, false when the key was already stored; throw for a failure.
+
+### TryGetAsync [#trygetasync]
+
+```csharp
+public Task<byte[]> TryGetAsync(string key, CancellationToken ct = default);
+```
+
+### PutAsync [#putasync]
+
+```csharp
+public Task PutAsync(string key, byte[] bytes, CancellationToken ct = default);
+```
+
+### Dispose [#dispose]
+
+```csharp
+public virtual void Dispose();
+```

@@ -20,6 +20,10 @@ namespace Nebula
         public sealed class Request
         {
             public string Method, Path, Body;
+            /// <summary>The raw request body of a request answered by a prefix handler (<see cref="MapDirectPrefix"/>); null for every other request, whose <see cref="Body"/> is text.</summary>
+            public byte[] BodyBytes;
+            /// <summary>Value of the <c>X-Nebula-Checksum</c> header, or "" (the shared cache's integrity check).</summary>
+            public string Checksum = "";
             /// <summary>The query string without its leading '?' ("" when there is none).</summary>
             public string Query = "";
             /// <summary>Value of the <c>X-Nebula-Token</c> header, or "" (the mesh token workers and gateways present).</summary>
@@ -34,6 +38,12 @@ namespace Nebula
         {
             public int Status;
             public string ContentType, Body;
+            /// <summary>When set, sent as the response body instead of <see cref="Body"/>.</summary>
+            public byte[] Bytes;
+            /// <summary>Sent as the <c>X-Nebula-Checksum</c> header when set.</summary>
+            public string Checksum;
+            /// <summary>A binary response (<c>application/octet-stream</c>) carrying <paramref name="checksum"/> in <c>X-Nebula-Checksum</c>.</summary>
+            public static Response Binary(int status, byte[] bytes, string checksum) => new Response { Status = status, ContentType = "application/octet-stream", Bytes = bytes, Checksum = checksum };
             public static Response Json(int status, string body) => new Response { Status = status, ContentType = "application/json", Body = body };
             public static Response Error(int status, string message) => Json(status, $"{{\"ok\":false,\"error\":{JsonWriter.Quote(message)}}}");
             /// <summary>Returned by a pumped handler that answers later through <see cref="Request.Complete"/> (a store lookup that lands on the next tick).</summary>
@@ -57,6 +67,8 @@ namespace Nebula
         public string Url { get; }
         private readonly ConcurrentDictionary<string, string> pages = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, Func<Request, Response>> direct = new(StringComparer.Ordinal);
+        private sealed record PrefixRoute(string Prefix, long MaxBodyBytes, Func<Request, Response> Handler);
+        private readonly ConcurrentDictionary<string, PrefixRoute> prefixes = new(StringComparer.Ordinal);
         private readonly ConcurrentQueue<Request> commands = new();
         private readonly string artifactDir;
         private readonly WebApplication app;
@@ -88,6 +100,24 @@ namespace Nebula
             string key = method + " " + path.TrimEnd('/');
             if (handler == null) direct.TryRemove(key, out _); else direct[key] = handler;
         }
+        /// <summary>
+        /// Answer every request whose path starts with <paramref name="prefix"/> + "/" on the server's own thread, with
+        /// the body as raw bytes (<see cref="Request.BodyBytes"/>) up to <paramref name="maxBodyBytes"/> (larger is
+        /// answered 413) instead of the general limit. For binary endpoints such as the shared cache;
+        /// <paramref name="handler"/> must be thread-safe.
+        /// </summary>
+        public void MapDirectPrefix(string prefix, long maxBodyBytes, Func<Request, Response> handler)
+        {
+            prefix = prefix.TrimEnd('/');
+            if (handler == null) prefixes.TryRemove(prefix, out _);
+            else prefixes[prefix] = new PrefixRoute(prefix, maxBodyBytes, handler);
+        }
+        private PrefixRoute FindPrefix(string path)
+        {
+            foreach (var route in prefixes.Values)
+                if (path.StartsWith(route.Prefix + "/", StringComparison.Ordinal)) return route;
+            return null;
+        }
         public void Pump(Func<Request, Response> handler)
         {
             while (commands.TryDequeue(out var req))
@@ -107,8 +137,17 @@ namespace Nebula
             Response response;
             try
             {
+                var route = FindPrefix(path);
+                long bodyLimit = route?.MaxBodyBytes ?? MaxBodyBytes;
+                if (route != null && context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } sizeFeature) sizeFeature.MaxRequestBodySize = bodyLimit;
                 if (stopping) response = Response.Error(503, "orchestrator shutting down");
-                else if (req.ContentLength > MaxBodyBytes) response = Response.Error(413, "request body too large");
+                else if (req.ContentLength > bodyLimit) response = Response.Error(413, "request body too large");
+                else if (route != null)
+                {
+                    using var buffer = new MemoryStream();
+                    await req.Body.CopyToAsync(buffer, context.RequestAborted);
+                    response = route.Handler(new Request { Method = req.Method, Path = path, Body = "", BodyBytes = buffer.ToArray(), Query = req.QueryString.HasValue ? req.QueryString.Value.TrimStart('?') : "", Token = req.Headers["X-Nebula-Token"].ToString(), Checksum = req.Headers["X-Nebula-Checksum"].ToString() });
+                }
                 else if (req.Method == "GET" && pages.TryGetValue(trimmed, out var page)) response = new Response { Status = 200, ContentType = "text/html; charset=utf-8", Body = page };
                 else if (req.Method == "GET" && trimmed == "/api/state") response = Response.Json(200, state);
                 else if (req.Method == "GET" && path.StartsWith("/build/", StringComparison.Ordinal))
@@ -149,7 +188,9 @@ namespace Nebula
             context.Response.StatusCode = response.Status;
             context.Response.ContentType = response.ContentType;
             context.Response.Headers.CacheControl = "no-store";
-            await context.Response.WriteAsync(response.Body ?? "", context.RequestAborted);
+            if (!string.IsNullOrEmpty(response.Checksum)) context.Response.Headers["X-Nebula-Checksum"] = response.Checksum;
+            if (response.Bytes != null) await context.Response.Body.WriteAsync(response.Bytes, context.RequestAborted);
+            else await context.Response.WriteAsync(response.Body ?? "", context.RequestAborted);
         }
         public void Dispose()
         {

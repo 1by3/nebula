@@ -1,0 +1,4 @@
+{
+  "title": "SharedCache",
+  "pages": ["folder-shared-cache-store", "i-shared-cache-client", "i-shared-cache-store", "local-shared-cache-client", "memory-shared-cache-store", "nebula-shared-cache", "remote-shared-cache-client", "shared-cache-client-base", "shared-cache-host", "shared-cache-key", "shared-cache-stats"]
+}

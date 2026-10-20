@@ -193,6 +193,16 @@ namespace Nebula
 
         private PersistenceHost _storeHost;
 
+        /// <summary>
+        /// The mesh's shared cache store (<see cref="NebulaSharedCache"/>), served to workers at <c>/cache/{key}</c>
+        /// (<see cref="SharedCacheHost"/>) and cleared from the dashboard (<c>POST /api/cache/clear</c>). Set by the
+        /// bootstrap before <see cref="Initialize"/>; null when the shared cache is off. The caller owns the store.
+        /// Separate from <see cref="Persistence"/>: clearing persistence leaves it alone.
+        /// </summary>
+        public ISharedCacheStore SharedCache { get; set; }
+
+        private SharedCacheHost _cacheHost;
+
         private readonly List<ManagedWorker> _managed = new List<ManagedWorker>();
         private readonly List<string> _log = new List<string>();
         /// <summary>
@@ -347,6 +357,14 @@ namespace Nebula
                 // The control plane this orchestrator hosts: reads are served on the listener thread, writes come
                 // through the command pump (HandleCommand) so they land on the main thread.
                 if (ControlPlane is ControlPlaneHost host) host.Attach(_http);
+                if (SharedCache != null)
+                {
+                    // Binary objects, up to the configured size, answered on the listener thread: a worker filling a
+                    // cold cache never waits for (or delays) the orchestrator's main thread.
+                    _cacheHost = new SharedCacheHost(SharedCache, Config.MeshToken, Config.SharedCacheMaxObjectBytes, Config.SharedCacheHostConcurrency, Config.SharedCacheExpiryDays);
+                    _http.MapDirectPrefix(SharedCacheHost.Prefix, _cacheHost.MaxObjectBytes, req => _cacheHost.TryHandle(req, out var answer) ? answer : OrchestratorHttpServer.Response.Error(404, "not found"));
+                    Log("info", $"shared cache: {SharedCache.Backend}, objects up to {_cacheHost.MaxObjectBytes} bytes, {(_cacheHost.ExpiryDays > 0 ? $"unread keys expire after {_cacheHost.ExpiryDays} day(s)" : "keys never expire")}");
+                }
                 _http.Start();
                 Log("info", $"dashboard at {_http.Url} (bind {bind}); World map at {_http.Url}map; workers post telemetry to {TelemetryUrl()}; artifacts from {artifacts ?? "(none)"}");
                 if (ControlPlane is ControlPlaneHost h) Log("info", $"control plane hosted at {ControlPlaneUrl()} (stored in {h.StorageBackend}{(h.HasToken ? ", token required" : "")})");
@@ -370,6 +388,7 @@ namespace Nebula
         {
             // Dashboard commands run here so every mutation happens on the main thread; the response waits for us.
             _http?.Pump(HandleCommand);
+            _cacheHost?.Tick(Time.unscaledTime);
             _host.Tick();
             if (!ReferenceEquals(_host, _local)) _local.Tick();
 
@@ -1603,6 +1622,13 @@ namespace Nebula
                 case "/api/rebalance":
                     RequestRebalance();
                     break;
+                case "/api/cache/clear":
+                {
+                    if (_cacheHost == null) return OrchestratorHttpServer.Response.Error(409, "the shared cache is off");
+                    int removed = _cacheHost.Clear();
+                    Log("warn", $"shared cache cleared from the dashboard: {removed} cached object(s) removed");
+                    break;
+                }
                 case "/api/persistence/clear":
                 {
                     if (Persistence == null) return OrchestratorHttpServer.Response.Error(409, "persistence is off");

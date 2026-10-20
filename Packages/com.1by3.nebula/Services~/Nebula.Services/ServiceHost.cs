@@ -34,6 +34,7 @@ namespace Nebula
             GatewayExtensionHost extension = null;
             IControlPlane control = null;
             IPersistenceStore persistence = null;
+            ISharedCacheStore sharedCache = null;
             NebulaDatabase database = null;
             GatewayHttpServer web = null;
             StreamWriter log = null;
@@ -80,7 +81,13 @@ namespace Nebula
                         NebulaLog.Warn("persistence: -nebula-reset-persistence: deleting every saved entity");
                         persistence.Clear();
                     }
-                    orchestrator = new NebulaOrchestrator { Persistence = persistence };
+                    sharedCache = CreateSharedCache(config, url, database);
+                    if (sharedCache != null && CommandLine.GetBool("nebula-reset-shared-cache", false))
+                    {
+                        NebulaLog.Warn("shared cache: -nebula-reset-shared-cache: deleting every cached object");
+                        sharedCache.Clear();
+                    }
+                    orchestrator = new NebulaOrchestrator { Persistence = persistence, SharedCache = sharedCache };
                     orchestrator.Initialize(config, control);
                 }
                 else if (role == "gateway")
@@ -132,7 +139,7 @@ namespace Nebula
             catch (Exception e) { NebulaLog.Error(e.ToString()); return 1; }
             finally
             {
-                try { web?.Dispose(); extension?.Dispose(); gateway?.Dispose(); orchestrator?.Dispose(); persistence?.Dispose(); control?.Dispose(); database?.Dispose(); }
+                try { web?.Dispose(); extension?.Dispose(); gateway?.Dispose(); orchestrator?.Dispose(); persistence?.Dispose(); sharedCache?.Dispose(); control?.Dispose(); database?.Dispose(); }
                 finally { Console.CancelKeyPress -= cancel; Console.SetOut(originalOut); Console.SetError(originalError); log?.Dispose(); }
             }
         }
@@ -175,6 +182,10 @@ namespace Nebula
             c.CapacitySaturation = CommandLine.GetFloat("nebula-capacity-saturation", c.CapacitySaturation);
             c.PersistenceMode = CommandLine.Get("nebula-persistence-mode", c.PersistenceMode);
             c.PersistenceLocalFile = CommandLine.Get("nebula-persistence-file", c.PersistenceLocalFile);
+            c.SharedCacheMode = CommandLine.Get("nebula-shared-cache-mode", c.SharedCacheMode);
+            c.SharedCacheLocalFolder = CommandLine.Get("nebula-shared-cache-folder", c.SharedCacheLocalFolder);
+            c.SharedCacheMaxObjectBytes = CommandLine.GetInt("nebula-shared-cache-max-bytes", c.SharedCacheMaxObjectBytes);
+            c.SharedCacheExpiryDays = CommandLine.GetInt("nebula-shared-cache-expiry-days", c.SharedCacheExpiryDays);
             c.GatewayExtension = CommandLine.Get("nebula-gateway-extension", c.GatewayExtension);
             c.GatewayExtensionType = CommandLine.Get("nebula-gateway-extension-type", c.GatewayExtensionType);
             c.GatewayExtensionOptions = CommandLine.Get("nebula-gateway-extension-options", c.GatewayExtensionOptions);
@@ -228,6 +239,30 @@ namespace Nebula
                 },
                 "remote" => throw new ArgumentException("The orchestrator owns the store; 'remote' is for workers"),
                 _ => throw new ArgumentException("Unknown persistence mode: " + mode)
+            };
+        }
+        /// <summary>
+        /// The shared cache the orchestrator serves to workers, from <c>-nebula-shared-cache-mode</c>: <c>auto</c> and
+        /// <c>database</c> use the orchestrator's database (a folder next to it for <c>file:</c>), <c>local</c> a folder, <c>memory</c> memory.
+        /// It is a separate table or folder from persistence, so clearing persistence does not clear it.
+        /// </summary>
+        private static ISharedCacheStore CreateSharedCache(NebulaConfig c, DatabaseUrl url, NebulaDatabase database)
+        {
+            string mode = (c.SharedCacheMode ?? "auto").ToLowerInvariant();
+            if (mode == "auto" || mode == "") mode = c.UseLocalControlPlane ? "local" : "database";
+            return mode switch
+            {
+                "off" or "none" => null,
+                "memory" => new MemorySharedCacheStore(),
+                "local" or "folder" => new FolderSharedCacheStore(string.IsNullOrEmpty(c.SharedCacheLocalFolder) ? Path.Combine(AppContext.BaseDirectory, "nebula-shared-cache") : c.SharedCacheLocalFolder),
+                "database" => url.Scheme switch
+                {
+                    "memory" => new MemorySharedCacheStore(),
+                    "file" => new FolderSharedCacheStore(Path.Combine(url.Target, "shared-cache")),
+                    _ => new SqlSharedCacheStore(database),
+                },
+                "remote" => throw new ArgumentException("The orchestrator owns the shared cache; 'remote' is for workers"),
+                _ => throw new ArgumentException("Unknown shared cache mode: " + mode)
             };
         }
         private static IControlPlaneStorage CreateControlPlaneStorage(DatabaseUrl url, NebulaDatabase database)

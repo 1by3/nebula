@@ -482,6 +482,7 @@ Keep the control plane and saved entities in SQLite or PostgreSQL from the stand
 | [NebulaDatabase](/docs/reference/storage/nebula-database) | Class. The standalone orchestrator's database: SQLite (a file next to the orchestrator, the default for a local mesh) or PostgreSQL (for a deployed mesh), behind one ADO.NET surface. |
 | [SqlControlPlaneStorage](/docs/reference/storage/sql-control-plane-storage) | Class. IControlPlaneStorage in the orchestrator's database: the document sits in the single row of nebula\_control\_plane, replaced on every save. |
 | [SqlPersistenceStore](/docs/reference/storage/sql-persistence-store) | Class. IPersistenceStore in the orchestrator's database (NebulaDatabase: SQLite or PostgreSQL), table nebula\_entity. |
+| [SqlSharedCacheStore](/docs/reference/storage/sql-shared-cache-store) | Class. ISharedCacheStore in the orchestrator's database (NebulaDatabase: SQLite or PostgreSQL), table shared\_cache. |
 
 ## Interest
 
@@ -536,4 +537,20 @@ Keep the control plane and saved entities in SQLite or PostgreSQL from the stand
 | [PersistentEntity](/docs/reference/persistence/persistent-entity) | Class. Put this on a prefab or a scene object to make the entity outlive the process that simulates it. |
 | [PersistentStateCodec](/docs/reference/persistence/persistent-state-codec) | Static class. The state blob of a PersistedEntityRecord: every PersistAttribute NetworkVariable and every behaviour's NetworkBehaviour.WritePersistentState chunk, each under a name. |
 | [RemotePersistenceStore](/docs/reference/persistence/remote-persistence-store) | Class. IPersistenceStore for a worker: every save and load goes to the orchestrator, which owns the real store (PersistenceHost over the dashboard address, the same one the control plane uses). |
+
+## SharedCache
+
+| Type | Summary |
+| --- | --- |
+| [FolderSharedCacheStore](/docs/reference/shared-cache/folder-shared-cache-store) | Class. ISharedCacheStore in a folder, one file per object. |
+| [ISharedCacheClient](/docs/reference/shared-cache/i-shared-cache-client) | Interface. A worker's way to the shared cache. |
+| [ISharedCacheStore](/docs/reference/shared-cache/i-shared-cache-store) | Interface. Where the shared cache keeps its objects: a folder (FolderSharedCacheStore), the orchestrator's database (SqlSharedCacheStore in the standalone orchestrator), or memory (MemorySharedCacheStore). |
+| [LocalSharedCacheClient](/docs/reference/shared-cache/local-shared-cache-client) | Class. ISharedCacheClient over a store in this process: a folder under the project or the persistent data path, or the store an orchestrator in the same process hosts. |
+| [MemorySharedCacheStore](/docs/reference/shared-cache/memory-shared-cache-store) | Class. ISharedCacheStore in memory: nothing survives the process. |
+| [NebulaSharedCache](/docs/reference/shared-cache/nebula-shared-cache) | Static class. A cache that every worker of a mesh shares, for data that is expensive to compute and the same every time: baked terrain, path data, generated layouts. |
+| [RemoteSharedCacheClient](/docs/reference/shared-cache/remote-shared-cache-client) | Class. ISharedCacheClient for a worker of a mesh or of Nebula Cloud: GET and PUT /cache/\{key\} on the orchestrator (SharedCacheHost), over the same address and mesh token that RemotePersistenceStore uses. |
+| [SharedCacheClientBase](/docs/reference/shared-cache/shared-cache-client-base) | Abstract class. What every client does around a backend call. |
+| [SharedCacheHost](/docs/reference/shared-cache/shared-cache-host) | Class. Serves the orchestrator's ISharedCacheStore to workers (RemoteSharedCacheClient) over the orchestrator's HTTP server, beside PersistenceHost: GET /cache/\{key\}: the object as application/octet-stream with its SHA-256 in X-Nebula-Checksum;... |
+| [SharedCacheKey](/docs/reference/shared-cache/shared-cache-key) | Static class. The rules every part of the shared cache applies to a key and to a stored object: the longest key and object, which characters a key may use, and how an object's checksum is written. |
+| [SharedCacheStats](/docs/reference/shared-cache/shared-cache-stats) | Struct. What a process has done with the shared cache since it started. |
 

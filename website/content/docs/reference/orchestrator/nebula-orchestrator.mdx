@@ -165,6 +165,14 @@ public IPersistenceStore Persistence { get; set; }
 
 The mesh's persistence store, so the dashboard can report how many entities are saved and wipe them (`POST /api/persistence/clear`). Set by [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) before [`Initialize`](#initialize); null when persistence is off. The orchestrator never writes records itself.
 
+### SharedCache [#sharedcache]
+
+```csharp
+public ISharedCacheStore SharedCache { get; set; }
+```
+
+The mesh's shared cache store ([`NebulaSharedCache`](/docs/reference/shared-cache/nebula-shared-cache)), served to workers at `/cache/{key}` ([`SharedCacheHost`](/docs/reference/shared-cache/shared-cache-host)) and cleared from the dashboard (`POST /api/cache/clear`). Set by the bootstrap before [`Initialize`](#initialize); null when the shared cache is off. The caller owns the store. Separate from [`Persistence`](#persistence): clearing persistence leaves it alone.
+
 ### HostName [#hostname]
 
 ```csharp

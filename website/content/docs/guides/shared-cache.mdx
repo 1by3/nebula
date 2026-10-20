@@ -1,0 +1,98 @@
+---
+title: Share expensive derived data between workers
+description: Store baked or generated data once in the shared cache so that every worker, including a replacement worker, reads it instead of computing it again.
+---
+
+Use the **shared cache** for data that is expensive to compute, the same every time, and needed by more than one worker. Examples are baked terrain, path data, and procedural layouts. A worker looks the data up by key. On a miss, it computes the data and stores it, and every later worker reads the stored copy.
+
+A worker's local disk does not help here. Workers are replaced by the orchestrator, and a replacement starts with an empty disk. The shared cache sits with the orchestrator, so it outlives any one worker.
+
+The shared cache is a separate store from [persistence](/docs/guides/persistence). It holds derived data you can always recompute, not game state. Clearing persistence does not clear it.
+
+## Use the cache from a worker
+
+Call [`NebulaSharedCache`](/docs/reference/shared-cache/nebula-shared-cache) from any thread. Both calls return a `Task` at once and do their work on the thread pool, so they never block a tick and need no pump on the main thread.
+
+```csharp title="TerrainBaker.cs"
+using System.Threading;
+using System.Threading.Tasks;
+using Nebula;
+
+public static class TerrainBaker
+{
+    // "terrain.v3." names the format. The hash names the exact inputs.
+    static string KeyFor(string inputHash) => "terrain.v3." + inputHash;
+
+    public static async Task<byte[]> GetOrBakeAsync(string inputHash, CancellationToken ct)
+    {
+        string key = KeyFor(inputHash);
+
+        byte[] cached = await NebulaSharedCache.TryGetAsync(key, ct);
+        if (cached != null) return cached;
+
+        byte[] baked = await Task.Run(() => Bake(inputHash), ct); // 20 seconds of CPU
+        _ = NebulaSharedCache.PutAsync(key, baked);               // best effort
+        return baked;
+    }
+
+    static byte[] Bake(string inputHash) => /* your expensive computation */ new byte[0];
+}
+```
+
+- `TryGetAsync(key, ct)` returns the stored bytes, or `null` on a miss. It also returns `null` when the cache is off, the orchestrator cannot be reached, the request times out, or `ct` is cancelled. Always be ready to compute the data yourself.
+- `PutAsync(key, bytes, ct)` stores the bytes unless the key is already stored. It does not throw when the store is unavailable: the data is dropped and the next worker computes it. Do not change `bytes` until the task completes.
+- Check `NebulaSharedCache.IsAvailable` to find out whether this process has a cache at all.
+
+## Write-once keys
+
+The cache is **content-addressed** and **write-once**. You choose the key, and one key must always mean the same bytes. Build it from a name and a hash of every input that affects the result, such as `terrain.v3.<hash of seed and settings>`.
+
+- Storing a key that is already stored does nothing and succeeds. The first object stays.
+- Two workers that store the same key at the same time both succeed. One of them writes the object.
+- To change what a key stands for, change the key. Put a version in it and raise the version when your format or algorithm changes.
+
+A key has 1 to 200 characters from `A-Z`, `a-z`, `0-9`, `.`, `_`, `-`, and `:`, and starts with a letter or digit. Another key is logged and treated as a miss.
+
+## Where the data is stored
+
+Nebula picks the store from how the process runs. Set `NebulaConfig.SharedCacheMode`, or pass `-nebula-shared-cache-mode`, to change it.
+
+| Run mode | Where objects live |
+| --- | --- |
+| The Unity Editor, including Multiplayer Play Mode | A folder in the project, `Library/Nebula/SharedCache`. |
+| A single-process run | A folder named `nebula-shared-cache` in the persistent data path. |
+| A mesh started with `nebula start`, and Nebula Cloud | The orchestrator stores them in its database, in the `shared_cache` table, and workers reach them over HTTP. |
+
+`SharedCacheMode` accepts `auto` (the default), `local`, `remote`, `database`, `memory`, and `off`. Set `SharedCacheLocalFolder` or `-nebula-shared-cache-folder` to use another folder for the local store.
+
+In a mesh, workers call `GET /cache/{key}` and `PUT /cache/{key}` on the orchestrator's dashboard address. The body is the raw object. Each side checks it against a SHA-256 checksum in the `X-Nebula-Checksum` header, and an object that fails the check is a miss on a read and a refused write. The endpoints use the same mesh token as the persistence endpoints.
+
+## Limits
+
+| Limit | Default | How to change it |
+| --- | --- | --- |
+| Largest object | 32 MiB | `SharedCacheMaxObjectBytes`, or `-nebula-shared-cache-max-bytes`. Use the same value on the orchestrator and on every worker. The orchestrator answers a larger object with HTTP 413. |
+| Requests one worker has in flight | 4 | `SharedCacheClientConcurrency`. More requests wait for a free slot. |
+| Requests the orchestrator serves at once | 8 | `SharedCacheHostConcurrency`. More requests get HTTP 503, which a worker treats as a miss. |
+| Time a key may go unread before it is removed | 30 days | `SharedCacheExpiryDays`, or `-nebula-shared-cache-expiry-days`. `0` keeps every key. |
+| Time one request may take | 30 seconds | `SharedCacheClientBase.Timeout`. |
+
+The orchestrator answers cache requests on its web server's own threads, not on its main thread. A group of cold workers that all fill the cache at once cannot hold up the control plane, and the request cap keeps them from using all of the server's threads.
+
+The orchestrator removes keys that nobody has read for the expiry time once an hour. A read refreshes a key's last-read time only when it is more than a day old, so a busy key costs no database writes. After a failed request, a worker answers calls from the same process as misses for a few seconds instead of waiting for the next timeout.
+
+## Clear the cache
+
+Clearing persistence does not clear the cache. To clear the cache on its own:
+
+- Send `POST /api/cache/clear` to the orchestrator's dashboard address.
+- Start the orchestrator with `-nebula-reset-shared-cache true` to clear it at startup.
+- In the Editor, delete the `Library/Nebula/SharedCache` folder. **Reset Dev Saves** leaves it in place.
+
+## Watch what the cache does
+
+Each call writes one log line with the key, whether it was a hit or a miss, the size in bytes, and the time in milliseconds. `NebulaSharedCache.Stats` returns a [`SharedCacheStats`](/docs/reference/shared-cache/shared-cache-stats) with counts of hits, misses, errors, puts, and bytes. The orchestrator keeps the same counters in `SharedCacheHost.Stats`.
+
+## Supply your own client
+
+To use another store, such as an object storage service, implement [`ISharedCacheClient`](/docs/reference/shared-cache/i-shared-cache-client) and pass it to `NebulaSharedCache.Install`. Nebula installs its own client at startup, so install yours after the bootstrap has started.

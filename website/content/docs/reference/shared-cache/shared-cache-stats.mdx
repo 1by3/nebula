@@ -1,0 +1,86 @@
+---
+title: "SharedCacheStats"
+description: "What a process has done with the shared cache since it started."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/SharedCache/SharedCacheClient.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/SharedCache/SharedCacheClient.cs)</div>
+
+```csharp
+public readonly struct SharedCacheStats
+```
+
+What a process has done with the shared cache since it started. Read it from [`NebulaSharedCache.Stats`](/docs/reference/shared-cache/nebula-shared-cache#stats) on a worker, or from [`SharedCacheHost.Stats`](/docs/reference/shared-cache/shared-cache-host#stats) on the orchestrator.
+
+## Constructors
+
+### SharedCacheStats [#sharedcachestats]
+
+```csharp
+public SharedCacheStats(long hits, long misses, long errors, long puts, long putsExisting, long bytesRead, long bytesWritten);
+```
+
+## Fields
+
+### Hits [#hits]
+
+```csharp
+public readonly long Hits;
+```
+
+Reads that found an object.
+
+### Misses [#misses]
+
+```csharp
+public readonly long Misses;
+```
+
+Reads that found nothing.
+
+### Errors [#errors]
+
+```csharp
+public readonly long Errors;
+```
+
+Reads and writes that failed: the backend or the network was unavailable, timed out, or answered with something unusable.
+
+### Puts [#puts]
+
+```csharp
+public readonly long Puts;
+```
+
+Writes that stored a new object.
+
+### PutsExisting [#putsexisting]
+
+```csharp
+public readonly long PutsExisting;
+```
+
+Writes that found the key already stored.
+
+### BytesRead [#bytesread]
+
+```csharp
+public readonly long BytesRead;
+```
+
+Bytes returned by hits.
+
+### BytesWritten [#byteswritten]
+
+```csharp
+public readonly long BytesWritten;
+```
+
+Bytes of the objects that writes stored.
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

@@ -1,0 +1,82 @@
+---
+title: "FolderSharedCacheStore"
+description: "ISharedCacheStore in a folder, one file per object."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/SharedCache/FolderSharedCacheStore.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/SharedCache/FolderSharedCacheStore.cs)</div>
+
+```csharp
+public sealed class FolderSharedCacheStore : ISharedCacheStore
+```
+
+[`ISharedCacheStore`](/docs/reference/shared-cache/i-shared-cache-store) in a folder, one file per object. Used when the process is its own cache: the Editor (including Multiplayer Play Mode), a single-process run, and an orchestrator that keeps its data in files.
+
+A file is named after the hash of its key, so any valid key is a safe file name on every platform and keys that differ only by letter case do not collide. It holds the key, the checksum and the bytes. An object is written to a temporary file in the same folder and then moved into place, so a reader never sees a half-written file and two processes that write the same key at once both succeed. The file's last-write time is the entry's last-read time: nothing else rewrites a finished file.
+
+## Constructors
+
+### FolderSharedCacheStore [#foldersharedcachestore]
+
+```csharp
+public FolderSharedCacheStore(string folder);
+```
+
+## Properties
+
+### Backend [#backend]
+
+```csharp
+public string Backend { get; }
+```
+
+### Folder [#folder]
+
+```csharp
+public string Folder { get; }
+```
+
+The folder the store writes to.
+
+## Methods
+
+### TryGet [#tryget]
+
+```csharp
+public bool TryGet(string key, out byte[] bytes, out string checksum);
+```
+
+### Put [#put]
+
+```csharp
+public bool Put(string key, byte[] bytes, string checksum);
+```
+
+### RemoveUnreadSince [#removeunreadsince]
+
+```csharp
+public int RemoveUnreadSince(DateTime cutoffUtc);
+```
+
+### Clear [#clear]
+
+```csharp
+public int Clear();
+```
+
+### Count [#count]
+
+```csharp
+public long Count();
+```
+
+### TotalBytes [#totalbytes]
+
+```csharp
+public long TotalBytes();
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```

@@ -27,6 +27,10 @@ namespace Nebula
             public string Query = "";
             /// <summary>Value of the <c>X-Nebula-Token</c> header, or "" (the mesh token workers and gateways present).</summary>
             public string Token = "";
+            /// <summary>The raw request body of a request answered by a prefix handler (<see cref="MapDirectPrefix"/>); null for every other request, whose <see cref="Body"/> is text.</summary>
+            public byte[] BodyBytes;
+            /// <summary>Value of the <c>X-Nebula-Checksum</c> header, or "" (the shared cache's integrity check).</summary>
+            public string Checksum = "";
             internal Response Result;
             internal readonly ManualResetEventSlim Done = new ManualResetEventSlim(false);
 
@@ -47,7 +51,13 @@ namespace Nebula
             public int Status;
             public string ContentType;
             public string Body;
+            /// <summary>When set, sent as the response body instead of <see cref="Body"/>.</summary>
+            public byte[] Bytes;
+            /// <summary>Sent as the <c>X-Nebula-Checksum</c> header when set.</summary>
+            public string Checksum;
 
+            /// <summary>A binary response (<c>application/octet-stream</c>) carrying <paramref name="checksum"/> in <c>X-Nebula-Checksum</c>.</summary>
+            public static Response Binary(int status, byte[] bytes, string checksum) => new Response { Status = status, ContentType = "application/octet-stream", Bytes = bytes, Checksum = checksum };
             public static Response Json(int status, string body) => new Response { Status = status, ContentType = "application/json", Body = body };
             public static Response Error(int status, string message) => Json(status, $"{{\"ok\":false,\"error\":{JsonWriter.Quote(message)}}}");
             /// <summary>Returned by a pumped handler that answers later through <see cref="Request.Complete"/> (a store lookup that lands on the next tick).</summary>
@@ -79,6 +89,14 @@ namespace Nebula
         private readonly HttpListener _listener = new HttpListener();
         private readonly ConcurrentDictionary<string, string> _pages = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, Func<Request, Response>> _direct = new ConcurrentDictionary<string, Func<Request, Response>>(StringComparer.Ordinal);
+        private sealed class PrefixRoute
+        {
+            public string Prefix;
+            public long MaxBodyBytes;
+            public Func<Request, Response> Handler;
+        }
+
+        private readonly ConcurrentDictionary<string, PrefixRoute> _prefixes = new ConcurrentDictionary<string, PrefixRoute>(StringComparer.Ordinal);
         private readonly ConcurrentQueue<Request> _commands = new ConcurrentQueue<Request>();
         private readonly string _artifactDir;
         private volatile string _state = "{}";
@@ -136,6 +154,42 @@ namespace Nebula
             else _direct[key] = handler;
         }
 
+        /// <summary>
+        /// Answer every request whose path starts with <paramref name="prefix"/> + "/" on the listener thread, with the
+        /// body as raw bytes (<see cref="Request.BodyBytes"/>) up to <paramref name="maxBodyBytes"/> (larger is answered
+        /// 413) instead of the general limit. For binary endpoints such as the shared cache; <paramref name="handler"/>
+        /// must be thread-safe and must not touch anything Unity owns.
+        /// </summary>
+        public void MapDirectPrefix(string prefix, long maxBodyBytes, Func<Request, Response> handler)
+        {
+            prefix = prefix.TrimEnd('/');
+            if (handler == null) _prefixes.TryRemove(prefix, out _);
+            else _prefixes[prefix] = new PrefixRoute { Prefix = prefix, MaxBodyBytes = maxBodyBytes, Handler = handler };
+        }
+
+        private PrefixRoute FindPrefix(string path)
+        {
+            foreach (var route in _prefixes.Values)
+                if (path.StartsWith(route.Prefix + "/", StringComparison.Ordinal)) return route;
+            return null;
+        }
+
+        /// <summary>The request body, or null when it is longer than <paramref name="limit"/> bytes.</summary>
+        private static byte[] ReadBounded(Stream input, long limit)
+        {
+            using (var buffer = new MemoryStream())
+            {
+                var chunk = new byte[1 << 16];
+                int read;
+                while ((read = input.Read(chunk, 0, chunk.Length)) > 0)
+                {
+                    if (buffer.Length + read > limit) return null;
+                    buffer.Write(chunk, 0, read);
+                }
+                return buffer.ToArray();
+            }
+        }
+
         /// <summary>Main thread: execute queued commands. Each waiting HTTP response is released with the handler's result.</summary>
         public void Pump(Func<Request, Response> handler)
         {
@@ -167,9 +221,18 @@ namespace Nebula
                 string path = req.Url.AbsolutePath;
                 string trimmed = path.Length > 1 ? path.TrimEnd('/') : path;
                 Response resp;
-                if (req.ContentLength64 > MaxBodyBytes)
+                var route = FindPrefix(path);
+                long bodyLimit = route != null ? route.MaxBodyBytes : MaxBodyBytes;
+                if (req.ContentLength64 > bodyLimit)
                 {
-                    resp = Response.Error(413, $"request body larger than {MaxBodyBytes} bytes");
+                    resp = Response.Error(413, $"request body larger than {bodyLimit} bytes");
+                }
+                else if (route != null)
+                {
+                    byte[] bytes = req.HasEntityBody ? ReadBounded(req.InputStream, bodyLimit) : Array.Empty<byte>();
+                    resp = bytes == null
+                        ? Response.Error(413, $"request body larger than {bodyLimit} bytes")
+                        : route.Handler(new Request { Method = req.HttpMethod, Path = trimmed, Body = "", BodyBytes = bytes, Query = req.Url.Query.TrimStart('?'), Token = req.Headers["X-Nebula-Token"] ?? "", Checksum = req.Headers["X-Nebula-Checksum"] ?? "" });
                 }
                 else if (req.HttpMethod == "GET" && _pages.TryGetValue(trimmed, out var html))
                 {
@@ -245,11 +308,12 @@ namespace Nebula
 
         private static void Write(HttpListenerResponse r, Response resp)
         {
-            var bytes = Encoding.UTF8.GetBytes(resp.Body ?? "");
+            var bytes = resp.Bytes ?? Encoding.UTF8.GetBytes(resp.Body ?? "");
             r.StatusCode = resp.Status;
             r.ContentType = resp.ContentType;
             r.ContentLength64 = bytes.Length;
             r.Headers["Cache-Control"] = "no-store";
+            if (!string.IsNullOrEmpty(resp.Checksum)) r.Headers["X-Nebula-Checksum"] = resp.Checksum;
             using (var s = r.OutputStream) s.Write(bytes, 0, bytes.Length);
             r.Close();
         }

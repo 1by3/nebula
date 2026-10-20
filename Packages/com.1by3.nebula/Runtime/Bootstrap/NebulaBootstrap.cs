@@ -62,6 +62,13 @@ namespace Nebula
         /// <see cref="NebulaConfig.PersistenceMode"/>. Null when persistence is off.
         /// </summary>
         public IPersistenceStore PersistenceStore { get; private set; }
+        /// <summary>
+        /// Where the shared cache (<see cref="NebulaSharedCache"/>) keeps its objects when this process owns them: an
+        /// orchestrator, or a process that is its own cache (the Editor, a single-process run). Null for a worker that
+        /// asks the orchestrator, and when the shared cache is off. See <see cref="NebulaConfig.SharedCacheMode"/>.
+        /// </summary>
+        public ISharedCacheStore SharedCacheStore { get; private set; }
+        private ISharedCacheClient _sharedCacheClient;
         public NebulaWorker Worker { get; private set; }
         public NebulaGateway Gateway { get; private set; }
         public NebulaOrchestrator Orchestrator { get; private set; }
@@ -180,10 +187,13 @@ namespace Nebula
                 }
             }
 
+            if (needsPersistence) StartSharedCache();
+
             if ((Roles & NebulaRoles.Orchestrator) != 0)
             {
                 Orchestrator = gameObject.AddComponent<NebulaOrchestrator>();
                 Orchestrator.Persistence = PersistenceStore;
+                Orchestrator.SharedCache = SharedCacheStore;
                 Orchestrator.Initialize(Config, ControlPlane);
             }
             if ((Roles & NebulaRoles.Gateway) != 0)
@@ -297,6 +307,14 @@ namespace Nebula
             ControlPlane?.Dispose();
             PersistenceStore?.Dispose();
             PersistenceStore = null;
+            if (_sharedCacheClient != null)
+            {
+                NebulaSharedCache.Uninstall(_sharedCacheClient);
+                _sharedCacheClient.Dispose();
+                _sharedCacheClient = null;
+            }
+            SharedCacheStore?.Dispose();
+            SharedCacheStore = null;
             Instance = null;
         }
 
@@ -350,6 +368,87 @@ namespace Nebula
         }
 
         /// <summary>Folder a Unity orchestrator keeps its data in when <see cref="NebulaConfig.DatabaseUrl"/> is empty.</summary>
+        /// <summary>
+        /// Set up the shared cache from <see cref="NebulaConfig.SharedCacheMode"/> (<c>-nebula-shared-cache-mode</c>) and
+        /// hand <see cref="NebulaSharedCache"/> its client: <c>auto</c> (the default) is a local folder in a
+        /// single-process run and the Editor, the orchestrator's own store on an orchestrator (<c>database</c>), and
+        /// the orchestrator over HTTP (<c>remote</c>) on a worker of a mesh. Workers and orchestrators get a cache;
+        /// gateways and clients do not use one.
+        /// </summary>
+        private void StartSharedCache()
+        {
+            string mode = (Config.SharedCacheMode ?? "auto").Trim().ToLowerInvariant();
+            bool orchestrator = (Roles & NebulaRoles.Orchestrator) != 0;
+            if (mode == "" || mode == "auto") mode = Config.UseLocalControlPlane ? "local" : orchestrator ? "database" : "remote";
+            int maxBytes = Config.SharedCacheMaxObjectBytes;
+            int concurrency = Config.SharedCacheClientConcurrency;
+            try
+            {
+                switch (mode)
+                {
+                    case "off":
+                    case "none":
+                        NebulaLog.Info("shared cache: off");
+                        return;
+                    case "memory":
+                        SharedCacheStore = new MemorySharedCacheStore();
+                        break;
+                    case "local":
+                    case "folder":
+                        SharedCacheStore = new FolderSharedCacheStore(SharedCacheFolder());
+                        break;
+                    case "remote":
+                        _sharedCacheClient = new RemoteSharedCacheClient(Config.ControlPlaneUrl, Config.MeshToken, maxBytes, concurrency);
+                        NebulaLog.Info($"shared cache: remote, through the orchestrator at {Config.ControlPlaneUrl}");
+                        break;
+                    case "database":
+                    {
+                        var url = DatabaseUrl.Parse(Config.DatabaseUrl, "file:" + DefaultDataDir);
+                        switch (url.Scheme)
+                        {
+                            case "memory": SharedCacheStore = new MemorySharedCacheStore(); break;
+                            case "file": SharedCacheStore = new FolderSharedCacheStore(System.IO.Path.Combine(url.Target, "shared-cache")); break;
+                            default:
+                                NebulaLog.Error($"shared cache: a Unity orchestrator cannot open '{url.Scheme}:' databases (use file: or memory here, or run the standalone orchestrator); the shared cache is off");
+                                return;
+                        }
+                        break;
+                    }
+                    default:
+                        NebulaLog.Warn($"unknown shared cache mode '{mode}'; the shared cache is off");
+                        return;
+                }
+            }
+            catch (Exception e)
+            {
+                NebulaLog.Error($"shared cache: could not start ({e.GetBaseException().Message}); the shared cache is off");
+                SharedCacheStore = null;
+                return;
+            }
+            if (SharedCacheStore != null)
+            {
+                if (orchestrator && CommandLine.GetBool("nebula-reset-shared-cache", false))
+                {
+                    NebulaLog.Warn("shared cache: -nebula-reset-shared-cache: deleting every cached object");
+                    SharedCacheStore.Clear();
+                }
+                NebulaLog.Info(SharedCacheStore is FolderSharedCacheStore folder
+                    ? $"shared cache: {SharedCacheStore.Backend} store at {folder.Folder}"
+                    : $"shared cache: {SharedCacheStore.Backend} store");
+                _sharedCacheClient = new LocalSharedCacheClient(SharedCacheStore, maxBytes, concurrency);
+            }
+            // Only a worker calls the cache; an orchestrator that is not also a worker just hosts the store.
+            if ((Roles & NebulaRoles.Worker) != 0) NebulaSharedCache.Install(_sharedCacheClient);
+        }
+
+        /// <summary>The folder of the local shared cache: <see cref="NebulaConfig.SharedCacheLocalFolder"/>, else the project's <c>Library/Nebula/SharedCache</c> in the Editor, else a folder in the persistent data path.</summary>
+        private string SharedCacheFolder()
+        {
+            if (!string.IsNullOrEmpty(Config.SharedCacheLocalFolder)) return Config.SharedCacheLocalFolder;
+            if (Application.isEditor && !string.IsNullOrEmpty(ProjectRoot)) return EditorDevPaths.SharedCache(ProjectRoot);
+            return System.IO.Path.Combine(Application.persistentDataPath, "nebula-shared-cache");
+        }
+
         private static string DefaultDataDir => System.IO.Path.Combine(Application.persistentDataPath, "nebula");
 
         /// <summary>Where a Unity orchestrator keeps the control plane between runs (see <see cref="NebulaConfig.DatabaseUrl"/>).</summary>
@@ -541,6 +640,10 @@ namespace Nebula
             cfg.GameScene = CommandLine.Get("nebula-scene", cfg.GameScene);
             cfg.PersistenceMode = CommandLine.Get("nebula-persistence-mode", cfg.PersistenceMode);
             cfg.PersistenceLocalFile = CommandLine.Get("nebula-persistence-file", cfg.PersistenceLocalFile);
+            cfg.SharedCacheMode = CommandLine.Get("nebula-shared-cache-mode", cfg.SharedCacheMode);
+            cfg.SharedCacheLocalFolder = CommandLine.Get("nebula-shared-cache-folder", cfg.SharedCacheLocalFolder);
+            cfg.SharedCacheMaxObjectBytes = CommandLine.GetInt("nebula-shared-cache-max-bytes", cfg.SharedCacheMaxObjectBytes);
+            cfg.SharedCacheExpiryDays = CommandLine.GetInt("nebula-shared-cache-expiry-days", cfg.SharedCacheExpiryDays);
             cfg.PersistenceCheckpointSeconds = CommandLine.GetFloat("nebula-persistence-checkpoint", cfg.PersistenceCheckpointSeconds);
             cfg.ScopeIdleRetireSeconds = CommandLine.GetFloat("nebula-scope-idle-retire", cfg.ScopeIdleRetireSeconds);
             cfg.ScopeRetireWithEntities = CommandLine.GetBool("nebula-scope-retire-with-entities", cfg.ScopeRetireWithEntities);

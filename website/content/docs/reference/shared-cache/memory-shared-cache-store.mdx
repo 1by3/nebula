@@ -1,0 +1,64 @@
+---
+title: "MemorySharedCacheStore"
+description: "ISharedCacheStore in memory: nothing survives the process."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/SharedCache/ISharedCacheStore.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/SharedCache/ISharedCacheStore.cs)</div>
+
+```csharp
+public sealed class MemorySharedCacheStore : ISharedCacheStore
+```
+
+[`ISharedCacheStore`](/docs/reference/shared-cache/i-shared-cache-store) in memory: nothing survives the process. For tests and for runs that keep nothing (`-nebula-shared-cache-mode memory`).
+
+## Properties
+
+### Backend [#backend]
+
+```csharp
+public string Backend { get; }
+```
+
+## Methods
+
+### TryGet [#tryget]
+
+```csharp
+public bool TryGet(string key, out byte[] bytes, out string checksum);
+```
+
+### Put [#put]
+
+```csharp
+public bool Put(string key, byte[] bytes, string checksum);
+```
+
+### RemoveUnreadSince [#removeunreadsince]
+
+```csharp
+public int RemoveUnreadSince(DateTime cutoffUtc);
+```
+
+### Clear [#clear]
+
+```csharp
+public int Clear();
+```
+
+### Count [#count]
+
+```csharp
+public long Count();
+```
+
+### TotalBytes [#totalbytes]
+
+```csharp
+public long TotalBytes();
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```

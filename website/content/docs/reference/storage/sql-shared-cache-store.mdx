@@ -1,0 +1,72 @@
+---
+title: "SqlSharedCacheStore"
+description: "ISharedCacheStore in the orchestrator's database (NebulaDatabase: SQLite or PostgreSQL), table shared_cache."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Services~/Nebula.Services/Storage/SqlSharedCacheStore.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Services~/Nebula.Services/Storage/SqlSharedCacheStore.cs)</div>
+
+```csharp
+public sealed class SqlSharedCacheStore : ISharedCacheStore
+```
+
+[`ISharedCacheStore`](/docs/reference/shared-cache/i-shared-cache-store) in the orchestrator's database ([`NebulaDatabase`](/docs/reference/storage/nebula-database): SQLite or PostgreSQL), table `shared_cache`. It is separate from `nebula_entity`, so persistence's [`IPersistenceStore.Clear`](/docs/reference/persistence/i-persistence-store#clear) and a world wipe leave it alone. Each call uses its own pooled connection, so reads and writes run in parallel with persistence's writer thread; a write is one `INSERT … ON CONFLICT DO NOTHING`, which makes the table write-once and lets two racing puts both succeed.
+
+## Constructors
+
+### SqlSharedCacheStore [#sqlsharedcachestore]
+
+```csharp
+public SqlSharedCacheStore(NebulaDatabase db);
+```
+
+## Properties
+
+### Backend [#backend]
+
+```csharp
+public string Backend { get; }
+```
+
+## Methods
+
+### TryGet [#tryget]
+
+```csharp
+public bool TryGet(string key, out byte[] bytes, out string checksum);
+```
+
+### Put [#put]
+
+```csharp
+public bool Put(string key, byte[] bytes, string checksum);
+```
+
+### RemoveUnreadSince [#removeunreadsince]
+
+```csharp
+public int RemoveUnreadSince(DateTime cutoffUtc);
+```
+
+### Clear [#clear]
+
+```csharp
+public int Clear();
+```
+
+### Count [#count]
+
+```csharp
+public long Count();
+```
+
+### TotalBytes [#totalbytes]
+
+```csharp
+public long TotalBytes();
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```

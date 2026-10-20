@@ -11,7 +11,8 @@ namespace Nebula
     /// mesh) or PostgreSQL (for a deployed mesh), behind one ADO.NET surface. It holds three tables:
     /// <c>nebula_control_plane</c> (the control plane document, see <see cref="SqlControlPlaneStorage"/>) and
     /// <c>nebula_entity</c> (saved entities, see <see cref="SqlPersistenceStore"/>), and
-    /// <c>nebula_gateway_session</c> (gateway admission claims), <c>nebula_scope</c> (scope-key claims). <see cref="EnsureSchema"/>
+    /// <c>nebula_gateway_session</c> (gateway admission claims), <c>nebula_scope</c> (scope-key claims), and
+    /// <c>shared_cache</c> (write-once derived data workers share, see <see cref="SqlSharedCacheStore"/>). <see cref="EnsureSchema"/>
     /// creates them if they are missing; every SQL statement is written once and differs only in the few type
     /// names the two engines disagree on.
     /// </summary>
@@ -136,6 +137,15 @@ namespace Nebula
                     saved_by TEXT NOT NULL,
                     scope_key TEXT NOT NULL DEFAULT '',
                     part_id TEXT NOT NULL DEFAULT '')");
+                // The shared cache is not persistence: its own table, so clearing saved entities leaves it alone.
+                Execute(c, $@"CREATE TABLE IF NOT EXISTS shared_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    bytes {Blob} NOT NULL,
+                    checksum TEXT NOT NULL,
+                    size BIGINT NOT NULL,
+                    created_at BIGINT NOT NULL,
+                    last_read_at BIGINT NOT NULL)");
+                Execute(c, "CREATE INDEX IF NOT EXISTS shared_cache_last_read ON shared_cache (last_read_at)");
                 Execute(c, "CREATE INDEX IF NOT EXISTS nebula_entity_container ON nebula_entity (container_id)");
                 Execute(c, "CREATE INDEX IF NOT EXISTS nebula_entity_carrier ON nebula_entity (carrier_key)");
                 // The scope key (EntityLocation.ScopeKey) was added after the table existed in deployed databases.
