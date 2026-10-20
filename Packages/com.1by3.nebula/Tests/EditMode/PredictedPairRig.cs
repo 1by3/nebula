@@ -36,8 +36,8 @@ namespace Nebula.Tests
         /// <summary>Every shove <c>Simulate</c> was shown: the tick and whether it was a replay.</summary>
         public readonly List<(uint Tick, bool Replaying)> ShovesSeen = new List<(uint, bool)>();
 
-        /// <summary>False: the worker does not step this walker through ticks it skipped (NEB-412).</summary>
-        public bool StepSkipped = true;
+        /// <summary>True: the worker steps this walker through ticks it skipped (NEB-412). Off by default, like the real thing.</summary>
+        public bool StepSkipped;
         protected override bool StepSkippedServerTicks => StepSkipped;
         protected override float CorrectionSmoothingSeconds => Smoothing;
         protected override float CorrectionSnapDistance => Snap;

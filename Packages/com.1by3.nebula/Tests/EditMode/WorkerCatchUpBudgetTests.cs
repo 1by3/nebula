@@ -131,6 +131,7 @@ namespace Nebula.Tests
         public void SkippingTenTicksMidFlightLeavesTheWorkerOnTheOwnersPose()
         {
             using var rig = new PredictedPairRig(lag: 3);
+            rig.Worker.StepSkipped = true; // the walker advances itself, so it opts in
             rig.Client.Hands = new Vector3(6f, 0f, 3f);
             rig.Advance(20);
             int corrections = rig.Client.Corrections;
@@ -142,17 +143,16 @@ namespace Nebula.Tests
         }
 
         [Test]
-        public void WithoutSteppingTheSameSkipIsACorrection()
+        public void ByDefaultTheSameSkipIsACorrection()
         {
             using var rig = new PredictedPairRig(lag: 3);
-            rig.Worker.StepSkipped = false;
             rig.Client.Hands = new Vector3(6f, 0f, 3f);
             rig.Advance(20);
             int corrections = rig.Client.Corrections;
             rig.SkipWorkerTicks(10);
             rig.Advance(30);
             Assert.AreEqual(0, rig.Worker.SkippedTicksStepped);
-            Assert.Greater(rig.Client.Corrections, corrections, "the opt-out keeps the old behaviour");
+            Assert.Greater(rig.Client.Corrections, corrections, "an entity that does not opt in is corrected after a skip");
         }
     }
 }

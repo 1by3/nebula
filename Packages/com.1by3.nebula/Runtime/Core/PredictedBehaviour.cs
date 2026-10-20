@@ -267,13 +267,15 @@ namespace Nebula
         /// <summary>
         /// Whether the worker, after it skipped tick numbers because it fell too far behind the wall clock, steps
         /// this entity through each skipped tick that has an input waiting before it simulates the next one (NEB-412).
-        /// The owner predicted every one of those ticks with its input, so an entity that left them out ends the next
-        /// tick short of where its owner has it and is corrected. Each skipped tick runs <c>Simulate</c> exactly as
-        /// the owner's replay does, so it must be a pure function of state and input (the contract already). Return
-        /// false for an entity whose <c>Simulate</c> cannot run again outside its own tick, such as one that steps a
-        /// physics scene itself. Default true.
+        /// The owner predicted every one of those ticks with its input, so an entity that is left out ends the next
+        /// tick short of where its owner has it and is corrected. Return true when <c>Simulate</c> advances the entity
+        /// itself and is a pure function of state and input, as the owner's replay already requires: each skipped tick
+        /// then runs exactly as the replay runs it and the entity ends where its owner has it. Leave it false when
+        /// <c>Simulate</c> relies on the physics engine stepping between ticks (it applies forces or sets a
+        /// Rigidbody's velocity): the skipped ticks would apply their forces back to back before one physics step and
+        /// the entity would lurch, so it is corrected after a skip instead. Default false.
         /// </summary>
-        protected virtual bool StepSkippedServerTicks => true;
+        protected virtual bool StepSkippedServerTicks => false;
 
         internal bool StepsSkippedServerTicks => StepSkippedServerTicks;
 
