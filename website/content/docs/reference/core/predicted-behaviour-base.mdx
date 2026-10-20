@@ -160,6 +160,22 @@ protected virtual int DriverInputTimeoutTicks { get; }
 
 Ticks without any input from the driver after which the worker stops repeating the last one and runs [`PredictedBehaviour<TInput>.GatherServerInput`](/docs/reference/core/predicted-behaviour#gatherserverinput) instead, until the driver's input comes back: a driver whose link drops does not leave the vehicle at full throttle. Default 30 (half a second). The driver keeps the seat; take it with [`NetworkIdentity.ClearDriver`](/docs/reference/core/network-identity#cleardriver) when the player leaves.
 
+### StepSkippedServerTicks [#stepskippedserverticks]
+
+```csharp
+protected virtual bool StepSkippedServerTicks { get; }
+```
+
+Whether the worker, after it skipped tick numbers because it fell too far behind the wall clock, steps this entity through each skipped tick that has an input waiting before it simulates the next one (NEB-412). The owner predicted every one of those ticks with its input, so an entity that is left out ends the next tick short of where its owner has it and is corrected. Return true when `Simulate` advances the entity itself and is a pure function of state and input, as the owner's replay already requires: each skipped tick then runs exactly as the replay runs it and the entity ends where its owner has it. Leave it false when `Simulate` relies on the physics engine stepping between ticks (it applies forces or sets a Rigidbody's velocity): the skipped ticks would apply their forces back to back before one physics step and the entity would lurch, so it is corrected after a skip instead. Default false.
+
+### SkippedTicksStepped [#skippedticksstepped]
+
+```csharp
+public int SkippedTicksStepped { get; protected set; }
+```
+
+Authority: ticks run as part of a catch-up after the worker skipped their numbers (NEB-412).
+
 ### ServerEventsPosted [#servereventsposted]
 
 ```csharp

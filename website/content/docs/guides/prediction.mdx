@@ -218,6 +218,14 @@ The worker reports the smallest lead it observed. The client tries to keep that 
 
 If the expected input is missing, the worker repeats its most recent input instead of freezing the entity. It increments `InputsMissed`. If no input has arrived since spawn, it uses the default value of the input struct.
 
+### Recover when the worker falls behind
+
+A worker that falls more than `NebulaWorker.MaxLagTicks` (15 ticks) behind the wall clock skips tick numbers instead of simulating them back to back. By default, an entity that skipped ticks is corrected: its owner predicted those ticks and the worker did not run them.
+
+To avoid the correction, override `StepSkippedServerTicks` to return `true`. When the entity next ticks, the worker then runs `Simulate` for each skipped tick that has an input waiting, oldest first, and then for the current tick. The entity ends where its owner predicted it. `SkippedTicksStepped` counts these extra steps.
+
+This is opt-in because it only suits an entity whose `Simulate` advances the entity itself and depends only on its state and the input, as replay already requires. If `Simulate` applies forces or sets the velocity of a Rigidbody and relies on Unity stepping physics between ticks, the skipped ticks would apply their forces back to back before one physics step and the entity would lurch. Leave `StepSkippedServerTicks` at `false` for those entities. They still get a correction after a skip.
+
 Use these values to diagnose timing:
 
 - `PendingInputCount` is the number of future inputs buffered on the worker.

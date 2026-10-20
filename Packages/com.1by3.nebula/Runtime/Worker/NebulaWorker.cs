@@ -1096,7 +1096,39 @@ namespace Nebula
         /// </summary>
         public const int MaxLagTicks = 15;
 
-        private void FixedUpdate()
+        /// <summary>
+        /// Default for <see cref="NebulaConfig.WorkerCatchUpBudgetMs"/>: about two and a half tick periods at 60 Hz.
+        /// </summary>
+        public const float DefaultCatchUpBudgetMs = 40f;
+
+        /// <summary>The clock the catch-up budget reads, in <see cref="Stopwatch.Frequency"/> units. A test replaces it.</summary>
+        internal Func<long> BudgetClock = Stopwatch.GetTimestamp;
+
+        /// <summary>Replaces the tick's simulation. A test uses it to run the catch-up loop on a worker that was never initialized, with ticks that cost whatever it says.</summary>
+        internal Action<uint> TickForTest;
+
+        private int _budgetFrame = -1;
+        private long _budgetSpent;
+        private int _profileBudgetCuts;
+
+        private long CatchUpBudgetTimestamps
+        {
+            get
+            {
+                float ms = Config != null ? Config.WorkerCatchUpBudgetMs : DefaultCatchUpBudgetMs;
+                return ms <= 0f ? long.MaxValue : (long)(ms / 1000.0 * Stopwatch.Frequency);
+            }
+        }
+
+        private void FixedUpdate() => CatchUp(NetworkTime.DerivedTick, Time.frameCount);
+
+        /// <summary>
+        /// Simulate the tick numbers that have elapsed up to <paramref name="derived"/>, at most
+        /// <see cref="MaxCatchUpTicks"/> per call and within the frame's wall-time budget (NEB-483).
+        /// <paramref name="frame"/> identifies the rendered frame: Unity runs several FixedUpdates in one frame after
+        /// a long one, and they share one budget.
+        /// </summary>
+        internal void CatchUp(uint derived, int frame)
         {
             // The tick number comes from the wall clock, not from counting FixedUpdates (see NetworkTime): every
             // worker agrees on it with no tick master. So this loop simulates the tick numbers that have elapsed
@@ -1104,8 +1136,14 @@ namespace Nebula
             // two samples with the same tick to every ghost: at most MaxCatchUpTicks of them now, the rest on the
             // next FixedUpdates. NEB-479: dropping the rest here skipped a tick on every 50 ms frame: its first
             // FixedUpdate saw three ticks elapsed, ran two and dropped the third, and the two after it found nothing.
-            uint derived = NetworkTime.DerivedTick;
-            if (_lastSimulatedTick == 0) { RunTick(derived); return; }
+            //
+            // NEB-483: Unity runs up to maximumDeltaTime / fixedDeltaTime FixedUpdates (about 20) after a long frame,
+            // so a worker whose ticks cost 4x their period simulated 40 of them in one frame (a second or two), fell
+            // further behind and did it again. Once a frame has spent the catch-up budget on ticks it simulates no
+            // more: the rest carries to the next frames while the worker is within MaxLagTicks of the wall clock and
+            // is skipped beyond it, so a frame stays short enough to poll the network and heartbeat.
+            if (frame != _budgetFrame) { _budgetFrame = frame; _budgetSpent = 0; }
+            if (_lastSimulatedTick == 0) { RunBudgeted(derived); return; }
             if (derived <= _lastSimulatedTick) { _profileDuplicateTicks++; return; }
             uint behind = derived - _lastSimulatedTick;
             if (behind > MaxLagTicks)
@@ -1113,7 +1151,19 @@ namespace Nebula
                 _profileSkippedTicks += (int)(behind - MaxLagTicks);
                 _lastSimulatedTick = derived - MaxLagTicks;
             }
-            for (int n = 0; n < MaxCatchUpTicks && _lastSimulatedTick < derived; n++) RunTick(_lastSimulatedTick + 1);
+            long budget = CatchUpBudgetTimestamps;
+            for (int n = 0; n < MaxCatchUpTicks && _lastSimulatedTick < derived; n++)
+            {
+                if (_budgetSpent >= budget) { _profileBudgetCuts++; break; }
+                RunBudgeted(_lastSimulatedTick + 1);
+            }
+        }
+
+        private void RunBudgeted(uint tick)
+        {
+            long start = BudgetClock();
+            RunTick(tick);
+            _budgetSpent += BudgetClock() - start;
         }
 
         private void RunTick(uint tick)
@@ -1124,7 +1174,7 @@ namespace Nebula
             if (_lastTickEnd != 0) ProfGap.Elapsed += start - _lastTickEnd;
             ProfGap.Calls++;
             _tickWatch.Restart();
-            Tick(tick);
+            if (TickForTest != null) TickForTest(tick); else Tick(tick);
             _tickWatch.Stop();
             _lastTickEnd = Stopwatch.GetTimestamp();
             _lastSimulatedTick = tick;
@@ -1139,7 +1189,7 @@ namespace Nebula
         /// One line every few seconds with the tick budget and where it went: ticks simulated in the window (60/s
         /// when keeping up), average and worst tick, how many FixedUpdates found no new tick to simulate ('dup':
         /// Unity catching up after a slow frame) and how many tick numbers were skipped ('skip': the process fell
-        /// further behind the wall clock than <see cref="MaxCatchUpTicks"/>), and every profiler section in ms per
+        /// further behind the wall clock than <see cref="MaxLagTicks"/>), how many times the frame's catch-up budget ended a FixedUpdate's catch-up early ('budget': ticks left for later frames, see <see cref="NebulaConfig.WorkerCatchUpBudgetMs"/>), and every profiler section in ms per
         /// tick (see <see cref="NebulaProfiler"/>), including 'untimed', the part of the tick no section covers. After
         /// the sections comes the Unity frame itself: its average, p90 and max wall time and its split in ms per
         /// frame (see <see cref="FrameProfiler"/>); the split adds up to the average, with 'idle' the remainder.
@@ -1171,13 +1221,14 @@ namespace Nebula
             ProfUntimed.Calls = _profileTicks;
             string frameText = frame.Frames > 0 ? $" | frame avg {frame.AvgMs:0.0}ms p90 {frame.P90Ms:0.0}ms max {frame.MaxMs:0.0}ms: {_lastFrameSplit}" : "";
             string sections = NebulaProfiler.ReportAndReset(_profileTicks, out _lastProfileSections);
-            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} dormant {DormantCount} resolve {ResolveCounters(_profileTicks)} rpcRejected {NebulaDiagnostics.RejectedAuthorityRpcSends} mem rss={WorkerMemorySampler.Mb(_lastMemory.ResidentBytes)}MB native={WorkerMemorySampler.Mb(_lastMemory.NativeAllocatedBytes)}MB managed={WorkerMemorySampler.Mb(_lastMemory.ManagedBytes)}MB | {sections}{frameText}");
+            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} budget {_profileBudgetCuts} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} dormant {DormantCount} resolve {ResolveCounters(_profileTicks)} rpcRejected {NebulaDiagnostics.RejectedAuthorityRpcSends} mem rss={WorkerMemorySampler.Mb(_lastMemory.ResidentBytes)}MB native={WorkerMemorySampler.Mb(_lastMemory.NativeAllocatedBytes)}MB managed={WorkerMemorySampler.Mb(_lastMemory.ManagedBytes)}MB | {sections}{frameText}");
             _profileTicks = 0;
             _profileFrames = 0;
             _profileMaxMs = 0f;
             _profileTotalMs = 0;
             _profileDuplicateTicks = 0;
             _profileSkippedTicks = 0;
+            _profileBudgetCuts = 0;
         }
 
         // ---------------------------------------------------------------------------------------- the tick

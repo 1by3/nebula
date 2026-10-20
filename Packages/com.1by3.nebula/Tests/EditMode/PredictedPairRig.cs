@@ -36,6 +36,9 @@ namespace Nebula.Tests
         /// <summary>Every shove <c>Simulate</c> was shown: the tick and whether it was a replay.</summary>
         public readonly List<(uint Tick, bool Replaying)> ShovesSeen = new List<(uint, bool)>();
 
+        /// <summary>True: the worker steps this walker through ticks it skipped (NEB-412). Off by default, like the real thing.</summary>
+        public bool StepSkipped;
+        protected override bool StepSkippedServerTicks => StepSkipped;
         protected override float CorrectionSmoothingSeconds => Smoothing;
         protected override float CorrectionSnapDistance => Snap;
         protected override WalkInput GatherInput() => new WalkInput { Move = Hands };
@@ -118,6 +121,11 @@ namespace Nebula.Tests
 
         public uint Step { get { return _step; } }
 
+        private int _skipWorker;
+
+        /// <summary>The worker runs none of the next <paramref name="steps"/> ticks (it fell behind and skipped their numbers), though their inputs still reach it; it carries on from the one after.</summary>
+        public void SkipWorkerTicks(int steps) { _skipWorker = steps; }
+
         /// <summary>Another walker alongside the pair, such as the worker an entity is handed over to.</summary>
         public PairWalker Extra(string name) { return Make(name); }
 
@@ -139,6 +147,7 @@ namespace Nebula.Tests
             {
                 uint s = _step - (uint)Lag;
                 Worker.ServerReceiveInput(s, new NetworkReader(_inputs[s]));
+                if (_skipWorker > 0) { _skipWorker--; Client.ApplyDrawnOffset(frameSeconds); return; }
                 NetworkTime.Tick = s;
                 Worker.NetworkTick(s, NetworkTime.TickInterval);
                 AfterWorkerTick?.Invoke(s);

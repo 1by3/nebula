@@ -264,6 +264,24 @@ namespace Nebula
 
         internal int DriverTimeoutTicks => DriverInputTimeoutTicks;
 
+        /// <summary>
+        /// Whether the worker, after it skipped tick numbers because it fell too far behind the wall clock, steps
+        /// this entity through each skipped tick that has an input waiting before it simulates the next one (NEB-412).
+        /// The owner predicted every one of those ticks with its input, so an entity that is left out ends the next
+        /// tick short of where its owner has it and is corrected. Return true when <c>Simulate</c> advances the entity
+        /// itself and is a pure function of state and input, as the owner's replay already requires: each skipped tick
+        /// then runs exactly as the replay runs it and the entity ends where its owner has it. Leave it false when
+        /// <c>Simulate</c> relies on the physics engine stepping between ticks (it applies forces or sets a
+        /// Rigidbody's velocity): the skipped ticks would apply their forces back to back before one physics step and
+        /// the entity would lurch, so it is corrected after a skip instead. Default false.
+        /// </summary>
+        protected virtual bool StepSkippedServerTicks => false;
+
+        internal bool StepsSkippedServerTicks => StepSkippedServerTicks;
+
+        /// <summary>Authority: ticks run as part of a catch-up after the worker skipped their numbers (NEB-412).</summary>
+        public int SkippedTicksStepped { get; protected set; }
+
         // ---- server events ---------------------------------------------------------------------------------------
 
         /// <summary>The most server events that can apply on one tick of one entity. More are refused and counted in <see cref="ServerEventsDropped"/>.</summary>
@@ -601,6 +619,27 @@ namespace Nebula
         // ---- server ------------------------------------------------------------------------------------------
 
         public sealed override void NetworkTick(uint tick, float deltaTime)
+        {
+            // NEB-412: the worker skipped tick numbers (it fell more than MaxLagTicks behind the wall clock). The owner
+            // predicted those ticks with the inputs it sent for them; step through each one whose input is waiting,
+            // oldest first, so this tick starts from where the owner has the entity instead of a correction.
+            if (_lastTickedServerTick != 0 && tick > _lastTickedServerTick + 1 && StepSkippedServerTicks
+                && (Identity.OwnerClientId != 0 || Identity.DriverClientId != 0))
+            {
+                uint from = _lastTickedServerTick + 1;
+                if (tick - from >= BufferSize) from = tick - (BufferSize - 1);
+                for (uint t = from; t < tick; t++)
+                {
+                    ref var skipped = ref _serverInputs[t % BufferSize];
+                    if (!skipped.Valid || skipped.Tick != t) continue;
+                    ServerStep(t, deltaTime);
+                    SkippedTicksStepped++;
+                }
+            }
+            ServerStep(tick, deltaTime);
+        }
+
+        private void ServerStep(uint tick, float deltaTime)
         {
             TInput input;
             ref var slot = ref _serverInputs[tick % BufferSize];

@@ -46,14 +46,15 @@ Use `NebulaLog.Info`, `Warn`, `Error`, and `Debugf` in your own components when 
 Every worker writes a profile line every five seconds:
 
 ```text
-[nebula] profile 300 ticks/5s 300 frames avg 6.8ms max 29.6ms dup 4 skip 0 gc 1 auth 331 ghosts 64 dormant 0 rpcRejected 0 mem rss=812.0MB native=210.3MB managed=64.1MB | poll=0.03 ghosts=0.07 physics.sync=0.08 simulate=5.40 poses=0.14 containers=0.56 band=0.26 publish=0.28 gap=9.86 begin=0.04 frames.sim=0.02 replicate=0.09 untimed=0.03 | frame avg 16.7ms p90 17.4ms max 41.2ms: physics=1.20 fixed=0.10 tick=6.80 update=0.50 late=0.10 idle=8.00
+[nebula] profile 300 ticks/5s 300 frames avg 6.8ms max 29.6ms dup 4 skip 0 budget 0 gc 1 auth 331 ghosts 64 dormant 0 rpcRejected 0 mem rss=812.0MB native=210.3MB managed=64.1MB | poll=0.03 ghosts=0.07 physics.sync=0.08 simulate=5.40 poses=0.14 containers=0.56 band=0.26 publish=0.28 gap=9.86 begin=0.04 frames.sim=0.02 replicate=0.09 untimed=0.03 | frame avg 16.7ms p90 17.4ms max 41.2ms: physics=1.20 fixed=0.10 tick=6.80 update=0.50 late=0.10 idle=8.00
 ```
 
 Use these fields to find a performance problem:
 
 - `ticks` should average 60 per second, and `frames` should stay close to `ticks`.
 - `dup` counts fixed updates that did not advance to a new network tick. An occasional duplicate is expected.
-- `skip` counts ticks discarded after the worker fell more than `NebulaWorker.MaxLagTicks` behind. Each one is a tick a predicting client ran and the worker did not, so its entity is corrected. A value that keeps increasing means the worker cannot maintain the tick rate.
+- `skip` counts ticks discarded after the worker fell more than `NebulaWorker.MaxLagTicks` behind. Each one is a tick a predicting client ran and the worker did not. The worker steps a predicted entity through the inputs of skipped ticks when it next ticks, so the entity is normally not corrected, but a value that keeps increasing means the worker cannot maintain the tick rate.
+- `budget` counts the times a frame stopped catching up early because it had spent `NebulaConfig.WorkerCatchUpBudgetMs` simulating ticks. The ticks left over run in the next frames, or are counted in `skip` once the worker is more than `MaxLagTicks` behind. A value that keeps increasing means ticks cost more than the time between them.
 - `avg` and `max` (before the `|`) report the average and maximum time spent in a Nebula tick.
 - The sections after the first `|` are milliseconds per tick and add up to the tick. `simulate` includes your `NetworkTick` methods. `begin`, `frames.sim` (instance scenes and physics frames) and `replicate` are the passes between the others, and `untimed` is whatever no section covers. `gap` is the time between two ticks.
 - `frame avg`, `p90` and `max` are the wall time of a whole Unity frame, from the start of one frame to the start of the next. A worker holding 60 frames per second averages 16.7 ms; a p90 or max far above it is a stall.
