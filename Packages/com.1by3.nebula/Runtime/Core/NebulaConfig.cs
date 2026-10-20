@@ -214,6 +214,8 @@ namespace Nebula
         public bool OrchestratorSpawnsGateway = true;
         public float WorkerHeartbeatSeconds = 1f;
         public float WorkerTimeoutSeconds = 5f;
+        [Tooltip("Wall time in milliseconds a worker may spend simulating ticks in one frame while it catches up with the clock. Once a frame has spent this much, the remaining ticks wait for the next frames (or are skipped when the worker is more than 15 ticks behind), so a starved worker keeps a short frame and keeps polling the network and sending heartbeats. About two to three tick periods; 0 turns the budget off.")]
+        public float WorkerCatchUpBudgetMs = 40f;
         [Tooltip("Seconds to wait after a worker is declared dead before a replacement is launched.")]
         public float DeadWorkerReplaceDelaySeconds = 8f;
         [Tooltip("Seconds a retiring worker gets to hand its entities over before it is killed regardless.")]

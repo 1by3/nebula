@@ -43,7 +43,7 @@ How often a worker re-stamps a runtime container it wants but does not own (see 
 public const int MaxCatchUpTicks = 2;
 ```
 
-Most ticks the loop simulates in one FixedUpdate to catch up with the wall clock. The rest are simulated by the next FixedUpdates (Unity runs several after a long frame), so a slow frame costs no tick.
+Most ticks the loop simulates in one FixedUpdate to catch up with the wall clock. What is left over is simulated by the next FixedUpdates (Unity runs several after a long frame), so a slow frame costs no tick; only a worker more than [`MaxLagTicks`](#maxlagticks) behind skips tick numbers.
 
 ### MaxLagTicks [#maxlagticks]
 
@@ -51,7 +51,15 @@ Most ticks the loop simulates in one FixedUpdate to catch up with the wall clock
 public const int MaxLagTicks = 15;
 ```
 
-Most ticks the worker may fall behind the wall clock before it skips the missing tick numbers (everything runs a little slow for a moment) rather than simulate them back-to-back, which would only push the next frame further behind. A skipped tick is one an owner's client predicted and the worker never ran, so the entity is corrected afterwards.
+Most ticks the worker may run behind the wall clock before it skips the missing tick numbers (everything runs a little slow for a moment) rather than simulate them back-to-back, which would only push the next frame further behind. A skipped tick is one an owner's client predicted and the worker never ran, so its entity ends that tick's step short of where its owner has it and is corrected (NEB-479). A quarter of a second at 60 Hz.
+
+### DefaultCatchUpBudgetMs [#defaultcatchupbudgetms]
+
+```csharp
+public const float DefaultCatchUpBudgetMs = 40f;
+```
+
+Default for [`NebulaConfig.WorkerCatchUpBudgetMs`](/docs/reference/core/nebula-config#workercatchupbudgetms): about two and a half tick periods at 60 Hz.
 
 ### PoseAngleEpsilon [#poseangleepsilon]
 
