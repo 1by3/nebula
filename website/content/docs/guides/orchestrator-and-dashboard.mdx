@@ -48,7 +48,7 @@ Set the initial count in `NebulaConfig.WorkerCount`, with `-nebula-workers`, or 
 `NebulaConfig.AutoScale` is on by default. Every worker reports the wall-clock time of its simulated tick on each heartbeat; the orchestrator keeps the last `ScaleWindowSeconds` (20 s) of that per worker and uses the 90th percentile as its **utilization**: the fraction of the 16.7 ms tick budget the worker is spending. The dashboard draws it as a bar on each worker card.
 
 - **Grow** when the busiest worker stays above `ScaleOutUtilization` (0.7) for `ScaleHoldSeconds` (30 s) **and** a dry run of the assignment policy with one more worker lowers the predicted peak by at least `ScaleMinGain` (0.1).
-- **Shrink** when the mesh's mean stays below `ScaleInUtilization` (0.3) for the same hold **and** a dry run with one worker fewer keeps everyone under the scale-out line. The worker carrying least is the one that retires.
+- **Shrink** when the mesh's mean stays below `ScaleInUtilization` (0.3) for the same hold **and** a dry run with one worker fewer keeps everyone under the scale-out line. The worker carrying least is the one that retires. The scaler judges only workers that have joined, so it does not shrink while a launch is still landing (a worker the mesh is driving towards that has not joined, for up to three minutes) or while the workers that have joined are at `MinWorkers`; it never retires the only live worker to make room for a machine that is still booting.
 
 Only one change happens per hold, and nothing is decided while a launch or a drain is still in flight.
 
@@ -80,7 +80,7 @@ When you add a worker, the orchestrator starts it on the lowest available worker
 
 When you remove a worker, the orchestrator retires the highest-index worker by default. It first assigns the worker's containers to other workers. The retiring worker then transfers its authoritative entities through the normal handover process.
 
-The orchestrator stops the retiring worker after it has no containers or authoritative entities. It stops the worker after `WorkerDrainTimeoutSeconds` even if the drain has not completed. If you scale to zero, no worker can receive the entities, so every retiring worker stops after the timeout.
+If no other worker can take over the containers and the mesh still wants at least one worker, the orchestrator cancels the retirement instead: the worker stays in service with its containers and the log says so. The orchestrator stops the retiring worker after it has no containers or authoritative entities. It stops the worker after `WorkerDrainTimeoutSeconds` even if the drain has not completed. If you scale to zero, no worker can receive the entities, so every retiring worker stops after the timeout. Once the orchestrator has stopped a worker, it refuses that worker if its process registers again before the machine is gone, and deals it nothing.
 
 ## Scale to zero
 

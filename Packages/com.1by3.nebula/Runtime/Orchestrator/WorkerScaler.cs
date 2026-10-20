@@ -105,6 +105,15 @@ namespace Nebula
         /// </summary>
         public Func<string, bool> IsWarm = _ => true;
 
+        /// <summary>
+        /// How long a launch that has not joined yet holds the shrink branch, in seconds. A worker that was just
+        /// launched (by the last grow, or to replace a dead one) is part of the count the mesh is driving towards but
+        /// not of the workers that are live, so shrinking against the live count alone would retire the only
+        /// machine that is serving while the new one boots. A launch that never lands (a failed boot) stops
+        /// holding the shrink once this passes.
+        /// </summary>
+        public float LaunchGraceSeconds = 180f;
+
         /// <summary>One managed worker as the settle check sees it (<see cref="IsInFlight"/>).</summary>
         public struct MeshMember
         {
@@ -141,6 +150,8 @@ namespace Nebula
         }
 
         private double _outSince = -1.0, _inSince = -1.0;
+        /// <summary>When the mesh was first seen with more workers desired than live, or -1 when every desired worker has joined.</summary>
+        private double _pendingSince = -1.0;
 
         /// <summary>How long the scale-out condition has held, in seconds, or 0.</summary>
         public float HeldOut(double now) => _outSince < 0.0 ? 0f : (float)(now - _outSince);
@@ -149,6 +160,7 @@ namespace Nebula
 
         /// <summary>Forget both holds (autoscaling was turned off, or the mesh is in flux).</summary>
         public void Reset() { _outSince = _inSince = -1.0; }
+        // _pendingSince is deliberately not cleared by Reset: it is a fact about the launches, not a hold clock.
 
         /// <summary>
         /// One pass.
@@ -164,6 +176,11 @@ namespace Nebula
         {
             var d = new ScaleDecision { Action = ScaleAction.None, BlockedBy = "", BlockedReason = "", RetireWorkerId = "", Reason = "idle", HoldSeconds = settings.HoldSeconds };
             int total = utilization != null ? utilization.Count : 0;
+            // Workers the mesh is driving towards that have not joined (a launch in progress). They are not in
+            // `utilization`, so every count below is of live workers only.
+            int pending = Math.Max(0, desiredWorkers - total);
+            if (pending == 0) _pendingSince = -1.0;
+            else if (_pendingSince < 0.0) _pendingSince = now;
             if (total == 0 || policy == null || input == null)
             {
                 Reset();
@@ -261,6 +278,21 @@ namespace Nebula
                     // again (it reads as idle), so the mesh waits for its first samples instead of flapping.
                     Reset();
                     d.Reason = $"not shrinking yet: {cold} worker(s) have not filled their window";
+                    return d;
+                }
+                if (pending > 0 && now - _pendingSince < LaunchGraceSeconds)
+                {
+                    // desired > live: the shrink would be judged on the machines that happen to be up while the
+                    // rest of the plan is still booting. Wait for the launch to land (or to time out).
+                    Reset();
+                    d.Reason = $"not shrinking yet: {pending} worker(s) still launching";
+                    return d;
+                }
+                if (total <= settings.MinWorkers)
+                {
+                    // Never take the live workers below the floor, whatever the desired count says.
+                    Reset();
+                    d.Reason = $"not shrinking: {total} live worker(s) is the floor ({settings.MinWorkers})";
                     return d;
                 }
                 if (_inSince < 0.0) _inSince = now;

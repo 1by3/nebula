@@ -340,6 +340,85 @@ namespace Nebula.Tests
             StringAssert.Contains("re-dealing", d.Reason);
         }
 
+        // ---------------------------------------------------------------- a launch that has not landed (NEB-482)
+
+        [Test]
+        public void NeverRetiresTheOnlyLiveWorkerWhileAnotherIsStillLaunching()
+        {
+            // Production, 2026-10-20: w1 was the only live worker, w2 had been launched and had not joined. The
+            // desired count (2) was over MinWorkers, the quiet mean said shrink, and the live count (1) made the
+            // dry run at N-1 workers a plan for none: w1 was retired and the mesh had no workers for minutes.
+            var ids = Row(4);
+            var input = Input(Spread(ids, 0.05f));
+            var workers = new Dictionary<string, float> { ["w1"] = 0.1f };
+            var scaler = new WorkerScaler();
+
+            scaler.Evaluate(0.0, workers, input, _policy, 2, Settings(), false);
+            var d = scaler.Evaluate(31.0, workers, input, _policy, 2, Settings(), false);
+            Assert.AreEqual(ScaleAction.None, d.Action);
+            Assert.AreEqual("", d.RetireWorkerId);
+            StringAssert.Contains("still launching", d.Reason);
+        }
+
+        [Test]
+        public void ShrinkWaitsForTheLaunchedWorkerAndThenJudgesTheWholeMesh()
+        {
+            var ids = Row(8);
+            var input = Input(Spread(ids, 0.2f / 8f));
+            var scaler = new WorkerScaler();
+            var oneLive = new Dictionary<string, float> { ["w1"] = 0.1f };
+
+            // Right after a grow, with the new worker still booting: nothing, however long it lasts.
+            for (double t = 0.0; t <= 120.0; t += 10.0)
+                Assert.AreEqual(ScaleAction.None, scaler.Evaluate(t, oneLive, input, _policy, 2, Settings(), false).Action, $"at {t} s");
+
+            // w2 joins with an empty window: still nothing (it reads as idle).
+            var cold = new WorkerScaler { IsWarm = id => id != "w2" };
+            var bothLive = new Dictionary<string, float> { ["w1"] = 0.1f, ["w2"] = 0f };
+            cold.Evaluate(130.0, bothLive, input, _policy, 2, Settings(), false);
+            var d = cold.Evaluate(170.0, bothLive, input, _policy, 2, Settings(), false);
+            Assert.AreEqual(ScaleAction.None, d.Action);
+            StringAssert.Contains("filled their window", d.Reason);
+
+            // Once it has filled its window the mesh is judged as a whole, and a worker goes.
+            var warm = new WorkerScaler();
+            warm.Evaluate(180.0, bothLive, input, _policy, 2, Settings(), false);
+            d = warm.Evaluate(211.0, bothLive, input, _policy, 2, Settings(), false);
+            Assert.AreEqual(ScaleAction.Shrink, d.Action);
+        }
+
+        [Test]
+        public void AShrinkHeldByALaunchGivesUpWhenTheLaunchNeverLands()
+        {
+            var ids = Row(4);
+            var input = Input(Spread(ids, 0.05f));
+            var workers = new Dictionary<string, float> { ["w1"] = 0.1f, ["w2"] = 0.1f };
+            var scaler = new WorkerScaler { LaunchGraceSeconds = 100f };
+
+            // Three desired, two live: the third is launching.
+            Assert.AreEqual(ScaleAction.None, scaler.Evaluate(0.0, workers, input, _policy, 3, Settings(), false).Action);
+            Assert.AreEqual(ScaleAction.None, scaler.Evaluate(99.0, workers, input, _policy, 3, Settings(), false).Action);
+            // Past the grace the launch is written off and the quiet mesh may shrink again (the hold starts now).
+            scaler.Evaluate(101.0, workers, input, _policy, 3, Settings(), false);
+            var d = scaler.Evaluate(140.0, workers, input, _policy, 3, Settings(), false);
+            Assert.AreEqual(ScaleAction.Shrink, d.Action);
+        }
+
+        [Test]
+        public void TheLiveCountNeverFallsBelowMinWorkers()
+        {
+            var ids = Row(4);
+            var input = Input(Spread(ids, 0.05f));
+            var workers = new Dictionary<string, float> { ["w1"] = 0.1f, ["w2"] = 0.1f };
+            // Two live of a minimum of two, with a third desired and booting: a shrink would leave one.
+            var scaler = new WorkerScaler { LaunchGraceSeconds = 0f };
+            scaler.Evaluate(0.0, workers, input, _policy, 3, Settings(min: 2), false);
+            var d = scaler.Evaluate(31.0, workers, input, _policy, 3, Settings(min: 2), false);
+            Assert.AreEqual(ScaleAction.None, d.Action);
+            Assert.AreEqual("", d.RetireWorkerId);
+            StringAssert.Contains("floor", d.Reason);
+        }
+
         // ---------------------------------------------------------------- a worker whose window is still filling
 
         [Test]

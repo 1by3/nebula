@@ -31,6 +31,14 @@ public Func<string, bool> IsWarm = _ => true;
 
 Has this worker reported enough heartbeats to be judged? A worker launched moments ago has an empty window and reads as 0 % busy, which would drag the mesh's mean under the scale-in line and make the brand new machine the cheapest one to retire. The orchestrator wires this to [`WorkerLoadTracker.IsWarm`](/docs/reference/orchestrator/worker-load-tracker#iswarm); a cold worker is left out of the peak, the mean and the retiree choice, and holds the shrink branch until its window fills. Default: everyone counts.
 
+### LaunchGraceSeconds [#launchgraceseconds]
+
+```csharp
+public float LaunchGraceSeconds = 180f;
+```
+
+How long a launch that has not joined yet holds the shrink branch, in seconds. A worker that was just launched (by the last grow, or to replace a dead one) is part of the count the mesh is driving towards but not of the workers that are live, so shrinking against the live count alone would retire the only machine that is serving while the new one boots. A launch that never lands (a failed boot) stops holding the shrink once this passes.
+
 ## Methods
 
 ### IsInFlight [#isinflight]
