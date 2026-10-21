@@ -24,12 +24,12 @@ namespace Nebula.Tests
         }
 
         [Test]
-        public void TheMessageIdsAreTheNextFreeOnesAndTheWindowIsClosedAt28()
+        public void TheMessageIdsAreTheNextFreeOnesAndTheWindowStartsAt28()
         {
             Assert.AreEqual(27, (int)MsgId.Portals);
             Assert.AreEqual(28, (int)MsgId.PortalLinks);
             Assert.AreEqual(29, (int)MsgId.PortalWarm);
-            Assert.AreEqual(28, HelloMsg.ProtocolVersion);
+            Assert.AreEqual(29, HelloMsg.ProtocolVersion, "29 (server events, NEB-474) is additive, so the window is 28..29");
             Assert.AreEqual(28, HelloMsg.MinProtocolVersion, "a client of 27 is refused: portals are not additive in meaning (D46)");
         }
 
