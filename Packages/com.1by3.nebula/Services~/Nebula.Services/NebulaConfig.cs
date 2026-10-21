@@ -70,6 +70,8 @@ namespace Nebula
         public bool OrchestratorSpawnsGateway = true;
         public float WorkerHeartbeatSeconds = 1f;
         public float WorkerTimeoutSeconds = 5f;
+        /// <summary>The gateway pushes a forwarded owner or sequenced RPC onto the wire as it forwards it, and flushes what it forwarded from a poll before its other work (NEB-475). Mirrors the Unity-side field.</summary>
+        public bool FlushRpcsImmediately = true;
         public float DeadWorkerReplaceDelaySeconds = 8f;
         public float WorkerDrainTimeoutSeconds = 10f;
         public ushort DashboardPort = 7080;
