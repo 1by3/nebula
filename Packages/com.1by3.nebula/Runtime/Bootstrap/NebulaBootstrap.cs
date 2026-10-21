@@ -117,7 +117,7 @@ namespace Nebula
                 Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
             }
 
-            Application.targetFrameRate = NebulaRuntime.IsClient ? -1 : NetworkTime.TickRate;
+            Application.targetFrameRate = NebulaRuntime.IsClient ? -1 : NebulaConfig.ServerFrameRateOf(Config);
             Time.fixedDeltaTime = NetworkTime.TickInterval;
             Physics.simulationMode = SimulationMode.FixedUpdate;
 
@@ -651,6 +651,9 @@ namespace Nebula
             cfg.GhostBandMargin = CommandLine.GetFloat("nebula-ghost-band", cfg.GhostBandMargin);
             cfg.HandoverHysteresis = CommandLine.GetFloat("nebula-hysteresis", cfg.HandoverHysteresis);
             cfg.AuthorityCallMaxHops = CommandLine.GetInt("nebula-authority-call-hops", cfg.AuthorityCallMaxHops);
+            cfg.ServerFrameRate = CommandLine.GetInt("nebula-server-fps", cfg.ServerFrameRate);
+            cfg.WorkerPollBeforeTick = CommandLine.GetBool("nebula-poll-before-tick", cfg.WorkerPollBeforeTick);
+            cfg.FlushRpcsImmediately = CommandLine.GetBool("nebula-flush-rpcs", cfg.FlushRpcsImmediately);
             cfg.StateHistoryTicks = CommandLine.GetInt("nebula-state-history", cfg.StateHistoryTicks);
             // Interest is the knob a load test or a soak run wants to sweep without rebuilding.
             cfg.InterestRadius = CommandLine.GetFloat("nebula-interest-radius", cfg.InterestRadius);

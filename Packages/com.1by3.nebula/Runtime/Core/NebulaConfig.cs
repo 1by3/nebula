@@ -216,6 +216,12 @@ namespace Nebula
         public float WorkerTimeoutSeconds = 5f;
         [Tooltip("Wall time in milliseconds a worker may spend simulating ticks in one frame while it catches up with the clock. Once a frame has spent this much, the remaining ticks wait for the next frames (or are skipped when the worker is more than 15 ticks behind), so a starved worker keeps a short frame and keeps polling the network and sending heartbeats. About two to three tick periods; 0 turns the budget off.")]
         public float WorkerCatchUpBudgetMs = 40f;
+        [Tooltip("Frames per second a worker or gateway process runs its Update loop at (it polls its network once per frame). Simulation stays at the 60 Hz tick rate; a higher value only makes a packet wait less for the next poll, at the cost of idle CPU: about 4 x the tick rate is a quarter of a tick period. 0 or anything at or below the tick rate keeps the old behavior (60). Clients are not affected. -nebula-server-fps overrides.")]
+        public int ServerFrameRate = 240;
+        [Tooltip("A worker polls its network at the start of each frame's first FixedUpdate, before it simulates, so an input that arrived since the last Update is seen by the tick that follows (and by PredictedBehaviour.OnServerInputReceived) instead of one frame later. -nebula-poll-before-tick overrides.")]
+        public bool WorkerPollBeforeTick = true;
+        [Tooltip("Push a client RPC onto the wire as soon as it is sent when it goes to one client (OwnerRpc) or asks for Delivery.Sequenced, on the worker and again on the gateway that forwards it, instead of at the end of the tick or the loop. A gateway also pushes what it forwarded from a poll before it does its other work. -nebula-flush-rpcs overrides.")]
+        public bool FlushRpcsImmediately = true;
         [Tooltip("Seconds to wait after a worker is declared dead before a replacement is launched.")]
         public float DeadWorkerReplaceDelaySeconds = 8f;
         [Tooltip("Seconds a retiring worker gets to hand its entities over before it is killed regardless.")]
@@ -467,6 +473,10 @@ namespace Nebula
 
         /// <summary>Whether the world's cells are centered on <c>coord × CellSize</c> (baked cells) rather than starting there (a runtime grid).</summary>
         private bool WorldCellsCentred() => WorldManifest != null && WorldManifest.World != null;
+
+        /// <summary>The frame rate a worker or gateway process runs at: <see cref="ServerFrameRate"/>, never below the tick rate. A null config gives the tick rate.</summary>
+        public static int ServerFrameRateOf(NebulaConfig config)
+            => config == null || config.ServerFrameRate <= NetworkTime.TickRate ? NetworkTime.TickRate : Mathf.Min(config.ServerFrameRate, 1000);
 
         public static NebulaConfig Load()
         {

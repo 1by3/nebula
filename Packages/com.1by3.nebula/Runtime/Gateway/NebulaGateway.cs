@@ -973,6 +973,9 @@ namespace Nebula
             _lastTickAt = now;
 
             _transport.Poll(HandleTransportEvent);
+            // What the poll forwarded (a client's input to its worker) goes out now, before the interest pass and the
+            // rest of the loop, instead of at the end of it or at the transport's next timer (NEB-475).
+            if (FlushRpcsImmediately) _transport.Flush();
             // Updates that named a container this gateway could not describe yet, and preparations whose
             // destination row had not arrived: both wait for the control plane, never longer than their bound.
             ReleaseHeldUpdates(InterestNow);
@@ -1540,6 +1543,9 @@ namespace Nebula
         /// </summary>
         private bool _workerPacketSequenced;
 
+        /// <summary><see cref="NebulaConfig.FlushRpcsImmediately"/>, true without a config.</summary>
+        private bool FlushRpcsImmediately => Config == null || Config.FlushRpcsImmediately;
+
         private void OnEntityRpc(WorkerConn w, EntityRpcMsg msg)
         {
             var delivery = _workerPacketSequenced ? Delivery.Sequenced : Delivery.ReliableOrdered;
@@ -1574,7 +1580,17 @@ namespace Nebula
             {
                 if (reliable) AppendReliable(c, _writer.ToSegment());
                 else Send(c.PeerId, delivery, _writer.ToSegment());
+                // A call to one client (an owner's hit marker) is waiting for a person: send it now, with whatever is
+                // already in that client's reliable batch ahead of it, not at the end of the loop (NEB-475).
+                if (FlushRpcsImmediately)
+                {
+                    FlushReliable(c);
+                    _transport.Flush();
+                }
+                return;
             }
+            // A sequenced broadcast is as urgent as a targeted call; a reliable one batches with the rest.
+            if (!reliable && FlushRpcsImmediately) _transport.Flush();
         }
 
         private readonly List<EntityStateEntry> _scratchEntries = new List<EntityStateEntry>();

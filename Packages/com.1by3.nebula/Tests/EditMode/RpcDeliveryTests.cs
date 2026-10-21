@@ -80,7 +80,8 @@ namespace Nebula.Tests
                 Incoming.Clear();
                 foreach (var ev in events) handler(ev);
             }
-            public void Flush() { }
+            public int Flushes;
+            public void Flush() { Flushes++; }
             public void Stop() { }
             public void Dispose() { }
         }
@@ -213,6 +214,13 @@ namespace Nebula.Tests
                 GatewayType.GetMethod("OnEntityRpc", Flags).Invoke(Gateway, new[] { Worker, (object)msg });
             }
 
+            public void SetFlushRpcsImmediately(bool on)
+            {
+                var config = ScriptableObject.CreateInstance<NebulaConfig>();
+                config.FlushRpcsImmediately = on;
+                GatewayType.GetField("<Config>k__BackingField", Flags).SetValue(Gateway, config);
+            }
+
             public int PendingReliable => Convert.ToInt32(Client.GetType().GetField("ReliableCount").GetValue(Client));
 
             public void FlushReliable() => GatewayType.GetMethod("FlushReliable", Flags).Invoke(Gateway, new[] { Client });
@@ -235,11 +243,12 @@ namespace Nebula.Tests
         }
 
         [Test]
-        public void TheGatewayStillBatchesAReliableOwnerRpcWithTheClientsReliableTraffic()
+        public void WithImmediateFlushOffTheGatewayStillBatchesAReliableOwnerRpcWithTheClientsReliableTraffic()
         {
             var transport = new RecordingTransport();
             var rig = GatewayRig.Make(transport);
             _created.Add(rig.Host);
+            rig.SetFlushRpcsImmediately(false);
 
             rig.WorkerSends(Delivery.ReliableOrdered);
 
@@ -249,6 +258,37 @@ namespace Nebula.Tests
             Assert.AreEqual(1, transport.Sent.Count);
             Assert.AreEqual(Delivery.ReliableOrdered, transport.Sent[0].Delivery);
             Assert.AreEqual((byte)MsgId.Batch, transport.Sent[0].Bytes[0]);
+        }
+
+        [Test]
+        public void ByDefaultTheGatewaySendsAReliableOwnerRpcAtOnceAndFlushesTheTransport()
+        {
+            var transport = new RecordingTransport();
+            var rig = GatewayRig.Make(transport);
+            _created.Add(rig.Host);
+
+            rig.WorkerSends(Delivery.ReliableOrdered);
+
+            Assert.AreEqual(1, transport.Sent.Count, "not held for the end of the loop (NEB-475)");
+            Assert.AreEqual(Delivery.ReliableOrdered, transport.Sent[0].Delivery);
+            Assert.AreEqual((byte)MsgId.Batch, transport.Sent[0].Bytes[0]);
+            Assert.AreEqual(0, rig.PendingReliable);
+            Assert.AreEqual(1, transport.Flushes, "pushed onto the wire");
+        }
+
+        [Test]
+        public void ASequencedOwnerRpcIsFlushedAtOnceAndIsNotWhenImmediateFlushIsOff()
+        {
+            var transport = new RecordingTransport();
+            var rig = GatewayRig.Make(transport);
+            _created.Add(rig.Host);
+            rig.WorkerSends(Delivery.Sequenced);
+            Assert.AreEqual(1, transport.Flushes);
+
+            rig.SetFlushRpcsImmediately(false);
+            rig.WorkerSends(Delivery.Sequenced);
+            Assert.AreEqual(2, transport.Sent.Count, "still sent at once");
+            Assert.AreEqual(1, transport.Flushes, "but left to the loop's flush");
         }
 
         // ---- under simulated loss (NEB-472) ---------------------------------------------------------------------

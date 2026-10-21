@@ -1120,7 +1120,30 @@ namespace Nebula
             }
         }
 
-        private void FixedUpdate() => CatchUp(NetworkTime.DerivedTick, Time.frameCount);
+        private void FixedUpdate()
+        {
+            if (IsListening) PollForTick(Time.frameCount);
+            CatchUp(NetworkTime.DerivedTick, Time.frameCount);
+        }
+
+        private int _polledFrame = -1;
+
+        /// <summary>
+        /// Poll the transport before a frame's first tick (<see cref="NebulaConfig.WorkerPollBeforeTick"/>). The loop
+        /// polls in Update, which runs after FixedUpdate, so without this an input that arrives between two Updates
+        /// waits for the next frame before the tick that could use it (and before
+        /// <c>PredictedBehaviour.OnServerInputReceived</c> reports it). Once per rendered frame: a catch-up burst of
+        /// FixedUpdates polls once.
+        /// </summary>
+        internal void PollForTick(int frame)
+        {
+            if (frame == _polledFrame) return;
+            _polledFrame = frame;
+            if (_transport == null || (Config != null && !Config.WorkerPollBeforeTick)) return;
+            ProfPoll.Begin();
+            _transport.Poll(HandleTransportEvent);
+            ProfPoll.End();
+        }
 
         /// <summary>
         /// Simulate the tick numbers that have elapsed up to <paramref name="derived"/>, at most
@@ -3590,10 +3613,17 @@ namespace Nebula
             if (targetClientId != 0)
             {
                 var session = SessionGatewayOf(targetClientId);
-                if (session != null) Send(session, delivery);
+                if (session != null)
+                {
+                    Send(session, delivery);
+                    // A call to one client (an owner's hit marker) is waiting for a person: do not hold it for the
+                    // end of the tick or the transport's own timer (NEB-475).
+                    if (Config == null || Config.FlushRpcsImmediately) _transport.Flush();
+                }
                 return;
             }
             SendToMask(PublishMaskOf(identity), delivery);
+            if (delivery == Delivery.Sequenced && (Config == null || Config.FlushRpcsImmediately)) _transport.Flush();
         }
 
         void IRpcSink.SendServerRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args)
