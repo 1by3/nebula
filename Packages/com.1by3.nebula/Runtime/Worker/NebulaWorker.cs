@@ -1120,7 +1120,30 @@ namespace Nebula
             }
         }
 
-        private void FixedUpdate() => CatchUp(NetworkTime.DerivedTick, Time.frameCount);
+        private void FixedUpdate()
+        {
+            if (IsListening) PollForTick(Time.frameCount);
+            CatchUp(NetworkTime.DerivedTick, Time.frameCount);
+        }
+
+        private int _polledFrame = -1;
+
+        /// <summary>
+        /// Poll the transport before a frame's first tick (<see cref="NebulaConfig.WorkerPollBeforeTick"/>). The loop
+        /// polls in Update, which runs after FixedUpdate, so without this an input that arrives between two Updates
+        /// waits for the next frame before the tick that could use it (and before
+        /// <c>PredictedBehaviour.OnServerInputReceived</c> reports it). Once per rendered frame: a catch-up burst of
+        /// FixedUpdates polls once.
+        /// </summary>
+        internal void PollForTick(int frame)
+        {
+            if (frame == _polledFrame) return;
+            _polledFrame = frame;
+            if (_transport == null || (Config != null && !Config.WorkerPollBeforeTick)) return;
+            ProfPoll.Begin();
+            _transport.Poll(HandleTransportEvent);
+            ProfPoll.End();
+        }
 
         /// <summary>
         /// Simulate the tick numbers that have elapsed up to <paramref name="derived"/>, at most
@@ -3561,20 +3584,46 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- IRpcSink
 
+        /// <summary>
+        /// Largest EntityRpc message sent on the sequenced channel. Sequenced delivery cannot fragment and a link's MTU
+        /// starts at 508 bytes, so a bigger call goes reliable instead of being dropped by the transport.
+        /// </summary>
+        public const int MaxSequencedRpcBytes = 400;
+
+        /// <summary>ClientRpcs that asked for a sequenced delivery but were too large for one packet and went reliable.</summary>
+        public long SequencedRpcsSentReliable { get; private set; }
+
         void IRpcSink.SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, ulong targetClientId, float radius)
+            => ((IRpcSink)this).SendClientRpc(identity, behaviourIndex, methodHash, args, targetClientId, radius, Delivery.ReliableOrdered);
+
+        void IRpcSink.SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, ulong targetClientId, float radius, Delivery delivery)
         {
             var msg = new EntityRpcMsg { NetId = identity.NetId, Epoch = identity.Epoch, BehaviourIndex = behaviourIndex, MethodHash = methodHash, ClientId = targetClientId, Radius = radius, Args = ToArray(args) };
             _writer.Reset();
             msg.Write(_writer, MsgId.EntityRpc);
+            if (delivery == Delivery.Sequenced && _writer.Length > MaxSequencedRpcBytes)
+            {
+                if ((++SequencedRpcsSentReliable & (SequencedRpcsSentReliable - 1)) == 0)
+                    NebulaLog.Warn($"sequenced ClientRpc {methodHash:x} is {_writer.Length} bytes, over the {MaxSequencedRpcBytes} a sequenced packet may carry; sent reliable ({SequencedRpcsSentReliable} so far)");
+                delivery = Delivery.ReliableOrdered;
+            }
+            else if (delivery != Delivery.Sequenced) delivery = Delivery.ReliableOrdered;
             // Targeted at one client: its gateway alone. Otherwise the gateways that hear about the entity at all —
             // an RPC for an entity a gateway has never been told about has nowhere to land.
             if (targetClientId != 0)
             {
                 var session = SessionGatewayOf(targetClientId);
-                if (session != null) Send(session, Delivery.ReliableOrdered);
+                if (session != null)
+                {
+                    Send(session, delivery);
+                    // A call to one client (an owner's hit marker) is waiting for a person: do not hold it for the
+                    // end of the tick or the transport's own timer (NEB-475).
+                    if (Config == null || Config.FlushRpcsImmediately) _transport.Flush();
+                }
                 return;
             }
-            SendToMask(PublishMaskOf(identity), Delivery.ReliableOrdered);
+            SendToMask(PublishMaskOf(identity), delivery);
+            if (delivery == Delivery.Sequenced && (Config == null || Config.FlushRpcsImmediately)) _transport.Flush();
         }
 
         void IRpcSink.SendServerRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args)

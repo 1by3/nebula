@@ -6,6 +6,13 @@ namespace Nebula
     public interface IRpcSink
     {
         void SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, ulong targetClientId, float radius);
+        /// <summary>
+        /// As <see cref="SendClientRpc(NetworkIdentity, byte, uint, ArraySegment{byte}, ulong, float)"/>, on the given
+        /// delivery class (<see cref="ClientRpcAttribute.Delivery"/>). The default forwards to the reliable overload, so
+        /// a sink written before delivery classes existed keeps compiling and sends everything reliable.
+        /// </summary>
+        void SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, ulong targetClientId, float radius, Delivery delivery)
+            => SendClientRpc(identity, behaviourIndex, methodHash, args, targetClientId, radius);
         void SendServerRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args);
         void SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args);
         /// <summary>

@@ -14,6 +14,19 @@ namespace Nebula
         /// default) reaches every client. Targeted sends (OwnerRpc) are never filtered.
         /// </summary>
         public float Radius;
+
+        /// <summary>
+        /// How the call travels from the worker to the client (through the gateway), for a broadcast and for
+        /// <c>OwnerRpc</c> alike. <see cref="Nebula.Delivery.ReliableOrdered"/> (the default) arrives exactly once, in
+        /// order with the other reliable traffic. <see cref="Nebula.Delivery.Sequenced"/> is for a message only useful
+        /// if it is fast, such as a provisional hit marker: it is not retransmitted when its packet is lost, and one
+        /// overtaken by a newer sequenced packet is dropped, so a lost packet never holds it up. A sequenced call may
+        /// therefore never arrive, and its order relative to reliable RPCs, spawns and state is not guaranteed: it can
+        /// arrive before or after a reliable message that was sent earlier or later. A call whose arguments do not fit
+        /// one small packet (about 400 bytes with the header) is sent reliable instead. Nebula has no separate
+        /// unordered-unreliable delivery class; sequenced is the fastest one.
+        /// </summary>
+        public Delivery Delivery = Delivery.ReliableOrdered;
     }
 
     /// <summary>Sent by the owning client, runs on whichever worker currently has authority over the entity.</summary>
@@ -39,6 +52,8 @@ namespace Nebula
         public string Name;
         /// <summary>ClientRpc only: <see cref="ClientRpcAttribute.Radius"/>.</summary>
         public float Radius;
+        /// <summary>ClientRpc only: <see cref="ClientRpcAttribute.Delivery"/>, normalised to a class the transport has.</summary>
+        public Delivery Delivery = Delivery.ReliableOrdered;
     }
 
     /// <summary>Reflection-based RPC table. A source generator can replace this later without changing gameplay code.</summary>
@@ -70,8 +85,9 @@ namespace Nebula
                 {
                     RpcKind kind;
                     float radius = 0f;
+                    var delivery = Delivery.ReliableOrdered;
                     var clientAttr = m.GetCustomAttribute<ClientRpcAttribute>();
-                    if (clientAttr != null) { kind = RpcKind.Client; radius = clientAttr.Radius; }
+                    if (clientAttr != null) { kind = RpcKind.Client; radius = clientAttr.Radius; delivery = clientAttr.Delivery == Delivery.Sequenced ? Delivery.Sequenced : Delivery.ReliableOrdered; }
                     else if (m.GetCustomAttribute<ServerRpcAttribute>() != null) kind = RpcKind.Server;
                     else if (m.GetCustomAttribute<AuthorityRpcAttribute>() != null) kind = RpcKind.Authority;
                     else continue;
@@ -87,7 +103,7 @@ namespace Nebula
                     uint hash = Hash(m.Name);
                     if (table.ContainsKey(hash))
                         throw new InvalidOperationException($"RPC name collision on {t.Name}: {m.Name} (overloads are not supported)");
-                    table[hash] = new RpcMethod { Method = m, ParameterTypes = types, Kind = kind, Hash = hash, Name = m.Name, Radius = radius };
+                    table[hash] = new RpcMethod { Method = m, ParameterTypes = types, Kind = kind, Hash = hash, Name = m.Name, Radius = radius, Delivery = delivery };
                 }
             }
             Tables[type] = table;

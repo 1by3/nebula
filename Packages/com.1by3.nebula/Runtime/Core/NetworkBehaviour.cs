@@ -326,7 +326,7 @@ namespace Nebula
                 case RpcKind.Client:
                     if (!IsServer) { NebulaLog.Warn($"ClientRpc {methodName} can only be sent from a worker"); return; }
                     if (!HasAuthority) { NebulaLog.Warn($"ClientRpc {methodName} sent from a ghost of {NetId}; ignored"); return; }
-                    sink.SendClientRpc(Identity, BehaviourIndex, m.Hash, payload, targetClientId, targetClientId == 0 ? m.Radius : 0f);
+                    sink.SendClientRpc(Identity, BehaviourIndex, m.Hash, payload, targetClientId, targetClientId == 0 ? m.Radius : 0f, m.Delivery);
                     break;
                 case RpcKind.Server:
                     if (!IsClient) { NebulaLog.Warn($"ServerRpc {methodName} can only be sent from a client"); return; }

@@ -51,13 +51,13 @@ Every worker writes a profile line every five seconds:
 
 Use these fields to find a performance problem:
 
-- `ticks` should average 60 per second, and `frames` should stay close to `ticks`.
+- `ticks` should average 60 per second. `frames` is the number of Unity frames in the window. With the default `ServerFrameRate` of 0 it stays close to `ticks`. A higher `ServerFrameRate` makes it a multiple of `ticks`, and a lower one makes it a fraction.
 - `dup` counts fixed updates that did not advance to a new network tick. An occasional duplicate is expected.
 - `skip` counts ticks discarded after the worker fell more than `NebulaWorker.MaxLagTicks` behind. Each one is a tick a predicting client ran and the worker did not. The worker steps a predicted entity through the inputs of skipped ticks when it next ticks, so the entity is normally not corrected, but a value that keeps increasing means the worker cannot maintain the tick rate.
 - `budget` counts the times a frame stopped catching up early because it had spent `NebulaConfig.WorkerCatchUpBudgetMs` simulating ticks. The ticks left over run in the next frames, or are counted in `skip` once the worker is more than `MaxLagTicks` behind. A value that keeps increasing means ticks cost more than the time between them.
 - `avg` and `max` (before the `|`) report the average and maximum time spent in a Nebula tick.
 - The sections after the first `|` are milliseconds per tick and add up to the tick. `simulate` includes your `NetworkTick` methods. `begin`, `frames.sim` (instance scenes and physics frames) and `replicate` are the passes between the others, and `untimed` is whatever no section covers. `gap` is the time between two ticks.
-- `frame avg`, `p90` and `max` are the wall time of a whole Unity frame, from the start of one frame to the start of the next. A worker holding 60 frames per second averages 16.7 ms; a p90 or max far above it is a stall.
+- `frame avg`, `p90` and `max` are the wall time of a whole Unity frame, from the start of one frame to the start of the next. A worker holding the default rate averages 16.7 ms, one tick period; a p90 or max far above its frame period is a stall.
 - The split after the colon is milliseconds per frame and adds up to the frame average. `physics` is the physics step, `fixed` the rest of the FixedUpdate phase (script `FixedUpdate` other than Nebula's tick), `tick` Nebula's tick, `update` the Update phase (including Nebula's transport poll and your `Update` methods), and `late` the PreLateUpdate phase (your `LateUpdate` methods). `idle` is the remainder: waiting for the frame limiter, rendering, the engine's own frame work and garbage collection. A frame that is mostly `idle` has room to spare; one with little `idle` and an average above 16.7 ms is falling behind.
 
 The worker sends the same figures on every heartbeat, so `GET /api/state` shows them per worker as `frameAvgMs`, `frameP90Ms`, `frameMaxMs`, `frameSections` (the split) and `profileSections` (every tick section), each a map from name to milliseconds. The values are those of the last completed five-second window. A worker older than this reports 0 and empty maps.

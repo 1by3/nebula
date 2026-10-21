@@ -17,7 +17,10 @@ Where RPCs and state changes go once a behaviour has produced them. Implemented 
 
 ```csharp
 void SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, ulong targetClientId, float radius);
+void SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, ulong targetClientId, float radius, Delivery delivery);
 ```
+
+As [`SendClientRpc`](#sendclientrpc), on the given delivery class ([`ClientRpcAttribute.Delivery`](/docs/reference/core/client-rpc-attribute#delivery)). The default forwards to the reliable overload, so a sink written before delivery classes existed keeps compiling and sends everything reliable.
 
 ### SendServerRpc [#sendserverrpc]
 
