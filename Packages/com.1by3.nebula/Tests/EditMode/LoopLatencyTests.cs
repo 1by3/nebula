@@ -128,7 +128,7 @@ namespace Nebula.Tests
         /// arrival.
         /// </summary>
         private static double RoundTrip(LiteNetTransport client, int clientPeer, LiteNetTransport gateway, int gwClientPeer, int gwWorkerPeer,
-            LiteNetTransport worker, int workerPeer, double gatewayPeriodMs, double workerPeriodMs, bool flushAnswerAtOnce, Random random)
+            LiteNetTransport worker, int workerPeer, double gatewayPeriodMs, double workerPeriodMs, bool flushAnswerAtOnce, System.Random random)
         {
             var clock = Stopwatch.StartNew();
             double nextGateway = random.NextDouble() * gatewayPeriodMs;
@@ -213,7 +213,7 @@ namespace Nebula.Tests
 
                 var before = new List<double>();
                 var after = new List<double>();
-                var random = new Random(475);
+                var random = new System.Random(475);
                 for (int i = 0; i < 40; i++)
                 {
                     // Before: Unity-hosted loops at the tick rate, the worker's answer left for the end of its tick.
