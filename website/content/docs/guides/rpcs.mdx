@@ -99,6 +99,34 @@ private void RpcShotFired(Vector3 origin, Vector3 end, bool hit)
 
 With hundreds of NPCs shooting, this keeps each client's reliable stream to the fights it can see.
 
+### Send an event that must be fast, not guaranteed
+
+By default a client RPC is reliable and ordered: it arrives exactly once, but a lost packet holds it, and everything reliable behind it, until Nebula retransmits. For a message that is only useful if it arrives quickly, such as a provisional hit marker, set `Delivery` on the attribute:
+
+```csharp
+[ClientRpc(Delivery = Delivery.Sequenced)]
+private void RpcHitMarker(int targetId)
+{
+    ShowHitMarker(targetId);
+}
+```
+
+`Delivery` applies to `ClientRpc` and `OwnerRpc` alike, because both use `[ClientRpc]`. The values are:
+
+| Value | Behavior |
+| --- | --- |
+| `Delivery.ReliableOrdered` (default) | Arrives exactly once, in order with other reliable messages. |
+| `Delivery.Sequenced` | Is sent once and never retransmitted. A lost packet is lost, and a packet that a newer sequenced packet overtakes is dropped. |
+
+The worker sends the call on the sequenced channel, and the gateway forwards it to the client on the same channel instead of adding it to the client's reliable batch. Keep these limits in mind:
+
+- A sequenced call can fail to arrive. Send something reliable, such as the confirmed result, for anything the client must not miss.
+- A sequenced call is not ordered against reliable RPCs, spawns, variables, or state. It can arrive before or after a reliable message that was sent earlier or later. In particular, it can reach a client before the spawn of the entity it targets, in which case the client ignores it.
+- A call whose serialized message exceeds about 400 bytes is sent reliable, because a sequenced packet cannot be split. Nebula logs a warning when that happens.
+- A gateway drops a sequenced call for an entity it has not finished describing to the client, instead of holding it.
+
+Nebula has no unordered, unreliable class beyond `Sequenced`. This setting changes no message bytes, so clients and gateways of the same wire protocol interoperate.
+
 Use `OwnerRpc` when only the owning client needs the result:
 
 ```csharp
@@ -315,7 +343,7 @@ Dispose the query when its owner is destroyed. This unregisters its request and 
 - Declare handlers with any C# visibility, including `private`.
 - Return `void`; RPC return values are not supported.
 - Expect handler exceptions to be logged on the receiving process, not thrown on the sender.
-- Expect reliable ordered delivery, but do not use an RPC as persistent state or predicted tick input.
+- Expect reliable ordered delivery unless you set `Delivery` on a `[ClientRpc]`. Do not use an RPC as persistent state or predicted tick input.
 
 ## Choose an RPC or replicated state
 

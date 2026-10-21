@@ -21,3 +21,11 @@ public float Radius;
 ```
 
 Metres. When set, the gateway delivers a broadcast of this RPC only to clients whose pawn is within this distance of the entity (a tracer, a footstep, a muzzle flash: nobody across the map needs it). 0 (the default) reaches every client. Targeted sends (OwnerRpc) are never filtered.
+
+### Delivery [#delivery]
+
+```csharp
+public Delivery Delivery = Delivery.ReliableOrdered;
+```
+
+How the call travels from the worker to the client (through the gateway), for a broadcast and for `OwnerRpc` alike. `Nebula.Delivery.ReliableOrdered` (the default) arrives exactly once, in order with the other reliable traffic. `Nebula.Delivery.Sequenced` is for a message only useful if it is fast, such as a provisional hit marker: it is not retransmitted when its packet is lost, and one overtaken by a newer sequenced packet is dropped, so a lost packet never holds it up. A sequenced call may therefore never arrive, and its order relative to reliable RPCs, spawns and state is not guaranteed: it can arrive before or after a reliable message that was sent earlier or later. A call whose arguments do not fit one small packet (about 400 bytes with the header) is sent reliable instead. Nebula has no separate unordered-unreliable delivery class; sequenced is the fastest one.

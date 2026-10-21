@@ -114,7 +114,7 @@ See [Interest management](/docs/guides/interest-management) for how these messag
 | `EntityVars` | Reliable | Sends every `NetworkVariable` value after one changes. |
 | `EntityMaps` | Reliable | Sends the entries of a [`NetworkMap`](/docs/guides/network-map) that changed. The gateway keeps each map's current contents, so a client that arrives later gets them in its spawn. |
 | `EntityState` | either | Sends state from sync components that have changed. The gateway gives each client only the components whose [sync audience](/docs/guides/sync-audiences) includes it. |
-| `EntityRpc` | Reliable | A `ClientRpc` or `OwnerRpc` (targeted at one client or broadcast). A broadcast declared with a `Radius` carries it, and the gateway forwards it only to clients whose pawn is within that distance of the entity. |
+| `EntityRpc` | Reliable, or sequenced when the attribute sets `Delivery = Delivery.Sequenced` | A `ClientRpc` or `OwnerRpc` (targeted at one client or broadcast). A broadcast declared with a `Radius` carries it, and the gateway forwards it only to clients whose pawn is within that distance of the entity. |
 
 **Client to gateway to worker**
 

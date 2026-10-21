@@ -1237,7 +1237,7 @@ namespace Nebula
                     _reader.Set(ev.Data);
                     try
                     {
-                        if (_workersByPeer.TryGetValue(ev.PeerId, out var w)) { _workerBytesIn += ev.Data.Count; DispatchWorker(w, _reader); }
+                        if (_workersByPeer.TryGetValue(ev.PeerId, out var w)) { _workerBytesIn += ev.Data.Count; _workerPacketSequenced = ev.Sequenced; try { DispatchWorker(w, _reader); } finally { _workerPacketSequenced = false; } }
                         else { _clientPacketsIn++; _clientBytesIn += ev.Data.Count; DispatchClient(ev.PeerId, _reader); }
                     }
                     catch (Exception e) { NebulaLog.Error($"bad packet from peer {ev.PeerId}: {e}"); }
@@ -1534,12 +1534,23 @@ namespace Nebula
             }
         }
 
+        /// <summary>
+        /// Whether the worker packet being dispatched arrived on the sequenced channel. A ClientRpc that asked for
+        /// <see cref="Delivery.Sequenced"/> is forwarded on the same class and never re-sent reliably.
+        /// </summary>
+        private bool _workerPacketSequenced;
+
         private void OnEntityRpc(WorkerConn w, EntityRpcMsg msg)
         {
-            if (HoldBehind(msg.NetId, msg.Epoch, new HeldUpdate { Kind = HeldKind.Rpc, Rpc = msg, Worker = w.Index })) return;
+            var delivery = _workerPacketSequenced ? Delivery.Sequenced : Delivery.ReliableOrdered;
+            _workerPacketSequenced = false;
+            // A sequenced call is only worth anything fast: if it would have to wait behind a held spawn it is dropped.
+            if (delivery == Delivery.Sequenced && _held.ContainsKey(msg.NetId)) return;
+            if (delivery == Delivery.ReliableOrdered && HoldBehind(msg.NetId, msg.Epoch, new HeldUpdate { Kind = HeldKind.Rpc, Rpc = msg, Worker = w.Index })) return;
             if (!_entities.TryGetValue(msg.NetId, out var rec) || msg.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) return;
             _writer.Reset();
             msg.Write(_writer, MsgId.EntityRpc);
+            bool reliable = delivery == Delivery.ReliableOrdered;
             if (msg.ClientId == 0 && msg.Radius > 0f)
             {
                 // A spatial RPC (a tracer, a footstep): of the clients that hold a replica, the ones whose pawn is
@@ -1553,11 +1564,17 @@ namespace Nebula
                     var root = RootOf(pawn);
                     if (root.FrameKey != rec.FrameKey) continue; // positions of different region spaces are not comparable
                     double dx = root.AbsX - rec.AbsX, dy = root.AbsY - rec.AbsY, dz = root.AbsZ - rec.AbsZ;
-                    if (dx * dx + dy * dy + dz * dz <= r2) AppendReliable(c, seg);
+                    if (dx * dx + dy * dy + dz * dz > r2) continue;
+                    if (reliable) AppendReliable(c, seg);
+                    else Send(c.PeerId, delivery, seg);
                 }
             }
-            else if (msg.ClientId == 0) BroadcastEntity(rec, Delivery.ReliableOrdered);
-            else if (_clientsById.TryGetValue(msg.ClientId, out var c) && c.Visible.Contains(rec.NetId)) AppendReliable(c, _writer.ToSegment());
+            else if (msg.ClientId == 0) BroadcastEntity(rec, delivery);
+            else if (_clientsById.TryGetValue(msg.ClientId, out var c) && c.Visible.Contains(rec.NetId))
+            {
+                if (reliable) AppendReliable(c, _writer.ToSegment());
+                else Send(c.PeerId, delivery, _writer.ToSegment());
+            }
         }
 
         private readonly List<EntityStateEntry> _scratchEntries = new List<EntityStateEntry>();

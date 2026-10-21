@@ -3561,20 +3561,39 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- IRpcSink
 
+        /// <summary>
+        /// Largest EntityRpc message sent on the sequenced channel. Sequenced delivery cannot fragment and a link's MTU
+        /// starts at 508 bytes, so a bigger call goes reliable instead of being dropped by the transport.
+        /// </summary>
+        public const int MaxSequencedRpcBytes = 400;
+
+        /// <summary>ClientRpcs that asked for a sequenced delivery but were too large for one packet and went reliable.</summary>
+        public long SequencedRpcsSentReliable { get; private set; }
+
         void IRpcSink.SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, ulong targetClientId, float radius)
+            => ((IRpcSink)this).SendClientRpc(identity, behaviourIndex, methodHash, args, targetClientId, radius, Delivery.ReliableOrdered);
+
+        void IRpcSink.SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, ulong targetClientId, float radius, Delivery delivery)
         {
             var msg = new EntityRpcMsg { NetId = identity.NetId, Epoch = identity.Epoch, BehaviourIndex = behaviourIndex, MethodHash = methodHash, ClientId = targetClientId, Radius = radius, Args = ToArray(args) };
             _writer.Reset();
             msg.Write(_writer, MsgId.EntityRpc);
+            if (delivery == Delivery.Sequenced && _writer.Length > MaxSequencedRpcBytes)
+            {
+                if ((++SequencedRpcsSentReliable & (SequencedRpcsSentReliable - 1)) == 0)
+                    NebulaLog.Warn($"sequenced ClientRpc {methodHash:x} is {_writer.Length} bytes, over the {MaxSequencedRpcBytes} a sequenced packet may carry; sent reliable ({SequencedRpcsSentReliable} so far)");
+                delivery = Delivery.ReliableOrdered;
+            }
+            else if (delivery != Delivery.Sequenced) delivery = Delivery.ReliableOrdered;
             // Targeted at one client: its gateway alone. Otherwise the gateways that hear about the entity at all —
             // an RPC for an entity a gateway has never been told about has nowhere to land.
             if (targetClientId != 0)
             {
                 var session = SessionGatewayOf(targetClientId);
-                if (session != null) Send(session, Delivery.ReliableOrdered);
+                if (session != null) Send(session, delivery);
                 return;
             }
-            SendToMask(PublishMaskOf(identity), Delivery.ReliableOrdered);
+            SendToMask(PublishMaskOf(identity), delivery);
         }
 
         void IRpcSink.SendServerRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args)

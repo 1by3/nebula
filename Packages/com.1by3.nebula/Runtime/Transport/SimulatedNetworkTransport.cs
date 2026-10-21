@@ -256,7 +256,7 @@ namespace Nebula
             {
                 int peer = pair.Key;
                 Release(pair.Value, now, held =>
-                    _handler?.Invoke(new TransportEvent(TransportEvent.Kind.Data, peer, new ArraySegment<byte>(held.Bytes))));
+                    _handler?.Invoke(new TransportEvent(TransportEvent.Kind.Data, peer, new ArraySegment<byte>(held.Bytes), held.Sequenced)));
             }
         }
 
