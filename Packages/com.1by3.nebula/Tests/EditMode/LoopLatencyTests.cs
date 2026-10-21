@@ -23,18 +23,20 @@ namespace Nebula.Tests
         // ---- configuration --------------------------------------------------------------------------------------
 
         [Test]
-        public void TheServerFrameRateIsNeverBelowTheTickRateAndIsCapped()
+        public void TheServerFrameRateDefaultsToTheTickRateAndIsClamped()
         {
             Assert.AreEqual(NetworkTime.TickRate, NebulaConfig.ServerFrameRateOf(null));
             var config = ScriptableObject.CreateInstance<NebulaConfig>();
             try
             {
-                Assert.AreEqual(240, config.ServerFrameRate, "default: four loops per tick, as the standalone gateway runs");
-                Assert.AreEqual(240, NebulaConfig.ServerFrameRateOf(config));
-                config.ServerFrameRate = 0;
-                Assert.AreEqual(NetworkTime.TickRate, NebulaConfig.ServerFrameRateOf(config), "0 keeps the old behavior");
-                config.ServerFrameRate = 30;
+                Assert.AreEqual(0, config.ServerFrameRate, "default: the tick rate, one tick a frame, as before");
                 Assert.AreEqual(NetworkTime.TickRate, NebulaConfig.ServerFrameRateOf(config));
+                config.ServerFrameRate = 240;
+                Assert.AreEqual(240, NebulaConfig.ServerFrameRateOf(config));
+                config.ServerFrameRate = 30;
+                Assert.AreEqual(30, NebulaConfig.ServerFrameRateOf(config), "below the tick rate: several ticks a frame, a loaded server");
+                config.ServerFrameRate = 3;
+                Assert.AreEqual(10, NebulaConfig.ServerFrameRateOf(config));
                 config.ServerFrameRate = 100000;
                 Assert.AreEqual(1000, NebulaConfig.ServerFrameRateOf(config));
                 Assert.IsTrue(config.WorkerPollBeforeTick);
@@ -184,7 +186,7 @@ namespace Nebula.Tests
 
         [Test]
         [Category("Timing")]
-        public void TheLoopPhasePartOfInputToOwnerRpcDropsByMoreThanATickWithTheNewDefaults()
+        public void TheLoopPhasePartOfInputToOwnerRpcDropsByMoreThanATickWithFasterServerLoops()
         {
             var gateway = new LiteNetTransport("loop-gateway");
             var client = new LiteNetTransport("loop-client");
@@ -219,7 +221,7 @@ namespace Nebula.Tests
                     // Before: Unity-hosted loops at the tick rate, the worker's answer left for the end of its tick.
                     before.Add(RoundTrip(client, clientPeer, gateway, gwClientPeer, gwWorkerPeer, worker, workerPeer, TickMs, TickMs, false, random));
                     Drain(client, gateway, worker);
-                    // After: loops at four times the tick rate, the answer flushed as it is sent.
+                    // After: loops at four times the tick rate (ServerFrameRate 240, not the default), the answer flushed as it is sent.
                     after.Add(RoundTrip(client, clientPeer, gateway, gwClientPeer, gwWorkerPeer, worker, workerPeer, TickMs / 4, TickMs / 4, true, random));
                     Drain(client, gateway, worker);
                 }

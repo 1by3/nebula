@@ -543,10 +543,10 @@ Wall time in milliseconds a worker may spend simulating ticks in one frame while
 ### ServerFrameRate [#serverframerate]
 
 ```csharp
-public int ServerFrameRate = 240;
+public int ServerFrameRate = 0;
 ```
 
-Frames per second a worker or gateway process runs its Update loop at (it polls its network once per frame). Simulation stays at the 60 Hz tick rate; a higher value only makes a packet wait less for the next poll, at the cost of idle CPU: about 4 x the tick rate is a quarter of a tick period. 0 or anything at or below the tick rate keeps the old behavior (60). Clients are not affected. -nebula-server-fps overrides.
+Frames per second a worker or gateway process runs its Update loop at (it polls its network once per frame). 0, the default, runs at the tick rate (60), one tick a frame. Simulation stays at the 60 Hz tick rate whatever this is: a higher value makes a packet wait less for the next poll but costs CPU for every extra frame (240 measured about 6 x the frame time of 60 in a game worker), and a lower one (10 or more) runs several ticks in a frame, which models a loaded server. Clients are not affected. -nebula-server-fps overrides.
 
 ### WorkerPollBeforeTick [#workerpollbeforetick]
 
@@ -1159,7 +1159,7 @@ public double CostLinkBytesPerSec { get; }
 public static int ServerFrameRateOf(NebulaConfig config);
 ```
 
-The frame rate a worker or gateway process runs at: [`ServerFrameRate`](#serverframerate), never below the tick rate. A null config gives the tick rate.
+The frame rate a worker or gateway process runs at: [`ServerFrameRate`](#serverframerate), from 10 to 1000; 0 (the default) or a null config gives the tick rate.
 
 ### Load [#load]
 
