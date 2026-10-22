@@ -60,6 +60,11 @@ namespace Nebula
         NearContainerMoving = 8,
         /// <summary>The link is closing with its band empty and holds a moment longer (<see cref="Portal.CloseHoldSeconds"/>), still observed.</summary>
         CloseHold = 9,
+        /// <summary>
+        /// The application holds a container of the far window not ready yet (<see cref="ReadinessHolds"/>, <c>docs/portals.md</c> D10 condition 6): on this
+        /// worker, or on the far worker that owns it, which says so in its interim answer to the link's preparation.
+        /// </summary>
+        FarContentHeld = 10,
     }
 
     /// <summary>Bit flags of a <see cref="PortalLinkRecord"/>.</summary>

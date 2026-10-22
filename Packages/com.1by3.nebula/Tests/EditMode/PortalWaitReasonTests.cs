@@ -62,6 +62,12 @@ namespace Nebula.Tests
                     link = h.Door.Open(PortalHarness.Owner, new[] { PortalHarness.Client });
                     h.Ticks(3);
                     break;
+                case PortalWait.FarContentHeld:
+                    link = h.Door.Open(PortalHarness.Owner, new[] { PortalHarness.Client });
+                    h.Tick();
+                    ReadinessHolds.Hold(h.Hall, "populating");
+                    h.Ticks(2);
+                    break;
                 case PortalWait.BandOccupied:
                     link = h.OpenDoor();
                     h.Player.transform.position = PortalHarness.At(0f, -1f);

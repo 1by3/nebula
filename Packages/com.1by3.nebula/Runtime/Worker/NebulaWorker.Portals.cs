@@ -238,8 +238,17 @@ namespace Nebula
             {
                 link.Error = "The far worker could not prepare the far container";
                 row.AskSent = false;
+                row.Held = false;
                 return;
             }
+            // Ready but held by the far side's application (docs/portals.md D10 condition 6): its final answer follows on release. Asked again
+            // meanwhile only as an unanswered ask is (every few seconds), which the far worker folds into the one it keeps pending.
+            if (message.Held)
+            {
+                if (!row.Held) { row.Held = true; link.Dirty = true; }
+                return;
+            }
+            row.Held = false;
             row.AskDone = true;
             link.Dirty = true;
         }

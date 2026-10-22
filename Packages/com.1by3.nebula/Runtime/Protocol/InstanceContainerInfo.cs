@@ -20,6 +20,12 @@ namespace Nebula
         /// entity's crossing (<see cref="NebulaWorker.PrepareTransfer"/>). A trailing field: an older body ends before it.
         /// </summary>
         public ulong LinkId;
+        /// <summary>
+        /// A link's preparation only (<c>docs/portals.md</c> D10 condition 6): the far worker's interim answer that its container is ready but the
+        /// application holds it (<c>ReadinessHolds</c>); the final answer follows once it is released or the hold runs out. A trailing field after
+        /// <see cref="LinkId"/>: an older body ends before it.
+        /// </summary>
+        public bool Held;
 
         public void Write(NetworkWriter w, MsgId id)
         {
@@ -31,13 +37,15 @@ namespace Nebula
             w.WriteULong(LeaseEpoch);
             w.WriteBool(Success);
             w.WriteULong(LinkId);
+            w.WriteBool(Held);
         }
 
         public static InstancePreparationMsg Read(NetworkReader r) => new InstancePreparationMsg
         {
             RequestId = r.ReadUInt(), EntityId = r.ReadULong(), Destination = ContainerRef.Read(r),
             SourceWorker = r.ReadUShort(), LeaseEpoch = r.ReadULong(), Success = r.ReadBool(),
-            LinkId = r.Remaining >= 8 ? r.ReadULong() : 0UL
+            LinkId = r.Remaining >= 8 ? r.ReadULong() : 0UL,
+            Held = r.Remaining >= 1 && r.ReadBool(),
         };
     }
 

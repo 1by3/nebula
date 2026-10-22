@@ -282,7 +282,7 @@ namespace Nebula
             }
 
             // 2. The far content is loaded on the worker that owns each row, and the near content on this one.
-            bool handshaking = false, loading = false;
+            bool handshaking = false, loading = false, heldThere = false;
             float loadProgress = 0f;
             bool announced = false;
             for (int i = 0; i < link.Rows.Count; i++)
@@ -295,6 +295,7 @@ namespace Nebula
                     if (!announced) { worker.PublishAdjacencyNow(this, link); announced = true; }
                     worker.AskFarWorker(link, row);
                     handshaking = true;
+                    heldThere |= row.Held; // condition 6, answered by the far worker: ready but held
                     continue;
                 }
                 InstanceScenes.Prepare(rowContainer);
@@ -312,7 +313,7 @@ namespace Nebula
                 }
                 if (content == InstanceContentState.Loading) { loading = true; loadProgress = Mathf.Max(loadProgress, InstanceScenes.ContentProgress(rowContainer)); }
             }
-            if (handshaking) { progress = done / Stages; return PortalWait.FarWorkerHandshake; }
+            if (handshaking) { progress = done / Stages; return heldThere ? PortalWait.FarContentHeld : PortalWait.FarWorkerHandshake; }
             link.Error = null;
             if (loading) { progress = (done + loadProgress) / Stages; return PortalWait.FarWorkerContent; }
             done += 1f;
@@ -325,6 +326,15 @@ namespace Nebula
 
             // 3. The far scope's persisted entities are restored.
             if (scope.State == ScopeState.Restoring) { progress = done / Stages; return PortalWait.FarEntitiesRestoring; }
+
+            // 6. The application holds none of the far window's containers this worker owns (ReadinessHolds); a far worker's own holds were in its
+            // answer to the handshake above. Checked after 3, so a game can populate a scope from its restored state before it lets anyone in.
+            for (int i = 0; i < link.Rows.Count; i++)
+            {
+                var rowContainer = link.Rows[i].Container;
+                bool here = string.IsNullOrEmpty(rowContainer.OwnerWorkerId) || rowContainer.OwnerWorkerId == worker.WorkerId;
+                if (here && ReadinessHolds.IsHeld(rowContainer)) { progress = done / Stages; return PortalWait.FarContentHeld; }
+            }
             done += 1f;
 
             // 4. Both workers have built the band's throat proxies and aperture colliders (D27, D28): this worker's sides here, and the far worker's

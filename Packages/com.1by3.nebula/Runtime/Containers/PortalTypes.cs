@@ -148,6 +148,8 @@ namespace Nebula
         public ulong ReadyEpoch;
         /// <summary>Another worker owns the container: its answer to the preparation that carries the link's id (<c>docs/portals.md</c> D35).</summary>
         public bool AskSent, AskDone;
+        /// <summary>The far worker said its container is ready but held by the application (<see cref="ReadinessHolds"/>, D10 condition 6): its final answer follows on release.</summary>
+        public bool Held;
         public uint Request;
         public float AskedAt;
     }
