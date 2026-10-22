@@ -196,6 +196,7 @@ namespace Nebula.Tests
             foreach (var template in _templates) if (template != null) Object.DestroyImmediate(template);
             _templates.Clear();
             InstanceScenes.Reset();
+            ReadinessHolds.Reset();
             Portals.ResetForNewSession();
         }
     }

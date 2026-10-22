@@ -41,12 +41,17 @@ namespace Nebula
         private readonly Dictionary<uint, InstanceTransfer> _instanceTransfers = new Dictionary<uint, InstanceTransfer>();
         private readonly List<uint> _expiredInstanceRequests = new List<uint>();
 
-        /// <summary>A preparation another worker asked of this one, answered once the destination's content has loaded.</summary>
+        /// <summary>
+        /// A preparation another worker asked of this one, answered once the destination's content has loaded and, for a link's
+        /// (<c>docs/portals.md</c> D10 condition 6), once the application no longer holds it (<see cref="ReadinessHolds"/>).
+        /// </summary>
         private struct PendingContentAck
         {
             public Peer Peer;
             public InstancePreparationMsg Message;
             public float GiveUpAt;
+            /// <summary>The asker was told the container is held (an interim answer with <see cref="InstancePreparationMsg.Held"/>).</summary>
+            public bool ToldHeld;
         }
         private readonly List<PendingContentAck> _pendingContentAcks = new List<PendingContentAck>();
 
@@ -432,11 +437,33 @@ namespace Nebula
                     _pendingContentAcks.RemoveAt(i);
                     continue;
                 }
+                // A link's preparation waits for the application's hold too (docs/portals.md D10 condition 6), which runs out by itself
+                // (ReadinessHolds.DefaultTimeoutSeconds unless the hold says otherwise): the asker is told once, then answered on release.
+                if (state == InstanceContentState.Ready && message.LinkId != 0 && ReadinessHolds.IsHeld(destination))
+                {
+                    if (!pending.ToldHeld)
+                    {
+                        AnswerHeld(peer, message);
+                        pending.ToldHeld = true;
+                        _pendingContentAcks[i] = pending;
+                    }
+                    continue;
+                }
                 message.Success = state == InstanceContentState.Ready && (message.LinkId == 0 || BuildFarSideOf(message.LinkId));
+                message.Held = false;
                 _writer.Reset(); message.Write(_writer, MsgId.InstanceReady);
                 _transport.Send(peer.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
                 _pendingContentAcks.RemoveAt(i);
             }
+        }
+
+        /// <summary>A link's preparation: tell the asker its container is ready but held (<see cref="InstancePreparationMsg.Held"/>); the final answer follows.</summary>
+        private void AnswerHeld(Peer peer, InstancePreparationMsg message)
+        {
+            message.Success = true;
+            message.Held = true;
+            _writer.Reset(); message.Write(_writer, MsgId.InstanceReady);
+            _transport.Send(peer.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
         }
 
         private bool ValidPreparationHere(Container destination, in InstancePreparationMsg message) =>
@@ -447,6 +474,15 @@ namespace Nebula
         {
             if (peer.Role != PeerRole.Worker || peer.Index != message.SourceWorker) return;
             var destination = message.Destination.Resolve();
+            message.Held = false;
+            // A link's preparation asked again (an asker that waited a while) replaces the one kept pending: one answer, to the newest request.
+            if (message.LinkId != 0)
+                for (int i = _pendingContentAcks.Count - 1; i >= 0; i--)
+                {
+                    var old = _pendingContentAcks[i];
+                    if (old.Peer != peer || old.Message.LinkId != message.LinkId || old.Message.Destination != message.Destination) continue;
+                    _pendingContentAcks.RemoveAt(i);
+                }
             message.Success = ValidPreparationHere(destination, message) && InstanceScenes.Prepare(destination);
             if (message.Success)
             {
@@ -455,6 +491,13 @@ namespace Nebula
                 if (state == InstanceContentState.Loading)
                 {
                     _pendingContentAcks.Add(new PendingContentAck { Peer = peer, Message = message, GiveUpAt = Time.unscaledTime + InstanceScenes.ContentWaitLimitSeconds });
+                    return;
+                }
+                // Ready, but the application holds it (docs/portals.md D10 condition 6): say so now, answer for good once it is released.
+                if (state == InstanceContentState.Ready && message.LinkId != 0 && ReadinessHolds.IsHeld(destination))
+                {
+                    AnswerHeld(peer, message);
+                    _pendingContentAcks.Add(new PendingContentAck { Peer = peer, Message = message, GiveUpAt = Time.unscaledTime + InstanceScenes.ContentWaitLimitSeconds, ToldHeld = true });
                     return;
                 }
                 // A link's preparation (docs/portals.md D10 condition 4) is answered once this side's aperture collider stands as well.

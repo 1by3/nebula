@@ -222,7 +222,20 @@ always says why, and `PortalLink.Progress` (0..1) gives a door's UI something to
 4. both workers have built the band's throat proxies and aperture colliders (§6);
 5. every member's client is warm: it holds the far window's rows, its own content loaders for them report `Ready`, and it
    has been sent the far window's entities. The client says so with `PortalWarm` (D45) after it has applied the
-   network gateway's first full delivery for the window, which the network gateway marks.
+   network gateway's first full delivery for the window, which the network gateway marks;
+6. the application holds none of the far window's containers not ready (`ReadinessHolds`): what the game needs done in the
+   far scope before anyone comes through, such as spawning its population, is done.
+
+> **As built, condition 6.** The worker that owns a container holds it with `ReadinessHolds.Hold(container, reason, timeoutSeconds)` and lets it go with
+> `Release(container, reason)`; each reason holds on its own. A link whose far window touches a held container stays `Preparing` with
+> `PortalWait.FarContentHeld`. On the worker that owns the portal the condition is checked after condition 3, so a game can populate a scope from its
+> restored state first. When another worker owns the row, that worker answers the link's `InstancePrepare` (D35) with an interim answer carrying
+> `Held` (a trailing field of `InstancePreparationMsg`) as soon as the container is ready but held, keeps the request pending, and sends its final answer
+> once the hold is released; an ask repeated meanwhile replaces the pending one. A hold is checked only while a link prepares: a link that is already open
+> stays open, and a per-entity transfer (`PrepareTransfer`) does not wait for it. **A hold never wedges a link:** every hold runs out
+> `timeoutSeconds` after it was placed (`ReadinessHolds.DefaultTimeoutSeconds`, 30 s, unless the caller gives another), with a warning, whether or not
+> anyone releases it. Holds live in the process that placed them; a container that moves to another worker is not held there unless that worker's
+> application holds it again. Tests: `PortalReadinessHoldTests`, and `PortalWaitReasonTests` for the wait.
 
 This generalises the per-entity handshake (`InstanceTransfer.WorkerReady`, `ClientReady`, `WorkerContentPending`) into a
 property of the link, held for as long as the link is open. It is what lets a commit load nothing (D16).

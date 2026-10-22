@@ -121,6 +121,24 @@ Nebula reads `State` once a frame on a client and once a tick on a worker, only 
 
 Open the portal early enough for the content to load before the player reaches the face. While the link is not open, whatever reaches the face is stopped there and `Refused` is raised.
 
+### Hold a link until your game is ready
+
+Sometimes the content is loaded but your game still has work to do in the far scope before anyone comes through, such as spawning the enemies of a level. On the worker that owns the far container, hold it:
+
+```csharp
+// When the container is yours and its content is built:
+ReadinessHolds.Hold(container, "populating", timeoutSeconds: 10f);
+// Once everything is spawned:
+ReadinessHolds.Release(container, "populating");
+```
+
+- A link into a held container stays `Preparing`, with `PortalWait.FarContentHeld`, until every hold on it is released. Show it as "preparing" on your door.
+- It works when the far container belongs to another worker: that worker tells the portal's worker the container is held, and answers for good once you release it.
+- Each reason holds on its own, so separate systems can hold one container.
+- A hold only stops a link that is still preparing. A link that is already open stays open.
+- A hold never wedges a link. It runs out after `timeoutSeconds` (30 s by default, `ReadinessHolds.DefaultTimeoutSeconds`) even if you never release it, and the worker logs a warning. Release it as soon as you can.
+- Holds live on the worker that placed them. If the container moves to another worker, hold it again there if you still need to.
+
 ## Place a portal in a scoped grid
 
 A portal can also stand in a [scoped chunk grid](/docs/guides/infinite-runtime-world), such as a planet whose buildings and caves your game builds per chunk at runtime. Parent the portal under the chunk's content root (`ChunkContext.Root`), as you would the rest of the chunk's content.
