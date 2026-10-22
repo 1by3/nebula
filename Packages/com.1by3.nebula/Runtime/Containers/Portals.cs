@@ -140,27 +140,37 @@ namespace Nebula
             if (innermost == null) return;
             if (ByContainer.Count > 0)
             {
-                bool carried = false;
+                // The carrier box the entity rides in, if any: what lies above it is the carrier's to cross. A neighbour inside the same
+                // carrier (a framed planet's chunks all sit in the planet's dynamic carrier) is still the entity's own to cross.
+                Container carrier = null;
                 int bound = ContainerRegistry.ChainBound;
                 int hops = 0;
                 for (var c = innermost; c != null && hops <= bound; c = c.Parent, hops++)
                 {
                     if (ByContainer.TryGetValue(c, out var here)) Ask(worker, entity, here);
                     // Whatever lies above a carrier's box is the carrier's to cross, not its passengers'.
-                    if (c.IsDynamic) { carried = true; break; }
+                    if (c.IsDynamic) { carrier = c; break; }
                 }
-                if (!carried)
+                if (carrier != innermost)
                 {
                     var neighbors = innermost.Neighbors;
                     for (int i = 0; i < neighbors.Count; i++)
                     {
                         var n = neighbors[i];
-                        if (n != null && ByContainer.TryGetValue(n, out var there)) Ask(worker, entity, there);
+                        if (n != null && (carrier == null || IsWithin(n, carrier)) && ByContainer.TryGetValue(n, out var there)) Ask(worker, entity, there);
                     }
                 }
             }
             ulong scope = innermost.InstanceId;
             if (scope != 0 && ByFarScope.Count > 0 && ByFarScope.TryGetValue(scope, out var leading) && !RidesAnywhere(entity)) Ask(worker, entity, leading);
+        }
+
+        /// <summary>Whether <paramref name="c"/> is <paramref name="ancestor"/> or lies inside it.</summary>
+        private static bool IsWithin(Container c, Container ancestor)
+        {
+            int hops = 0;
+            for (var p = c; p != null && hops <= ContainerRegistry.ChainBound; p = p.Parent, hops++) if (p == ancestor) return true;
+            return false;
         }
 
         /// <summary>How many times a portal was asked about an entity on this process: what the index keeps down (tests).</summary>
