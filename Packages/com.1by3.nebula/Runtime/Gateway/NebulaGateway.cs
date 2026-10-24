@@ -32,6 +32,9 @@ namespace Nebula
         private sealed class ClientConn
         {
             public int PeerId;
+            /// <summary>When the join was first held for want of a connected owner (unscaled time), or 0.</summary>
+            public float SpawnHeldSince;
+            public bool SpawnHeldWarned;
             /// <summary>The mesh-wide session id (<see cref="SessionIds"/>); the same across a reconnection with a session token.</summary>
             public ulong ClientId;
             /// <summary>The session's connection generation: bumped on every (re)claim, fences stale gateways at the worker.</summary>
@@ -1334,7 +1337,8 @@ namespace Nebula
                 _workersByIndex.Remove(w.Index);
                 _dialing.Remove(w.WorkerId);
             }
-            NebulaLog.Warn($"worker {w.WorkerId} disconnected; dropping its entities");
+            NebulaLog.Warn(w.Ready ? $"worker {w.WorkerId} disconnected; dropping its entities"
+                : $"dial to worker {w.WorkerId} failed before its Hello; it is dialled again while the link is wanted");
             DropWorkerPortals(w.Index);
             _scratchIds.Clear();
             foreach (var rec in _entities.Values) if (rec.OwnerWorkerIndex == w.Index) _scratchIds.Add(rec.NetId);
@@ -2520,11 +2524,14 @@ namespace Nebula
                 // The client is held rather than dropped, the orchestrator sees the pending join on the next
                 // heartbeat and boots a worker, and this retry (every 3 s) places the player with no reconnect.
                 SendJoinStatus(c, JoinState.Starting, c.ScopeKey.Length == 0 ? JoinHoldReason.WorldStarting : JoinHoldReason.ScopeNotReady);
+                WarnIfHeldLong(c);
                 NebulaLog.Debugf(c.ScopeKey.Length == 0
                     ? $"no container available to spawn client {c.ClientId} yet; holding the join (world starting)"
                     : $"scope '{c.ScopeKey}' has no container with a live owner yet; holding the join of client {c.ClientId}");
                 return;
             }
+            c.SpawnHeldSince = 0f;
+            c.SpawnHeldWarned = false;
             // Capacity: a target that is at capacity is not silently split and not silently overfilled. Candidates
             // below capacity are preferred, and only when every one of them is full is the game asked what to do
             // with this particular arrival (docs/capacity-admission.md).
@@ -2587,6 +2594,38 @@ namespace Nebula
         /// closed, so a client that named a scope is never placed in the public world by accident and a public
         /// client is never placed inside somebody's instance.
         /// </summary>
+        /// <summary>Seconds a join may be held for want of a connected owner before the gateway says so at WARN.</summary>
+        private const float SpawnHeldWarnSeconds = 30f;
+
+        /// <summary>
+        /// Says once, at WARN, when a client has been held <see cref="SpawnHeldWarnSeconds"/> because no container of
+        /// its scope has an owner this gateway is connected to, and names the owners it is not connected to (CLOUD-11).
+        /// </summary>
+        private void WarnIfHeldLong(ClientConn c)
+        {
+            float now = Time.unscaledTime;
+            if (c.SpawnHeldSince == 0f) c.SpawnHeldSince = now;
+            if (c.SpawnHeldWarned || now - c.SpawnHeldSince < SpawnHeldWarnSeconds) return;
+            c.SpawnHeldWarned = true;
+            var unlinked = new HashSet<string>(StringComparer.Ordinal);
+            CollectUnlinkedOwners(ContainerRegistry.All, unlinked, c.ScopeKey);
+            CollectUnlinkedOwners(ContainerRegistry.Runtime, unlinked, c.ScopeKey);
+            NebulaLog.Warn(unlinked.Count > 0
+                ? $"client {c.ClientId} held {now - c.SpawnHeldSince:0} s for scope '{c.ScopeKey}': its owners ({string.Join(", ", unlinked)}) are not connected to this gateway"
+                : $"client {c.ClientId} held {now - c.SpawnHeldSince:0} s for scope '{c.ScopeKey}': no worker owns a container in it");
+        }
+
+        private void CollectUnlinkedOwners(IReadOnlyList<Container> containers, HashSet<string> owners, string scopeKey)
+        {
+            for (int i = 0; i < containers.Count; i++)
+            {
+                var container = containers[i];
+                if (string.IsNullOrEmpty(container.OwnerWorkerId)) continue;
+                if (!string.Equals(container.ScopeKey ?? "", scopeKey ?? "", StringComparison.Ordinal)) continue;
+                if (!_workersById.TryGetValue(container.OwnerWorkerId, out var w) || !w.Ready) owners.Add(container.OwnerWorkerId);
+            }
+        }
+
         private void CollectSpawnCandidates(IReadOnlyList<Container> containers, List<Container> candidates, string scopeKey)
         {
             for (int i = 0; i < containers.Count; i++)

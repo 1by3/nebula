@@ -53,7 +53,16 @@ namespace Nebula
             /// <summary>The worker incarnation the subscription was built against; a change forces a Full snapshot.</summary>
             public uint Incarnation;
             public bool Linked;
+            /// <summary>When the current dial started (<see cref="InterestNow"/>), or NaN when none is in flight.</summary>
+            public double DialStartedAt = double.NaN;
+            /// <summary>The earliest time another dial may start, so a worker that refuses is not dialled every frame.</summary>
+            public double NextDialAt;
         }
+
+        /// <summary>A dial that has not finished its Hello by then is abandoned and tried again.</summary>
+        private const double WorkerDialTimeoutSeconds = 10;
+        /// <summary>The wait before dialling a worker again after a link was lost or a dial failed.</summary>
+        private const double WorkerRedialSeconds = 2;
 
         /// <summary>
         /// The bridge between the gateway's entity records and the shared evaluation in
@@ -1576,24 +1585,58 @@ namespace Nebula
             if (link != null) link.Reasons |= reason;
         }
 
-        /// <summary>Hold a link to this worker, dialling it if we are not already talking to it.</summary>
+        /// <summary>
+        /// Hold a link to this worker, dialling it if we are not already talking to it. A held link whose connection
+        /// was lost, or whose dial failed or never finished, is dialled again (CLOUD-11): a link kept alive by a
+        /// waiting client's spawn reason used to stay unconnected for good, holding every join at ScopeNotReady
+        /// while the worker reported ready.
+        /// </summary>
         private WorkerLink EnsureLink(string workerId)
         {
             if (string.IsNullOrEmpty(workerId)) return null;
-            if (_links.TryGetValue(workerId, out var link)) return link;
+            if (_links.TryGetValue(workerId, out var link))
+            {
+                if (!_workersById.ContainsKey(workerId)) Redial(link);
+                return link;
+            }
             var info = ControlPlane.FindWorker(workerId);
             if (info == null || info.Status == WorkerStatus.Dead) return null;
             link = new WorkerLink { WorkerId = workerId, Index = (ushort)info.WorkerIndex, Sub = new RegionSubscriptionSender(() => InterestNow) };
             link.Sub.Grid = _interestGrid;
             _links[workerId] = link;
-            if (!_workersById.ContainsKey(workerId) && !_dialing.Contains(workerId))
-            {
-                int peerId = _transport.Connect(info.Address, info.Port);
-                _workersByPeer[peerId] = new WorkerConn { PeerId = peerId, WorkerId = workerId, Index = (ushort)info.WorkerIndex, Outbound = true };
-                _dialing.Add(workerId);
-                NebulaLog.Debugf($"dialing worker {workerId} at {info.Address}:{info.Port} (interest)");
-            }
+            if (!_workersById.ContainsKey(workerId) && !_dialing.Contains(workerId)) Dial(link, info.Address, info.Port, info.WorkerIndex, "interest");
             return link;
+        }
+
+        private void Dial(WorkerLink link, string address, int port, uint workerIndex, string why)
+        {
+            int peerId = _transport.Connect(address, port);
+            _workersByPeer[peerId] = new WorkerConn { PeerId = peerId, WorkerId = link.WorkerId, Index = (ushort)workerIndex, Outbound = true };
+            _dialing.Add(link.WorkerId);
+            link.Index = (ushort)workerIndex;
+            link.DialStartedAt = InterestNow;
+            link.NextDialAt = InterestNow + WorkerRedialSeconds;
+            NebulaLog.Info($"dialing worker {link.WorkerId} at {address}:{port} ({why})");
+        }
+
+        /// <summary>A held link with no connection: abandon a dial that has hung, then dial again once the backoff has passed.</summary>
+        private void Redial(WorkerLink link)
+        {
+            double now = InterestNow;
+            if (_dialing.Contains(link.WorkerId))
+            {
+                if (double.IsNaN(link.DialStartedAt) || now - link.DialStartedAt < WorkerDialTimeoutSeconds) return;
+                NebulaLog.Warn($"dial to worker {link.WorkerId} did not finish in {WorkerDialTimeoutSeconds:0} s; abandoning it");
+                int stale = -1;
+                foreach (var pair in _workersByPeer)
+                    if (pair.Value.Outbound && !pair.Value.Ready && pair.Value.WorkerId == link.WorkerId) { stale = pair.Key; break; }
+                if (stale >= 0) { _workersByPeer.Remove(stale); _transport.Disconnect(stale); }
+                _dialing.Remove(link.WorkerId);
+            }
+            if (now < link.NextDialAt) return;
+            var info = ControlPlane.FindWorker(link.WorkerId);
+            if (info == null || info.Status == WorkerStatus.Dead) { link.NextDialAt = now + WorkerRedialSeconds; return; }
+            Dial(link, info.Address, info.Port, info.WorkerIndex, "the link was lost");
         }
 
         private void DropLink(string workerId, string why)
