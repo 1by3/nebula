@@ -1150,7 +1150,7 @@ namespace Nebula
             for (int i = 0; i < Behaviours.Length; i++)
             {
                 try { Behaviours[i].OnOriginShifted(delta); }
-                catch (Exception ex) { NebulaLog.Error($"OnOriginShifted on {Behaviours[i].GetType().Name} of {name} threw: {ex.Message}"); }
+                catch (Exception ex) { NebulaLog.Error($"OnOriginShifted on {Behaviours[i].GetType().Name} of {SafeName} threw: {ex.Message}"); }
             }
         }
 
@@ -1281,7 +1281,7 @@ namespace Nebula
                 // of the entity (docs/sync-audience.md D3).
                 var audience = SyncAudience.Everyone;
                 try { audience = b.SyncAudience; }
-                catch (Exception ex) { NebulaLog.Error($"SyncAudience on {b.GetType().Name} of {name} threw: {ex.Message}; using Everyone"); }
+                catch (Exception ex) { NebulaLog.Error($"SyncAudience on {b.GetType().Name} of {SafeName} threw: {ex.Message}; using Everyone"); }
                 if (b == RootTransform && audience != SyncAudience.Everyone)
                 {
                     // The root pose is the entity's place in the world: interest, carriers and every client's view
@@ -1296,7 +1296,7 @@ namespace Nebula
                 // stream, rated by the gateway already.
                 var rating = SyncDistanceRating.Off;
                 try { rating = b.SyncDistanceRating; }
-                catch (Exception ex) { NebulaLog.Error($"SyncDistanceRating on {b.GetType().Name} of {name} threw: {ex.Message}; using Off"); }
+                catch (Exception ex) { NebulaLog.Error($"SyncDistanceRating on {b.GetType().Name} of {SafeName} threw: {ex.Message}; using Off"); }
                 b.DistanceRating = b == RootTransform ? SyncDistanceRating.Off : rating;
             }
             SyncBehaviours = sync.ToArray();
@@ -1453,7 +1453,7 @@ namespace Nebula
                 if (i >= Behaviours.Length) continue;
                 ChunkReader.Set(chunk);
                 try { Behaviours[i].ReadHandoverState(ChunkReader); }
-                catch (Exception ex) { NebulaLog.Error($"ReadHandoverState on {Behaviours[i].GetType().Name} of {name} threw: {ex.Message}"); }
+                catch (Exception ex) { NebulaLog.Error($"ReadHandoverState on {Behaviours[i].GetType().Name} of {SafeName} threw: {ex.Message}"); }
             }
         }
 
@@ -1583,7 +1583,7 @@ namespace Nebula
                 if (b.Audience != SyncAudience.Custom) continue;
                 uint refresh = 0;
                 try { refresh = b.SyncAudienceRefreshTicks; }
-                catch (Exception ex) { NebulaLog.Error($"SyncAudienceRefreshTicks on {b.GetType().Name} of {name} threw: {ex.Message}"); }
+                catch (Exception ex) { NebulaLog.Error($"SyncAudienceRefreshTicks on {b.GetType().Name} of {SafeName} threw: {ex.Message}"); }
                 if (!b.AudienceDirty && (refresh == 0 || tick < b.AudienceNextTick)) continue;
                 b.AudienceDirty = false;
                 b.AudienceNextTick = refresh > 0 ? tick + refresh : 0;
@@ -1743,7 +1743,7 @@ namespace Nebula
                     b.SyncCleared = true;
                     b.SyncClearedTick = tick;
                     try { b.OnSyncStateCleared(); }
-                    catch (Exception ex) { NebulaLog.Error($"OnSyncStateCleared on {b.GetType().Name} of {name} threw: {ex.Message}"); }
+                    catch (Exception ex) { NebulaLog.Error($"OnSyncStateCleared on {b.GetType().Name} of {SafeName} threw: {ex.Message}"); }
                     return;
                 }
                 bool full = (flags & SyncStateCodec.ChunkFlags.Full) != 0;
@@ -1754,18 +1754,21 @@ namespace Nebula
                 }
                 SyncChunkReader.Set(chunk);
                 try { b.ReadSyncState(SyncChunkReader, tick, full); }
-                catch (Exception ex) { NebulaLog.Error($"ReadSyncState on {b.GetType().Name} of {name} threw: {ex.Message}"); }
+                catch (Exception ex) { NebulaLog.Error($"ReadSyncState on {b.GetType().Name} of {SafeName} threw: {ex.Message}"); }
             });
         }
 
         /// <summary>Present the tick <paramref name="renderTick"/> on every behavior (ghosts and remote client copies).</summary>
         public void RemoteTick(double renderTick)
         {
+            // An identity whose object was destroyed without a despawn has nothing left to present. Its holder drops
+            // it; this keeps a caller that has not checked from throwing for every behaviour on every tick.
+            if (this == null) return;
             ReplayPendingState();
             for (int i = 0; i < Behaviours.Length; i++)
             {
                 try { Behaviours[i].RemoteTick(renderTick); }
-                catch (Exception ex) { NebulaLog.Error($"RemoteTick on {Behaviours[i].GetType().Name} of {name} threw: {ex.Message}"); }
+                catch (Exception ex) { NebulaLog.Error($"RemoteTick on {Behaviours[i].GetType().Name} of {SafeName} threw: {ex.Message}"); }
             }
         }
 
@@ -2079,6 +2082,12 @@ namespace Nebula
                 transform.SetPositionAndRotation(localPosition, localRotation);
             }
         }
+
+        /// <summary>
+        /// The object's name for a log line, safe on a destroyed object. <c>name</c> throws once Unity has destroyed the
+        /// object, and a catch block that throws escapes the loop it was protecting.
+        /// </summary>
+        private string SafeName => this == null ? $"destroyed#{NetId}" : name;
 
         public override string ToString()
         {

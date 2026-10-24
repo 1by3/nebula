@@ -1286,11 +1286,16 @@ namespace Nebula
             ProfGhosts.Begin();
             double renderTick = tick - 1.0;
             NetworkTime.RenderTick = renderTick;
+            bool anyDestroyed = false;
             foreach (var e in _entities.Values)
             {
+                // An object destroyed without a despawn (it went down with a destroyed parent, say) is dropped once
+                // below instead of throwing here on every tick.
+                if (e == null) { anyDestroyed = true; continue; }
                 if (e.HasAuthority) continue;
                 e.RemoteTick(renderTick);
             }
+            if (anyDestroyed) PurgeDestroyed();
             ProfGhosts.End();
             // Ghost colliders must be where the stream says before anyone raycasts against them this tick.
             ProfSyncTransforms.Begin();
@@ -1528,8 +1533,8 @@ namespace Nebula
         {
             _scratchIds.Clear();
             foreach (var kv in _entities) if (kv.Value == null) _scratchIds.Add(kv.Key);
-            NebulaLog.Warn($"{_scratchIds.Count} entity object(s) were destroyed without a despawn; forgetting them");
-            foreach (var id in _scratchIds) { _entities.Remove(id); InterestRemove(id); }
+            if (_scratchIds.Count > 0) NebulaLog.Warn($"{_scratchIds.Count} entity object(s) were destroyed without a despawn; forgetting them");
+            foreach (var id in _scratchIds) { _entities.Remove(id); InterestRemove(id); _handedOff.Remove(id); }
             _authoritative.RemoveAll(e => e == null);
             _scratchEntities.Clear();
             _scratchIds.Clear();
@@ -1802,9 +1807,29 @@ namespace Nebula
             // would otherwise set a dead rider down in the box around it, and a scope's box that still lists a
             // departed entity cannot be forgotten (ContainerRegistry.UnregisterRuntime).
             identity.SetContainer(null, reparent: false);
-            if (identity.IsSceneEntity) identity.Unbind(); // the object belongs to its scene
-            else if (Application.isPlaying) Destroy(identity.gameObject);
+            if (identity.IsSceneEntity) { identity.Unbind(); return; } // the object belongs to its scene
+            // Nothing else networked may go down with this object: an identity still parented under it (one that
+            // EvacuateCarried did not reach) would be destroyed without a despawn and leave a dead reference here.
+            StrandDescendants(identity);
+            if (Application.isPlaying) Destroy(identity.gameObject);
             else DestroyImmediate(identity.gameObject); // a worker driven from edit mode (tools, tests)
+        }
+
+        private static readonly List<NetworkIdentity> _strandScratch = new List<NetworkIdentity>();
+
+        /// <summary>Lift every other identity out of <paramref name="identity"/>'s hierarchy, keeping world poses, before the object is destroyed.</summary>
+        private static void StrandDescendants(NetworkIdentity identity)
+        {
+            _strandScratch.Clear();
+            identity.GetComponentsInChildren(true, _strandScratch);
+            for (int i = 0; i < _strandScratch.Count; i++)
+            {
+                var e = _strandScratch[i];
+                if (e == null || e == identity) continue;
+                NebulaLog.Warn($"{e} was still parented under {identity} as it left the world; moved out so it is not destroyed with it");
+                e.transform.SetParent(null, true);
+            }
+            _strandScratch.Clear();
         }
 
         public NetworkIdentity Find(ulong netId) => _entities.TryGetValue(netId, out var e) ? e : null;
