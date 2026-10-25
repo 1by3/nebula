@@ -1146,7 +1146,10 @@ namespace Nebula
             var root = frame != null ? frame.Root : null;
             if (frame == null)
             {
-                position = Double3.From(t.position);
+                // Composed in double from the local poses up to the scene, not Unity's float world position: a scope whose
+                // scene coordinates are millions of metres out (a worker holding a system's space far from Unity's origin)
+                // rounds that to a metre, while what an entity stands in and where it is in it are exact (NEB-496).
+                position = LocalIn(t, null);
                 rotation = t.rotation;
                 scale = t.lossyScale;
                 return;

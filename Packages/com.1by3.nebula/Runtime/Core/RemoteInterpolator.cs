@@ -247,6 +247,9 @@ namespace Nebula
 
         // ---- a container's pose at a past tick (NEB-392)
 
+        /// <summary>How far past a carrier's newest sample a prediction's comparison extrapolates its pose (<see cref="CarryBack"/>).</summary>
+        internal const uint PredictionAheadTicks = 6;
+
         /// <summary>How many carriers deep a pose at a past tick is looked up (a crate in a ship in a turning planet is two).</summary>
         private const int CarryDepth = 4;
 
@@ -255,14 +258,14 @@ namespace Nebula
         /// carrier at or above it whose copy here is interpolated (its buffer knows where it was at a past tick). None for
         /// a container that does not move, or one in a frame posed for simulation, where nothing follows its carrier.
         /// </summary>
-        private static NetworkIdentity MovingCarrierOf(Container container, bool ignoreSimulationPose = false)
+        private static NetworkIdentity MovingCarrierOf(Container container, bool forPrediction = false)
         {
             int hops = 0;
             for (var c = container; c != null && hops <= ContainerRegistry.ChainBound; c = c.Parent, hops++)
             {
-                // A caller that reads positions through the frames' render poses, not the roots' (a prediction's comparison),
-                // follows the carrier whether or not a frame is posed for simulation right now.
-                if (!ignoreSimulationPose && c.Frame != null && PhysicsFrames.InSimulationPose(c)) return null;
+                // A prediction's comparison reads positions through the frames' render poses, not the roots', and follows the
+                // carrier whether or not a frame is posed for simulation right now.
+                if (!forPrediction && c.Frame != null && PhysicsFrames.InSimulationPose(c)) return null;
                 if (!c.IsDynamic) continue;
                 // A carrier this process predicts or simulates is not drawn from its buffer: its pose at a past tick is
                 // not known here, and it is converted at its current pose as before.
@@ -286,12 +289,14 @@ namespace Nebula
         /// A world pose fixed in <paramref name="container"/> as it stands now, moved to where it was at
         /// <paramref name="tick"/>: carried back along the motion of the carrier the container rides on.
         /// </summary>
-        internal static void CarryBack(Container container, uint tick, ref Vector3 position, ref Quaternion rotation, int depth, bool ignoreSimulationPose = false)
+        internal static void CarryBack(Container container, uint tick, ref Vector3 position, ref Quaternion rotation, int depth, bool forPrediction = false)
         {
             if (depth >= CarryDepth) return;
-            var carrier = MovingCarrierOf(container, ignoreSimulationPose);
-            // Only a tick the carrier's buffer has reached: past its newest sample it would be extrapolated.
-            if (carrier == null || tick > carrier.Interpolator.LatestTick) return;
+            var carrier = MovingCarrierOf(container, forPrediction);
+            // Only a tick the carrier's buffer has reached: past its newest sample it would be extrapolated. A prediction's
+            // comparison may run a few ticks ahead of it: the owner's report of a tick can arrive before the carrier's state
+            // for that tick, and the carrier's velocity carries it across them (NEB-496).
+            if (carrier == null || tick > carrier.Interpolator.LatestTick + (forPrediction ? PredictionAheadTicks : 0u)) return;
             CarrierPoseAt(carrier, tick, depth, out var thenPosition, out var thenRotation);
             var t = carrier.transform;
             var turn = thenRotation * Quaternion.Inverse(t.rotation);
@@ -300,12 +305,14 @@ namespace Nebula
         }
 
         /// <summary>The inverse of <see cref="CarryBack"/>: a world pose fixed in <paramref name="container"/> as it stood at <paramref name="tick"/>, where it is now.</summary>
-        internal static void CarryForward(Container container, uint tick, ref Vector3 position, ref Quaternion rotation, int depth, bool ignoreSimulationPose = false)
+        internal static void CarryForward(Container container, uint tick, ref Vector3 position, ref Quaternion rotation, int depth, bool forPrediction = false)
         {
             if (depth >= CarryDepth) return;
-            var carrier = MovingCarrierOf(container, ignoreSimulationPose);
-            // Only a tick the carrier's buffer has reached: past its newest sample it would be extrapolated.
-            if (carrier == null || tick > carrier.Interpolator.LatestTick) return;
+            var carrier = MovingCarrierOf(container, forPrediction);
+            // Only a tick the carrier's buffer has reached: past its newest sample it would be extrapolated. A prediction's
+            // comparison may run a few ticks ahead of it: the owner's report of a tick can arrive before the carrier's state
+            // for that tick, and the carrier's velocity carries it across them (NEB-496).
+            if (carrier == null || tick > carrier.Interpolator.LatestTick + (forPrediction ? PredictionAheadTicks : 0u)) return;
             CarrierPoseAt(carrier, tick, depth, out var thenPosition, out var thenRotation);
             var t = carrier.transform;
             var turn = t.rotation * Quaternion.Inverse(thenRotation);

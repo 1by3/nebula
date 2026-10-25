@@ -967,8 +967,8 @@ namespace Nebula
             }
             var world = from != null ? DrawnWorld(from, local) : local;
             var turn = Quaternion.identity;
-            if (from != null) RemoteInterpolator.CarryBack(from, tick, ref world, ref turn, 0, ignoreSimulationPose: true);
-            if (to != null) RemoteInterpolator.CarryForward(to, tick, ref world, ref turn, 0, ignoreSimulationPose: true);
+            if (from != null) RemoteInterpolator.CarryBack(from, tick, ref world, ref turn, 0, forPrediction: true);
+            if (to != null) RemoteInterpolator.CarryForward(to, tick, ref world, ref turn, 0, forPrediction: true);
             return to != null ? DrawnLocal(to, world) : world;
         }
 
