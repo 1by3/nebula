@@ -116,7 +116,7 @@ Vector3 drawn = Identity.Space != null ? PhysicsFrames.Convert(local, Identity.S
 
 ## Cross the frame's boundary
 
-An entity enters a frame when the worker resolves it into the framed container's box, and leaves when it is farther than `HandoverHysteresis` outside the inside of that box. Nebula converts its position, rotation, and velocity at the frame's pose for that tick. A leaving entity gains the frame's velocity, including the part that comes from the frame turning, so a crate that falls out of a moving ship keeps moving with the ship.
+An entity enters a frame when the worker resolves it into the framed container's box, and leaves when it is farther than `HandoverHysteresis` outside the inside of that box. Nebula converts its position, rotation, and velocity at the frame's pose for that tick. A leaving entity gains the frame's velocity, including the part that comes from the frame turning, so a crate that falls out of a moving ship keeps moving with the ship. A `Rigidbody`'s angular velocity gains the frame's spin the same way, and an entering one loses it, so a crate turning with a turning ship stands still once inside it.
 
 Nebula converts `Identity.Motion.Velocity` and a `Rigidbody`'s velocity. A controller that keeps a velocity of its own, such as a vertical speed for jumping, reads it back from `Identity.Motion.Velocity` in `OnContainerChanged` on the worker, so a fall or a jump continues along the new space's up:
 
@@ -159,6 +159,8 @@ Size the container's box with that in mind. If the box of a ship's hold ends on 
 ## Read the frame's motion
 
 `container.Frame.State` is a `PhysicsFrameState`. It holds the frame's position, rotation, velocity, angular velocity, and acceleration in the space around it, updated once per tick on every process that holds the frame. On the worker that simulates the carrier it is exact. Elsewhere it comes from the replicated carrier pose, one replication delay late.
+
+The space around a frame can itself be a frame. When a ship with a frame lands inside a carrier that has one, the ship's `State` is its motion relative to the carrier from the next tick on, so a ship resting on a cruising carrier's deck reads zero.
 
 Nebula applies no fictitious forces unless you ask for them. To make a body feel the frame's motion, add [`FrameInertia`](#let-cargo-feel-the-ship-move) to it. To apply your own, read `State.LocalAcceleration` and `State.LocalAngularVelocity`, which are in the frame's own axes.
 
@@ -251,6 +253,24 @@ The orchestrator deals the room like any other leased container. The ship's work
 Without a frame on the ship, Nebula logs a warning, and the room is simulated by the ship's worker until it is under a frame (`Container.AuthorityDemoted`). An owner of a leased room under a moving parent would otherwise simulate against a pose that arrives one replication delay late.
 
 A change in one part that affects the other, such as an engineer cutting power to the engines, is an ordinary cross-worker call. Use `[AuthorityRpc]` on a behavior of the ship.
+
+## Land a ship inside a moving carrier
+
+A carrier with a frame can hold other carriers with frames: a ship that lands on a cruising capital ship, a shuttle in a station's hangar, or a ship on a planet. Nothing extra is needed beyond a frame on each. While the outer carrier moves and turns:
+
+- The ship enters the carrier's frame at the carrier's box face, on the carrier's pose owner, and leaves it the same way with the carrier's velocity added, including the part from the carrier turning.
+- The ship's crew stay in the ship's frame, in its coordinates, through both crossings and every handover.
+- A crew member can walk out of the ship into the carrier's frame and back. Leaving the ship needs the ship's pose owner, and leaving the carrier needs the carrier's.
+- Positions are composed in double through both frames, on workers with `PhysicsFrames.ConvertLocal` and on clients with `PhysicsFrame.LocalToRenderPrecise`.
+
+Set the boxes up like this:
+
+- Make the carrier's box cover everything a ship can land on, plus the room above it that the ship flies through to land: for example its deck and 12 m over it. A ship is inside the carrier once its origin is more than `HandoverHysteresis` inside that box.
+- Keep the ship's box smaller than the carrier's. Of two framed carriers whose boxes hold each other's origins, the smaller always goes inside the larger.
+- Extend the ship's floor colliders past its box by more than `HandoverHysteresis` where the crew step out, and give the carrier a floor where they land, so a crew member leaves the ship's box while still standing on it.
+- To let the crew out only through a ramp or an airlock, give the ship a [crossing policy](#cross-the-frames-boundary). The carrier needs none for the ship.
+
+To have another worker simulate the ships that land, [lease part of the carrier's inside](#lease-part-of-the-inside-to-another-worker), such as a hangar bay, to it. A ship that lands in the bay is handed to the bay's owner with its crew, and is handed back to the carrier's pose owner when it takes off.
 
 ## Make a planet a frame
 
@@ -345,6 +365,8 @@ Only one level of frame is supported for each side of a portal. A body in a fram
 ## Limits
 
 - Every process that holds a framed container also holds its frame scene.
+- A carrier goes inside the smallest carried box that holds its origin. Two carriers with frames are the exception: the larger never goes inside the smaller. For carriers without frames, keep a carrier's origin out of a smaller carrier's box, such as a truck parked over a cart.
+- An entity leaves one frame per tick. A crew member who steps out of a ship where the ship overhangs its carrier's box is in the carrier's frame for one tick before it leaves that frame too.
 - Raycasts do not pass from one frame into another. A shot fired out of a ship's open ramp hits nothing outside the ship's frame unless your game casts again in the space around it.
 - A client predicts in the frame of its own player only. Other entities in other frames are shown at their replicated poses.
 - Leased containers inside a frame are found by a linear scan. Keep their number in the hundreds per frame, not the thousands.

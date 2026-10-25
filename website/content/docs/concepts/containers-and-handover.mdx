@@ -35,7 +35,7 @@ Containers form a tree. The root of the tree is the [scope](/docs/guides/scopes)
 
 A leased container may only sit under a parent that does not move, or under a moving parent that has a physics frame of its own. Under a moving parent without a frame, the leased container's worker would simulate against a pose that arrives one replication delay late. Nebula logs a warning and simulates it as inherited until it is somewhere else (`AuthorityDemoted`).
 
-When an entity moves, Nebula places it in the deepest container that holds its position, and uses the smaller one when two are equally deep. An entity is never placed inside a container that it carries, directly or through anything that rides inside it.
+When an entity moves, Nebula places it in the deepest container that holds its position, and uses the smaller one when two are equally deep. An entity is never placed inside a container that it carries, directly or through anything that rides inside it. A carrier with a [physics frame](/docs/guides/physics-frames) is also never placed inside a smaller carrier with a frame, so a ship set down over a larger carrier's origin goes inside the carrier, not the other way round.
 
 At startup, `ContainerRegistry.Rebuild()` collects the containers in the loaded scene. It sorts them by ID and assigns each one an `Index`. Nebula uses the ID for control-plane assignments and the smaller index in network messages.
 
