@@ -1154,6 +1154,17 @@ namespace Nebula
             }
         }
 
+        /// <summary>
+        /// Authority: the entity was committed from scope <paramref name="fromScope"/> into another by a transfer, which
+        /// moved it (or the carrier it rides in) <paramref name="delta"/> in simulation space (NEB-497). Its history and,
+        /// for a carrier, its frame's motion sample follow, as they follow an origin shift.
+        /// </summary>
+        internal void CarryAcrossScopes(ulong fromScope, Vector3 delta)
+        {
+            _history?.CarryAcrossScopes(fromScope, delta, Container);
+            if (_carried != null && _carried.Frame != null) _carried.Frame.CarryAcrossScopes(delta);
+        }
+
         private void Awake()
         {
             // A prefab instance initialises when it is instantiated through NetworkPrefabs; a scene object has no
