@@ -130,6 +130,17 @@ namespace Nebula
         internal PhysicsFrameState _state;
         private Vector3 _lastVelocity;
         private int _samples;
+        /// <summary>
+        /// The carrier's position at the last sample in double, which the rates are taken from: frame-local in the space
+        /// around the frame on a worker, composed from the local poses up to the scene in the scope's own space, and the
+        /// drawn position on a client inside another frame. A float world position millions of metres out is a quarter
+        /// of a metre apart or more, so a carrier at 25 m/s read 15 or 30 m/s a tick from it (NEB-496).
+        /// </summary>
+        private Double3 _precise;
+        /// <summary><see cref="_precise"/> is frame-local, so an origin shift of the space around the frame does not move it.</summary>
+        private bool _preciseInFrame;
+        /// <summary>The space the motion samples were taken in: the carrier's own <see cref="Container.Space"/> then (NEB-496).</summary>
+        private Container _sampleSpace;
         internal readonly List<KeyValuePair<Collider, Collider>> Clones = new List<KeyValuePair<Collider, Collider>>();
         /// <summary>
         /// The copies whose source has moved since the frame was built, each with the kinematic body that now moves it
@@ -235,15 +246,23 @@ namespace Nebula
         internal void Sample(uint tick, float dt)
         {
             var t = Owner.transform;
+            // A carrier that changed space since the last sample (into or out of another frame) was converted with it by
+            // Reframe; one placed there without a conversion starts its rates again rather than reading the jump between
+            // the two spaces as one tick's motion.
+            var space = Owner.Space;
+            if (_samples > 0 && space != _sampleSpace) ResetMotion();
+            _sampleSpace = space;
             var position = t.position;
             var rotation = t.rotation;
+            var precise = PrecisePosition(space, out bool inFrame);
             // The same pose sampled again in the same tick (two workers sharing one registry in a test, or a client
             // rendering twice within a tick while the carrier stands still) adds nothing; reading it as a sample would
             // report the frame at rest for a tick.
             if (_samples > 0 && tick == _state.Tick && position.Equals(_state.Position) && rotation.Equals(_state.Rotation)) return;
             if (_samples > 0 && dt > 0f)
             {
-                var velocity = (position - _state.Position) / dt;
+                var moved = precise - _precise;
+                var velocity = new Vector3((float)(moved.X / dt), (float)(moved.Y / dt), (float)(moved.Z / dt));
                 _state.Acceleration = _samples > 1 ? (velocity - _lastVelocity) / dt : Vector3.zero;
                 _state.Velocity = velocity;
                 _state.AngularVelocity = AngularVelocity(rotation, dt);
@@ -251,6 +270,8 @@ namespace Nebula
                 _state.HasRates = true;
             }
             PushRotation(rotation, _samples > 0 && dt > 0f ? dt : 0f);
+            _precise = precise;
+            _preciseInFrame = inFrame;
             _state.Position = position;
             _state.Rotation = rotation;
             _state.Tick = tick;
@@ -266,6 +287,48 @@ namespace Nebula
         {
             if (_samples == 0 || delta == Vector3.zero) return;
             _state.Position += delta;
+            if (!_preciseInFrame) _precise += delta;
+        }
+
+        /// <summary>Where the carrier is now, as <see cref="_precise"/> holds it.</summary>
+        private Double3 PrecisePosition(Container space, out bool inFrame)
+        {
+            var t = Owner.transform;
+            inFrame = space != null && !PhysicsFrames.RendersFrames;
+            if (space == null || inFrame)
+            {
+                PhysicsFrames.PoseInSpace(t, space, out var position, out _, out _);
+                return position;
+            }
+            return Double3.From(t.position);
+        }
+
+        /// <summary>
+        /// The carrier moved from space <paramref name="from"/> into space <paramref name="to"/> (it crossed into or out of
+        /// another physics frame, NEB-496), converted through the frames' poses now: the motion sampled so far is converted
+        /// with it, as its pose and velocity are, so the next sample reads the carrier's motion in its new space and not the
+        /// distance between the two spaces divided by one tick. On a worker the sample was taken this tick, after everything
+        /// moved, so the conversion is exact. The rotation history starts again from the converted rotation: its older
+        /// samples were taken against a space that turned since.
+        /// </summary>
+        internal void Reframe(Container from, Container to)
+        {
+            _sampleSpace = to;
+            if (_samples == 0 || from == to) return;
+            var position = _state.Position;
+            _state.Position = PhysicsFrames.Convert(position, from, to);
+            _precise = PhysicsFrames.ConvertLocal(_precise, from, to);
+            _preciseInFrame = to != null;
+            _state.Rotation = PhysicsFrames.Convert(_state.Rotation, from, to);
+            if (_state.HasRates)
+            {
+                _state.Velocity = PhysicsFrames.ConvertVelocity(_state.Velocity, position, from, to);
+                _state.AngularVelocity = PhysicsFrames.ConvertAngularVelocity(_state.AngularVelocity, from, to);
+                _state.Acceleration = PhysicsFrames.Convert(Quaternion.identity, from, to) * _state.Acceleration;
+            }
+            _lastVelocity = PhysicsFrames.ConvertVelocity(_lastVelocity, position, from, to);
+            _rotationCount = 0;
+            PushRotation(_state.Rotation, 0f);
         }
 
         internal void ResetMotion()
@@ -273,6 +336,7 @@ namespace Nebula
             _samples = 0;
             _rotationCount = 0;
             _state = new PhysicsFrameState { Position = Owner.transform.position, Rotation = Owner.transform.rotation };
+            _precise = PrecisePosition(Owner.Space, out _preciseInFrame);
         }
 
         // ---- angular velocity (D14, NEB-390)
@@ -843,6 +907,32 @@ namespace Nebula
             return velocity;
         }
 
+        /// <summary>
+        /// An angular velocity in space <paramref name="from"/> expressed in space <paramref name="to"/>: rotated, plus the
+        /// spin of every frame left, minus the spin of every frame entered, from each frame's <see cref="PhysicsFrame.State"/>.
+        /// </summary>
+        internal static Vector3 ConvertAngularVelocity(Vector3 omega, Container from, Container to)
+        {
+            if (from == to) return omega;
+            var common = CommonSpace(from, to);
+            for (var s = from; s != common && s != null; s = s.Space)
+            {
+                omega = s.transform.rotation * omega;
+                if (s.Frame != null && s.Frame.State.HasRates) omega += s.Frame.State.AngularVelocity;
+            }
+            if (to == common) return omega;
+            _chain.Clear();
+            for (var s = to; s != common && s != null; s = s.Space) _chain.Add(s);
+            for (int i = _chain.Count - 1; i >= 0; i--)
+            {
+                var s = _chain[i];
+                if (s.Frame != null && s.Frame.State.HasRates) omega -= s.Frame.State.AngularVelocity;
+                omega = Quaternion.Inverse(s.transform.rotation) * omega;
+            }
+            _chain.Clear();
+            return omega;
+        }
+
         private static readonly List<Container> _chain = new List<Container>();
 
         private static void Descend(ref Vector3 point, Container to, Container common)
@@ -1086,7 +1176,10 @@ namespace Nebula
             var root = frame != null ? frame.Root : null;
             if (frame == null)
             {
-                position = Double3.From(t.position);
+                // Composed in double from the local poses up to the scene, not Unity's float world position: a scope whose
+                // scene coordinates are millions of metres out (a worker holding a system's space far from Unity's origin)
+                // rounds that to a metre, while what an entity stands in and where it is in it are exact (NEB-496).
+                position = LocalIn(t, null);
                 rotation = t.rotation;
                 scale = t.lossyScale;
                 return;

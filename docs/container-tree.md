@@ -5,7 +5,7 @@ stays **18**: every wire change is additive (a trailing optional field or sectio
 `docs/compatibility-policy.md` D3). User-facing pages: `website/content/docs/concepts/containers-and-handover.mdx`
 (§ The container tree), `website/content/docs/guides/physics-frames.mdx`, `guides/runtime-containers.mdx`
 (§ Place a container inside another), `guides/dynamic-containers.mdx` (§ Lease a dynamic container). Conformance:
-scenarios 20–23, 40 and 41 of `docs/conformance-suite.md`.
+scenarios 20–23, 40, 41 and 77 of `docs/conformance-suite.md`.
 
 ## 0. Problem
 
@@ -168,7 +168,8 @@ and the tick after a shift reads the carrier's own motion, not the shift over on
 vector part, over as many of the last 256 samples as it takes the frame to turn a milliradian, while that baseline
 agrees with the newest tick's own reading (NEB-390): a one-tick difference of float quaternions read zero below about
 2 degrees a second, and a planet turning once in a few hours turns by about 2e-6 rad a tick. A planet at 1e-4 rad/s
-reads within 0.1% after about four seconds of samples; a frame that stops turning reads still at once. Nebula applies
+reads within 0.1% after about four seconds of samples; a frame that stops turning reads still at once. A carrier that
+moves into or out of another frame takes its samples with it (D26). Nebula applies
 no fictitious forces by itself; a body opts in with `FrameInertia` (`docs/frame-bodies.md` D4).
 
 **D15 Crossings go through the pose owner.** Moving between a frame and the space around it needs the frame's pose at
@@ -178,7 +179,9 @@ the converted point in the space around it; into a framed box it descends to the
 The worker then:
 
 - crosses the entity itself when it simulates the frame's carrier (`IsPoseOwner`, by net id): `SetContainer`
-  converts position, rotation and velocity (leaving adds the frame's velocity and ω × r, entering takes them off);
+  converts position, rotation and velocity (leaving adds the frame's velocity and ω × r, entering takes them off), and
+  a dynamic body's spin (leaving adds the frame's spin, entering takes it off, `PhysicsFrames.ConvertAngularVelocity`;
+  NEB-496: it was only rotated, so a crate turning with a turning carrier went on turning inside it);
 - otherwise hands it to the carrier's worker unconverted, flagged (`AuthorityTransferMsg.Crossing`, trailing byte).
   The receiver holds it for `CrossingHoldTicks` (30) against being handed straight back, crosses it on its next
   tick, then hands it on if the destination belongs to another worker. One extra handover, no error.
@@ -325,6 +328,62 @@ carrier through that carrier (`TryCarrierOf` reads the placements on the lease r
 an entity across a change of container converts the older sample through both containers' poses at that sample's own
 tick, read from each moving carrier's interpolation buffer, not through where they are now: a planet turning while a
 ship crosses its box moved on by a render delay since, which drew the ship up to 10 cm off (NEB-392).
+
+**D26 A framed carrier rides in a moving framed carrier (NEB-496).** Nothing in §3 is limited to one level: a ship (B)
+with its own frame lands in, rides in and leaves a carrier (A) with its own frame while A cruises and turns, as it
+does on a planet. B crosses A's box face on A's pose owner (D15) and is handed to whoever owns the container of A's it
+lands in, a leased bay included (D20), its riders with it (they stay under B's frame root, in B's coordinates); poses
+compose in double through both frames (`ConvertLocal`, and on a client `LocalToRenderPrecise` through A's render
+pose); a rider walks from B's frame into A's through B's pose owner and back; an origin shift of A's frame moves B,
+which stands in it, and one of B's moves B's riders only; B leaves through A's pose owner with A's velocity and ω × r.
+One thing did not hold, and was fixed:
+
+- *A frame's motion follows its carrier into another space.* D14 samples a frame's motion from its carrier's transform,
+  in the space around the frame. When the carrier itself changed space, the next sample read the jump between the two
+  spaces as one tick of motion: B landing in A a few kilometres from the scope's origin read about 180 km/s, 10 rad/s and 10⁷ m/s², and
+  handed it to anything crossing out of B on that tick and to every `FrameInertia` body in B. Now `SetContainer`, which
+  converts the carrier's pose and velocity, converts its frame's last sample with them (`PhysicsFrame.Reframe`:
+  position, rotation, velocity, spin, acceleration), exactly, since on a worker the sample was taken this tick after
+  everything moved; the rotation history starts again from the converted rotation. A carrier placed in another space
+  without that conversion starts its rates again instead (one tick without them).
+- *A framed carrier never goes inside a smaller one.* Two framed carriers in one space resolve by D3, deepest then
+  smallest box: a ship set down over a carrier's deck so that its box held the carrier's origin put the carrier inside
+  the ship, and the ship was then refused entry into the carrier it stood in (D4). `ContainerRegistry` now skips, for a
+  subject with a framed box of its own, any carried framed box smaller than that box (`InvertsNesting`): the smaller one
+  goes inside the larger one, whichever is resolved first.
+- *A pilot's prediction crosses a moving carrier's box without a correction.* At a crossing the client's prediction for
+  a tick was recorded in the container the ship left and the worker's state for it is in the one it entered.
+  `PredictedBehaviour.ClientReconcile` related the two through the containers as they are drawn now: the carrier drawn
+  a render delay behind, the ship predicted an input lead ahead, so every crossing of a moving carrier's box read its
+  speed times lead plus delay as a correction (1.4 to 1.7 m at 25 m/s in a game, 0.8 m in the test). Now each
+  container is taken where it stood at that tick, read from the carrier's interpolation buffer as NEB-392 does for an
+  interpolated entity, and through the frames' render poses rather than matrices cached at either pose of a root; the
+  carrier's state for that tick may not have arrived yet (the owner's report of a tick travels apart from the
+  carrier's, and can come first), so its newest sample is carried on by its velocity up to
+  `RemoteInterpolator.PredictionAheadTicks` (6). And when the prediction agrees but the container changed, the client
+  re-predicts from the worker's state in the new container instead of keeping its present state, which was carried
+  across through the drawn poses with its velocity unconverted (a client converts nothing between spaces) and was off
+  by the same amount on the next report. Neither counts as a correction; the drawn pose eases across the difference as
+  after any correction.
+- *A crossing is converted in double on the worker.* `SetContainer` converted the pose through Unity's float world
+  positions, and a worker that holds a scope's space millions of metres from Unity's origin (a game measured 1.3e7 m)
+  rounded every crossing to the float spacing there, half a metre to a metre: a ship landing in a carrier arrived with
+  its height snapped to a whole metre. It now reads the frame-local pose (or the scope-space pose composed in double from
+  the local poses up to the scene, `PhysicsFrames.PoseInSpace`), carries it with `ConvertLocal` and writes it as a local
+  pose under the new container (`SetFramePose`). Velocities still go through the float poses, which is exact enough for
+  them.
+- *A frame's motion is sampled in double.* D14's rates were finite differences of the carrier's float world position,
+  and on such a worker a carrier at 25 m/s, 0.42 m a tick, read 15 or 30 m/s 2.4e6 m out (0, 30 or 60 m/s at 1e7 m):
+  the velocity added to what left it and taken off what entered it. `PhysicsFrame.Sample` now takes them from the
+  carrier's position in double, frame-local in the space around the frame on a worker and composed from the local poses
+  up to the scene in the scope's own space (`PoseInSpace`), and carries that sample through an origin shift, a change
+  of space and a scope transfer as it carries the float one. A client drawing a frame inside another keeps sampling the
+  drawn position.
+
+How a game sets it up: A's box covers what B can land on plus the envelope it flies in (a deck and 12 m over it); B's
+box is smaller than A's and sits on B's own floor; B's interior colliders reach past its box by more than the
+hysteresis where riders step out, as any frame's must (`docs/frame-bodies.md` D6), and A's deck is where they land.
+An airlock or ramp is a crossing policy on B's frame (D16); A's needs none for B. Scenario 77.
 
 ## 5b. Chunk grids hosted by a container
 
@@ -516,6 +575,7 @@ carrier of its own (a ship's frame is local to the ship). Scenario 45 pins the n
 | 45 | Wire precision in a large frame: an entity in a hosted chunk of a 500 km planet is near-exact, an entity directly in the frame at 100 km and 250 km from its origin is within half the float spacing (1.6 cm at 250 km) of where it stands, none of it depends on the scope being 10,000 km out, and the gateway's absolute records are double fields filed in the frame's own space | `ConformanceFramePrecisionTests` |
 | 41 | A planet's ground as a grid hosted by the planet (D22), nothing leased statically: allocated around a ground pawn on one worker, a second pawn on the other and a ship flying scenario 40's lap at 300 m/s; the ship never stands in the box outside a leased chunk, each chunk it enters was leased ahead of it, the ground behind it retires, and a restart brings back a crate standing in a hosted chunk under the planet's own restored container | `ConformanceCarrierHostedGridTests`, plus `HostedChunkGridTests` |
 | 43 | A `Portal` (an `InstanceBoundary` until NEB-428) in a chunk hosted by a framed carrier (NEB-394): its face is read out of the carrier's frame, as an entity's is, so the instance is prepared at the door; a player on the planet enters it and leaves back into the planet's chunk, in its frame | `ConformanceFramedPortalTests` |
+| 77 | A framed ship (B) enters, rides in and leaves a framed carrier (A, 40 × 100 m, a bay leased on its own) cruising at 200 m/s and turning at 6°/s, on one and two workers: no position error at either crossing, riders in their seats, B's frame reading its motion relative to A from the first tick (D26), a body turning with A standing still in it; origin shifts of A, of B and of both on one tick moving nothing; B leaving with A's velocity and ω × r, drawn on a client without a jump; a rider walking from B into A and back, predicted on its own client with no correction; a ship predicted by its pilot three ticks ahead, the carrier's state a tick behind the ship's, crossing into and out of A, translating at 25 and 100 m/s, and of a carrier 10,000 km from the scene's origin, with no correction and its pose written at each crossing to the hundredth of a millimetre; a carrier 10,000 km (or 1.3e7 m) from the scene's origin whose frame reads its 25 m/s within 0.05 m/s every tick and hands it to a rider stepping out; a late joiner drawing both nested; persistence and `CargoPolicy.Stow` at depth two; A crossing a worker seam with B and its rider, carrier first, in one tick; and the overlapping-box rule | `ConformanceNestedFramedCarrierTests` |
 | 49 | A large frame on a client (D11, D19, D25): a scope's origin shift poses the frames at once, so `KeepOriginNear` on a pawn on a framed planet run after a game's own rule never shifts back over 1,000 frames; a scope's shift leaves the history of what stands in a frame alone; ground 205 km out on a planet turning at 8.5e-4 rad/s holds within a millimetre against the camera over 1,000 frames under a render origin (about 3 cm without); the frame's world pose is unchanged; prediction runs bit for bit at the simulation pose; a ship on the planet is drawn through the planet's render origin and needs none of its own; a body moving at 100 m/s in a chunk 205 km out, with a camera riding it and the scene's origin kept within 1 km of the camera, holds within half a millimetre a frame while cameras draw (about 14 mm a frame with -O left on the root); drawing puts every root and child back exactly and never overlaps a prediction step; a tool 0.4 m in front of a camera 20 km from Unity's origin, through the turning frame, holds within 0.05 mm a frame under the scene render origin (about 4 mm without) | `ConformanceFrameRenderOriginTests` |
 
 Tier limit (B, `ConformanceMesh`): the container registry is process-wide, so of two workers' copies of one carrier
@@ -524,6 +584,18 @@ only the last registered owns the box and its frame. Scenario 21's two-worker ca
 ## 8. Known limits
 
 - Every process that holds a framed container holds its frame scene.
+- Overlapping carriers (D3, D26): a carrier goes inside the deepest, then smallest, carried box holding its origin. For
+  two framed carriers that is never the smaller one (D26); for carriers without a frame it still can be, so keep a
+  carrier's origin out of a smaller carrier's box (a truck parked over a cart). A framed carrier's box must stay larger
+  than every framed carrier that lands in it.
+- A predicted entity in an interpolated carrier is drawn against the carrier's drawn pose, a render delay behind, while
+  it is predicted an input lead ahead: at a crossing of a moving carrier's box its drawn pose eases (100 ms by default)
+  across the carrier's speed times lead plus delay. The prediction itself is not corrected (D26). How closely the
+  comparison at a crossing holds is bounded by how precisely the client knows the carrier: a carrier sent with
+  compressed rotations (`NetworkTransform.UseQuaternionCompression`, about a milliradian) puts a ship 50 m from its
+  origin some centimetres off; a game measured 5.5 to 7 cm, and none with the carrier's compression turned off.
+- An entity leaves one frame per tick: a rider stepping out of a ship where the ship overhangs its carrier's box is in
+  the carrier's frame for a tick (through the ship's pose owner) before it leaves that one too (through the carrier's).
 - Raycasts do not pass from one frame into another; the game casts again in the space around a frame.
 - A `Portal` (which replaced `InstanceBoundary`, NEB-428) reads its own face and an entity's position in the scope's own space, out of any physics frame (NEB-394), and leaves an occupant into the deepest container holding the point, descending into frames (`Portal.FindDestination`). Its aperture is a rectangle on the face's z = 0 plane, in the face's own axes: the portal's rotation, read in the scope's own space like its position, turns the plane, so a door on sloping or curved ground has a crossing plane that follows it. A boundary on a frame that is turning still sweeps its box with the frame: keep doors on frames that turn off. A client in the instance is not sent the carrier (`docs/scope-activation.md` D24: rows only, no host entities), so the chunks under it are held for their parent there: a crossing into one is acknowledged by the client all the same (`ContainerRegistry.IsHeldForCarrier`), and the carrier and its ground arrive with the scope; but an `ObserveHost` window over a carrier's ground keeps rows the client cannot register, so the ground behind an open door on a framed planet is not drawn.
 - A client predicts in the frame of its own player only.

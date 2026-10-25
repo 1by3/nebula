@@ -51,7 +51,7 @@ The carrier itself is not inside its own container. Nebula excludes the carried 
 
 ### Overlapping carriers
 
-Two carriers never ride inside each other. When Nebula resolves an entity's position, it skips every dynamic container that the entity carries, at any depth: its own box, and the box of any carrier that rides inside it. It uses the next smallest container that holds the position instead.
+Two carriers never ride inside each other. When Nebula resolves an entity's position, it skips every dynamic container that the entity carries, at any depth: its own box, and the box of any carrier that rides inside it. It uses the next smallest container that holds the position instead. It also skips, for a carrier with a [physics frame](/docs/guides/physics-frames), every carrier with a frame whose box is smaller than its own: the smaller of two such carriers goes inside the larger.
 
 For example, when two ships spawn with overlapping interiors, one ship moves into the other ship's container. The other ship stays in the surrounding container, because the first ship's box now rides inside it. When more ships overlap, each one nests inside the next, and one ship stays in the surrounding container. If your carriers should not board each other, spawn them far enough apart that no box holds another carrier's origin.
 

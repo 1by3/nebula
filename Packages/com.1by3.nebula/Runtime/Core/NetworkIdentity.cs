@@ -1822,20 +1822,31 @@ namespace Nebula
             var toSpace = container != null ? container.InnerSpace : null;
             // A first placement (a spawn) takes the pose as given, in the space of the container it is placed in.
             bool convert = reparent && !IsSceneEntity && previous != null && fromSpace != toSpace && !PhysicsFrames.RendersFrames;
-            Vector3 position = default;
+            Double3 position = default;
             Quaternion rotation = default;
             if (convert)
             {
+                // The pose in double, from the frame-local pose (or the scope-space pose composed from local poses) through
+                // each frame's pose, and written below as a local pose under the new container: through Unity's float world
+                // positions it rounded to the float spacing of the scene coordinates, a metre in a scope held millions of
+                // metres from Unity's origin, at every crossing (NEB-496).
+                PhysicsFrames.PoseInSpace(transform, fromSpace, out var fromPosition, out var fromRotation, out _);
+                position = PhysicsFrames.ConvertLocal(fromPosition, fromSpace, toSpace);
+                rotation = PhysicsFrames.ConvertLocal(fromRotation, fromSpace, toSpace);
                 var p = transform.position;
-                position = PhysicsFrames.Convert(p, fromSpace, toSpace);
-                rotation = PhysicsFrames.Convert(transform.rotation, fromSpace, toSpace);
                 Motion.Velocity = PhysicsFrames.ConvertVelocity(Motion.Velocity, p, fromSpace, toSpace);
                 var body = GetComponent<Rigidbody>();
                 if (body != null && !body.isKinematic)
                 {
                     body.linearVelocity = PhysicsFrames.ConvertVelocity(body.linearVelocity, p, fromSpace, toSpace);
-                    body.angularVelocity = PhysicsFrames.Convert(Quaternion.identity, fromSpace, toSpace) * body.angularVelocity;
+                    // The spin of every frame left is added and of every frame entered taken off, as the velocity's ω × r is:
+                    // a body turning with a turning frame stands still in it (NEB-496).
+                    body.angularVelocity = PhysicsFrames.ConvertAngularVelocity(body.angularVelocity, fromSpace, toSpace);
                 }
+                // A carrier with a frame of its own takes the frame's sampled motion into the new space too (NEB-496): a
+                // ship landing in a moving carrier's frame would otherwise read the jump between the two spaces as one
+                // tick of its own motion, and hand it to whatever crosses out of it or feels its inertia on that tick.
+                if (_carried != null && _carried.Frame != null) _carried.Frame.Reframe(fromSpace, toSpace);
             }
             Container = container;
             if (previous != null) previous.Entities.Remove(this);
@@ -1858,7 +1869,7 @@ namespace Nebula
                     var home = fromSpace != null ? fromSpace.gameObject.scene : default;
                     if (home.IsValid() && gameObject.scene != home) SceneManager.MoveGameObjectToScene(gameObject, home);
                 }
-                if (convert) transform.SetPositionAndRotation(position, rotation);
+                if (convert) SetFramePose(toSpace, position, rotation);
             }
             if (carrying) CarryReplicaThroughPortal(previous, container, in carryMap, carryAbsolute, carryRotation, carryVelocity);
             foreach (var b in Behaviours) b.OnContainerChanged(previous, container);
