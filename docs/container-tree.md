@@ -561,6 +561,9 @@ only the last registered owns the box and its frame. Scenario 21's two-worker ca
   two framed carriers that is never the smaller one (D26); for carriers without a frame it still can be, so keep a
   carrier's origin out of a smaller carrier's box (a truck parked over a cart). A framed carrier's box must stay larger
   than every framed carrier that lands in it.
+- A loaded carrier crossing a worker seam is handed over in one tick with everything aboard, and the receiver makes
+  every copy it does not hold yet in that tick (or in the tick the band's ghosts arrive): about 0.1 ms an entity in the
+  Editor, plus a log line each. Measured in `docs/scale-suite.md` D13 (NEB-498).
 - An entity leaves one frame per tick: a rider stepping out of a ship where the ship overhangs its carrier's box is in
   the carrier's frame for a tick (through the ship's pose owner) before it leaves that one too (through the carrier's).
 - Raycasts do not pass from one frame into another; the game casts again in the space around a frame.

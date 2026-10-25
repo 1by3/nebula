@@ -227,6 +227,12 @@ namespace Nebula.Tests
 
         /// <summary>Every message delivered so far, in delivery order.</summary>
         public readonly List<WireMessage> Delivered = new List<WireMessage>();
+
+        /// <summary>
+        /// Measurements: when set, <see cref="Pump"/> times each delivery into a worker's <c>Dispatch</c> (what the receiver
+        /// spends applying it) and reports it here, in milliseconds.
+        /// </summary>
+        public Action<WireMessage, double> Timed;
         public IReadOnlyList<Worker> Workers => _workers;
 
         /// <summary>The <see cref="NebulaConfig"/> every worker of the mesh was given; defaults, until a scenario changes a field.</summary>
@@ -477,7 +483,13 @@ namespace Nebula.Tests
                             throw new InvalidOperationException($"{from.Id} sent {(MsgId)sent.Value[0]} to unknown peer {sent.Key}");
                         var message = new WireMessage(from.Id, to.Id, sent.Value);
                         Delivered.Add(message);
-                        to.Dispatch(to.PeersById[from.Id], sent.Value);
+                        if (Timed == null) to.Dispatch(to.PeersById[from.Id], sent.Value);
+                        else
+                        {
+                            long start = System.Diagnostics.Stopwatch.GetTimestamp();
+                            to.Dispatch(to.PeersById[from.Id], sent.Value);
+                            Timed(message, (System.Diagnostics.Stopwatch.GetTimestamp() - start) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+                        }
                         delivered++;
                         moved = true;
                     }
