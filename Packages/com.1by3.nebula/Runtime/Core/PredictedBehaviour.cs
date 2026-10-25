@@ -897,15 +897,29 @@ namespace Nebula
             // the pawn to another (a seam, a ship's door) since. Compare in the worker's frame, or every crossing
             // would look like a snap the size of the distance between the two origins.
             var predicted = h.Position;
-            if (h.Container != Identity.Container) predicted = Rehome(h.Container, Identity.Container, predicted);
+            if (h.Container != Identity.Container) predicted = Rehome(h.Container, Identity.Container, predicted, serverTick);
             float error = (serverPos - predicted).magnitude;
             // The prediction agrees with the worker, but the report brought an event for a tick already simulated without it: the
             // worker's state is right, so replay from it, now with the event on its tick, instead of waiting for the error to show.
             bool eventReplay = error <= CorrectionThreshold && HasUnappliedServerEvents(serverTick, _clientTick);
-            if (error <= CorrectionThreshold && !eventReplay)
+            // The worker moved the entity to another container since this tick was predicted (a seam, a carrier's box). The
+            // prediction agrees, but the present state the client holds was carried into the new container through where the
+            // containers are drawn now, not where they will be when it is simulated, and with its velocity unconverted
+            // (a client converts nothing between spaces): re-predict from the worker's state in the new container instead,
+            // which nothing counts as a correction (NEB-496).
+            bool moved = h.Container != Identity.Container;
+            if (error <= CorrectionThreshold && !eventReplay && !moved)
             {
                 OwnSnapshotReader.Set(OwnSnapshot.ToSegment());
                 ReadState(OwnSnapshotReader);
+                return;
+            }
+            if (error <= CorrectionThreshold && !eventReplay)
+            {
+                h.Position = serverPos;
+                h.Container = Identity.Container;
+                Replay(serverTick);
+                NoteCorrection(previousContainer, previousPosition, previousRotation);
                 return;
             }
             if (eventReplay)
@@ -935,9 +949,14 @@ namespace Nebula
         /// one physics frame (a ship crossing a planet's chunks, or between a chunk and the planet's own container) are related
         /// through the frame's root, in double, from their local poses: their cached world matrices may have been taken this
         /// frame on either side of the root's move between its drawn and simulated poses (D11), and comparing through them read
-        /// the difference as a correction of metres (NEB-478).
+        /// the difference as a correction of metres (NEB-478). Otherwise each container is taken where it stood at
+        /// <paramref name="tick"/>, the tick the position was recorded for: a moving carrier (one the pawn flew into, or out
+        /// of) is drawn where it was a render delay ago, while the pawn is predicted an input lead ahead, and relating the two
+        /// through where it is drawn now read its speed times that time as a correction at every crossing of its box (1.7 m
+        /// at 25 m/s, NEB-496). The carrier's pose at the tick comes from its interpolation buffer, as an interpolated
+        /// entity's older sample does (NEB-392); a tick the buffer has not reached goes through the current pose, as before.
         /// </summary>
-        private static Vector3 Rehome(Container from, Container to, Vector3 local)
+        private static Vector3 Rehome(Container from, Container to, Vector3 local, uint tick)
         {
             var root = FrameRootOf(from);
             if (root != null && FrameRootOf(to) == root)
@@ -946,8 +965,39 @@ namespace Nebula
                 var inRoot = from.OwnPhysicsFrame ? Double3.From(local) : PhysicsFrames.PointIn(from.transform, local, root);
                 return to.OwnPhysicsFrame ? inRoot.ToVector3() : PhysicsFrames.PointFrom(inRoot, to.transform, root);
             }
-            var world = from != null ? from.ToWorld(local) : local;
-            return to != null ? to.ToLocal(world) : world;
+            var world = from != null ? DrawnWorld(from, local) : local;
+            var turn = Quaternion.identity;
+            if (from != null) RemoteInterpolator.CarryBack(from, tick, ref world, ref turn, 0, ignoreSimulationPose: true);
+            if (to != null) RemoteInterpolator.CarryForward(to, tick, ref world, ref turn, 0, ignoreSimulationPose: true);
+            return to != null ? DrawnLocal(to, world) : world;
+        }
+
+        /// <summary>
+        /// A point local to <paramref name="c"/> where it is drawn: through its frame's render pose, composed from the local
+        /// poses under the frame's root, when the container lives in a physics frame on a client (whose root may be at its
+        /// simulation pose for this very reconcile, and whose cached matrices may be from either pose); through the
+        /// container's own matrix otherwise.
+        /// </summary>
+        private static Vector3 DrawnWorld(Container c, Vector3 local)
+        {
+            var space = c.InnerSpace;
+            var frame = space != null ? space.Frame : null;
+            if (frame == null || frame.Root == null || !PhysicsFrames.RendersFrames) return c.ToWorld(local);
+            if (c.OwnPhysicsFrame) return frame.LocalToRenderPrecise(Double3.From(local)).ToVector3();
+            if (!PhysicsFrames.IsUnder(c.transform, frame.Root)) return c.ToWorld(local);
+            return frame.LocalToRenderPrecise(PhysicsFrames.PointIn(c.transform, local, frame.Root)).ToVector3();
+        }
+
+        /// <summary>The inverse of <see cref="DrawnWorld"/>.</summary>
+        private static Vector3 DrawnLocal(Container c, Vector3 world)
+        {
+            var space = c.InnerSpace;
+            var frame = space != null ? space.Frame : null;
+            if (frame == null || frame.Root == null || !PhysicsFrames.RendersFrames) return c.ToLocal(world);
+            var inFrame = frame.RenderToLocalPrecise(Double3.From(world));
+            if (c.OwnPhysicsFrame) return inFrame.ToVector3();
+            if (!PhysicsFrames.IsUnder(c.transform, frame.Root)) return c.ToLocal(world);
+            return PhysicsFrames.PointFrom(inFrame, c.transform, frame.Root);
         }
 
         /// <summary>The root of the physics frame what <paramref name="c"/> holds lives in (its own, or its space's), when its transform hangs under it; else null.</summary>
