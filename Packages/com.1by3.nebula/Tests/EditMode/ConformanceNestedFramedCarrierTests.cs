@@ -827,58 +827,130 @@ namespace Nebula.Tests
             public Quaternion CarrierRotation;
         }
 
+        /// <summary>Which part of a carrier the pilot's ship flies through, and where the carrier is.</summary>
+        public enum PilotPath
+        {
+            /// <summary>A's bay, a leased container in A's frame; A a few kilometres from the scene's origin.</summary>
+            Bay,
+            /// <summary>A's own box, a few kilometres out.</summary>
+            OwnBox,
+            /// <summary>
+            /// A carrier's own box, with the carrier ten thousand kilometres from the worker's scene origin (the space of a
+            /// star system held far out), where a float is a metre apart.
+            /// </summary>
+            Far,
+        }
+
         /// <summary>
         /// The pilot's own prediction of a ship crossing into a carrier that translates at <paramref name="speed"/>, and out
         /// of it on the far side (<c>docs/portals.md</c> §13 R3: no correction over 0.1 m). The worker flies the ship (a
-        /// framed carrier, coasting 10 m/s across A); the pilot's client predicts it three ticks ahead of the worker with
-        /// A drawn two ticks behind the newest state it has, and reconciles each tick with the worker's owner state as
-        /// <c>NebulaClient.OnOwnerState</c> does: the container named first, then the state. At each crossing the client's
-        /// prediction was recorded in the container it left and the worker's state is in the one it entered. Related
-        /// through A as it is drawn, not as it stood at that tick, the two differed by A's speed times the lead and the
-        /// delay, and every crossing read as a correction of that size (1.4 to 1.7 m at 25 m/s in a game).
+        /// framed carrier, coasting 10 m/s across the carrier); the pilot's client predicts it three ticks ahead of the
+        /// worker, holds the carrier's state one tick behind the ship's owner state (they travel separately, and the
+        /// owner's report of a tick can come first), draws the carrier two ticks behind that, and reconciles each tick with
+        /// the worker's owner state as <c>NebulaClient.OnOwnerState</c> does: the container named first, then the state.
+        /// <para>
+        /// What a game showed (1.4 to 1.7 m at 25 m/s, then 5 to 30 cm): the client related the prediction, recorded in the
+        /// container the ship left, to the worker's state in the one it entered through the carrier as it is drawn rather
+        /// than as it stood at that tick, and then only up to its newest sample, a tick short; and the worker converted the
+        /// ship's pose at the crossing through Unity's float world positions, which ten thousand kilometres out are a metre
+        /// apart (<see cref="PilotPath.Far"/>, at 60 m/s so the carrier moves a whole float step a tick and its frame's
+        /// sampled velocity is exact).
+        /// </para>
         /// </summary>
-        [TestCase(25f, true, TestName = "APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(25 m/s, through the bay)")]
-        [TestCase(100f, true, TestName = "APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(100 m/s, through the bay)")]
-        [TestCase(25f, false, TestName = "APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(25 m/s, through A's own box)")]
-        [TestCase(100f, false, TestName = "APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(100 m/s, through A's own box)")]
-        public void APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(float speed, bool throughBay)
+        [TestCase(25f, PilotPath.Bay, TestName = "APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(25 m/s, through the bay)")]
+        [TestCase(100f, PilotPath.Bay, TestName = "APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(100 m/s, through the bay)")]
+        [TestCase(25f, PilotPath.OwnBox, TestName = "APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(25 m/s, through A's own box)")]
+        [TestCase(100f, PilotPath.OwnBox, TestName = "APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(100 m/s, through A's own box)")]
+        [TestCase(60f, PilotPath.Far, TestName = "APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(60 m/s, 10,000 km out)")]
+        public void APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(float speed, PilotPath path)
         {
             Build(1);
             var prefab = Prefabs(false)[1];
             prefab.name = "pilot-ship-prefab";
             prefab.AddComponent<Coasting>();
             ushort pilotShip = _mesh.RegisterPrefab(prefab);
-            var carrierVelocity = new Vector3(0f, 0f, speed);
+            Container space = _west;
+            NetworkIdentity carrier = _a;
+            var heading = Quaternion.identity;
+            var farOffset = new Vector3(1.0e7f, 0f, 0f); // a float is a metre apart here
+            if (path == PilotPath.Far)
+            {
+                space = _mesh.AddStaticContainer("far", farOffset, new Vector3(20000f, 20000f, 20000f));
+                space.Center = Vector3.zero;
+                ContainerRegistry.Rebuild();
+                _mesh.SetOwner(space, W1);
+                heading = Quaternion.Euler(0f, 90f, 0f); // flying +x, a whole metre a tick at 60 m/s
+                carrier = W1.SpawnServerDriven(_carrierPrefab, space, farOffset, heading);
+                carrier.transform.localPosition = Vector3.zero;
+            }
+            var carrierVelocity = heading * new Vector3(0f, 0f, speed);
             void Translate()
             {
-                _a.Motion.Velocity = carrierVelocity;
-                _a.transform.position += carrierVelocity * Dt;
+                carrier.Motion.Velocity = carrierVelocity;
+                carrier.transform.localPosition += carrierVelocity * Dt; // in its container's small numbers, as a game moves it
             }
             uint tick = 1;
             for (int i = 0; i < 30; i++, tick++) { Translate(); TickAll(tick); }
-            var ship = W1.SpawnServerDriven(pilotShip, _west, _a.transform.TransformPoint(new Vector3(28f, 3f, throughBay ? -20f : 20f)), Quaternion.identity);
-            ship.Motion.Velocity = carrierVelocity + new Vector3(-10f, 0f, 0f);
+            // Carrier-local; off the metre grid far out, so a pose rounded to a float there shows.
+            var relative = new Vector3(28f, 3f, path == PilotPath.Bay ? -20f : path == PilotPath.Far ? 20.37f : 20f);
+            var relativeVelocity = new Vector3(-10f, 0f, 0f);
+            var ship = W1.SpawnServerDriven(pilotShip, space, carrier.transform.position, Quaternion.identity);
+            ship.transform.localPosition = carrier.transform.localPosition + heading * relative;
+            ship.Motion.Velocity = carrierVelocity + heading * relativeVelocity;
             var steps = new List<PilotStep>();
             var containers = new List<Container>();
+            float worstIn = 0f, worstOut = 0f, worstVelocity = 0f;
+            var lastContainer = ship.Container;
+            var lastLocal = ship.LocalPosition;
+            var lastVelocity = ship.Motion.Velocity;
             for (int i = 0; i < 400; i++, tick++)
             {
                 Translate();
                 TickAll(tick);
+                if (ship.Container != lastContainer)
+                {
+                    // Where the ship's own step put it this tick, in the space it left (the same float sum its simulation
+                    // made), carried into the space it entered in double: what the crossing should have written.
+                    var stepped = Double3.From(lastLocal + lastVelocity * Dt);
+                    var carrierLocal = Double3.From(carrier.transform.localPosition);
+                    if (lastContainer == space)
+                    {
+                        var expected = PhysicsFrames.Rotate(Quaternion.Inverse(heading), stepped - carrierLocal);
+                        worstIn = Mathf.Max(worstIn, (float)Distance(expected, Double3.From(In(ship, carrier.Carried))));
+                    }
+                    else
+                    {
+                        var expected = carrierLocal + PhysicsFrames.Rotate(heading, stepped);
+                        worstOut = Mathf.Max(worstOut, (float)Distance(expected, Double3.From(ship.LocalPosition)));
+                    }
+                }
+                if (ship.Container != space) worstVelocity = Mathf.Max(worstVelocity, Vector3.Distance(relativeVelocity, ship.Motion.Velocity));
+                lastContainer = ship.Container;
+                lastLocal = ship.Container == space ? ship.LocalPosition : In(ship, carrier.Carried);
+                lastVelocity = ship.Motion.Velocity;
                 var state = new NetworkWriter(64);
                 ship.Predicted.WriteOwnerState(state);
-                steps.Add(new PilotStep { Tick = tick, Container = ship.Container, State = state.ToArray(), CarrierPosition = _a.transform.position, CarrierRotation = _a.transform.rotation });
+                steps.Add(new PilotStep { Tick = tick, Container = ship.Container, State = state.ToArray(), CarrierPosition = carrier.transform.localPosition, CarrierRotation = carrier.transform.localRotation });
                 if (containers.Count == 0 || containers[containers.Count - 1] != ship.Container) containers.Add(ship.Container);
             }
-            Assume.That(containers.Count, Is.EqualTo(3), "the ship flew into A and out of it again");
-            Assume.That(containers[1], Is.SameAs(throughBay ? _bay : _a.Carried), "through the part of A asked for");
-            TestContext.WriteLine("containers: " + string.Join(" -> ", containers.ConvertAll(c => c.ContainerId)));
+            TestContext.WriteLine($"{path}, carrier at {speed} m/s: containers {string.Join(" -> ", containers.ConvertAll(c => c.ContainerId))}; on the worker, pose written at the crossing in {worstIn * 1000f:0.000} mm, out {worstOut * 1000f:0.000} mm, velocity in the carrier {worstVelocity:0.000} m/s");
+            Assume.That(containers.Count, Is.EqualTo(3), "the ship flew into the carrier and out of it again");
+            Assume.That(containers[1], Is.SameAs(path == PilotPath.Bay ? _bay : carrier.Carried), "through the part of the carrier asked for");
+            Assert.That(worstIn, Is.LessThan(0.002f), "the worker put the ship where it was, in the carrier's coordinates");
+            Assert.That(worstOut, Is.LessThan(0.002f), "and back where it was in space");
+            Assert.That(worstVelocity, Is.LessThan(0.1f), "with the carrier's velocity taken off");
 
-            // The pilot's client: its own copy of the ship, and A's copy drawn from A's stream.
+            // The pilot's client keeps its origin near what it draws: the far scope is moved to Unity's origin on its side.
+            if (path == PilotPath.Far)
+            {
+                space.transform.position = Vector3.zero;
+                space.RefreshCache();
+            }
             NebulaRuntime.IsServer = false;
             NebulaRuntime.IsClient = true;
             var go = new GameObject("ship-on-its-pilots-client");
             _objects.Add(go);
-            var coasting = go.AddComponent<Coasting>();
+            go.AddComponent<Coasting>();
             var pawn = go.GetComponent<NetworkIdentity>();
             pawn.Initialize();
             pawn.NetId = 991;
@@ -886,9 +958,9 @@ namespace Nebula.Tests
             pawn.IsLocalPlayer = true;
             pawn.InvokeSpawn();
             pawn.SetContainer(steps[0].Container);
-            var buffer = _a.gameObject.AddComponent<RemoteInterpolator>();
-            _a.Interpolator = buffer;
-            const int Lead = 3, Delay = 2;
+            var buffer = carrier.gameObject.AddComponent<RemoteInterpolator>();
+            carrier.Interpolator = buffer;
+            const int Lead = 3, CarrierLag = 1, Delay = 2;
             var input = new NetworkWriter(32);
             for (int n = 0; n < steps.Count; n++)
             {
@@ -898,9 +970,10 @@ namespace Nebula.Tests
                     pawn.Predicted.ClientReconcile(steps[0].Tick, new NetworkReader(steps[0].State));
                     continue;
                 }
-                if (n >= Lead) buffer.Push(steps[n - Lead].Tick, steps[n - Lead].CarrierPosition, steps[n - Lead].CarrierRotation, carrierVelocity);
-                var drawn = steps[Mathf.Max(0, n - Lead - Delay)];
-                _a.transform.SetPositionAndRotation(drawn.CarrierPosition, drawn.CarrierRotation);
+                int heard = n - Lead - CarrierLag;
+                if (heard >= 0) buffer.Push(steps[heard].Tick, space, steps[heard].CarrierPosition, steps[heard].CarrierRotation, carrierVelocity);
+                var drawn = steps[Mathf.Max(0, heard - Delay)];
+                carrier.transform.SetLocalPositionAndRotation(drawn.CarrierPosition, drawn.CarrierRotation);
                 PhysicsFrames.PoseForRender();
                 ContainerRegistry.RefreshCaches();
                 if (n >= Lead)
@@ -921,8 +994,8 @@ namespace Nebula.Tests
                 pawn.Predicted.ClientPredictTick(steps[n].Tick, input);
                 PhysicsFrames.EndSimulation();
             }
-            TestContext.WriteLine($"carrier at {speed} m/s: {pawn.Predicted.Corrections} corrections, largest {pawn.Predicted.MaxCorrectionMagnitude * 1000f:0.0} mm, the ship ended in {pawn.Container?.ContainerId}");
-            Assert.AreSame(_west, pawn.Container, "the client followed the ship in and out");
+            TestContext.WriteLine($"client: {pawn.Predicted.Corrections} corrections, largest {pawn.Predicted.MaxCorrectionMagnitude * 1000f:0.0} mm, the ship ended in {pawn.Container?.ContainerId}");
+            Assert.AreSame(space, pawn.Container, "the client followed the ship in and out");
             Assert.That(pawn.Predicted.MaxCorrectionMagnitude, Is.LessThanOrEqualTo(0.1f), "no correction over 0.1 m at either crossing (R3)");
             Assert.AreEqual(0, pawn.Predicted.Corrections, "nor any correction at all: the prediction agrees with the worker in both spaces");
         }

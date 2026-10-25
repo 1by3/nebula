@@ -1833,13 +1833,18 @@ namespace Nebula
             var toSpace = container != null ? container.InnerSpace : null;
             // A first placement (a spawn) takes the pose as given, in the space of the container it is placed in.
             bool convert = reparent && !IsSceneEntity && previous != null && fromSpace != toSpace && !PhysicsFrames.RendersFrames;
-            Vector3 position = default;
+            Double3 position = default;
             Quaternion rotation = default;
             if (convert)
             {
+                // The pose in double, from the frame-local pose (or the scope-space pose composed from local poses) through
+                // each frame's pose, and written below as a local pose under the new container: through Unity's float world
+                // positions it rounded to the float spacing of the scene coordinates, a metre in a scope held millions of
+                // metres from Unity's origin, at every crossing (NEB-496).
+                PhysicsFrames.PoseInSpace(transform, fromSpace, out var fromPosition, out var fromRotation, out _);
+                position = PhysicsFrames.ConvertLocal(fromPosition, fromSpace, toSpace);
+                rotation = PhysicsFrames.ConvertLocal(fromRotation, fromSpace, toSpace);
                 var p = transform.position;
-                position = PhysicsFrames.Convert(p, fromSpace, toSpace);
-                rotation = PhysicsFrames.Convert(transform.rotation, fromSpace, toSpace);
                 Motion.Velocity = PhysicsFrames.ConvertVelocity(Motion.Velocity, p, fromSpace, toSpace);
                 var body = GetComponent<Rigidbody>();
                 if (body != null && !body.isKinematic)
@@ -1875,7 +1880,7 @@ namespace Nebula
                     var home = fromSpace != null ? fromSpace.gameObject.scene : default;
                     if (home.IsValid() && gameObject.scene != home) SceneManager.MoveGameObjectToScene(gameObject, home);
                 }
-                if (convert) transform.SetPositionAndRotation(position, rotation);
+                if (convert) SetFramePose(toSpace, position, rotation);
             }
             if (carrying) CarryReplicaThroughPortal(previous, container, in carryMap, carryAbsolute, carryRotation, carryVelocity);
             foreach (var b in Behaviours) b.OnContainerChanged(previous, container);
