@@ -1303,18 +1303,32 @@ namespace Nebula
                         if (depth < best || (depth == best && volume >= insideVolume)) continue;
                     }
                     // The chain walk only for a box that would win: most candidates lose first.
-                    if (subject == null || !c.IsCarriedBy(subject))
+                    if (subject == null || (!c.IsCarriedBy(subject) && !InvertsNesting(c, subject)))
                     {
                         insideVolume = volume;
                         inside = c;
                     }
                 }
-                else if (d < nearestDist && (subject == null || !c.IsCarriedBy(subject)))
+                else if (d < nearestDist && (subject == null || (!c.IsCarriedBy(subject) && !InvertsNesting(c, subject))))
                 {
                     nearestDist = d;
                     nearest = c;
                 }
             }
+        }
+
+        /// <summary>
+        /// A carrier with a physics frame of its own never goes inside a carried, framed box smaller than its own
+        /// (<c>docs/container-tree.md</c> D26, NEB-496). Two framed carriers in one space, one docking in the other: when
+        /// the small one's box holds the large one's origin (a ship set down over a carrier's deck), the large one would
+        /// otherwise resolve into the ship, and the ship then be refused entry into the carrier it is standing in. The
+        /// small one goes inside the large one instead, whichever of the two is resolved first.
+        /// </summary>
+        private static bool InvertsNesting(Container c, NetworkIdentity subject)
+        {
+            if (!c.OwnPhysicsFrame || !c.IsDynamic) return false;
+            var own = subject.Carried;
+            return own != null && own.OwnPhysicsFrame && c.Volume < own.Volume;
         }
 
         /// <summary>

@@ -130,6 +130,8 @@ namespace Nebula
         internal PhysicsFrameState _state;
         private Vector3 _lastVelocity;
         private int _samples;
+        /// <summary>The space the motion samples were taken in: the carrier's own <see cref="Container.Space"/> then (NEB-496).</summary>
+        private Container _sampleSpace;
         internal readonly List<KeyValuePair<Collider, Collider>> Clones = new List<KeyValuePair<Collider, Collider>>();
         /// <summary>
         /// The copies whose source has moved since the frame was built, each with the kinematic body that now moves it
@@ -235,6 +237,12 @@ namespace Nebula
         internal void Sample(uint tick, float dt)
         {
             var t = Owner.transform;
+            // A carrier that changed space since the last sample (into or out of another frame) was converted with it by
+            // Reframe; one placed there without a conversion starts its rates again rather than reading the jump between
+            // the two spaces as one tick's motion.
+            var space = Owner.Space;
+            if (_samples > 0 && space != _sampleSpace) ResetMotion();
+            _sampleSpace = space;
             var position = t.position;
             var rotation = t.rotation;
             // The same pose sampled again in the same tick (two workers sharing one registry in a test, or a client
@@ -266,6 +274,32 @@ namespace Nebula
         {
             if (_samples == 0 || delta == Vector3.zero) return;
             _state.Position += delta;
+        }
+
+        /// <summary>
+        /// The carrier moved from space <paramref name="from"/> into space <paramref name="to"/> (it crossed into or out of
+        /// another physics frame, NEB-496), converted through the frames' poses now: the motion sampled so far is converted
+        /// with it, as its pose and velocity are, so the next sample reads the carrier's motion in its new space and not the
+        /// distance between the two spaces divided by one tick. On a worker the sample was taken this tick, after everything
+        /// moved, so the conversion is exact. The rotation history starts again from the converted rotation: its older
+        /// samples were taken against a space that turned since.
+        /// </summary>
+        internal void Reframe(Container from, Container to)
+        {
+            _sampleSpace = to;
+            if (_samples == 0 || from == to) return;
+            var position = _state.Position;
+            _state.Position = PhysicsFrames.Convert(position, from, to);
+            _state.Rotation = PhysicsFrames.Convert(_state.Rotation, from, to);
+            if (_state.HasRates)
+            {
+                _state.Velocity = PhysicsFrames.ConvertVelocity(_state.Velocity, position, from, to);
+                _state.AngularVelocity = PhysicsFrames.ConvertAngularVelocity(_state.AngularVelocity, from, to);
+                _state.Acceleration = PhysicsFrames.Convert(Quaternion.identity, from, to) * _state.Acceleration;
+            }
+            _lastVelocity = PhysicsFrames.ConvertVelocity(_lastVelocity, position, from, to);
+            _rotationCount = 0;
+            PushRotation(_state.Rotation, 0f);
         }
 
         internal void ResetMotion()
@@ -841,6 +875,32 @@ namespace Nebula
             }
             _chain.Clear();
             return velocity;
+        }
+
+        /// <summary>
+        /// An angular velocity in space <paramref name="from"/> expressed in space <paramref name="to"/>: rotated, plus the
+        /// spin of every frame left, minus the spin of every frame entered, from each frame's <see cref="PhysicsFrame.State"/>.
+        /// </summary>
+        internal static Vector3 ConvertAngularVelocity(Vector3 omega, Container from, Container to)
+        {
+            if (from == to) return omega;
+            var common = CommonSpace(from, to);
+            for (var s = from; s != common && s != null; s = s.Space)
+            {
+                omega = s.transform.rotation * omega;
+                if (s.Frame != null && s.Frame.State.HasRates) omega += s.Frame.State.AngularVelocity;
+            }
+            if (to == common) return omega;
+            _chain.Clear();
+            for (var s = to; s != common && s != null; s = s.Space) _chain.Add(s);
+            for (int i = _chain.Count - 1; i >= 0; i--)
+            {
+                var s = _chain[i];
+                if (s.Frame != null && s.Frame.State.HasRates) omega -= s.Frame.State.AngularVelocity;
+                omega = Quaternion.Inverse(s.transform.rotation) * omega;
+            }
+            _chain.Clear();
+            return omega;
         }
 
         private static readonly List<Container> _chain = new List<Container>();

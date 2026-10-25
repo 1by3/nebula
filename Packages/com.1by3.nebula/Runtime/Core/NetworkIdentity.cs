@@ -1834,8 +1834,14 @@ namespace Nebula
                 if (body != null && !body.isKinematic)
                 {
                     body.linearVelocity = PhysicsFrames.ConvertVelocity(body.linearVelocity, p, fromSpace, toSpace);
-                    body.angularVelocity = PhysicsFrames.Convert(Quaternion.identity, fromSpace, toSpace) * body.angularVelocity;
+                    // The spin of every frame left is added and of every frame entered taken off, as the velocity's ω × r is:
+                    // a body turning with a turning frame stands still in it (NEB-496).
+                    body.angularVelocity = PhysicsFrames.ConvertAngularVelocity(body.angularVelocity, fromSpace, toSpace);
                 }
+                // A carrier with a frame of its own takes the frame's sampled motion into the new space too (NEB-496): a
+                // ship landing in a moving carrier's frame would otherwise read the jump between the two spaces as one
+                // tick of its own motion, and hand it to whatever crosses out of it or feels its inertia on that tick.
+                if (_carried != null && _carried.Frame != null) _carried.Frame.Reframe(fromSpace, toSpace);
             }
             Container = container;
             if (previous != null) previous.Entities.Remove(this);
