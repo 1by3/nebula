@@ -331,6 +331,17 @@ namespace Nebula
             PushRotation(_state.Rotation, 0f);
         }
 
+        /// <summary>
+        /// The carrier was committed into another scope by a translation (NEB-497) and moved <paramref name="delta"/> in
+        /// simulation space without moving at all: like an origin shift (<see cref="Rebase"/>), the last sample follows it
+        /// when it was taken in the scope's own space, so the next sample reads the carrier's own motion and not the jump.
+        /// A frame in another frame that came along was not moved in that frame's coordinates and needs nothing.
+        /// </summary>
+        internal void CarryAcrossScopes(Vector3 delta)
+        {
+            if (_sampleSpace == null && Owner.Space == null) Rebase(delta);
+        }
+
         internal void ResetMotion()
         {
             _samples = 0;

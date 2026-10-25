@@ -33,6 +33,11 @@ namespace Nebula
         /// <summary>This worker owns the destination and waits for its content's <see cref="IInstanceContentLoader"/>s.</summary>
         internal bool WorkerContentPending;
         internal float Deadline;
+        /// <summary>At the commit: the scope the entity left and where it stood in that scope's simulation space.</summary>
+        internal ulong FromScope;
+        internal Vector3 ScopeBefore;
+        /// <summary>How far the commit moved the entity in simulation space, from the old scope's to the new one's.</summary>
+        internal Vector3 Moved;
     }
 
     public sealed partial class NebulaWorker
@@ -160,9 +165,17 @@ namespace Nebula
         /// Commit a group only when every member is ready. Each member must have its own preparation and admission check.
         /// <para>
         /// A member riding in another member's carried container (<see cref="NetworkIdentity.Carried"/>), at any depth (the crew of a ship that is
-        /// itself in the group), keeps its seat: it moves with its carrier and stays inside it, so it arrives in the
-        /// destination scope through the carrier instead of being put down in the destination container. Its
-        /// preparation is still what readies its owner's client for the destination.
+        /// itself in the group, a ship landed in a carrier and its crew), keeps its seat: it moves with its carrier and
+        /// stays inside it, so it arrives in the destination scope through the carrier instead of being put down in the
+        /// destination container. Its preparation is still what readies its owner's client for the destination. What
+        /// every member recorded in the old scope (<see cref="NetworkIdentity.StateAt"/>) and a carrier's frame motion
+        /// follow it (NEB-497).
+        /// </para>
+        /// <para>
+        /// A group is never split across workers: when anything in a carrier's box, at any depth, is simulated by another
+        /// worker (a rider handed to it, an interior or a room leased to it), nothing is committed, false is returned, and
+        /// the carrier's preparation says why in <see cref="InstanceTransfer.Error"/>. Bring it to this worker (or out of
+        /// the carrier) and prepare the group again.
         /// </para>
         /// </summary>
         /// <param name="transfers">Distinct entity preparations owned by this worker. This is not a cross-worker transaction.</param>
@@ -201,11 +214,68 @@ namespace Nebula
                 rotations[i] = PhysicsFrames.InSimulationPose(space) ? PhysicsFrames.Convert(member.transform.rotation, space, null) : member.transform.rotation;
                 seated[i] = RidesInAny(transfers[i].Entity, entities);
             }
+            // Never split: a carrier that holds something another worker simulates does not leave without it (NEB-497).
+            for (int i = 0; i < transfers.Count; i++)
+            {
+                if (seated[i]) continue;
+                string held = HeldElsewhere(transfers[i].Entity);
+                if (held == null) continue;
+                transfers[i].Error = held;
+                NebulaLog.Warn($"transfer of {transfers[i].Entity} refused: {held}");
+                return false;
+            }
+            var fromScopes = new ulong[transfers.Count];
+            for (int i = 0; i < transfers.Count; i++) fromScopes[i] = transfers[i].Entity.InstanceId;
             // Carriers first, then what they carry: a rider is committed in place once the ship it sits in has
             // already moved it (docs/scope-activation.md D19).
             for (int i = 0; i < transfers.Count; i++) if (!seated[i]) TryCommitTransfer(transfers[i], null, positions[i], rotations[i]);
-            for (int i = 0; i < transfers.Count; i++) if (seated[i]) CommitSeated(transfers[i]);
+            for (int i = 0; i < transfers.Count; i++)
+                if (seated[i]) CommitSeated(transfers[i], fromScopes[i], MovedWith(transfers[i].Entity, transfers, seated));
             return true;
+        }
+
+        /// <summary>How far the commit moved the unseated member <paramref name="rider"/> rides in, which moved it too.</summary>
+        private static Vector3 MovedWith(NetworkIdentity rider, IReadOnlyList<InstanceTransfer> transfers, bool[] seated)
+        {
+            var container = rider.Container;
+            int limit = ContainerRegistry.Dynamic.Count;
+            for (int hops = 0; container != null && container.IsDynamic && hops <= limit; hops++)
+            {
+                var carrier = container.Carrier;
+                if (carrier == null) break;
+                for (int i = 0; i < transfers.Count; i++)
+                    if (!seated[i] && transfers[i].Entity == carrier) return transfers[i].Moved;
+                container = carrier.Container;
+            }
+            return Vector3.zero;
+        }
+
+        /// <summary>
+        /// The first thing in <paramref name="carrier"/>'s box, at any depth (riders, the boxes of carriers riding in it,
+        /// rooms fixed in it), that another worker simulates, described for <see cref="InstanceTransfer.Error"/>; null when
+        /// this worker simulates all of it.
+        /// </summary>
+        private string HeldElsewhere(NetworkIdentity carrier)
+        {
+            var root = carrier.Carried;
+            if (root == null || !root.IsDynamic) return null;
+            var boxes = new List<Container> { root };
+            for (int i = 0; i < boxes.Count && i <= ContainerRegistry.ChainBound; i++)
+            {
+                var box = boxes[i];
+                if (box.IsLeased && box.OwnerWorkerId != WorkerId)
+                    return $"{box.ContainerId} in {carrier.name}#{carrier.NetId} is simulated by worker '{box.OwnerWorkerId}': bring it to this worker, or empty it, and prepare the group again";
+                foreach (var e in box.Entities)
+                {
+                    // Another process's copy (only an in-process test mesh lists those) is that process's to judge.
+                    if (e == null || Find(e.NetId) != e) continue;
+                    if (!e.HasAuthority)
+                        return $"entity {e.NetId} riding in {carrier.name}#{carrier.NetId} is simulated by another worker: hand it to this worker, or take it out, and prepare the group again";
+                    if (e.Carried != null && e.Carried.IsDynamic && e.Carried != box) boxes.Add(e.Carried);
+                }
+                foreach (var child in box.FixedChildren) if (child != null) boxes.Add(child);
+            }
+            return null;
         }
 
         /// <summary>Whether <paramref name="entity"/> is carried, at any depth, by one of <paramref name="group"/>.</summary>
@@ -230,10 +300,11 @@ namespace Nebula
         /// already. It keeps its container and pose; the crossing is recorded as it is for any other member — a new
         /// epoch, so every copy takes the next state as a fresh location, and the preparation is finished.
         /// </summary>
-        private void CommitSeated(InstanceTransfer transfer)
+        private void CommitSeated(InstanceTransfer transfer, ulong fromScope, Vector3 moved)
         {
             if (!ValidTransfer(transfer)) return;
             var entity = transfer.Entity;
+            if (entity.InstanceId != fromScope) entity.CarryAcrossScopes(fromScope, moved);
             entity.Epoch++;
             entity.HasStateTick = false;
             transfer.Finished = true;
@@ -352,6 +423,8 @@ namespace Nebula
             var entity = transfer.Entity;
             if (entity.IsSceneEntity) throw new InvalidOperationException("Scene entities cannot leave their authored scene");
             if (!InstanceScenes.Complete(transfer.Destination)) return false;
+            transfer.FromScope = entity.InstanceId;
+            transfer.ScopeBefore = PhysicsFrames.ToScope(entity.transform.position, entity.Space);
             entity.SetContainer(transfer.Destination);
             return true;
         }
@@ -359,6 +432,13 @@ namespace Nebula
         private void EndCommit(InstanceTransfer transfer)
         {
             var entity = transfer.Entity;
+            // Into another scope: what it recorded there, and a carrier's frame motion, follow it (NEB-497). Within one
+            // scope the move is a teleport, and the history keeps where it really was.
+            if (entity.InstanceId != transfer.FromScope)
+            {
+                transfer.Moved = PhysicsFrames.ToScope(entity.transform.position, entity.Space) - transfer.ScopeBefore;
+                entity.CarryAcrossScopes(transfer.FromScope, transfer.Moved);
+            }
             entity.Epoch++;
             entity.HasStateTick = false;
             transfer.Finished = true;

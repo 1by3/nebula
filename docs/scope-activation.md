@@ -375,6 +375,31 @@ member is committed in place — new epoch, preparation finished, container and 
 still what readied its owner's client for the destination. A rider committed without its ship is put down in the
 destination as before.
 
+As built at depth two (NEB-497, scenario 78): a carrier with its own physics frame carrying another, a rider in the inner
+one and a rider standing directly in the outer one keep their containers, frames and frame-local poses; velocities are
+unchanged (the translation moves poses only). Two things did not hold before, and do now:
+
+- *History follows the group.* What a member recorded in the scope it left (`NetworkIdentity.StateAt`) stayed in that
+  scope's simulation space, so a hit test in the new scope rewound the outer carrier to where it had been in the old
+  one, 580 m off in the test. A commit into another scope now moves those entries by how far the commit moved the member
+  (or, for a seated rider, the member it rides in) and names the container it is in now; entries recorded inside a
+  frame that came along are frame-local and stay as they are. Within one scope a commit is a teleport, and the history
+  keeps where the entity really was.
+- *A carrier's frame does not read the jump as motion.* A frame samples its carrier's pose each tick
+  (`docs/container-tree.md` D14), so the tick after the commit read the translation as one tick of the carrier's motion,
+  about 35 km/s in the test, and handed it to anything crossing out of the frame and to every `FrameInertia` body in it.
+  The commit moves the last sample with the carrier, as an origin shift does. An inner frame that came along was not
+  moved in the outer frame's coordinates and reads nothing.
+
+**A group is never split across workers.** A worker can prepare only what it simulates, so a rider another worker
+simulates aboard a carrier in the group could not be in the group, and the carrier took it to the new scope anyway,
+with no preparation of its own. `TryCommitTransfers` now refuses the whole group when anything in an unseated member's
+box, at any depth (riders, the boxes of carriers riding in it, rooms fixed in it), is simulated by another worker: a
+rider this worker holds only as a ghost, or a box leased to another worker. Nothing moves, it returns false, and the
+carrier's preparation says what was in the way (`InstanceTransfer.Error`, also logged). The game gathers the group on
+one worker (hands the rider over, or takes the lease back) and prepares again. Riders this worker simulates that are not
+in the group still ride along, as before.
+
 **D20 No wire change.** Every rule above is a gateway, client or worker decision over messages that already existed:
 `InterestSubscribe.Entities`, `ContainerOwnership` deltas, `WorldState` on the reliable stream. Protocol stays 18.
 
@@ -405,6 +430,10 @@ uses the mechanism both sides already implement (D12), is bounded, and is limite
 Nothing new is required. A game may prepare every rider along with the ship — that readies each rider's client for
 the destination before the commit — and commit them as one group; or it may move the ship alone and let the riders'
 clients follow it. Both are tested.
+
+Limits (NEB-497): a group whose carriers hold something another worker simulates is refused rather than gathered by
+Nebula; the game moves it first. Rooms fixed inside a carrier (runtime containers whose parent is the carrier's box)
+take their scope from their own lease rows, and a scope transfer of the carrier is not covered for them by scenario 78.
 
 ## 12. An instance can keep observing its host (NEB-369)
 

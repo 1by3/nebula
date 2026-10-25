@@ -346,6 +346,45 @@ namespace Nebula
                 if (_ring[i].Valid && SpaceOf(_ring[i].Container) == space) _ring[i].Position += delta;
         }
 
+        /// <summary>
+        /// The entity was committed into another scope by a translation (a transfer, <c>docs/scope-activation.md</c> D19,
+        /// NEB-497): what it recorded in the scope it left follows it, moved by <paramref name="delta"/> (from the old
+        /// scope's simulation space to the new one's) and named in <paramref name="container"/>, the container it is in
+        /// now, so a hit test in the new scope rewinds it along its own path. Entries recorded inside a physics frame that
+        /// came along with it (its carrier's, now in the new scope) are left alone: they are in that frame's coordinates,
+        /// which did not move. Entries in a frame left behind are read out of it at its current pose first.
+        /// </summary>
+        internal void CarryAcrossScopes(ulong fromScope, Vector3 delta, Container container)
+        {
+            if (!_any) return;
+            var toSpace = SpaceOf(container);
+            bool toFramed = PhysicsFrames.InSimulationPose(toSpace);
+            for (int i = 0; i < _ring.Length; i++)
+            {
+                ref var e = ref _ring[i];
+                if (!e.Valid) continue;
+                var fromSpace = SpaceOf(e.Container);
+                if (fromSpace != null && fromSpace.InstanceId != fromScope) continue; // a frame that came along, or another scope's
+                // Recorded in the scope's own space: in a box of the old scope, or in a carrier that came along.
+                if (fromSpace == null && e.Container != null && !e.Container.IsDynamic && e.Container.InstanceId != fromScope) continue;
+                bool fromFramed = PhysicsFrames.InSimulationPose(fromSpace);
+                var position = fromFramed ? PhysicsFrames.Convert(e.Position, fromSpace, null) : e.Position;
+                var rotation = fromFramed ? PhysicsFrames.Convert(e.Rotation, fromSpace, null) : e.Rotation;
+                var velocity = fromFramed ? PhysicsFrames.Convert(Quaternion.identity, fromSpace, null) * e.Velocity : e.Velocity;
+                position += delta;
+                if (toFramed)
+                {
+                    position = PhysicsFrames.Convert(position, null, toSpace);
+                    rotation = PhysicsFrames.Convert(rotation, null, toSpace);
+                    velocity = PhysicsFrames.Convert(Quaternion.identity, null, toSpace) * velocity;
+                }
+                e.Position = position;
+                e.Rotation = rotation;
+                e.Velocity = velocity;
+                e.Container = container;
+            }
+        }
+
         /// <summary>The space an entry recorded in <paramref name="container"/> is in (a gone container counts as the scope's).</summary>
         private static Container SpaceOf(Container container) => container != null ? container.InnerSpace : null;
 

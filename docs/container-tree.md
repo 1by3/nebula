@@ -383,7 +383,8 @@ One thing did not hold, and was fixed:
 How a game sets it up: A's box covers what B can land on plus the envelope it flies in (a deck and 12 m over it); B's
 box is smaller than A's and sits on B's own floor; B's interior colliders reach past its box by more than the
 hysteresis where riders step out, as any frame's must (`docs/frame-bodies.md` D6), and A's deck is where they land.
-An airlock or ramp is a crossing policy on B's frame (D16); A's needs none for B. Scenario 77.
+An airlock or ramp is a crossing policy on B's frame (D16); A's needs none for B. Scenario 77; a scope transfer of A
+with B and their riders aboard is scenario 78 (`docs/scope-activation.md` D19).
 
 ## 5b. Chunk grids hosted by a container
 
