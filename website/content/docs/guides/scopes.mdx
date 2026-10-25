@@ -196,6 +196,10 @@ worker.TryCommitTransfers(group, arrival - ship.ScopePositionPrecise);
 
 `arrivalInPlanet` is a `Double3` in the planet frame's own coordinates, and `planet` is the framed `Container` in the destination's scope. Preparing each rider lets its client get the destination ready before the commit. After the commit, the ship is in the destination container and every rider is still in its seat inside the ship, now in the destination scope.
 
+This works at any depth: a carrier with a physics frame that carries a ship with one, with crew in both, arrives with everyone in their frames and seats. Velocities are unchanged, what each member recorded for lag compensation (`NetworkIdentity.StateAt`) moves with it into the new scope, and neither frame reads the jump as motion.
+
+The group must be on one worker. If anything aboard a carrier in the group is simulated by another worker, such as a rider handed to it or an interior leased to it, `TryCommitTransfers` commits nothing and returns `false`, and the carrier's `InstanceTransfer.Error` says what is in the way. Hand that rider to this worker, or take it out of the carrier, then prepare the group again. A failed preparation cannot be reused.
+
 You can also commit only the ship. Each rider's client follows the ship into the new scope without reconnecting: it keeps the ship, its own pawn, and everything else aboard, such as cargo or other players, with no despawn. It starts receiving the destination's entities and stops receiving the scope it left. Clients that were watching the ship from the old scope lose it and everything aboard, and are not told where it went. A rider that reconnects after the crossing finds the ship in its new scope.
 
 A rider's gateway keeps up to `NebulaGateway.MaxFollowedPassengers` (4096) entities aboard its riders' ships through a crossing. Beyond that, extra cargo can briefly disappear and reappear on a rider's screen when the ship changes scope.
