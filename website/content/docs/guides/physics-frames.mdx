@@ -262,6 +262,7 @@ A carrier with a frame can hold other carriers with frames: a ship that lands on
 - The ship's crew stay in the ship's frame, in its coordinates, through both crossings and every handover.
 - A crew member can walk out of the ship into the carrier's frame and back. Leaving the ship needs the ship's pose owner, and leaving the carrier needs the carrier's.
 - Positions are composed in double through both frames, on workers with `PhysicsFrames.ConvertLocal` and on clients with `PhysicsFrame.LocalToRenderPrecise`.
+- A pilot whose client predicts the ship is not corrected at either crossing, at any speed of the carrier. The ship's drawn position eases over about 100 ms at each crossing, because the carrier is drawn a little in the past while the ship is predicted a little ahead.
 
 Set the boxes up like this:
 

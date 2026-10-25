@@ -22,6 +22,7 @@ namespace Nebula.Tests
     /// <item>Leaving: B leaves with A's velocity added, ω × r included, and a client drawing B sees no jump.</item>
     /// <item>Walking: a rider walks out of B's frame into A's and back, and its own client predicts the walk with no
     /// correction.</item>
+    /// <item>Prediction: a ship its pilot predicts crosses into and out of a translating A with no correction.</item>
     /// <item>Late join: a client that hears of the riders before their carriers draws both nested where they are.</item>
     /// <item>Persistence: riders of B are saved against B, B against A; A stowed with its cargo comes back at depth two.</item>
     /// <item>Seam handover: A crosses a worker seam with B and B's rider aboard, carrier first, in one tick.</item>
@@ -797,6 +798,133 @@ namespace Nebula.Tests
             Assert.AreEqual(0, pawn.Predicted.Corrections, "the prediction recorded in one frame matches the worker's state in the other");
             Assert.That(worstDrawn, Is.LessThan(0.005f), "drawn where it is in A at every step: " + worstAt);
             Assert.AreSame(b.Carried, pawn.Container, "back in B");
+        }
+
+        // ------------------------------------------------------------------------------------ a pilot-predicted ship
+
+        /// <summary>
+        /// A ship that coasts: each tick it moves by its velocity in the space it is in, and the input (an acceleration)
+        /// changes the velocity. Predicted by its pilot's client with the same inputs; its state is its pose and velocity in
+        /// its container, which Nebula converts at a crossing on the worker.
+        /// </summary>
+        internal sealed class Coasting : PredictedBehaviour<WalkInput>
+        {
+            protected override WalkInput GatherInput() => default;
+
+            protected override void Simulate(uint tick, in WalkInput input, float deltaTime)
+            {
+                Identity.Motion.Velocity += input.Move * deltaTime;
+                Identity.SetLocalPose(Identity.Container, Identity.LocalPosition + Identity.Motion.Velocity * deltaTime, Identity.LocalRotation);
+            }
+        }
+
+        private struct PilotStep
+        {
+            public uint Tick;
+            public Container Container;
+            public byte[] State;
+            public Vector3 CarrierPosition;
+            public Quaternion CarrierRotation;
+        }
+
+        /// <summary>
+        /// The pilot's own prediction of a ship crossing into a carrier that translates at <paramref name="speed"/>, and out
+        /// of it on the far side (<c>docs/portals.md</c> §13 R3: no correction over 0.1 m). The worker flies the ship (a
+        /// framed carrier, coasting 10 m/s across A); the pilot's client predicts it three ticks ahead of the worker with
+        /// A drawn two ticks behind the newest state it has, and reconciles each tick with the worker's owner state as
+        /// <c>NebulaClient.OnOwnerState</c> does: the container named first, then the state. At each crossing the client's
+        /// prediction was recorded in the container it left and the worker's state is in the one it entered. Related
+        /// through A as it is drawn, not as it stood at that tick, the two differed by A's speed times the lead and the
+        /// delay, and every crossing read as a correction of that size (1.4 to 1.7 m at 25 m/s in a game).
+        /// </summary>
+        [TestCase(25f, true, TestName = "APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(25 m/s, through the bay)")]
+        [TestCase(100f, true, TestName = "APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(100 m/s, through the bay)")]
+        [TestCase(25f, false, TestName = "APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(25 m/s, through A's own box)")]
+        [TestCase(100f, false, TestName = "APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(100 m/s, through A's own box)")]
+        public void APilotPredictsItsShipAcrossAMovingCarrierWithoutACorrection(float speed, bool throughBay)
+        {
+            Build(1);
+            var prefab = Prefabs(false)[1];
+            prefab.name = "pilot-ship-prefab";
+            prefab.AddComponent<Coasting>();
+            ushort pilotShip = _mesh.RegisterPrefab(prefab);
+            var carrierVelocity = new Vector3(0f, 0f, speed);
+            void Translate()
+            {
+                _a.Motion.Velocity = carrierVelocity;
+                _a.transform.position += carrierVelocity * Dt;
+            }
+            uint tick = 1;
+            for (int i = 0; i < 30; i++, tick++) { Translate(); TickAll(tick); }
+            var ship = W1.SpawnServerDriven(pilotShip, _west, _a.transform.TransformPoint(new Vector3(28f, 3f, throughBay ? -20f : 20f)), Quaternion.identity);
+            ship.Motion.Velocity = carrierVelocity + new Vector3(-10f, 0f, 0f);
+            var steps = new List<PilotStep>();
+            var containers = new List<Container>();
+            for (int i = 0; i < 400; i++, tick++)
+            {
+                Translate();
+                TickAll(tick);
+                var state = new NetworkWriter(64);
+                ship.Predicted.WriteOwnerState(state);
+                steps.Add(new PilotStep { Tick = tick, Container = ship.Container, State = state.ToArray(), CarrierPosition = _a.transform.position, CarrierRotation = _a.transform.rotation });
+                if (containers.Count == 0 || containers[containers.Count - 1] != ship.Container) containers.Add(ship.Container);
+            }
+            Assume.That(containers.Count, Is.EqualTo(3), "the ship flew into A and out of it again");
+            Assume.That(containers[1], Is.SameAs(throughBay ? _bay : _a.Carried), "through the part of A asked for");
+            TestContext.WriteLine("containers: " + string.Join(" -> ", containers.ConvertAll(c => c.ContainerId)));
+
+            // The pilot's client: its own copy of the ship, and A's copy drawn from A's stream.
+            NebulaRuntime.IsServer = false;
+            NebulaRuntime.IsClient = true;
+            var go = new GameObject("ship-on-its-pilots-client");
+            _objects.Add(go);
+            var coasting = go.AddComponent<Coasting>();
+            var pawn = go.GetComponent<NetworkIdentity>();
+            pawn.Initialize();
+            pawn.NetId = 991;
+            pawn.Epoch = 1;
+            pawn.IsLocalPlayer = true;
+            pawn.InvokeSpawn();
+            pawn.SetContainer(steps[0].Container);
+            var buffer = _a.gameObject.AddComponent<RemoteInterpolator>();
+            _a.Interpolator = buffer;
+            const int Lead = 3, Delay = 2;
+            var input = new NetworkWriter(32);
+            for (int n = 0; n < steps.Count; n++)
+            {
+                if (n == 0)
+                {
+                    // Where the worker had it at its first recorded tick, before predicting the next.
+                    pawn.Predicted.ClientReconcile(steps[0].Tick, new NetworkReader(steps[0].State));
+                    continue;
+                }
+                if (n >= Lead) buffer.Push(steps[n - Lead].Tick, steps[n - Lead].CarrierPosition, steps[n - Lead].CarrierRotation, carrierVelocity);
+                var drawn = steps[Mathf.Max(0, n - Lead - Delay)];
+                _a.transform.SetPositionAndRotation(drawn.CarrierPosition, drawn.CarrierRotation);
+                PhysicsFrames.PoseForRender();
+                ContainerRegistry.RefreshCaches();
+                if (n >= Lead)
+                {
+                    var r = steps[n - Lead];
+                    if (r.Container != pawn.Container)
+                    {
+                        PhysicsFrames.ReleaseSimulationPose();
+                        pawn.SetContainer(r.Container);
+                    }
+                    PhysicsFrames.BeginSimulation(r.Container != null ? r.Container.InnerSpace : null, pawn.transform);
+                    pawn.Predicted.ClientReconcile(r.Tick, new NetworkReader(r.State));
+                    PhysicsFrames.EndSimulation();
+                }
+                NetworkTime.Tick = steps[n].Tick;
+                PhysicsFrames.BeginSimulation(pawn.Container != null ? pawn.Container.InnerSpace : null, pawn.transform);
+                input.Reset();
+                pawn.Predicted.ClientPredictTick(steps[n].Tick, input);
+                PhysicsFrames.EndSimulation();
+            }
+            TestContext.WriteLine($"carrier at {speed} m/s: {pawn.Predicted.Corrections} corrections, largest {pawn.Predicted.MaxCorrectionMagnitude * 1000f:0.0} mm, the ship ended in {pawn.Container?.ContainerId}");
+            Assert.AreSame(_west, pawn.Container, "the client followed the ship in and out");
+            Assert.That(pawn.Predicted.MaxCorrectionMagnitude, Is.LessThanOrEqualTo(0.1f), "no correction over 0.1 m at either crossing (R3)");
+            Assert.AreEqual(0, pawn.Predicted.Corrections, "nor any correction at all: the prediction agrees with the worker in both spaces");
         }
 
         // ------------------------------------------------------------------------------------ late join
