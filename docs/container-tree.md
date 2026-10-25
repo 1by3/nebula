@@ -589,6 +589,9 @@ only the last registered owns the box and its frame. Scenario 21's two-worker ca
   two framed carriers that is never the smaller one (D26); for carriers without a frame it still can be, so keep a
   carrier's origin out of a smaller carrier's box (a truck parked over a cart). A framed carrier's box must stay larger
   than every framed carrier that lands in it.
+- A loaded carrier crossing a worker seam is handed over in one tick with everything aboard, and the receiver makes
+  every copy it does not hold yet in that tick (or in the tick the band's ghosts arrive): about 0.1 ms an entity in the
+  Editor, plus a log line each. Measured in `docs/scale-suite.md` D13 (NEB-498).
 - A predicted entity in an interpolated carrier is drawn against the carrier's drawn pose, a render delay behind, while
   it is predicted an input lead ahead: at a crossing of a moving carrier's box its drawn pose eases (100 ms by default)
   across the carrier's speed times lead plus delay. The prediction itself is not corrected (D26). How closely the

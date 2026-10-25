@@ -292,6 +292,61 @@ scenarios of their own, one per layer, and recorded in `docs/server-owned-entiti
 The editor layer is a third one beside D1's two: real workers, but in one process with a recording transport, so it
 measures a worker's own tick and its messages exactly and nothing about sockets or a player build.
 
+## D13. A large loaded carrier across a seam (NEB-498)
+
+`Tests/EditMode/LargeCarrierSeamMeasurementTests` (layer `editor`, `[Explicit]`, category `Scale`; artifact
+`Logs/scale/editor-large-carrier-seam.csv`, and a table in the Editor log) measures what two workers spend when a
+100 m carrier with its own physics frame (box 40 × 16 × 100 m: a deck and 12 m over it) crosses the seam between them.
+It carries 0, 100, 300 or 500 build pieces attached to it (`FrameAttachment`, a collider each), two ships with frames of
+their own (10 × 6 × 20 m) with two riders each, and four riders on its deck. Every configuration flies at 300 m/s and
+at 50 m/s, with and without an explicit extent (`docs/entity-extents.md`), with the Editor's log on and off; each of its
+five crossings is a freshly built carrier's first, from 200 m out, and the first is a warm-up. Per crossing: the
+sender's tick, what the receiver spent applying the handover messages (each `Dispatch` timed, `ConformanceMesh.Timed`)
+and its next tick, the receiver's frame on the tick the band's ghost spawns arrived, the handover's bytes and messages,
+and how many ticks it spanned.
+
+One run on a Windows development machine, Editor (Mono), medians of four crossings at 300 m/s (50 m/s is the same
+within noise, except that the extent's lead is 65 ticks instead of 11). "Frame" is apply plus next tick; budget
+`docs/portals.md` §13 R2: no worker tick over 16 ms.
+
+| Pieces | Entities | Extent | Sender, log on / off (ms) | Receiver frame at handover, on / off | Receiver frame at ghost spawn, on / off (max) | Handover bytes |
+|---|---|---|---|---|---|---|
+| 0 | 11 | no | 4.4 / 0.6 | 4.3 / 0.6 | 1.0 / 0.8 | 2,225 |
+| 0 | 11 | yes | 4.1 / 0.4 | 3.7 / 0.3 | 1.0 / 1.0 | 2,225 |
+| 100 | 111 | no | 38.8 / 2.8 | 46.3 / 10.4 | 1.0 / 0.7 | 21,525 |
+| 100 | 111 | yes | 39.0 / 2.8 | 33.3 / 2.5 | 7.1 / 7.1 (13.7) | 21,525 |
+| 300 | 311 | no | 107.5 / 7.9 | 127.9 / 36.7 | 1.0 / 0.7 | 60,125 |
+| 300 | 311 | yes | 110.3 / 8.3 | 95.7 / 11.1 | 20.3 / 20.6 (36.8) | 60,125 |
+| 500 | 511 | no | 179.1 / 13.6 | 213.3 / 53.4 | 1.1 / 0.9 | 98,725 |
+| 500 | 511 | yes | 196.0 / 12.9 | 163.6 / 13.3 | 35.4 / 31.8 (61.9) | 98,725 |
+
+What it shows:
+
+- **The handover is atomic.** Every entity aboard, at any depth, moves in one tick, carrier first, one
+  `AuthorityTransfer` each: 195 B for the carrier, 203 B for a ship or a rider, 193 B for a piece. The receiver's first
+  tick with the group is cheap (3 ms at 511 entities); the cost is in applying what it is sent.
+- **The log dominates in the Editor.** A worker logs a line (`NebulaLog.Info`) for every entity it hands over and every
+  one it receives: about 0.3 ms each in the Editor, about 180 of the sender's 196 ms at 500 pieces. A built worker writes
+  the same lines, more cheaply, but still one per entity.
+- **Without the log, the cost is making the copies.** The receiver spends about 0.1 ms per entity it has no copy of
+  (instantiate, spawn, attach, bookkeeping; `TheReceivePathInPieces` puts the parts at 0.03 to 0.05 ms for a piece or a
+  rider and 0.2 to 0.5 ms for a framed carrier, frame scene and collider copies included). Without an extent the root
+  band gives the receiver its copies one tick (300 m/s) to five ticks (50 m/s) before the handover, and most of the
+  making lands on the handover (53 ms at 500 pieces). With the extent the band gives them 11 or 65 ticks before, and the
+  handover itself is a flip (13 ms at 500 pieces), but the making lands on the tick the ghosts arrive instead: 32 ms
+  median, 62 ms worst, all in one tick.
+- **The extent is free to keep.** A cruising carrier's tick is the same with it and without it to the hundredth of a
+  millisecond (1.27 ms at 511 entities): its registry query does not show at this size.
+- **`PartitionWarnEntities` (2,000) does not fire**: 511 entities is a quarter of it. The per-gateway filter-time
+  warning fired once, in a warm-up.
+
+The numbers are a proxy for a built worker, not its numbers: Mono in the Editor, preview scenes for frames, the
+Editor's log, prefabs with a collider or two and no game behaviours, no sockets and no garbage collection to speak of.
+A crewed ship of about 60 m measured on a built worker cost the receiving worker 60 to 70 ms on its first frame after
+a seam; with eleven entities this harness spends 4 ms, so most of that field cost is in what the harness leaves out
+(the game's own spawn and authority callbacks, real meshes and collider sets copied into the frame, the log), and is to
+be found with a profiler on the built worker.
+
 ## Non-goals
 
 Not a conformance suite: nothing here is deterministic except the two planner scenarios, and a scale run that is
