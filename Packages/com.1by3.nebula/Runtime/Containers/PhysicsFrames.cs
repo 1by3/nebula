@@ -130,6 +130,15 @@ namespace Nebula
         internal PhysicsFrameState _state;
         private Vector3 _lastVelocity;
         private int _samples;
+        /// <summary>
+        /// The carrier's position at the last sample in double, which the rates are taken from: frame-local in the space
+        /// around the frame on a worker, composed from the local poses up to the scene in the scope's own space, and the
+        /// drawn position on a client inside another frame. A float world position millions of metres out is a quarter
+        /// of a metre apart or more, so a carrier at 25 m/s read 15 or 30 m/s a tick from it (NEB-496).
+        /// </summary>
+        private Double3 _precise;
+        /// <summary><see cref="_precise"/> is frame-local, so an origin shift of the space around the frame does not move it.</summary>
+        private bool _preciseInFrame;
         /// <summary>The space the motion samples were taken in: the carrier's own <see cref="Container.Space"/> then (NEB-496).</summary>
         private Container _sampleSpace;
         internal readonly List<KeyValuePair<Collider, Collider>> Clones = new List<KeyValuePair<Collider, Collider>>();
@@ -245,13 +254,15 @@ namespace Nebula
             _sampleSpace = space;
             var position = t.position;
             var rotation = t.rotation;
+            var precise = PrecisePosition(space, out bool inFrame);
             // The same pose sampled again in the same tick (two workers sharing one registry in a test, or a client
             // rendering twice within a tick while the carrier stands still) adds nothing; reading it as a sample would
             // report the frame at rest for a tick.
             if (_samples > 0 && tick == _state.Tick && position.Equals(_state.Position) && rotation.Equals(_state.Rotation)) return;
             if (_samples > 0 && dt > 0f)
             {
-                var velocity = (position - _state.Position) / dt;
+                var moved = precise - _precise;
+                var velocity = new Vector3((float)(moved.X / dt), (float)(moved.Y / dt), (float)(moved.Z / dt));
                 _state.Acceleration = _samples > 1 ? (velocity - _lastVelocity) / dt : Vector3.zero;
                 _state.Velocity = velocity;
                 _state.AngularVelocity = AngularVelocity(rotation, dt);
@@ -259,6 +270,8 @@ namespace Nebula
                 _state.HasRates = true;
             }
             PushRotation(rotation, _samples > 0 && dt > 0f ? dt : 0f);
+            _precise = precise;
+            _preciseInFrame = inFrame;
             _state.Position = position;
             _state.Rotation = rotation;
             _state.Tick = tick;
@@ -274,6 +287,20 @@ namespace Nebula
         {
             if (_samples == 0 || delta == Vector3.zero) return;
             _state.Position += delta;
+            if (!_preciseInFrame) _precise += delta;
+        }
+
+        /// <summary>Where the carrier is now, as <see cref="_precise"/> holds it.</summary>
+        private Double3 PrecisePosition(Container space, out bool inFrame)
+        {
+            var t = Owner.transform;
+            inFrame = space != null && !PhysicsFrames.RendersFrames;
+            if (space == null || inFrame)
+            {
+                PhysicsFrames.PoseInSpace(t, space, out var position, out _, out _);
+                return position;
+            }
+            return Double3.From(t.position);
         }
 
         /// <summary>
@@ -290,6 +317,8 @@ namespace Nebula
             if (_samples == 0 || from == to) return;
             var position = _state.Position;
             _state.Position = PhysicsFrames.Convert(position, from, to);
+            _precise = PhysicsFrames.ConvertLocal(_precise, from, to);
+            _preciseInFrame = to != null;
             _state.Rotation = PhysicsFrames.Convert(_state.Rotation, from, to);
             if (_state.HasRates)
             {
@@ -307,6 +336,7 @@ namespace Nebula
             _samples = 0;
             _rotationCount = 0;
             _state = new PhysicsFrameState { Position = Owner.transform.position, Rotation = Owner.transform.rotation };
+            _precise = PrecisePosition(Owner.Space, out _preciseInFrame);
         }
 
         // ---- angular velocity (D14, NEB-390)

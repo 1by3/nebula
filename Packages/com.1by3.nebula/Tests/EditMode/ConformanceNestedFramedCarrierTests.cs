@@ -18,6 +18,7 @@ namespace Nebula.Tests
     /// <item>Entering: B crosses into A's frame at A's box edge on A's pose owner, its riders keep their seats, and its
     /// pose composes in double through both frames with no error at the crossing; B's own frame reads its motion
     /// relative to A from the first tick after the crossing. A loose body turning with A stands still once inside.</item>
+    /// <item>Far out: a carrier's frame reads its velocity exactly 10,000 km from the scene's origin, and gives it to what leaves.</item>
     /// <item>Floating origin: a shift of A's frame, of B's, and of both on one tick moves nothing.</item>
     /// <item>Leaving: B leaves with A's velocity added, ω × r included, and a client drawing B sees no jump.</item>
     /// <item>Walking: a rider walks out of B's frame into A's and back, and its own client predicts the walk with no
@@ -412,6 +413,51 @@ namespace Nebula.Tests
             Assert.AreSame(_a.Carried, crate.Container, "the body crossed into A's frame");
             Assert.That(body.linearVelocity.magnitude, Is.LessThan(0.5f), $"it does not move in A ({body.linearVelocity})");
             Assert.That(body.angularVelocity.magnitude, Is.LessThan(0.005f), $"nor turn in it ({body.angularVelocity}, A turns at {Omega.y} rad/s)");
+        }
+
+        /// <summary>
+        /// A carrier's frame reads its motion exactly however far the scene is from Unity's origin: a carrier cruising at
+        /// 25 m/s, ten thousand kilometres out (or 1.3e7 m along one axis, as a game's worker holds a system's space), in a
+        /// container whose own numbers are small. Its frame's velocity is within 0.05 m/s of the truth every tick, and a
+        /// rider stepping out of it leaves with that velocity. Sampled from the carrier's float world position, a step there
+        /// is half a metre to a metre, and 0.42 m a tick read as 0, 30 or 60 m/s.
+        /// </summary>
+        [TestCase(5773503f, 5773503f, 5773503f, TestName = "AFarCarriersFrameReadsItsVelocity(10,000 km out)")]
+        [TestCase(0f, 0f, 1.3e7f, TestName = "AFarCarriersFrameReadsItsVelocity(1.3e7 m along z)")]
+        public void AFarCarriersFrameReadsItsVelocity(float x, float y, float z)
+        {
+            Build(1);
+            var offset = new Vector3(x, y, z);
+            var far = _mesh.AddStaticContainer("far", offset, new Vector3(20000f, 20000f, 20000f));
+            far.Center = Vector3.zero;
+            ContainerRegistry.Rebuild();
+            _mesh.SetOwner(far, W1);
+            var heading = Quaternion.Euler(0f, 30f, 0f);
+            var carrier = W1.SpawnServerDriven(_carrierPrefab, far, offset, heading);
+            carrier.transform.localPosition = Vector3.zero;
+            var rider = SpawnIn(W1, _crewPrefab, carrier.Carried, new Vector3(0f, 1f, 0f), Quaternion.identity);
+            var velocity = heading * new Vector3(0f, 0f, 25f);
+            float worst = 0f;
+            uint tick = 1;
+            for (int i = 0; i < 120; i++, tick++)
+            {
+                carrier.Motion.Velocity = velocity;
+                carrier.transform.localPosition += velocity * Dt; // in the container's small numbers
+                TickAll(tick);
+                var state = carrier.Carried.Frame.State;
+                if (i >= 2 && state.HasRates) worst = Mathf.Max(worst, Vector3.Distance(velocity, state.Velocity));
+            }
+            TestContext.WriteLine($"{offset}: worst frame velocity error {worst:0.0000} m/s");
+            Assert.That(worst, Is.LessThan(0.05f), "the frame reads the carrier's velocity every tick");
+
+            // The rider steps out through the side: it leaves with the carrier's velocity.
+            carrier.Motion.Velocity = velocity;
+            carrier.transform.localPosition += velocity * Dt;
+            rider.transform.position = carrier.Carried.Frame.LocalToSimulation(new Vector3(25f, 1f, 0f));
+            rider.Motion.Velocity = Vector3.zero;
+            TickAll(tick);
+            Assert.AreSame(far, rider.Container, "the rider left the carrier");
+            Assert.That(Vector3.Distance(velocity, rider.Motion.Velocity), Is.LessThan(0.05f), $"with the carrier's velocity ({rider.Motion.Velocity}, the carrier's {velocity})");
         }
 
         // ------------------------------------------------------------------------------------ floating origin
