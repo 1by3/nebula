@@ -247,7 +247,7 @@ namespace Nebula
         private static readonly ProfileSection ProfCLease = NebulaProfiler.Section("c.lease");
         private static readonly ProfileSection ProfCHandover = NebulaProfiler.Section("c.handover");
         private static readonly ProfileSection ProfCLoop = NebulaProfiler.Section("c.loop");
-        private long _passVisited, _passDue, _passPinned;
+        private long _passVisited, _passDue, _passPinned, _passRemembered;
         private static readonly ProfileSection ProfBand = NebulaProfiler.Section("band");
         private static readonly ProfileSection ProfPublish = NebulaProfiler.Section("publish");
         private static readonly ProfileSection ProfGap = NebulaProfiler.Section("gap");
@@ -1259,8 +1259,8 @@ namespace Nebula
         private string ResolveCounters(int ticks)
         {
             double t = Math.Max(1, ticks);
-            var s = $"visited={_passVisited / t:0.0} due={_passDue / t:0.0} pinned={_passPinned / t:0.0} fast={ContainerRegistry.FastResolves / t:0.0} full={ContainerRegistry.FullResolves / t:0.0} (nocur={ContainerRegistry.RefusedNoCurrent / t:0.0} frame={ContainerRegistry.RefusedFrame / t:0.0} outside={ContainerRegistry.RefusedOutside / t:0.0} neighbour={ContainerRegistry.RefusedNeighbour / t:0.0} moving={ContainerRegistry.RefusedMoving / t:0.0}) content frames={PhysicsFrames.All.Count} clones={PhysicsFrames.ClonesVisited / t:0.0} reposed={PhysicsFrames.ClonesReposed / t:0.0} boxes runtime={ContainerRegistry.Runtime.Count} dynamic={ContainerRegistry.Dynamic.Count} movingRuntime={ContainerRegistry.MovingRuntimeCount}";
-            _passVisited = _passDue = _passPinned = 0;
+            var s = $"visited={_passVisited / t:0.0} due={_passDue / t:0.0} pinned={_passPinned / t:0.0} remembered={_passRemembered / t:0.0} fast={ContainerRegistry.FastResolves / t:0.0} full={ContainerRegistry.FullResolves / t:0.0} (nocur={ContainerRegistry.RefusedNoCurrent / t:0.0} frame={ContainerRegistry.RefusedFrame / t:0.0} outside={ContainerRegistry.RefusedOutside / t:0.0} neighbour={ContainerRegistry.RefusedNeighbour / t:0.0} moving={ContainerRegistry.RefusedMoving / t:0.0}) content frames={PhysicsFrames.All.Count} clones={PhysicsFrames.ClonesVisited / t:0.0} reposed={PhysicsFrames.ClonesReposed / t:0.0} boxes runtime={ContainerRegistry.Runtime.Count} dynamic={ContainerRegistry.Dynamic.Count} movingRuntime={ContainerRegistry.MovingRuntimeCount}";
+            _passVisited = _passDue = _passPinned = _passRemembered = 0;
             PhysicsFrames.ClonesVisited = PhysicsFrames.ClonesReposed = 0;
             ContainerRegistry.ResetResolveCounters();
             return s;
@@ -1445,6 +1445,7 @@ namespace Nebula
             // A fenced worker hands nothing over: its view of who owns what may be stale, and the receiver would hold
             // a copy of something that is being restored elsewhere (docs/persistence-durability.md D8).
             bool fenced = IsFenced;
+            ContainerRegistry.SnapshotMovingBoxes();
             // Entities not resolved on this tick (asleep, or between their updates) are asked whether their container's
             // owner is still this worker only when an owner changed since the last pass, or a handover was left
             // waiting: most ticks they cost nothing here.
@@ -1481,7 +1482,28 @@ namespace Nebula
                 // so it follows its container to whichever worker owns it (docs/frame-bodies.md D8).
                 ts = System.Diagnostics.Stopwatch.GetTimestamp();
                 if (e.ContainerPinned) _passPinned++;
-                var resolved = e.ContainerPinned ? e.Container : ContainerRegistry.Resolve(e.transform.position, e.Container, Config.HandoverHysteresis, e);
+                Container resolved;
+                if (e.ContainerPinned) resolved = e.Container;
+                else
+                {
+                    // An entity that has not moved since its container was resolved to the one it is in, with the same boxes registered and no
+                    // carried or moving box near it, resolves to it again: Resolve is a function of the point, the current box and the boxes.
+                    // At 75 players at 30 Hz the pass resolved 800 entities a tick at ~4.7 us each, most of them standing still.
+                    var at = e.transform.position;
+                    if (e.ResolvedIn != null && e.ResolvedIn == e.Container && e.ResolvedVersion == ContainerRegistry.TopologyVersion && e.ResolvedAt.Equals(at)
+                        && !ContainerRegistry.AnyMovingBoxMightHold(at, e.Container, e.Container != null ? e.Container.InnerSpace : null))
+                    {
+                        resolved = e.Container;
+                        _passRemembered++;
+                    }
+                    else
+                    {
+                        resolved = ContainerRegistry.Resolve(at, e.Container, Config.HandoverHysteresis, e);
+                        e.ResolvedIn = resolved == e.Container ? resolved : null;
+                        e.ResolvedAt = at;
+                        e.ResolvedVersion = ContainerRegistry.TopologyVersion;
+                    }
+                }
                 tResolve += System.Diagnostics.Stopwatch.GetTimestamp() - ts;
                 if (resolved != e.Container)
                 {
