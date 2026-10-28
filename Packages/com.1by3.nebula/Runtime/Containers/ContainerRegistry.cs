@@ -74,6 +74,8 @@ namespace Nebula
         // no physics frame of its own) cannot live in the spatial hash: their boxes change every tick. They are few,
         // and scanned linearly like carried containers.
         private static readonly List<Container> MovingRuntime = new List<Container>();
+        /// <summary>Runtime boxes that move on their own (fixed in a carrier): the resolve shortcut asks each of them (profiling).</summary>
+        internal static int MovingRuntimeCount => MovingRuntime.Count;
         // Runtime containers fixed inside a physics frame (a planet's chunks: hundreds, and most of what stands
         // anywhere stands in one) are hashed per frame in the frame root's own coordinates, which never change
         // however the root is shifted on a worker or posed on a client. Keyed by the framed container, then by bucket.
@@ -1582,13 +1584,19 @@ namespace Nebula
                 var m = MovingRuntime[i];
                 if (m != null && m != current && m.Space == space && MightHold(m, p) && Claims(m, p)) { RefusedMoving++; return false; }
             }
-            for (int i = 0; i < DynamicList.Count; i++)
+            // The carriers near the point only, from the carried-box broad phase (padded by a bucket for what moved since it was built, as
+            // NeighborsOf uses it): every resolve scanned every carrier, and the carriers grow with the players (their ships and vehicles).
+            List<Container> carriers = DynamicList;
+            if (DynamicList.Count > DynamicHashThreshold) { CollectDynamicIn(new Bounds(p, Vector3.zero), AloneCandidates); carriers = AloneCandidates; }
+            for (int i = 0; i < carriers.Count; i++)
             {
-                var d = DynamicList[i];
+                var d = carriers[i];
                 if (d != null && d != current && d.Space == space && MightHold(d, p)) { RefusedMoving++; return false; }
             }
             return true;
         }
+
+        private static readonly List<Container> AloneCandidates = new List<Container>();
 
         /// <summary>Whether a runtime cell placed inside another container claims a point its box holds (<see cref="RuntimeClaims"/>, D22); true for every other box.</summary>
         private static bool Claims(Container c, Vector3 p) =>
