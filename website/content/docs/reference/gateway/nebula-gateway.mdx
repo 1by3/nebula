@@ -239,7 +239,23 @@ Far entities this gateway holds a pose for (NEB-388).
 public long FarEntriesRelayed { get; }
 ```
 
-Far-tier entries sent to clients since start (enters, updates and leaves).
+Far-tier entries sent to clients since start (enters, updates and leaves, full and compact).
+
+### FarPosesRelayed [#farposesrelayed]
+
+```csharp
+public long FarPosesRelayed { get; }
+```
+
+Of [`FarEntriesRelayed`](#farentriesrelayed), the compact poses ([`FarPosesMsg`](/docs/reference/protocol/far-poses-msg), protocol 31).
+
+### FarBytesRelayed [#farbytesrelayed]
+
+```csharp
+public long FarBytesRelayed { get; }
+```
+
+Bytes of far-tier messages sent to clients since start.
 
 ### InterestPolicy [#interestpolicy]
 
@@ -440,6 +456,7 @@ Whether a client holds an entity in its far tier (tests and diagnostics); false 
 
 ```csharp
 public int FarTierSize(ulong clientId);
+public int FarTierSize(ulong clientId, byte farClass);
 ```
 
 How many entities a client holds in its far tier; -1 for an unknown client.

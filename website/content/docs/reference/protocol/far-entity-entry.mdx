@@ -93,6 +93,54 @@ public Quaternion Rotation;
 public Vector3 Velocity;
 ```
 
+### FarClass [#farclass]
+
+```csharp
+public byte FarClass;
+```
+
+The entity's far class ([`NetworkIdentity.FarClass`](/docs/reference/core/network-identity#farclass); 0 the default). Protocol 31.
+
+### Slot [#slot]
+
+```csharp
+public ushort Slot;
+```
+
+Gateway to client, protocol 31: the client's short name for the entity, which [`FarPosesMsg`](/docs/reference/protocol/far-poses-msg) entries use.
+
+### Age [#age]
+
+```csharp
+public float Age;
+```
+
+Seconds since the pose was taken, when a gateway sends one it stored (0: fresh). Protocol 31, millisecond resolution.
+
+### FromReplica [#fromreplica]
+
+```csharp
+public bool FromReplica;
+```
+
+The replica the client holds is leaving its set, and this is its far marker (protocol 31, D112).
+
+### Upright [#upright]
+
+```csharp
+public bool Upright;
+```
+
+[`FarEntryKind.Pose`](/docs/reference/protocol/far-entry-kind#pose) only: write the facing alone (an upright class, `Nebula.FarClass.Upright`).
+
+### ClassesVersion [#classesversion]
+
+```csharp
+public const ushort ClassesVersion = 31;
+```
+
+The first protocol whose far entries carry a class, a slot, an age and the replica hand-over flag.
+
 ### StateWireSize [#statewiresize]
 
 ```csharp
@@ -113,7 +161,10 @@ public static FarEntityEntry GoneOf(ulong netId, uint epoch);
 
 ```csharp
 public void Write(NetworkWriter w);
+public void Write(NetworkWriter w, ushort version);
 ```
+
+Write at this build's protocol.
 
 ### Read [#read]
 

@@ -72,6 +72,14 @@ public float FarUpdateRate = 1f;
 
 Far-tier pose updates per second (default 1). Only used when FarRelevanceRadius is set; clamped to 0.1..30.
 
+### FarClass [#farclass]
+
+```csharp
+public byte FarClass;
+```
+
+The far tier class this entity is counted in (0, the default class, budgeted by InterestFarMaxEntities). Classes are configured in NebulaConfig.InterestFarClasses, each with its own budget per client, rate, radius and priority, so a crowd of distant people never pushes ships out of a client's far tier. A class's rate and radius, when set, replace this entity's own; a class with a radius makes the entity far relevant even with FarRelevanceRadius 0. See docs/interest-management.md section 16 (D110).
+
 ### MaxUpdateInterval [#maxupdateinterval]
 
 ```csharp
@@ -570,6 +578,14 @@ public event Action<Container, Container> ContainerChanged;
 ```
 
 ## Methods
+
+### IsFarRelevant [#isfarrelevant]
+
+```csharp
+public bool IsFarRelevant(FarClassTable classes);
+```
+
+Whether this entity is in the far tier at all, once its class has had its say ([`FarClassTable.Resolve`](/docs/reference/interest/far-class-table#resolve)).
 
 ### SetUpdateRate [#setupdaterate]
 
