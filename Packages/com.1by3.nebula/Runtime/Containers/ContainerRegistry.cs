@@ -1554,17 +1554,20 @@ namespace Nebula
                 if (space == null || space.Frame == null) { RefusedFrame++; return false; }
             }
             if (!current.Contains(p)) { RefusedOutside++; return false; }
+            // A cell of a curved grid whose boxes overlap its neighbours' (D22): the point is its only while it claims it, and a
+            // neighbour whose box holds the point can take it only when that neighbour claims it, as the search decides (FindAmong).
+            if (!Claims(current, p)) { RefusedOutside++; return false; }
             if (space != null && space.SignedDistanceInner(p) > hysteresis) { RefusedFrame++; return false; }
             var neighbors = current.Neighbors;
             for (int i = 0; i < neighbors.Count; i++)
             {
                 var n = neighbors[i];
-                if (n != null && MightHold(n, p)) { RefusedNeighbour++; return false; }
+                if (n != null && MightHold(n, p) && Claims(n, p)) { RefusedNeighbour++; return false; }
             }
             for (int i = 0; i < MovingRuntime.Count; i++)
             {
                 var m = MovingRuntime[i];
-                if (m != null && m != current && m.Space == space && MightHold(m, p)) { RefusedMoving++; return false; }
+                if (m != null && m != current && m.Space == space && MightHold(m, p) && Claims(m, p)) { RefusedMoving++; return false; }
             }
             for (int i = 0; i < DynamicList.Count; i++)
             {
@@ -1573,6 +1576,10 @@ namespace Nebula
             }
             return true;
         }
+
+        /// <summary>Whether a runtime cell placed inside another container claims a point its box holds (<see cref="RuntimeClaims"/>, D22); true for every other box.</summary>
+        private static bool Claims(Container c, Vector3 p) =>
+            RuntimeClaims == null || !c.IsRuntime || c.FixedParent == null || RuntimeClaims(c, p);
 
         /// <summary>
         /// Whether the point could be in the box. An axis-aligned box is its <see cref="Container.WorldBounds"/>,

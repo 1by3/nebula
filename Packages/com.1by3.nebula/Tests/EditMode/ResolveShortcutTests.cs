@@ -135,6 +135,42 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void OverlappingChunksOfAPlanetResolveByTheirClaimAndStillTakeTheShortcut()
+        {
+            // A curved grid's cells have boxes that overlap their neighbours' (D22): each claims the half of the overlap nearer its centre.
+            MakePlanet(out var chunks);
+            for (int i = 0; i < 4; i++)
+                ContainerRegistry.RegisterRuntime(2000UL + (ulong)i,
+                    ContainerPlacement.Child("planet", new Vector3(-3000f + 2000f * i, 100f, 0f), new Vector3(2600f, 1000f, 8000f), ContainerAuthority.Leased));
+            ContainerRegistry.RuntimeClaims = (c, p) =>
+            {
+                float best = float.MaxValue; Container owner = null;
+                foreach (var k in chunks) { float d = Mathf.Abs(p.x - k.transform.localPosition.x); if (d < best) { best = d; owner = k; } }
+                return owner == c;
+            };
+            try
+            {
+                foreach (float h in new[] { 0f, 0.35f })
+                {
+                    var fast = chunks[0]; var slow = chunks[0];
+                    ContainerRegistry.ResetResolveCounters();
+                    int searched = 0;
+                    for (float x = -3900f; x <= 2900f; x += 4f)
+                    {
+                        var p = new Vector3(x, 1f, 0.5f);
+                        int before = ContainerRegistry.FullResolves;
+                        fast = ContainerRegistry.Resolve(p, fast, h);
+                        searched += ContainerRegistry.FullResolves - before;
+                        slow = Reference(p, slow, h);
+                        Assert.AreSame(slow, fast, $"x={x} h={h}");
+                    }
+                    Assert.Greater(ContainerRegistry.FastResolves, searched * 10, $"h={h}: a point in the overlap the current cell claims skips the search");
+                }
+            }
+            finally { ContainerRegistry.RuntimeClaims = null; }
+        }
+
+        [Test]
         public void AStationaryEntityInAPlanetChunkIsNotSearched()
         {
             MakePlanet(out var chunks);
