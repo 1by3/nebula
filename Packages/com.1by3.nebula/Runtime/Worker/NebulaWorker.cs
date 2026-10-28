@@ -82,8 +82,8 @@ namespace Nebula
         public int FrameCrossings { get; private set; }
         /// <summary>Entities this worker handed to a frame's pose owner so it could cross them (D15).</summary>
         public int CrossingHandoffs { get; private set; }
-        /// <summary>How long an entity handed over for a crossing stays with the pose owner before it may be handed back (ticks).</summary>
-        public const int CrossingHoldTicks = 30;
+        /// <summary>How long an entity handed over for a crossing stays with the pose owner before it may be handed back, in ticks: half a second.</summary>
+        public static int CrossingHoldTicks => NetworkTime.SecondsToTicks(0.5);
         /// <summary>Entities received for a crossing, by net id: the tick until which they are not handed back.</summary>
         private readonly Dictionary<ulong, uint> _crossingHold = new Dictionary<ulong, uint>();
         /// <summary>The entity the transfer being written is a crossing for (D15); its contents travel as ordinary followers.</summary>
@@ -203,7 +203,7 @@ namespace Nebula
         private readonly Dictionary<string, LeaseInfo> _leaseScratch = new Dictionary<string, LeaseInfo>(StringComparer.Ordinal);
         private bool _hostedLeaseOwnersRead;
         private uint _hostedLeaseOwnersTick;
-        private const uint HostedLeaseRereadTicks = NetworkTime.TickRate / 4;
+        private static uint HostedLeaseRereadTicks => (uint)Math.Max(1, NetworkTime.TickRate / 4);
         private readonly List<Container> _neighborScratch = new List<Container>();
         /// <summary>
         /// Snapshots of one container's contents for the recursive whole-subtree walks (a handoff, an
@@ -451,7 +451,7 @@ namespace Nebula
             NebulaRuntime.LocalWorkerId = WorkerId;
             NebulaRuntime.LocalWorkerIndex = WorkerIndex;
             NebulaRuntime.RpcSink = this;
-            StateHistory.WindowTicks = Mathf.Clamp(config.StateHistoryTicks, 0, StateHistory.MaxWindowTicks);
+            StateHistory.WindowTicks = Mathf.Clamp(config.StateHistoryTicks, 0, StateHistory.MaxWindowTicks); // seconds at the running rate
             _callRouter = new AuthorityCallRouter(config.AuthorityCallMaxHops);
             _callTracker = new AuthorityCallTracker(WorkerIndex, AuthorityCallId.InitialSequence(Incarnation));
             InitializeInterest();
@@ -1102,12 +1102,17 @@ namespace Nebula
         /// runs a little slow for a moment) rather than simulate them back-to-back, which would only push the next
         /// frame further behind. A skipped tick is one an owner's client predicted and the worker never ran, so its
         /// entity ends that tick's step short of where its owner has it and is corrected (NEB-479). A quarter of a
-        /// second at 60 Hz.
+        /// second (<see cref="MaxLagSeconds"/>): 15 ticks at 60 Hz, 8 at 30.
         /// </summary>
-        public const int MaxLagTicks = 15;
+        public static int MaxLagTicks => NetworkTime.SecondsToTicks(MaxLagSeconds);
+
+        /// <summary>How far behind the wall clock, in seconds, a worker may run before it skips tick numbers (<see cref="MaxLagTicks"/>).</summary>
+        public const float MaxLagSeconds = 0.25f;
 
         /// <summary>
-        /// Default for <see cref="NebulaConfig.WorkerCatchUpBudgetMs"/>: about two and a half tick periods at 60 Hz.
+        /// Default for <see cref="NebulaConfig.WorkerCatchUpBudgetMs"/>: about two and a half tick periods at 60 Hz. It is
+        /// wall time a frame may spend, so it stays 40 ms at any tick rate (at 30 Hz about one and a quarter periods,
+        /// with <see cref="MaxCatchUpTicks"/> still two ticks per FixedUpdate).
         /// </summary>
         public const float DefaultCatchUpBudgetMs = 40f;
 
@@ -1179,10 +1184,11 @@ namespace Nebula
             if (_lastSimulatedTick == 0) { RunBudgeted(derived); return; }
             if (derived <= _lastSimulatedTick) { _profileDuplicateTicks++; return; }
             uint behind = derived - _lastSimulatedTick;
-            if (behind > MaxLagTicks)
+            uint maxLag = (uint)MaxLagTicks;
+            if (behind > maxLag)
             {
-                _profileSkippedTicks += (int)(behind - MaxLagTicks);
-                _lastSimulatedTick = derived - MaxLagTicks;
+                _profileSkippedTicks += (int)(behind - maxLag);
+                _lastSimulatedTick = derived - maxLag;
                 _previousSkipAt = _lastSkipAt;
                 _lastSkipAt = _lastSimulatedTick; // the tick the worker resumes from: the ticks it simulates next come after it
             }
@@ -1207,11 +1213,11 @@ namespace Nebula
         private uint _lastRanTick;
 
         /// <summary>
-        /// Skips closer together than this (a second at 60 Hz) mean the worker is overloaded rather than past a hitch: predicted entities
+        /// Skips closer together than this (a second) mean the worker is overloaded rather than past a hitch: predicted entities
         /// then are not stepped through the ticks it skipped (<see cref="PredictedBehaviourBase.ReplaySkippedTicks"/>), and their owners
         /// are corrected instead, so the work the worker could not afford is not added back on top of the next tick.
         /// </summary>
-        public const uint SustainedSkipTicks = 60;
+        public static uint SustainedSkipTicks => (uint)NetworkTime.SecondsToTicks(1.0);
 
         /// <summary>Whether the worker is skipping ticks again and again: twice within <see cref="SustainedSkipTicks"/>, the last of them that recently.</summary>
         internal bool SkippingSustained(uint tick) =>
@@ -2661,7 +2667,7 @@ namespace Nebula
             e.Interpolator?.Clear();
             SetGhostPhysics(e, false);
             _handedOff.Remove(e.NetId);
-            if (msg.Crossing) _crossingHold[e.NetId] = CurrentTick + CrossingHoldTicks;
+            if (msg.Crossing) _crossingHold[e.NetId] = CurrentTick + (uint)CrossingHoldTicks;
             if (!_authoritative.Contains(e)) _authoritative.Add(e);
             if (e.OwnerClientId != 0)
             {

@@ -26,7 +26,7 @@ namespace Nebula.Tests
     [Category("Conformance")]
     public sealed class ConformanceServerOwnedBoardingTests
     {
-        private const float Dt = NetworkTime.TickInterval;
+        private static float Dt => NetworkTime.TickInterval;
         private const float WalkSpeed = 3f;
         private const float DriftSpeed = 1.5f;
         /// <summary>

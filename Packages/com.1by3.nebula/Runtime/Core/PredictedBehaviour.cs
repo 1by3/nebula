@@ -515,10 +515,13 @@ namespace Nebula
         public const int MaxServerEventsPerTick = 4;
 
         /// <summary>
-        /// For how many ticks after the tick it applies on a server event keeps being sent in the owner's reports, so a lost packet does
-        /// not lose it. The owner ignores the repeats.
+        /// For how long after the tick it applies on a server event keeps being sent in the owner's reports, so a lost packet does
+        /// not lose it: half a second. The owner ignores the repeats.
         /// </summary>
-        public const int ServerEventRepeatTicks = 30;
+        public const float ServerEventRepeatSeconds = 0.5f;
+
+        /// <summary><see cref="ServerEventRepeatSeconds"/> in ticks at the running rate (30 at 60 Hz).</summary>
+        public static int ServerEventRepeatTicks => NetworkTime.SecondsToTicks(ServerEventRepeatSeconds);
 
         /// <summary>Authority: server events accepted by <see cref="PostServerEvent{TEvent}"/> since spawn.</summary>
         public int ServerEventsPosted { get; private set; }

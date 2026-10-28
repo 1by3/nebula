@@ -14,6 +14,9 @@ namespace Nebula
     public static class ServiceHost
     {
         internal static string LogDirectory => Path.GetDirectoryName(Path.GetFullPath(CommandLine.Get("logFile", Path.Combine(AppContext.BaseDirectory, "Logs", "orchestrator.log"))));
+        /// <summary>How often the standalone gateway polls and forwards: four times per tick, and never less often than 240 times a second.</summary>
+        internal static double GatewayLoopPeriodSeconds => Math.Min(NetworkTime.TickInterval, 1.0 / NetworkTime.DefaultTickRate) / 4;
+
         public static int Run(string role, CancellationToken cancellationToken = default)
         {
             if (CommandLine.Has("help"))
@@ -60,6 +63,8 @@ namespace Nebula
                 Hosting.WorkerEnvironment.ManifestEnv = manifest.Env;
                 NebulaEnv.Warn = message => NebulaLog.Warn("env: " + message);
                 ApplyOverrides(config);
+                config.TickRate = NetworkTime.Configure(NetworkTime.ResolveRate(config.TickRate));
+                NebulaLog.Info($"tick rate {NetworkTime.TickRate} Hz");
                 if (config.UseLocalControlPlane && !CommandLine.Has("nebula-local-control-plane"))
                     throw new InvalidOperationException("A standalone service cannot use an in-process control plane; disable UseLocalControlPlane in the exported configuration.");
                 if (role == "orchestrator")
@@ -96,7 +101,7 @@ namespace Nebula
                     control.Connect();
                     gateway = new NebulaGateway();
                     gateway.Initialize(config, control, config.WebClients ? StartWebClients(config, out web) : null);
-                    gateway.LoopPeriodSeconds = NetworkTime.TickInterval / 4;
+                    gateway.LoopPeriodSeconds = GatewayLoopPeriodSeconds;
                     // A load balancer needs a health check whether or not browsers are served: without web clients
                     // the HTTP server still answers /healthz on the gateway port (tcp) and nothing else.
                     if (web == null) web = StartHealthOnly(config);
@@ -110,7 +115,8 @@ namespace Nebula
                 NebulaLog.Info($"standalone {role} started; {ContainerRegistry.Count} baked containers");
                 // The orchestrator ticks at the simulation rate; the gateway is a relay, and a packet it holds until its
                 // next loop is latency the client sees, so it polls and forwards several times per tick.
-                double period = gateway != null ? NetworkTime.TickInterval / 4 : NetworkTime.TickInterval;
+                // The relay's period is a latency figure, so it stays a quarter of a 60 Hz tick at a lower tick rate.
+                double period = gateway != null ? GatewayLoopPeriodSeconds : NetworkTime.TickInterval;
                 var clock = Stopwatch.StartNew();
                 double next = 0;
                 // Loop telemetry: how regularly the service actually ticks (the OS timer decides, not the code).

@@ -353,10 +353,10 @@ namespace Nebula
 
         /// <summary>
         /// With <see cref="EntityExtentSource.Colliders"/>, the box is computed again at least this often, in ticks
-        /// of the worker that holds authority. Nothing tells Nebula that a collider deeper than a direct child
-        /// changed; call <see cref="RefreshExtent"/> when a change must count sooner.
+        /// of the worker that holds authority: once a second. Nothing tells Nebula that a collider deeper than a direct
+        /// child changed; call <see cref="RefreshExtent"/> when a change must count sooner.
         /// </summary>
-        public const int ColliderExtentRefreshTicks = 60;
+        public static int ColliderExtentRefreshTicks => NetworkTime.SecondsToTicks(1.0);
 
         private Bounds _colliderExtent;
         private bool _hasColliderExtent;
@@ -962,15 +962,15 @@ namespace Nebula
         /// <summary>
         /// Every this many ticks a dirty sync behavior writes a keyframe instead of a delta, and an unreliable one
         /// writes a keyframe whether it is dirty or not. Keyframes heal lost packets and are what the gateway hands to
-        /// late joiners.
+        /// late joiners. Half a second: 30 ticks at 60 Hz, 15 at 30.
         /// </summary>
-        public const uint SyncKeyframeInterval = 30;
+        public static uint SyncKeyframeInterval => (uint)NetworkTime.SecondsToTicks(0.5);
 
         /// <summary>
         /// Ticks a distance-rated sync behavior (<see cref="NetworkBehaviour.SyncDistanceRating"/>) must go without a
         /// change before it sends the reliable keyframe every client that holds the entity is given, near or far.
         /// </summary>
-        public const uint SyncSettleTicks = SyncKeyframeInterval;
+        public static uint SyncSettleTicks => SyncKeyframeInterval;
 
         public PredictedBehaviourBase Predicted { get; private set; }
         public RemoteInterpolator Interpolator { get; internal set; }

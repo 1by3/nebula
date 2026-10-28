@@ -2380,7 +2380,7 @@ namespace Nebula
                 ExpiresAt = JsonWebToken.UnixNow() + SessionTokenLifetimeSeconds,
             });
             _writer.Reset();
-            new WelcomeMsg { ClientId = c.ClientId, TickRate = NetworkTime.TickRate, ServerTick = NetworkTime.DerivedTick, Identity = c.Identity, Token = issuedToken, SessionToken = sessionToken, Reclaimed = c.Reclaimed, NegotiatedVersion = c.ProtocolVersion }.Write(_writer);
+            new WelcomeMsg { ClientId = c.ClientId, TickRate = (byte)NetworkTime.TickRate, ServerTick = NetworkTime.DerivedTick, Identity = c.Identity, Token = issuedToken, SessionToken = sessionToken, Reclaimed = c.Reclaimed, NegotiatedVersion = c.ProtocolVersion }.Write(_writer);
             Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
             // A session taken over through identity coordination rather than a token never went through
             // TryReclaim, so the pawn it already owns has to be found here. With interest management the pawn is

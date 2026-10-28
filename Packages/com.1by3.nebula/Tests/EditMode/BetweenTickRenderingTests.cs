@@ -10,7 +10,7 @@ namespace Nebula.Tests
     /// </summary>
     public sealed class BetweenTickRenderingTests
     {
-        private const float Frame = NetworkTime.TickInterval;
+        private static float Frame => NetworkTime.TickInterval;
         private const float Speed = 6f; // 0.1 m per tick at 60 Hz
         private PredictedPairRig _rig;
 

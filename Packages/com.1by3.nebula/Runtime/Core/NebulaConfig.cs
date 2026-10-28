@@ -214,9 +214,19 @@ namespace Nebula
         public bool OrchestratorSpawnsGateway = true;
         public float WorkerHeartbeatSeconds = 1f;
         public float WorkerTimeoutSeconds = 5f;
-        [Tooltip("Wall time in milliseconds a worker may spend simulating ticks in one frame while it catches up with the clock. Once a frame has spent this much, the remaining ticks wait for the next frames (or are skipped when the worker is more than 15 ticks behind), so a starved worker keeps a short frame and keeps polling the network and sending heartbeats. About two to three tick periods; 0 turns the budget off.")]
+        [Tooltip("Wall time in milliseconds a worker may spend simulating ticks in one frame while it catches up with the clock. Once a frame has spent this much, the remaining ticks wait for the next frames (or are skipped when the worker is more than a quarter of a second behind), so a starved worker keeps a short frame and keeps polling the network and sending heartbeats. About 40 ms, whatever the tick rate; 0 turns the budget off.")]
         public float WorkerCatchUpBudgetMs = 40f;
-        [Tooltip("Frames per second a worker or gateway process runs its Update loop at (it polls its network once per frame). 0, the default, runs at the tick rate (60), one tick a frame. Simulation stays at the 60 Hz tick rate whatever this is: a higher value makes a packet wait less for the next poll but costs CPU for every extra frame (240 measured about 6 x the frame time of 60 in a game worker), and a lower one (10 or more) runs several ticks in a frame, which models a loaded server. Clients are not affected. -nebula-server-fps overrides.")]
+        /// <summary>
+        /// Simulation ticks per second for the whole mesh (docs/tick-rate.md): every worker simulates at this rate,
+        /// Unity's fixed step is one tick, and a client takes the rate from its gateway's welcome. 60 by default; 10 to
+        /// 240. A lower rate halves what every per-tick cost is paid at (30 Hz: a 33 ms budget a tick instead of 17) and
+        /// adds up to a tick of latency to each hop. Nebula's own timing is held in seconds, so it means the same at any
+        /// rate; a game's own tick counts must be converted (<see cref="NetworkTime.SecondsToTicks"/>).
+        /// <c>-nebula-tick-rate</c> or the <c>NEBULA_TICK_RATE</c> environment variable overrides.
+        /// </summary>
+        [Tooltip("Simulation ticks per second for the whole mesh (workers, gateway, orchestrator; clients take it from the gateway). 60 by default, 10 to 240. Unity's fixed step is one tick. -nebula-tick-rate or NEBULA_TICK_RATE overrides.")]
+        [Range(NetworkTime.MinTickRate, NetworkTime.MaxTickRate)] public int TickRate = NetworkTime.DefaultTickRate;
+        [Tooltip("Frames per second a worker or gateway process runs its Update loop at (it polls its network once per frame). 0, the default, runs at the tick rate (TickRate), one tick a frame. Simulation stays at the tick rate whatever this is: a higher value makes a packet wait less for the next poll but costs CPU for every extra frame (240 measured about 6 x the frame time of 60 in a game worker), and a lower one (10 or more) runs several ticks in a frame, which models a loaded server. Clients are not affected. -nebula-server-fps overrides.")]
         public int ServerFrameRate = 0;
         [Tooltip("A worker polls its network at the start of each frame's first FixedUpdate, before it simulates, so an input that arrived since the last Update is seen by the tick that follows (and by PredictedBehaviour.OnServerInputReceived) instead of one frame later. -nebula-poll-before-tick overrides.")]
         public bool WorkerPollBeforeTick = true;
@@ -248,8 +258,13 @@ namespace Nebula
         public float HandoverHysteresis = 0.35f;
         [Tooltip("Ghosts stay resident this long after leaving the band.")]
         public float GhostLingerSeconds = 2f;
-        [Tooltip("Ticks of pose and [SyncHistory] state every worker keeps per entity, for lag compensation and time-sensitive validation (NetworkIdentity.StateAt). About half a second at 60 Hz by default. 0 turns recording off. -nebula-state-history overrides.")]
-        public int StateHistoryTicks = StateHistory.DefaultWindowTicks;
+        /// <summary>
+        /// Seconds of pose and [SyncHistory] state every worker keeps per entity, for lag compensation and time-sensitive
+        /// validation (<see cref="NetworkIdentity.StateAt"/>): about half a second by default (32 ticks at 60 Hz, 16 at
+        /// 30). 0 turns recording off. <c>-nebula-state-history &lt;ticks&gt;</c> overrides, in ticks at the running rate.
+        /// </summary>
+        [Tooltip("Seconds of pose and [SyncHistory] state every worker keeps per entity, for lag compensation and time-sensitive validation (NetworkIdentity.StateAt). About half a second by default, at any tick rate. 0 turns recording off. -nebula-state-history <ticks> overrides.")]
+        public float StateHistorySeconds = StateHistory.DefaultWindowSeconds;
         [Tooltip("How many times an AuthorityRpc may be forwarded after the target entity changes worker before it is rejected with RejectedHopLimit. Also the number of authority changes a call's epoch may lag behind the entity before it is rejected as stale. -nebula-authority-call-hops overrides.")]
         public int AuthorityCallMaxHops = 3;
 
@@ -373,39 +388,44 @@ namespace Nebula
         public RelevanceTierBands InterestBackgroundTiers;
 
         [Header("Client")]
-        [Tooltip("Render delay for remote entities, in ticks.")]
-        public int InterpolationDelayTicks = 3;
+        /// <summary>
+        /// Client: how far behind the newest snapshot remote entities are drawn, in seconds, rounded up to whole ticks
+        /// (<see cref="InterpolationDelayTicks"/>): 0.05 s is 3 ticks at 60 Hz and 2 at 30, so the buffer always holds
+        /// at least two snapshots at the default.
+        /// </summary>
+        [Tooltip("Client: render delay for remote entities, in seconds, rounded up to whole ticks (0.05 s is 3 ticks at 60 Hz, 2 at 30).")]
+        public float InterpolationDelaySeconds = 0.05f;
         /// <summary>
         /// Client: add to <see cref="InterpolationDelayTicks"/> what the world-state streams' measured lateness needs: the
         /// <see cref="InterpolationJitterPercentile"/>th percentile, over the last two seconds, of how many ticks late each
         /// packet arrived against the client's clock, taken per worker, highest worker first, rounded down. A clean stream adds
         /// nothing; a jittery link or a worker that runs behind gets the buffer it needs, so the interpolator does not run past
         /// its newest sample and snap back. The delay rises at once and falls a tick every half second. Off: the delay grows by
-        /// the slowest worker's lag behind the newest stream, as before. Either way at most <see cref="MaxStreamLagTicks"/>.
+        /// the slowest worker's lag behind the newest stream, as before. Either way at most <see cref="MaxStreamLagSeconds"/>.
         /// </summary>
         [Tooltip("Client: grow the render delay by the measured lateness of the world-state streams (a jitter percentile per worker) instead of the slowest worker's lag behind the newest one.")]
         public bool AdaptiveInterpolationDelay = true;
         /// <summary>Client: the percentile of packet lateness the adaptive render delay covers (<see cref="AdaptiveInterpolationDelay"/>), 50 to 100. Default 95.</summary>
         [Tooltip("Client: the percentile of packet lateness the adaptive render delay covers, 50 to 100. Higher buffers more and extrapolates less.")]
         public float InterpolationJitterPercentile = 95f;
-        /// <summary>Client: the most ticks the measured stream lateness (or lag) may add to <see cref="InterpolationDelayTicks"/>. Default 12 (200 ms at 60 Hz); it was a fixed 6.</summary>
-        [Tooltip("Client: the most ticks the measured stream lateness may add to the render delay.")]
-        public int MaxStreamLagTicks = 12;
+        /// <summary>Client: the most seconds the measured stream lateness (or lag) may add to the render delay. Default 0.2 (12 ticks at 60 Hz).</summary>
+        [Tooltip("Client: the most seconds the measured stream lateness may add to the render delay.")]
+        public float MaxStreamLagSeconds = 0.2f;
         /// <summary>
-        /// The most extra render delay, in ticks, a client gives a remote entity whose state arrives further apart than
+        /// The most extra render delay, in seconds, a client gives a remote entity whose state arrives further apart than
         /// the render delay (an entity updated every few ticks, or sent in a slow distance tier), so it interpolates
         /// across its own gap instead of being extrapolated past its newest state and snapping back. Entities sent
         /// every tick or two get none. 0 turns it off. See <see cref="UpdateGapDelay"/> and
         /// <see cref="NetworkIdentity.UpdateGap"/>.
         /// </summary>
-        [Tooltip("Client: the most extra render delay, in ticks, for a remote entity whose state arrives further apart than the render delay, so it interpolates across its own gap instead of extrapolating. Entities sent every tick get none. 0 turns it off.")]
-        public int SlowUpdateMaxDelayTicks = 30;
-        [Tooltip("Extra ticks of input lead on top of half the measured RTT, before the adaptive adjustment.")]
-        public int InputLeadMarginTicks = 2;
-        [Tooltip("Lead (in ticks) the client tries to keep its inputs arriving at the worker with. Below this the client sends further ahead at once; well above it, it slowly relaxes.")]
-        public int InputLeadTargetTicks = 3;
-        [Tooltip("Upper bound on the adaptive input lead adjustment, in ticks.")]
-        public int InputLeadMaxAdjustTicks = 30;
+        [Tooltip("Client: the most extra render delay, in seconds, for a remote entity whose state arrives further apart than the render delay, so it interpolates across its own gap instead of extrapolating. Entities sent every tick get none. 0 turns it off.")]
+        public float SlowUpdateMaxDelaySeconds = 0.5f;
+        [Tooltip("Client: extra input lead on top of half the measured RTT, in seconds, rounded up to whole ticks, before the adaptive adjustment.")]
+        public float InputLeadMarginSeconds = 2f / NetworkTime.DefaultTickRate;
+        [Tooltip("Client: how early, in seconds (rounded up to whole ticks), the client tries to keep its inputs arriving at the worker. Below this it sends further ahead at once; well above it, it slowly relaxes.")]
+        public float InputLeadTargetSeconds = 3f / NetworkTime.DefaultTickRate;
+        [Tooltip("Client: upper bound on the adaptive input lead adjustment, in seconds.")]
+        public float InputLeadMaxAdjustSeconds = 0.5f;
 
         [Header("Simulated network (development only)")]
         /// <summary>

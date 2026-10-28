@@ -150,9 +150,10 @@ namespace Nebula.Tests
             Worker.Identity.SetLocalPose(Worker.Identity.Container, Worker.Identity.LocalPosition + meters, Worker.Identity.LocalRotation);
         }
 
-        /// <summary>One tick and one rendered frame of <paramref name="frameSeconds"/>.</summary>
-        public void Advance(float frameSeconds = NetworkTime.TickInterval)
+        /// <summary>One tick and one rendered frame of <paramref name="frameSeconds"/> (one tick when 0 or less).</summary>
+        public void Advance(float frameSeconds = 0f)
         {
+            if (frameSeconds <= 0f) frameSeconds = NetworkTime.TickInterval;
             _step++;
             NetworkTime.Tick = _step;
             var input = new NetworkWriter(32);

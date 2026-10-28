@@ -11,8 +11,8 @@ namespace Nebula
     /// </summary>
     internal sealed class PortalBodies
     {
-        /// <summary>How many ticks a cached description of an entity's colliders is trusted. A collider added or removed shows up within this.</summary>
-        public const uint RefreshTicks = 30;
+        /// <summary>How many ticks a cached description of an entity's colliders is trusted (half a second). A collider added or removed shows up within this.</summary>
+        public static uint RefreshTicks => (uint)NetworkTime.SecondsToTicks(0.5);
 
         /// <summary>The colliders of one entity that can be copied, and how far the entity reaches.</summary>
         public sealed class Info

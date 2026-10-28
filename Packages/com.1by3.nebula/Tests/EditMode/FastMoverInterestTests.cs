@@ -10,7 +10,7 @@ namespace Nebula.Tests
     /// </summary>
     public sealed class FastMoverInterestTests
     {
-        private const float Tick = NetworkTime.TickInterval;
+        private static float Tick => NetworkTime.TickInterval;
 
         [Test]
         public void AFastEntityIsSentOftenEnoughThatItNeverTravelsMoreThanTheLimitBetweenUpdates()

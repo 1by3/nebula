@@ -28,7 +28,7 @@ namespace Nebula.Tests
     public sealed class ConformanceHostedChunkDealtAwayTests
     {
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        private const float Dt = NetworkTime.TickInterval;
+        private static float Dt => NetworkTime.TickInterval;
         private static readonly Vector3 PlanetBox = new Vector3(8192f, 1200f, 8192f);
         private static readonly Vector3 PlanetAt = new Vector3(30000f, 20000f, 0f);
         private static readonly Vector3 Chunk = new Vector3(512f, 1200f, 512f);

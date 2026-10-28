@@ -95,8 +95,11 @@ namespace Nebula
     {
         /// <summary>Ids remembered per worker by default: 4096, a few seconds of busy cross-worker traffic.</summary>
         public const int DefaultCapacity = 4096;
-        /// <summary>Ticks an id is remembered by default: 600, ten seconds at 60 ticks per second.</summary>
-        public const uint DefaultTtlTicks = 600;
+        /// <summary>Seconds an id is remembered by default: ten.</summary>
+        public const float DefaultTtlSeconds = 10f;
+
+        /// <summary><see cref="DefaultTtlSeconds"/> in ticks at the running rate: 600 at 60 Hz.</summary>
+        public static uint DefaultTtlTicks => (uint)NetworkTime.SecondsToTicks(DefaultTtlSeconds);
 
         private readonly Dictionary<ulong, uint> _appliedAt;
         private readonly Queue<ulong> _order;
@@ -112,11 +115,13 @@ namespace Nebula
         /// <summary>Ids forgotten because the ledger was full, since it was created.</summary>
         public long Evictions { get; private set; }
 
-        public AuthorityCallLedger(int capacity = DefaultCapacity, uint ttlTicks = DefaultTtlTicks)
+        /// <param name="capacity">The most ids remembered at once.</param>
+        /// <param name="ttlTicks">How many ticks an id stays remembered; 0 is <see cref="DefaultTtlTicks"/> at the running rate.</param>
+        public AuthorityCallLedger(int capacity = DefaultCapacity, uint ttlTicks = 0)
         {
             if (capacity < 1) throw new ArgumentOutOfRangeException(nameof(capacity));
             Capacity = capacity;
-            TtlTicks = ttlTicks;
+            TtlTicks = ttlTicks != 0 ? ttlTicks : DefaultTtlTicks;
             _appliedAt = new Dictionary<ulong, uint>(capacity);
             _order = new Queue<ulong>(capacity);
         }

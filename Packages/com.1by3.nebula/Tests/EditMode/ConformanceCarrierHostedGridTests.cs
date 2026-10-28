@@ -31,7 +31,7 @@ namespace Nebula.Tests
     public sealed class ConformanceCarrierHostedGridTests
     {
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        private const float Dt = NetworkTime.TickInterval;
+        private static float Dt => NetworkTime.TickInterval;
         private const string Scope = "space/conformance";
         private const string GridKey = "planet/conformance/0";
         private const ulong SpaceId = 777UL;

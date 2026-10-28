@@ -436,6 +436,15 @@ namespace Nebula
         private bool _hasRenderOffset;
         /// <summary>How fast the render clock's offset closes on its target: the fraction of the remaining error removed per second (a 1/3 s time constant).</summary>
         private const double RenderOffsetRatePerSecond = 3.0;
+
+        /// <summary>How far the render clock may be from its target before it jumps instead of easing: 1/6 s (10 ticks at 60 Hz), in ticks.</summary>
+        private static double RenderSnapTicks => NetworkTime.SecondsToTicksExact(10.0 / NetworkTime.DefaultTickRate);
+
+        /// <summary>The prediction tick jumps to its target when it is this far behind it (8 ticks at 60 Hz, 4 at 30) ...</summary>
+        private static uint PredictJumpTicks => (uint)Math.Max(2, NetworkTime.SecondsToTicks(8.0 / NetworkTime.DefaultTickRate));
+
+        /// <summary>... and holds a step when it is this far ahead (4 ticks at 60 Hz, 2 at 30).</summary>
+        private static uint PredictStallTicks => (uint)Math.Max(2, NetworkTime.SecondsToTicks(4.0 / NetworkTime.DefaultTickRate));
         private float _maxFrameMs;
         private int _fixedThisFrame, _maxFixedPerFrame;
         /// <summary>Gaps in the local pawn's own state stream (which the gateway sends every tick) longer than this many ticks.</summary>
@@ -1083,7 +1092,7 @@ namespace Nebula
             // twice a second. Fast clients never saw it; a client rendering a busy scene saw nothing else.
             double now = Time.unscaledTimeAsDouble * NetworkTime.TickRate;
             double desiredOffset = targetRender - now;
-            if (!_hasRenderOffset || Math.Abs(desiredOffset - _renderOffset) > 10) { _renderOffset = desiredOffset; _hasRenderOffset = true; }
+            if (!_hasRenderOffset || Math.Abs(desiredOffset - _renderOffset) > RenderSnapTicks) { _renderOffset = desiredOffset; _hasRenderOffset = true; }
             else _renderOffset += (desiredOffset - _renderOffset) * Math.Min(1.0, RenderOffsetRatePerSecond * Time.unscaledDeltaTime);
             _renderTick = now + _renderOffset;
             NetworkTime.RenderTick = _renderTick;
@@ -1211,13 +1220,13 @@ namespace Nebula
             uint target = (uint)Math.Round(_serverTickEstimate) + (uint)InputLeadTicks;
             uint first;
             int steps = 1;
-            if (_predictTick == 0 || target > _predictTick + 8)
+            if (_predictTick == 0 || target > _predictTick + PredictJumpTicks)
             {
                 // Way behind: jump. The worker's next lead reports describe the ticks we skipped, so ignore them.
                 first = target;
                 _leadHoldUntil = Time.unscaledTime + Mathf.Max(0.1f, RttMs / 1000f) + 0.2f;
             }
-            else if (target + 4 < _predictTick) return;                                     // way ahead: stall one tick
+            else if (target + PredictStallTicks < _predictTick) return;                     // way ahead: stall one tick
             else
             {
                 // A little behind (the lead just grew): predict two ticks per FixedUpdate until caught up. Simply
@@ -2180,7 +2189,7 @@ namespace Nebula
                 _lateness.Add(workerIndex, now, (float)(expected - tick));
             }
             NoteServerTick(tick);
-            int lag = (int)Math.Min(_latestServerTick - tick, 30);
+            int lag = (int)Math.Min(_latestServerTick - tick, (uint)NetworkTime.SecondsToTicks(0.5));
             if (Time.unscaledTime >= _lagBucketEnds) { _lagPreviousBucket = _lagBucket; _lagBucket = 0; _lagBucketEnds = Time.unscaledTime + 1f; }
             if (lag > _lagBucket) _lagBucket = lag;
             double age = (NetworkTime.DerivedTickExact - tick) * NetworkTime.TickInterval * 1000.0;
@@ -2334,17 +2343,21 @@ namespace Nebula
                 _leadHoldUntil = now + hold;
                 _leadRelaxAt = now + 3f;
             }
-            else if (lead > target + 3 && InputLeadAdjustTicks > 0 && now >= _leadRelaxAt)
+            else if (lead > target + LeadRelaxMarginTicks && InputLeadAdjustTicks > 0 && now >= _leadRelaxAt)
             {
                 // Comfortably early: come down, faster the further above target, once a second.
-                int sub = Math.Min(InputLeadAdjustTicks, Math.Max(1, (lead - target - 3) / 2));
+                int sub = Math.Min(InputLeadAdjustTicks, Math.Max(1, (lead - target - LeadRelaxMarginTicks) / 2));
                 InputLeadAdjustTicks -= sub;
                 _leadRelaxAt = now + 1f;
                 _leadHoldUntil = now + hold;
             }
         }
 
-        private const int MaxLeadStep = 8;
+        /// <summary>The most one late report may raise the input lead by: 8 ticks at 60 Hz (133 ms), in ticks at the running rate.</summary>
+        private static int MaxLeadStep => NetworkTime.SecondsToTicksCeil(8.0 / NetworkTime.DefaultTickRate);
+
+        /// <summary>How far above its target the lead must be before it relaxes: 3 ticks at 60 Hz (50 ms), in ticks at the running rate.</summary>
+        private static int LeadRelaxMarginTicks => NetworkTime.SecondsToTicksCeil(3.0 / NetworkTime.DefaultTickRate);
 
         /// <summary>
         /// The far tier's entries (<see cref="MsgId.FarEntities"/>): enter or update an entity's marker, or take it away. An

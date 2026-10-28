@@ -22,14 +22,14 @@ namespace Nebula
     public sealed class UpdateGapDelay
     {
         /// <summary>How fast the delay moves toward its target, in ticks per second: half the tick rate.</summary>
-        public const double SlewTicksPerSecond = NetworkTime.TickRate * 0.5;
+        public static double SlewTicksPerSecond => NetworkTime.TickRate * 0.5;
 
         /// <summary>
-        /// Gaps longer than this, in ticks (one second), are an entity at rest, not its rate. It stays under the
-        /// 64 ticks a <see cref="RemoteInterpolator"/> buffers, so the older state of a gap is still there to
+        /// Gaps longer than this, in ticks (one second at the running rate), are an entity at rest, not its rate. It stays
+        /// under the 64 states a <see cref="RemoteInterpolator"/> buffers, so the older state of a gap is still there to
         /// interpolate from.
         /// </summary>
-        public const int MaxGapTicks = NetworkTime.TickRate;
+        public static int MaxGapTicks => Math.Min(NetworkTime.TickRate, 63);
 
         private uint _lastTick;
         private bool _hasTick;

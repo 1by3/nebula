@@ -10,7 +10,7 @@ namespace Nebula.Tests
     /// </summary>
     public sealed class CorrectionSmoothingTests
     {
-        private const float Frame = NetworkTime.TickInterval;
+        private static float Frame => NetworkTime.TickInterval;
         private PredictedPairRig _rig;
         private readonly List<GameObject> _objects = new List<GameObject>();
 
