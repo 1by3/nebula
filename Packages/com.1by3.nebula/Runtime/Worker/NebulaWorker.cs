@@ -1259,7 +1259,7 @@ namespace Nebula
         private string ResolveCounters(int ticks)
         {
             double t = Math.Max(1, ticks);
-            var s = $"visited={_passVisited / t:0.0} due={_passDue / t:0.0} pinned={_passPinned / t:0.0} fast={ContainerRegistry.FastResolves / t:0.0} full={ContainerRegistry.FullResolves / t:0.0} (nocur={ContainerRegistry.RefusedNoCurrent / t:0.0} frame={ContainerRegistry.RefusedFrame / t:0.0} outside={ContainerRegistry.RefusedOutside / t:0.0} neighbour={ContainerRegistry.RefusedNeighbour / t:0.0} moving={ContainerRegistry.RefusedMoving / t:0.0}) content frames={PhysicsFrames.All.Count} clones={PhysicsFrames.ClonesVisited / t:0.0} reposed={PhysicsFrames.ClonesReposed / t:0.0}";
+            var s = $"visited={_passVisited / t:0.0} due={_passDue / t:0.0} pinned={_passPinned / t:0.0} fast={ContainerRegistry.FastResolves / t:0.0} full={ContainerRegistry.FullResolves / t:0.0} (nocur={ContainerRegistry.RefusedNoCurrent / t:0.0} frame={ContainerRegistry.RefusedFrame / t:0.0} outside={ContainerRegistry.RefusedOutside / t:0.0} neighbour={ContainerRegistry.RefusedNeighbour / t:0.0} moving={ContainerRegistry.RefusedMoving / t:0.0}) content frames={PhysicsFrames.All.Count} clones={PhysicsFrames.ClonesVisited / t:0.0} reposed={PhysicsFrames.ClonesReposed / t:0.0} boxes runtime={ContainerRegistry.Runtime.Count} dynamic={ContainerRegistry.Dynamic.Count} movingRuntime={ContainerRegistry.MovingRuntimeCount}";
             _passVisited = _passDue = _passPinned = 0;
             PhysicsFrames.ClonesVisited = PhysicsFrames.ClonesReposed = 0;
             ContainerRegistry.ResetResolveCounters();
@@ -2985,6 +2985,7 @@ namespace Nebula
 
         private void BucketPlayersForAudiences()
         {
+            _audienceTrees.Clear();
             foreach (var s in _audienceSpaces.Values) ResetSpace(s);
             if (_audienceRootSpace != null) ResetSpace(_audienceRootSpace);
             float cell = AudienceCell;
@@ -3025,8 +3026,45 @@ namespace Nebula
                         }
             }
             // Pawns in another space (aboard a carrier, or on the ground while this entity rides one): the predicate converts their place itself.
+            // Perf: not those of an unrelated frame tree of the same scope (another planet, a ship out in space far from this entity's): every
+            // crate on one planet asked every player on the other planets, with the dear cross-space conversion each time (replicate 0.8 -> 4.7 ms
+            // a tick from 50 to 125 players over four planets). A frame tree is the outermost framed container a space hangs under; two trees
+            // whose outer boxes come within AudienceTreeSlack of each other (a ship beside a station) still see each other's pawns, and a pawn
+            // of another scope is always a candidate, as before.
+            var ownTree = AudienceTreeOf(own);
             if (_audienceRootSpace != null && own != null) into.AddRange(_audienceRootSpace.All);
-            foreach (var kv in _audienceSpaces) if (kv.Key != own) into.AddRange(kv.Value.All);
+            foreach (var kv in _audienceSpaces)
+            {
+                if (kv.Key == own) continue;
+                var tree = AudienceTreeOf(kv.Key);
+                if (tree == ownTree || ownTree == null || tree == null || TreesNear(ownTree, tree)) { into.AddRange(kv.Value.All); continue; }
+                var list = kv.Value.All;
+                for (int i = 0; i < list.Count; i++) if (list[i].Value != null && list[i].Value.InstanceId != e.InstanceId) into.Add(list[i]);
+            }
+        }
+
+        /// <summary>Metres two frame trees' outer boxes may be apart and still share audiences (rounding of large coordinates included).</summary>
+        private const float AudienceTreeSlack = 512f;
+
+        private readonly Dictionary<Container, Container> _audienceTrees = new Dictionary<Container, Container>();
+
+        /// <summary>The outermost framed container <paramref name="space"/> hangs under (itself when it is outermost); null for the scope's own space. Cached for the tick's audiences.</summary>
+        private Container AudienceTreeOf(Container space)
+        {
+            if (space == null) return null;
+            if (_audienceTrees.TryGetValue(space, out var tree)) return tree;
+            tree = space;
+            int hops = 0;
+            for (var s = space.Space; s != null && hops <= ContainerRegistry.ChainBound; s = s.Space, hops++) tree = s;
+            _audienceTrees[space] = tree;
+            return tree;
+        }
+
+        private static bool TreesNear(Container a, Container b)
+        {
+            var ba = a.WorldBounds;
+            ba.Expand(2f * AudienceTreeSlack);
+            return ba.Intersects(b.WorldBounds);
         }
 
         private void OnGhostSyncState(Peer from, EntitySyncMsg msg)
