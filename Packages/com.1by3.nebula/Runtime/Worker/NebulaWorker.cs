@@ -839,6 +839,16 @@ namespace Nebula
                 ReportProfile();
             }
 
+            MarkControlPlane.Begin();
+            UpdateControlPlane();
+            MarkControlPlane.End();
+            UpdateUpkeep();
+        }
+
+        private static readonly Unity.Profiling.ProfilerMarker MarkControlPlane = new Unity.Profiling.ProfilerMarker("nebula.update.controlPlane");
+
+        private void UpdateControlPlane()
+        {
             if (_registration.Register(ControlPlane))
             {
                 _nextHeartbeat = 0f;
@@ -857,22 +867,44 @@ namespace Nebula
                 if (fenced) NebulaLog.Warn($"worker {WorkerId} is fenced: no control-plane heartbeat for over {Config.WorkerTimeoutSeconds:0.#} s, so its containers may be dealt elsewhere; not saving, restoring or handing over until one lands");
                 else NebulaLog.Info($"worker {WorkerId} is no longer fenced: its control-plane heartbeat landed");
             }
+        }
+
+        private void UpdateUpkeep()
+        {
+            bool fenced = _wasFenced;
+            // The parts of the worker's Update, named for a capture (its self time was 1.2 ms a frame at 75 players with nothing inside it named).
+            MarkTelemetry.Begin();
             if (_registered) _telemetry?.Update(this);
+            MarkTelemetry.End();
+            MarkScopes.Begin();
             if (_registered) ScopeLifecycleAgent.Update();
             ExpireSessions(Time.unscaledTime);
+            MarkScopes.End();
             // A fenced worker spawns no scene entities either: the container may be spawning them elsewhere (D8).
             if (_registered && !fenced && Time.unscaledTime >= _nextScenePass)
             {
                 _nextScenePass = Time.unscaledTime + ScenePassSeconds;
+                MarkScenePass.Begin();
                 SpawnSceneEntities();
+                MarkScenePass.End();
             }
             // Checkpoints and restores run here, off the tick, bounded per frame.
+            MarkPersistence.Begin();
             Persistence?.Update();
+            MarkPersistence.End();
+            MarkRequests.Begin();
             _entityRequests?.Update();
             _chunkStates?.Update();
             _callRouter?.Ledger.Expire(CurrentTick);
             _callTracker?.Expire(CurrentTick);
+            MarkRequests.End();
         }
+
+        private static readonly Unity.Profiling.ProfilerMarker MarkTelemetry = new Unity.Profiling.ProfilerMarker("nebula.update.telemetry");
+        private static readonly Unity.Profiling.ProfilerMarker MarkScopes = new Unity.Profiling.ProfilerMarker("nebula.update.scopes");
+        private static readonly Unity.Profiling.ProfilerMarker MarkScenePass = new Unity.Profiling.ProfilerMarker("nebula.update.scenePass");
+        private static readonly Unity.Profiling.ProfilerMarker MarkPersistence = new Unity.Profiling.ProfilerMarker("nebula.update.persistence");
+        private static readonly Unity.Profiling.ProfilerMarker MarkRequests = new Unity.Profiling.ProfilerMarker("nebula.update.requests");
 
         // ---------------------------------------------------------------------------------------- scene entities
 
