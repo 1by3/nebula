@@ -85,7 +85,8 @@ namespace Nebula
 
         /// <summary>
         /// Owning client: the world position the entity is drawn at, which is the simulated position plus the
-        /// correction offset still being eased. Cameras and anything else that follows the entity on screen should
+        /// correction offset still being eased (and, with <see cref="RenderBetweenTicks"/>, moved back between the last two
+        /// predicted ticks). Cameras and anything else that follows the entity on screen should
         /// read this, or <c>transform.position</c> during a frame, where Nebula has already moved the transform to
         /// the drawn pose (it moves it back before the next <c>Simulate</c>). Equal to <c>transform.position</c> when nothing is being eased.
         /// </summary>
@@ -93,10 +94,13 @@ namespace Nebula
         {
             get
             {
-                if (_offsetApplied || !HasCorrectionOffset) return Identity.transform.position;
+                if (_offsetApplied) return Identity.transform.position;
+                bool blending = ComputeTickBlend();
+                if (!HasCorrectionOffset && !blending) return Identity.transform.position;
                 ConvertOffsetToCurrentContainer();
                 var container = Identity.Container;
-                return Identity.transform.position + (container != null ? container.Rotation * _drawnOffset : _drawnOffset);
+                var offset = _drawnOffset + _blendOffset;
+                return Identity.transform.position + (container != null ? container.Rotation * offset : offset);
             }
         }
 
@@ -105,13 +109,116 @@ namespace Nebula
         {
             get
             {
-                if (_offsetApplied || !HasCorrectionOffset) return Identity.transform.rotation;
+                if (_offsetApplied) return Identity.transform.rotation;
+                bool blending = ComputeTickBlend();
+                if (!HasCorrectionOffset && !blending) return Identity.transform.rotation;
                 ConvertOffsetToCurrentContainer();
                 var container = Identity.Container;
-                if (container == null) return _drawnRotationOffset * Identity.transform.rotation;
+                var local = _drawnRotationOffset * _blendRotation;
+                if (container == null) return local * Identity.transform.rotation;
                 var c = container.Rotation;
-                return c * _drawnRotationOffset * Quaternion.Inverse(c) * Identity.transform.rotation;
+                return c * local * Quaternion.Inverse(c) * Identity.transform.rotation;
             }
+        }
+
+        // ---- between-tick rendering -------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Owning client: draw the entity between the poses of its last two predicted ticks instead of at the newest one.
+        /// Prediction runs in fixed steps (60 Hz by default), so a fast predicted entity drawn at its newest tick moves in
+        /// 16.7 ms steps whatever the frame rate: at 144 Hz three frames show one pose and the fourth jumps, and a frame
+        /// with two fixed steps jumps twice as far. With this on, every frame draws the entity at
+        /// <c>Lerp(previous tick, newest tick, fraction)</c>, where the fraction is how far the frame is into the current
+        /// fixed step (Unity's own <c>RigidbodyInterpolation.Interpolate</c>, done here because a predicted body is
+        /// stepped by Nebula and its interpolation must stay off). Rotation is slerped the same way.
+        /// <para>
+        /// The blend is part of the drawn pose (<see cref="DrawnPosition"/>): Nebula moves the transform there at the end of
+        /// its <c>Update</c>, so renderers and a camera that follows the transform in <c>LateUpdate</c> see the blended
+        /// pose, and moves it back before the next <c>Simulate</c>, which never sees it. The cost is up to one tick (8 ms on
+        /// average at 60 Hz) of extra visual latency on the entity. Nothing is blended across a container change, a
+        /// teleport (a move outside <c>Simulate</c>), or a step longer than both <see cref="CorrectionSnapDistance"/> and two ticks at the entity's <c>Motion.Velocity</c>.
+        /// Default false: a game that already interpolates its own view (an eye position of its own) keeps doing so.
+        /// </para>
+        /// </summary>
+        protected virtual bool RenderBetweenTicks => false;
+
+        /// <summary>Owning client: how far the last drawn frame was into the current fixed step, 0 to 1 (1: at the newest tick). Diagnostics.</summary>
+        public float RenderTickFraction => _tickFraction;
+
+        // The poses after the last two predicted (or replayed) ticks, container-local in _tickPoseContainer.
+        private bool _hasTickPose, _hasPreviousTickPose;
+        private Container _tickPoseContainer;
+        private Vector3 _tickPosition, _previousTickPosition;
+        private Quaternion _tickRotation = Quaternion.identity, _previousTickRotation = Quaternion.identity;
+        private float _tickFraction = 1f;
+        // This frame's between-tick offset from the simulated pose, container-local: drawn = simulated + correction + blend.
+        private Vector3 _blendOffset;
+        private Quaternion _blendRotation = Quaternion.identity;
+        // The between-tick offset ApplyDrawnOffset applied, for taking it off again when something moved the entity in between.
+        private Vector3 _appliedBlendOffset;
+        private Quaternion _appliedBlendRotation = Quaternion.identity;
+
+        private bool AtTickPose()
+        {
+            if (Identity.Container != _tickPoseContainer) return false;
+            if ((Identity.LocalPosition - _tickPosition).sqrMagnitude > 1e-8f) return false;
+            return Mathf.Abs(Quaternion.Dot(Identity.LocalRotation, _tickRotation)) > 0.9999999f;
+        }
+
+        private void RecordTickPose(bool keepPrevious)
+        {
+            var container = Identity.Container;
+            if (keepPrevious && _hasTickPose && container == _tickPoseContainer)
+            {
+                _previousTickPosition = _tickPosition;
+                _previousTickRotation = _tickRotation;
+                _hasPreviousTickPose = true;
+            }
+            else _hasPreviousTickPose = false;
+            _tickPoseContainer = container;
+            _tickPosition = Identity.LocalPosition;
+            _tickRotation = Identity.LocalRotation;
+            _hasTickPose = true;
+        }
+
+        /// <summary>A predicted tick is about to be simulated: a move made since the last one (a teleport) starts the blend afresh.</summary>
+        private protected void BeginPredictedTickPose()
+        {
+            if (!RenderBetweenTicks) return;
+            if (!_hasTickPose || !AtTickPose()) RecordTickPose(false);
+        }
+
+        /// <summary>A predicted or replayed tick was simulated: its pose becomes the newest, the one before it the previous.</summary>
+        private protected void EndPredictedTickPose()
+        {
+            if (!RenderBetweenTicks) return;
+            RecordTickPose(true);
+        }
+
+        /// <summary>The simulated pose was replaced (a reconcile): it is the newest tick pose, with nothing before it until the replay adds some.</summary>
+        private protected void ResetPredictedTickPose()
+        {
+            if (!RenderBetweenTicks) { _hasTickPose = _hasPreviousTickPose = false; return; }
+            RecordTickPose(false);
+        }
+
+        private protected void ClearPredictedTickPose() => _hasTickPose = _hasPreviousTickPose = false;
+
+        /// <summary>This frame's between-tick offset (<see cref="_blendOffset"/>, <see cref="_blendRotation"/>) from the simulated pose; false when there is none.</summary>
+        private bool ComputeTickBlend()
+        {
+            _blendOffset = Vector3.zero;
+            _blendRotation = Quaternion.identity;
+            if (!RenderBetweenTicks || !_hasPreviousTickPose || _tickFraction >= 1f || Identity == null) return false;
+            if (!AtTickPose()) return false;
+            // A step much longer than the entity's speed explains is a jump made inside Simulate (a respawn): not blended.
+            var step = _tickPosition - _previousTickPosition;
+            float longest = Mathf.Max(CorrectionSnapDistance, Identity.Motion.Velocity.magnitude * NetworkTime.TickInterval * 2f);
+            if (step.sqrMagnitude > longest * longest) return false;
+            float back = 1f - _tickFraction;
+            _blendOffset = -step * back;
+            _blendRotation = Quaternion.Slerp(_previousTickRotation, _tickRotation, _tickFraction) * Quaternion.Inverse(_tickRotation);
+            return _blendOffset.sqrMagnitude > 0f || _blendRotation != Quaternion.identity;
         }
 
         private bool HasCorrectionOffset => _drawnOffset.sqrMagnitude > 0f || _drawnRotationOffset != Quaternion.identity;
@@ -146,38 +253,52 @@ namespace Nebula
                 return;
             }
             // Something else moved it in between (or it changed container): take the offset off where it is now.
+            bool sameContainer = container == _appliedContainer;
             ConvertOffsetToCurrentContainer();
-            Identity.SetLocalPose(container, position - _drawnOffset, Quaternion.Inverse(_drawnRotationOffset) * rotation);
+            var blend = sameContainer ? _appliedBlendOffset : Vector3.zero;
+            var blendRotation = sameContainer ? _appliedBlendRotation : Quaternion.identity;
+            Identity.SetLocalPose(container, position - _drawnOffset - blend, Quaternion.Inverse(_drawnRotationOffset * blendRotation) * rotation);
         }
 
         /// <summary>
         /// Once a frame, after the frame's messages and before anything draws: decay the offset by <paramref name="deltaTime"/>
         /// seconds and move the entity to the simulated pose plus what is left of it. A correction made during this frame is
-        /// drawn in full first and decays from the next frame on.
+        /// drawn in full first and decays from the next frame on. <paramref name="tickFraction"/> is how far this frame is into
+        /// the current fixed step (0 to 1); with <see cref="RenderBetweenTicks"/> the entity is drawn that far between its
+        /// previous and newest predicted tick, and at 1 (the default) at the newest.
         /// </summary>
-        internal void ApplyDrawnOffset(float deltaTime)
+        internal void ApplyDrawnOffset(float deltaTime, float tickFraction = 1f)
         {
             RemoveDrawnOffset();
-            if (!HasCorrectionOffset) return;
-            ConvertOffsetToCurrentContainer();
-            float seconds = CorrectionSmoothingSeconds;
-            if (seconds <= 0f) { ClearCorrectionOffset(); return; }
-            if (_offsetFresh) _offsetFresh = false;
-            else
+            _tickFraction = Mathf.Clamp01(tickFraction);
+            bool blending = ComputeTickBlend();
+            if (!HasCorrectionOffset && !blending) return;
+            if (HasCorrectionOffset)
             {
-                float k = Mathf.Exp(-DecayLn * Mathf.Max(0f, deltaTime) / seconds);
-                _drawnOffset *= k;
-                _drawnRotationOffset = Quaternion.Slerp(Quaternion.identity, _drawnRotationOffset, k);
-            }
-            if (_drawnOffset.sqrMagnitude < OffsetEpsilonMeters * OffsetEpsilonMeters && CorrectionOffsetDegrees < OffsetEpsilonDegrees)
-            {
-                ClearCorrectionOffset();
-                return;
+                ConvertOffsetToCurrentContainer();
+                float seconds = CorrectionSmoothingSeconds;
+                if (seconds <= 0f) ClearCorrectionOffset();
+                else
+                {
+                    if (_offsetFresh) _offsetFresh = false;
+                    else
+                    {
+                        float k = Mathf.Exp(-DecayLn * Mathf.Max(0f, deltaTime) / seconds);
+                        _drawnOffset *= k;
+                        _drawnRotationOffset = Quaternion.Slerp(Quaternion.identity, _drawnRotationOffset, k);
+                    }
+                    if (_drawnOffset.sqrMagnitude < OffsetEpsilonMeters * OffsetEpsilonMeters && CorrectionOffsetDegrees < OffsetEpsilonDegrees)
+                        ClearCorrectionOffset();
+                }
+                if (!HasCorrectionOffset && !blending) return;
             }
             _appliedContainer = Identity.Container;
             _simulatedPosition = Identity.LocalPosition;
             _simulatedRotation = Identity.LocalRotation;
-            Identity.SetLocalPose(_appliedContainer, _simulatedPosition + _drawnOffset, _drawnRotationOffset * _simulatedRotation);
+            _appliedBlendOffset = blending ? _blendOffset : Vector3.zero;
+            _appliedBlendRotation = blending ? _blendRotation : Quaternion.identity;
+            Identity.SetLocalPose(_appliedContainer, _simulatedPosition + _drawnOffset + _appliedBlendOffset,
+                _drawnRotationOffset * _appliedBlendRotation * _simulatedRotation);
             _drawnPositionLocal = Identity.LocalPosition;
             _drawnRotationLocal = Identity.LocalRotation;
             _offsetApplied = true;
@@ -689,6 +810,7 @@ namespace Nebula
         {
             // A portal is a teleport: nothing is eased across it.
             ClearCorrectionOffset();
+            ClearPredictedTickPose();
             for (int i = 0; i < BufferSize; i++)
             {
                 if (!_history[i].Valid) continue;
@@ -718,6 +840,7 @@ namespace Nebula
                 for (int i = 0; i < BufferSize; i++) _history[i].Valid = false;
                 _lastReconciledTick = 0;
                 ClearCorrectionOffset();
+                ClearPredictedTickPose();
                 ClearServerEvents();
             }
             try { OnDriverChanged(previous, current); }
@@ -851,9 +974,11 @@ namespace Nebula
             _clientTick = tick;
             input.Serialize(inputOut);
             LastInput = input;
+            BeginPredictedTickPose();
             BeginClientEventTick(tick);
             try { Simulate(tick, in input, NetworkTime.TickInterval); }
             finally { EndEventTick(tick); }
+            EndPredictedTickPose();
             ref var h = ref _history[tick % BufferSize];
             h.Tick = tick;
             h.Input = input;
@@ -1013,6 +1138,8 @@ namespace Nebula
         /// <summary>Re-run every predicted tick after <paramref name="serverTick"/> from the state just applied, recording where each ended.</summary>
         private void Replay(uint serverTick)
         {
+            // The pose the replay starts from is the worker's at serverTick: the tick poses are rebuilt from it.
+            ResetPredictedTickPose();
             if (_clientTick <= serverTick) return;
             IsReplaying = true;
             try
@@ -1026,6 +1153,7 @@ namespace Nebula
                     BeginClientEventTick(t);
                     try { Simulate(t, in r.Input, NetworkTime.TickInterval); }
                     finally { EndEventTick(t); }
+                    EndPredictedTickPose();
                     r.Position = Identity.LocalPosition;
                     r.Container = Identity.Container;
                 }
@@ -1040,6 +1168,7 @@ namespace Nebula
             _hasLastServerInput = false;
             _newestServerInputTick = 0;
             ClearCorrectionOffset();
+            ClearPredictedTickPose();
             ClearServerEvents();
         }
     }

@@ -151,6 +151,27 @@ protected override float CorrectionSnapDistance => 2f;        // meters
 
 Smoothing applies on the owning client, and on a client that drives a vehicle. It never changes what the worker or other clients see.
 
+## Draw a predicted entity between ticks
+
+Prediction runs in fixed steps of 1/60 second. A predicted entity drawn at its newest tick therefore moves in 16.7 ms steps, whatever the frame rate. A fast vehicle shows it most: at 144 frames per second, about three frames show one pose and the next jumps a whole tick, and a frame that runs two fixed steps jumps two.
+
+To draw the entity smoothly, override `RenderBetweenTicks`:
+
+```csharp
+protected override bool RenderBetweenTicks => true;
+```
+
+Each frame, Nebula then draws the entity between the poses of its last two predicted ticks, as far along as the frame is into the current fixed step. Rotation is blended the same way. This is what Unity's `RigidbodyInterpolation.Interpolate` does, done by Nebula because Nebula steps a predicted body itself. Leave the Rigidbody's own interpolation off.
+
+The blend is part of the drawn pose described in [Smooth corrections](#smooth-corrections):
+
+- `Simulate`, `WriteState`, the replay and the history never see it.
+- A camera that follows `transform` in `LateUpdate`, or reads `DrawnPosition` and `DrawnRotation`, sees the blended pose.
+- Nothing is blended across a change of container, a move made outside `Simulate` (a teleport), or a step longer than both `CorrectionSnapDistance` and two ticks of travel at `Identity.Motion.Velocity`.
+- After a correction, the blend follows the replayed ticks, and the correction offset still starts where the entity was drawn.
+
+The cost is up to one tick of visual delay on the entity: 8 ms on average at 60 ticks per second. The setting is off by default, so a game that already blends its own view between ticks keeps doing so. `RenderTickFraction` reports the fraction used for the last frame.
+
 ## Apply server events
 
 `Simulate` must depend only on the entity's state and its input, because the owning client runs it ahead of the worker and again during a replay. Something only the worker decides, such as a shove, a stun, or a forced move, breaks that rule if you apply it from outside `Simulate`. The owner's replay does not know why the worker's state changed, so any state outside `WriteState` drifts, and a one-time effect cannot tell a replay from the first run.

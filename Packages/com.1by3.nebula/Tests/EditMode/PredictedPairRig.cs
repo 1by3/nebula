@@ -39,6 +39,11 @@ namespace Nebula.Tests
         /// <summary>True: the worker steps this walker through ticks it skipped (NEB-412). Off by default, like the real thing.</summary>
         public bool StepSkipped;
         protected override bool StepSkippedServerTicks => StepSkipped;
+        /// <summary>True: drawn between its last two predicted ticks (<see cref="PredictedBehaviourBase.RenderBetweenTicks"/>).</summary>
+        public bool BetweenTicks;
+        /// <summary>Degrees of yaw each <c>Simulate</c> adds (not simulation state: both copies must be given the same).</summary>
+        public float TurnDegreesPerTick;
+        protected override bool RenderBetweenTicks => BetweenTicks;
         protected override float CorrectionSmoothingSeconds => Smoothing;
         protected override float CorrectionSnapDistance => Snap;
         protected override WalkInput GatherInput() => new WalkInput { Move = Hands };
@@ -51,7 +56,7 @@ namespace Nebula.Tests
                 Drift += shove.Velocity;
                 ShovesSeen.Add((tick, IsReplaying));
             }
-            Identity.SetLocalPose(Identity.Container, Identity.LocalPosition + (input.Move + Drift) * deltaTime, Identity.LocalRotation);
+            Identity.SetLocalPose(Identity.Container, Identity.LocalPosition + (input.Move + Drift) * deltaTime, Identity.LocalRotation * Quaternion.Euler(0f, TurnDegreesPerTick, 0f));
         }
 
         protected override void WriteState(NetworkWriter writer)

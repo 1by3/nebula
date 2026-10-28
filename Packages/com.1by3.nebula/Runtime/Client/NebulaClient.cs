@@ -1109,9 +1109,16 @@ namespace Nebula
         private void ApplyDrawnOffsets(float deltaTime)
         {
             if (ConnectionState != State.InGame) return;
-            if (LocalPlayer != null && LocalPlayer.Predicted != null) LocalPlayer.Predicted.ApplyDrawnOffset(deltaTime);
-            for (int i = 0; i < _driven.Count; i++) if (_driven[i] != null && _driven[i].Predicted != null) _driven[i].Predicted.ApplyDrawnOffset(deltaTime);
+            // How far this frame is into the fixed step after the last prediction: predicted entities that render between
+            // ticks are drawn that far from their previous tick to their newest (PredictedBehaviourBase.RenderBetweenTicks).
+            float step = Time.fixedDeltaTime;
+            float fraction = step > 0f && _predictedAtTime >= 0f ? Mathf.Clamp01((Time.time - _predictedAtTime) / step) : 1f;
+            if (LocalPlayer != null && LocalPlayer.Predicted != null) LocalPlayer.Predicted.ApplyDrawnOffset(deltaTime, fraction);
+            for (int i = 0; i < _driven.Count; i++) if (_driven[i] != null && _driven[i].Predicted != null) _driven[i].Predicted.ApplyDrawnOffset(deltaTime, fraction);
         }
+
+        /// <summary>The game time of the fixed step that last predicted (<c>Time.fixedTime</c>), or -1 before the first.</summary>
+        private float _predictedAtTime = -1f;
 
         /// <summary>The scope whose instance content this client last showed.</summary>
         private ulong _viewScope;
@@ -1232,6 +1239,7 @@ namespace Nebula
                 }
             }
             finally { if (!PhysicsFrames.HoldThroughFixedSteps) PhysicsFrames.ReleaseSimulationPose(); }
+            _predictedAtTime = Time.fixedTime;
 
             if (pawn)
             {
