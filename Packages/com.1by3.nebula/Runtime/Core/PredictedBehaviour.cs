@@ -55,6 +55,59 @@ namespace Nebula
         /// </summary>
         protected virtual float CorrectionSnapDistance => 3f;
 
+        // ---- speed-aware reconciliation -------------------------------------------------------------------------
+
+        /// <summary>
+        /// Owning client: the speed, in meters per second, that scales the correction threshold, the snap distance and
+        /// the smoothing time below. Read on the worker's reported state of the tick being reconciled. Default: the
+        /// magnitude of <see cref="NetworkMotionState.Velocity"/>, which the default <c>WriteState</c> carries; a game
+        /// whose state keeps its velocity elsewhere overrides this. Return 0 to make all three speed-independent.
+        /// </summary>
+        protected virtual float CorrectionSpeed => Identity != null ? Identity.Motion.Velocity.magnitude : 0f;
+
+        /// <summary>
+        /// Owning client: the correction threshold grows to this fraction of the distance the entity travels in one tick
+        /// at <see cref="CorrectionSpeed"/>, when that is larger than <c>CorrectionThreshold</c>. At 400 m/s a tick is
+        /// 6.7 m, so a fixed 5 cm threshold replays on errors no player can see. Default 0.25 (no change below about
+        /// 12 m/s at 60 Hz); 0 keeps the threshold fixed.
+        /// </summary>
+        protected virtual float CorrectionThresholdTickFraction => 0.25f;
+
+        /// <summary>
+        /// Owning client: the snap distance grows to the distance the entity travels in this many seconds at
+        /// <see cref="CorrectionSpeed"/>, when that is larger than <see cref="CorrectionSnapDistance"/>: a 3 m correction is
+        /// 7 ms of flight at 400 m/s and should be eased, not snapped. Default 0.25; 0 keeps the snap distance fixed.
+        /// </summary>
+        protected virtual float CorrectionSnapSeconds => 0.25f;
+
+        /// <summary>
+        /// Owning client: the speed, in meters per second, at which the smoothing time has doubled. The smoothing time is
+        /// <c>CorrectionSmoothingSeconds × (1 + speed / this)</c>, at most three times <see cref="CorrectionSmoothingSeconds"/>:
+        /// a correction at speed is eased over a longer time so the drawn pose does not visibly accelerate. Default 1500
+        /// (104 ms at 60 m/s, 127 ms at 400 m/s, 300 ms from 3 km/s, with the 100 ms default); 0 keeps it fixed.
+        /// </summary>
+        protected virtual float CorrectionSmoothingDoublingSpeed => 1500f;
+
+        /// <summary>Owning client: <see cref="CorrectionSpeed"/> at the most recent reconcile, which sizes the snap distance and smoothing time of the offset it left.</summary>
+        public float LastCorrectionSpeed { get; private protected set; }
+
+        /// <summary>The snap distance at <paramref name="speed"/>; see <see cref="CorrectionSnapSeconds"/>.</summary>
+        internal float SnapDistanceAt(float speed)
+        {
+            float snap = CorrectionSnapDistance;
+            float seconds = CorrectionSnapSeconds;
+            return seconds > 0f && speed > 0f ? Mathf.Max(snap, speed * seconds) : snap;
+        }
+
+        /// <summary>The smoothing time at <paramref name="speed"/>; see <see cref="CorrectionSmoothingDoublingSpeed"/>.</summary>
+        internal float SmoothingSecondsAt(float speed)
+        {
+            float seconds = CorrectionSmoothingSeconds;
+            float doubling = CorrectionSmoothingDoublingSpeed;
+            if (seconds <= 0f || doubling <= 0f || speed <= 0f) return seconds;
+            return seconds * Mathf.Min(3f, 1f + speed / doubling);
+        }
+
         // The offset from the simulated pose to the drawn one, in _offsetContainer's local space: drawn position = simulated
         // position + offset, drawn rotation = rotation offset * simulated rotation. Container-local, so it follows the
         // container while a ship carries the entity around.
@@ -276,7 +329,7 @@ namespace Nebula
             if (HasCorrectionOffset)
             {
                 ConvertOffsetToCurrentContainer();
-                float seconds = CorrectionSmoothingSeconds;
+                float seconds = SmoothingSecondsAt(LastCorrectionSpeed);
                 if (seconds <= 0f) ClearCorrectionOffset();
                 else
                 {
@@ -318,7 +371,7 @@ namespace Nebula
         /// A correction moved the simulated pose from (<paramref name="previousPosition"/>, <paramref name="previousRotation"/>), in
         /// <paramref name="previousContainer"/>, to where it is now. The entity keeps being drawn where it was: the offset becomes
         /// the old drawn pose minus the new simulated one, on top of whatever was still being eased, unless that is further than
-        /// <see cref="CorrectionSnapDistance"/> (or smoothing is off), when the drawn pose follows at once.
+        /// <see cref="CorrectionSnapDistance"/> (scaled by <see cref="CorrectionSnapSeconds"/> at <see cref="LastCorrectionSpeed"/>; or smoothing is off), when the drawn pose follows at once.
         /// </summary>
         internal void NoteCorrection(Container previousContainer, Vector3 previousPosition, Quaternion previousRotation)
         {
@@ -335,7 +388,7 @@ namespace Nebula
             }
             ConvertOffsetToCurrentContainer();
             var offset = _drawnOffset + (previousPosition - position);
-            if (CorrectionSmoothingSeconds <= 0f || offset.magnitude > CorrectionSnapDistance)
+            if (CorrectionSmoothingSeconds <= 0f || offset.magnitude > SnapDistanceAt(LastCorrectionSpeed))
             {
                 ClearCorrectionOffset();
                 return;
@@ -678,8 +731,19 @@ namespace Nebula
         /// <summary>The input consumed by the most recent <see cref="Simulate"/> call.</summary>
         public TInput LastInput { get; private set; }
 
-        /// <summary>Positional error above which the client snaps to the server's state and replays.</summary>
+        /// <summary>
+        /// Positional error above which the client snaps to the server's state and replays. At speed the threshold in
+        /// use grows with <see cref="PredictedBehaviourBase.CorrectionThresholdTickFraction"/>; see <see cref="CorrectionThresholdAt"/>.
+        /// </summary>
         protected virtual float CorrectionThreshold => 0.05f;
+
+        /// <summary>The correction threshold at <paramref name="speed"/> meters per second: <see cref="CorrectionThreshold"/>, or the fraction of a tick's travel <see cref="PredictedBehaviourBase.CorrectionThresholdTickFraction"/> asks for when that is larger.</summary>
+        public float CorrectionThresholdAt(float speed)
+        {
+            float threshold = CorrectionThreshold;
+            float fraction = CorrectionThresholdTickFraction;
+            return fraction > 0f && speed > 0f ? Mathf.Max(threshold, speed * NetworkTime.TickInterval * fraction) : threshold;
+        }
         /// <summary>Diagnostics: log every correction with the server and predicted positions (owning client).</summary>
         public static bool LogCorrections;
 
@@ -1018,6 +1082,9 @@ namespace Nebula
             WriteState(OwnSnapshot);
             ReadState(state);
             var serverPos = Identity.LocalPosition;
+            // The worker's speed at that tick sizes the threshold, and the snap distance and smoothing of any offset left.
+            LastCorrectionSpeed = Mathf.Max(0f, CorrectionSpeed);
+            float threshold = CorrectionThresholdAt(LastCorrectionSpeed);
             // The prediction was recorded in the container the client was in at that tick; the worker may have moved
             // the pawn to another (a seam, a ship's door) since. Compare in the worker's frame, or every crossing
             // would look like a snap the size of the distance between the two origins.
@@ -1026,20 +1093,20 @@ namespace Nebula
             float error = (serverPos - predicted).magnitude;
             // The prediction agrees with the worker, but the report brought an event for a tick already simulated without it: the
             // worker's state is right, so replay from it, now with the event on its tick, instead of waiting for the error to show.
-            bool eventReplay = error <= CorrectionThreshold && HasUnappliedServerEvents(serverTick, _clientTick);
+            bool eventReplay = error <= threshold && HasUnappliedServerEvents(serverTick, _clientTick);
             // The worker moved the entity to another container since this tick was predicted (a seam, a carrier's box). The
             // prediction agrees, but the present state the client holds was carried into the new container through where the
             // containers are drawn now, not where they will be when it is simulated, and with its velocity unconverted
             // (a client converts nothing between spaces): re-predict from the worker's state in the new container instead,
             // which nothing counts as a correction (NEB-496).
             bool moved = h.Container != Identity.Container;
-            if (error <= CorrectionThreshold && !eventReplay && !moved)
+            if (error <= threshold && !eventReplay && !moved)
             {
                 OwnSnapshotReader.Set(OwnSnapshot.ToSegment());
                 ReadState(OwnSnapshotReader);
                 return;
             }
-            if (error <= CorrectionThreshold && !eventReplay)
+            if (error <= threshold && !eventReplay)
             {
                 h.Position = serverPos;
                 h.Container = Identity.Container;
@@ -1058,7 +1125,7 @@ namespace Nebula
             }
             // Snap to the server's state at serverTick (ReadState left us there) and replay every input after it.
             Corrections++;
-            if (LogCorrections) NebulaLog.Info($"correction on {Identity} tick {serverTick} error {error:0.000} m: server {serverPos:F3} predicted {predicted:F3} (recorded in {(h.Container != null ? h.Container.ContainerId : "world")}, now in {(Identity.Container != null ? Identity.Container.ContainerId : "world")})");
+            if (LogCorrections) NebulaLog.Info($"correction on {Identity} tick {serverTick} error {error:0.000} m (threshold {threshold:0.000} m at {LastCorrectionSpeed:0.#} m/s): server {serverPos:F3} predicted {predicted:F3} (recorded in {(h.Container != null ? h.Container.ContainerId : "world")}, now in {(Identity.Container != null ? Identity.Container.ContainerId : "world")})");
             LastCorrectionMagnitude = error;
             if (error > MaxCorrectionMagnitude) MaxCorrectionMagnitude = error;
             h.Position = serverPos;

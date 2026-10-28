@@ -124,7 +124,7 @@ protected override void ReadState(NetworkReader reader)
 
 Read fields in the same order and with the same types used to write them. Call the base implementation first if you want to keep the default pose and velocity state.
 
-Override `CorrectionThreshold` to change the position error that triggers a correction. The default is 0.05 meters. Use `OnCorrected(float magnitude)` for diagnostics or a visual response after a correction.
+Override `CorrectionThreshold` to change the position error that triggers a correction. The default is 0.05 meters, and it grows at speed (see [Scale corrections with speed](#scale-corrections-with-speed)). Use `OnCorrected(float magnitude)` for diagnostics or a visual response after a correction.
 
 ## Smooth corrections
 
@@ -150,6 +150,27 @@ protected override float CorrectionSnapDistance => 2f;        // meters
 ```
 
 Smoothing applies on the owning client, and on a client that drives a vehicle. It never changes what the worker or other clients see.
+
+## Scale corrections with speed
+
+Fixed thresholds suit a walking character, not a vehicle. At 400 m/s an entity travels 6.7 m in one tick: a 5 cm threshold replays on errors no player can see, and a 3 m correction is only 7 ms of travel but would teleport. Nebula therefore scales three values with the entity's speed in the worker's report:
+
+| Value | Rule | Default factor | At 5 m/s | At 400 m/s | At 3,000 m/s |
+| --- | --- | --- | --- | --- | --- |
+| Correction threshold | The larger of `CorrectionThreshold` and this fraction of one tick's travel | `CorrectionThresholdTickFraction` = 0.25 | 0.05 m | 1.67 m | 12.5 m |
+| Snap distance | The larger of `CorrectionSnapDistance` and this many seconds of travel | `CorrectionSnapSeconds` = 0.25 | 3 m | 100 m | 750 m |
+| Smoothing time | `CorrectionSmoothingSeconds × (1 + speed / this)`, at most three times it | `CorrectionSmoothingDoublingSpeed` = 1500 m/s | 0.1 s | 0.127 s | 0.3 s |
+
+The speed is `CorrectionSpeed`, which by default is the magnitude of `Identity.Motion.Velocity` in the reported state. The default `WriteState` carries that velocity, so a behavior that keeps `Motion.Velocity` up to date in `Simulate` gets the scaling without other changes. Below about 12 m/s nothing changes.
+
+Each factor is a `protected virtual` property. Set one to 0 to make its value fixed, or override `CorrectionSpeed` if your state keeps the velocity somewhere else:
+
+```csharp
+protected override float CorrectionThresholdTickFraction => 0.1f; // replay sooner at speed
+protected override float CorrectionSnapSeconds => 0f;             // always snap beyond CorrectionSnapDistance
+```
+
+A larger threshold lets a real divergence persist longer before it is corrected. `CorrectionThresholdAt(speed)` returns the threshold in use, and `LastCorrectionSpeed` the speed of the most recent reconcile.
 
 ## Draw a predicted entity between ticks
 

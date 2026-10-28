@@ -43,6 +43,13 @@ namespace Nebula.Tests
         public bool BetweenTicks;
         /// <summary>Degrees of yaw each <c>Simulate</c> adds (not simulation state: both copies must be given the same).</summary>
         public float TurnDegreesPerTick;
+        /// <summary>True: <c>Simulate</c> keeps <see cref="NetworkMotionState.Velocity"/> up to date, so the reports carry the speed (speed-aware reconciliation).</summary>
+        public bool ReportVelocity;
+        /// <summary>Overrides of the speed-aware reconciliation factors; negative keeps Nebula's default.</summary>
+        public float ThresholdTickFraction = -1f, SnapSeconds = -1f, SmoothingDoublingSpeed = -1f;
+        protected override float CorrectionThresholdTickFraction => ThresholdTickFraction >= 0f ? ThresholdTickFraction : base.CorrectionThresholdTickFraction;
+        protected override float CorrectionSnapSeconds => SnapSeconds >= 0f ? SnapSeconds : base.CorrectionSnapSeconds;
+        protected override float CorrectionSmoothingDoublingSpeed => SmoothingDoublingSpeed >= 0f ? SmoothingDoublingSpeed : base.CorrectionSmoothingDoublingSpeed;
         protected override bool RenderBetweenTicks => BetweenTicks;
         protected override float CorrectionSmoothingSeconds => Smoothing;
         protected override float CorrectionSnapDistance => Snap;
@@ -57,6 +64,7 @@ namespace Nebula.Tests
                 ShovesSeen.Add((tick, IsReplaying));
             }
             Identity.SetLocalPose(Identity.Container, Identity.LocalPosition + (input.Move + Drift) * deltaTime, Identity.LocalRotation * Quaternion.Euler(0f, TurnDegreesPerTick, 0f));
+            if (ReportVelocity) Identity.Motion.Velocity = input.Move + Drift;
         }
 
         protected override void WriteState(NetworkWriter writer)
