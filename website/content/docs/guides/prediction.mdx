@@ -124,7 +124,7 @@ protected override void ReadState(NetworkReader reader)
 
 Read fields in the same order and with the same types used to write them. Call the base implementation first if you want to keep the default pose and velocity state.
 
-Override `CorrectionThreshold` to change the position error that triggers a correction. The default is 0.05 meters. Use `OnCorrected(float magnitude)` for diagnostics or a visual response after a correction.
+Override `CorrectionThreshold` to change the position error that triggers a correction. The default is 0.05 meters, and it grows at speed (see [Scale corrections with speed](#scale-corrections-with-speed)). Use `OnCorrected(float magnitude)` for diagnostics or a visual response after a correction.
 
 ## Smooth corrections
 
@@ -150,6 +150,48 @@ protected override float CorrectionSnapDistance => 2f;        // meters
 ```
 
 Smoothing applies on the owning client, and on a client that drives a vehicle. It never changes what the worker or other clients see.
+
+## Scale corrections with speed
+
+Fixed thresholds suit a walking character, not a vehicle. At 400 m/s an entity travels 6.7 m in one tick: a 5 cm threshold replays on errors no player can see, and a 3 m correction is only 7 ms of travel but would teleport. Nebula therefore scales three values with the entity's speed in the worker's report:
+
+| Value | Rule | Default factor | At 5 m/s | At 400 m/s | At 3,000 m/s |
+| --- | --- | --- | --- | --- | --- |
+| Correction threshold | The larger of `CorrectionThreshold` and this fraction of one tick's travel | `CorrectionThresholdTickFraction` = 0.25 | 0.05 m | 1.67 m | 12.5 m |
+| Snap distance | The larger of `CorrectionSnapDistance` and this many seconds of travel | `CorrectionSnapSeconds` = 0.25 | 3 m | 100 m | 750 m |
+| Smoothing time | `CorrectionSmoothingSeconds × (1 + speed / this)`, at most three times it | `CorrectionSmoothingDoublingSpeed` = 1500 m/s | 0.1 s | 0.127 s | 0.3 s |
+
+The speed is `CorrectionSpeed`, which by default is the magnitude of `Identity.Motion.Velocity` in the reported state. The default `WriteState` carries that velocity, so a behavior that keeps `Motion.Velocity` up to date in `Simulate` gets the scaling without other changes. Below about 12 m/s nothing changes.
+
+Each factor is a `protected virtual` property. Set one to 0 to make its value fixed, or override `CorrectionSpeed` if your state keeps the velocity somewhere else:
+
+```csharp
+protected override float CorrectionThresholdTickFraction => 0.1f; // replay sooner at speed
+protected override float CorrectionSnapSeconds => 0f;             // always snap beyond CorrectionSnapDistance
+```
+
+A larger threshold lets a real divergence persist longer before it is corrected. `CorrectionThresholdAt(speed)` returns the threshold in use, and `LastCorrectionSpeed` the speed of the most recent reconcile.
+
+## Draw a predicted entity between ticks
+
+Prediction runs in fixed steps of 1/60 second. A predicted entity drawn at its newest tick therefore moves in 16.7 ms steps, whatever the frame rate. A fast vehicle shows it most: at 144 frames per second, about three frames show one pose and the next jumps a whole tick, and a frame that runs two fixed steps jumps two.
+
+To draw the entity smoothly, override `RenderBetweenTicks`:
+
+```csharp
+protected override bool RenderBetweenTicks => true;
+```
+
+Each frame, Nebula then draws the entity between the poses of its last two predicted ticks, as far along as the frame is into the current fixed step. Rotation is blended the same way. This is what Unity's `RigidbodyInterpolation.Interpolate` does, done by Nebula because Nebula steps a predicted body itself. Leave the Rigidbody's own interpolation off.
+
+The blend is part of the drawn pose described in [Smooth corrections](#smooth-corrections):
+
+- `Simulate`, `WriteState`, the replay and the history never see it.
+- A camera that follows `transform` in `LateUpdate`, or reads `DrawnPosition` and `DrawnRotation`, sees the blended pose.
+- Nothing is blended across a change of container, a move made outside `Simulate` (a teleport), or a step longer than both `CorrectionSnapDistance` and two ticks of travel at `Identity.Motion.Velocity`.
+- After a correction, the blend follows the replayed ticks, and the correction offset still starts where the entity was drawn.
+
+The cost is up to one tick of visual delay on the entity: 8 ms on average at 60 ticks per second. The setting is off by default, so a game that already blends its own view between ticks keeps doing so. `RenderTickFraction` reports the fraction used for the last frame.
 
 ## Apply server events
 
@@ -220,11 +262,13 @@ If the expected input is missing, the worker repeats its most recent input inste
 
 ### Recover when the worker falls behind
 
-A worker that falls more than `NebulaWorker.MaxLagTicks` (15 ticks) behind the wall clock skips tick numbers instead of simulating them back to back. By default, an entity that skipped ticks is corrected: its owner predicted those ticks and the worker did not run them.
+A worker that falls more than `NebulaWorker.MaxLagTicks` (15 ticks) behind the wall clock skips tick numbers instead of simulating them back to back. By default, the worker then tells the owner which ticks it dropped for the entity (protocol 31), and the owner re-bases: it takes the worker's state on the next report as its new base and predicts on from it with the inputs after it. This is not counted as a misprediction (`Corrections`), and it isn't eased. The entity moves at once by what the dropped inputs had moved it, the real divergence. `Rebases` and `MaxRebaseMagnitude` count these on the owner, and `TicksDropped` counts the dropped ticks on the worker. A client of protocol 30, or a worker with `NebulaConfig.ReportDroppedTicks` off, counts a correction instead.
 
 To avoid the correction, override `StepSkippedServerTicks` to return `true`. When the entity next ticks, the worker then runs `Simulate` for each skipped tick that has an input waiting, oldest first, and then for the current tick. The entity ends where its owner predicted it. `SkippedTicksStepped` counts these extra steps.
 
-This is opt-in because it only suits an entity whose `Simulate` advances the entity itself and depends only on its state and the input, as replay already requires. If `Simulate` applies forces or sets the velocity of a Rigidbody and relies on Unity stepping physics between ticks, the skipped ticks would apply their forces back to back before one physics step and the entity would lurch. Leave `StepSkippedServerTicks` at `false` for those entities. They still get a correction after a skip.
+This is opt-in because it only suits an entity whose `Simulate` advances the entity itself and depends only on its state and the input, as replay already requires. If `Simulate` applies forces or sets the velocity of a Rigidbody and relies on Unity stepping physics between ticks, the skipped ticks would apply their forces back to back before one physics step and the entity would lurch. Leave `StepSkippedServerTicks` at `false` for those entities. They re-base after a skip.
+
+A worker that keeps skipping, twice within `NebulaWorker.SustainedSkipTicks` (a second at 60 Hz), is overloaded rather than past a hitch. Stepping every entity through the ticks it couldn't afford would only push it further behind, so it steps none of them while that lasts (`noreplay` on its profile line), and their owners re-base too.
 
 Use these values to diagnose timing:
 

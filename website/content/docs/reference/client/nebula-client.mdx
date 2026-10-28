@@ -317,7 +317,23 @@ How far behind the newest tick heard the world-state stream of the slowest worke
 public int RenderDelayTicks { get; }
 ```
 
-The render delay in use: [`NebulaConfig.InterpolationDelayTicks`](/docs/reference/core/nebula-config#interpolationdelayticks) plus the measured stream lag.
+The render delay in use: [`NebulaConfig.InterpolationDelayTicks`](/docs/reference/core/nebula-config#interpolationdelayticks) plus the measured stream lateness (or lag; see [`NebulaConfig.AdaptiveInterpolationDelay`](/docs/reference/core/nebula-config#adaptiveinterpolationdelay)).
+
+### StreamLatenessTicks [#streamlatenessticks]
+
+```csharp
+public float StreamLatenessTicks { get; }
+```
+
+The world-state streams' lateness in ticks at [`NebulaConfig.InterpolationJitterPercentile`](/docs/reference/core/nebula-config#interpolationjitterpercentile), the worst worker's, over the last two seconds ([`StreamLateness`](/docs/reference/client/stream-lateness)). With [`NebulaConfig.AdaptiveInterpolationDelay`](/docs/reference/core/nebula-config#adaptiveinterpolationdelay) the render delay grows by it, rounded down.
+
+### AdaptiveDelayTicks [#adaptivedelayticks]
+
+```csharp
+public int AdaptiveDelayTicks { get; }
+```
+
+The ticks the adaptive render delay currently adds ([`NebulaConfig.AdaptiveInterpolationDelay`](/docs/reference/core/nebula-config#adaptiveinterpolationdelay)).
 
 ### LastError [#lasterror]
 

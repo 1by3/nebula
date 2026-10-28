@@ -85,7 +85,7 @@ namespace Nebula.Tests
         [Test]
         public void EntityStateEntryReservesTheLargestReference()
         {
-            Assert.AreEqual(8 + 4 + 10 + 2 + 12 + 16 + 12 + 6, EntityStateEntry.WireSize);
+            Assert.AreEqual(8 + 4 + 10 + 2 + 1 + 12 + 16 + 12 + 6 + 6, EntityStateEntry.WireSize, "protocol 30: the ext byte and an angular velocity");
             var entry = new EntityStateEntry { NetId = 9, Epoch = 2, Container = ContainerRef.Runtime(77), LocalPosition = new Vector3(1, 2, 3), LocalRotation = Quaternion.identity, Velocity = Vector3.zero, Fields = TransformFields.Position };
             var w = new NetworkWriter(64);
             entry.Write(w);

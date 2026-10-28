@@ -54,7 +54,7 @@ namespace Nebula
                         UpdateSource(e);
                     }
                     foreach (var rig in _rigs.Values) SweepRig(rig);
-                    if (tick % 120 == 0) Bodies.Prune(tick, 600);
+                    if (tick % BodiesPruneEveryTicks == 0) Bodies.Prune(tick, BodiesPruneAgeTicks);
                 }
                 if (_posedThisStep)
                 {

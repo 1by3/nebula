@@ -21,7 +21,7 @@ namespace Nebula.Tests
     [Category("Conformance")]
     public sealed class ConformanceFrameBodiesTests
     {
-        private const float Dt = NetworkTime.TickInterval;
+        private static float Dt => NetworkTime.TickInterval;
         /// <summary>The hold's inside: 6 m wide, 4 m high, 10 m long, floor at y = 0 in the ship's own coordinates.</summary>
         private static readonly Vector3 Hold = new Vector3(6f, 4f, 10f);
 

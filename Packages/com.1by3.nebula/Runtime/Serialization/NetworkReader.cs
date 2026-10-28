@@ -165,6 +165,25 @@ namespace Nebula
             }
         }
 
+        /// <summary>A quaternion written by <see cref="NetworkWriter.WritePreciseQuaternion"/> (6 bytes).</summary>
+        public Quaternion ReadPreciseQuaternion()
+        {
+            ulong packed = (ulong)ReadUShort() << 32;
+            packed |= ReadUInt();
+            int largest = (int)((packed >> 45) & 3);
+            float a = NetworkWriter.DequantizePrecise((int)((packed >> 30) & 0x7FFF));
+            float b = NetworkWriter.DequantizePrecise((int)((packed >> 15) & 0x7FFF));
+            float c = NetworkWriter.DequantizePrecise((int)(packed & 0x7FFF));
+            float d = Mathf.Sqrt(Mathf.Max(0f, 1f - a * a - b * b - c * c));
+            switch (largest)
+            {
+                case 0: return new Quaternion(d, a, b, c);
+                case 1: return new Quaternion(a, d, b, c);
+                case 2: return new Quaternion(a, b, d, c);
+                default: return new Quaternion(a, b, c, d);
+            }
+        }
+
         public Color ReadColor() => new Color(ReadFloat(), ReadFloat(), ReadFloat(), ReadFloat());
     }
 }

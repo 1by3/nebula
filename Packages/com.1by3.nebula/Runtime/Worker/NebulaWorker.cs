@@ -82,8 +82,8 @@ namespace Nebula
         public int FrameCrossings { get; private set; }
         /// <summary>Entities this worker handed to a frame's pose owner so it could cross them (D15).</summary>
         public int CrossingHandoffs { get; private set; }
-        /// <summary>How long an entity handed over for a crossing stays with the pose owner before it may be handed back (ticks).</summary>
-        public const int CrossingHoldTicks = 30;
+        /// <summary>How long an entity handed over for a crossing stays with the pose owner before it may be handed back, in ticks: half a second.</summary>
+        public static int CrossingHoldTicks => NetworkTime.SecondsToTicks(0.5);
         /// <summary>Entities received for a crossing, by net id: the tick until which they are not handed back.</summary>
         private readonly Dictionary<ulong, uint> _crossingHold = new Dictionary<ulong, uint>();
         /// <summary>The entity the transfer being written is a crossing for (D15); its contents travel as ordinary followers.</summary>
@@ -203,7 +203,7 @@ namespace Nebula
         private readonly Dictionary<string, LeaseInfo> _leaseScratch = new Dictionary<string, LeaseInfo>(StringComparer.Ordinal);
         private bool _hostedLeaseOwnersRead;
         private uint _hostedLeaseOwnersTick;
-        private const uint HostedLeaseRereadTicks = NetworkTime.TickRate / 4;
+        private static uint HostedLeaseRereadTicks => (uint)Math.Max(1, NetworkTime.TickRate / 4);
         private readonly List<Container> _neighborScratch = new List<Container>();
         /// <summary>
         /// Snapshots of one container's contents for the recursive whole-subtree walks (a handoff, an
@@ -253,7 +253,17 @@ namespace Nebula
         private static readonly ProfileSection ProfGap = NebulaProfiler.Section("gap");
         // The passes between the sections above, so the sections add up to the tick; 'untimed' is what is still left.
         private static readonly ProfileSection ProfBegin = NebulaProfiler.Section("begin");
+        // The parts of 'begin' (nested, like c.*): the entities' BeginTick, the container caches (and instance preparations), the portals, the frames' content.
+        private static readonly ProfileSection ProfBEntities = NebulaProfiler.Section("b.entities");
+        private static readonly ProfileSection ProfBCaches = NebulaProfiler.Section("b.caches");
+        private static readonly ProfileSection ProfBPortals = NebulaProfiler.Section("b.portals");
+        private static readonly ProfileSection ProfBContent = NebulaProfiler.Section("b.content");
         private static readonly ProfileSection ProfFrameSim = NebulaProfiler.Section("frames.sim");
+        // The parts of 'frames.sim' (nested): portal proxies, the instance scenes' step, the physics frames' step, the frames' state sampling and origin shift.
+        private static readonly ProfileSection ProfFPortals = NebulaProfiler.Section("f.portals");
+        private static readonly ProfileSection ProfFInstances = NebulaProfiler.Section("f.instances");
+        private static readonly ProfileSection ProfFFrames = NebulaProfiler.Section("f.frames");
+        private static readonly ProfileSection ProfFStates = NebulaProfiler.Section("f.states");
         private static readonly ProfileSection ProfReplicate = NebulaProfiler.Section("replicate");
         private static readonly ProfileSection ProfUntimed = NebulaProfiler.Section("untimed");
         private long _lastTickEnd;
@@ -441,7 +451,7 @@ namespace Nebula
             NebulaRuntime.LocalWorkerId = WorkerId;
             NebulaRuntime.LocalWorkerIndex = WorkerIndex;
             NebulaRuntime.RpcSink = this;
-            StateHistory.WindowTicks = Mathf.Clamp(config.StateHistoryTicks, 0, StateHistory.MaxWindowTicks);
+            StateHistory.WindowTicks = Mathf.Clamp(config.StateHistoryTicks, 0, StateHistory.MaxWindowTicks); // seconds at the running rate
             _callRouter = new AuthorityCallRouter(config.AuthorityCallMaxHops);
             _callTracker = new AuthorityCallTracker(WorkerIndex, AuthorityCallId.InitialSequence(Incarnation));
             InitializeInterest();
@@ -1092,12 +1102,17 @@ namespace Nebula
         /// runs a little slow for a moment) rather than simulate them back-to-back, which would only push the next
         /// frame further behind. A skipped tick is one an owner's client predicted and the worker never ran, so its
         /// entity ends that tick's step short of where its owner has it and is corrected (NEB-479). A quarter of a
-        /// second at 60 Hz.
+        /// second (<see cref="MaxLagSeconds"/>): 15 ticks at 60 Hz, 8 at 30.
         /// </summary>
-        public const int MaxLagTicks = 15;
+        public static int MaxLagTicks => NetworkTime.SecondsToTicks(MaxLagSeconds);
+
+        /// <summary>How far behind the wall clock, in seconds, a worker may run before it skips tick numbers (<see cref="MaxLagTicks"/>).</summary>
+        public const float MaxLagSeconds = 0.25f;
 
         /// <summary>
-        /// Default for <see cref="NebulaConfig.WorkerCatchUpBudgetMs"/>: about two and a half tick periods at 60 Hz.
+        /// Default for <see cref="NebulaConfig.WorkerCatchUpBudgetMs"/>: about two and a half tick periods at 60 Hz. It is
+        /// wall time a frame may spend, so it stays 40 ms at any tick rate (at 30 Hz about one and a quarter periods,
+        /// with <see cref="MaxCatchUpTicks"/> still two ticks per FixedUpdate).
         /// </summary>
         public const float DefaultCatchUpBudgetMs = 40f;
 
@@ -1169,10 +1184,13 @@ namespace Nebula
             if (_lastSimulatedTick == 0) { RunBudgeted(derived); return; }
             if (derived <= _lastSimulatedTick) { _profileDuplicateTicks++; return; }
             uint behind = derived - _lastSimulatedTick;
-            if (behind > MaxLagTicks)
+            uint maxLag = (uint)MaxLagTicks;
+            if (behind > maxLag)
             {
-                _profileSkippedTicks += (int)(behind - MaxLagTicks);
-                _lastSimulatedTick = derived - MaxLagTicks;
+                _profileSkippedTicks += (int)(behind - maxLag);
+                _lastSimulatedTick = derived - maxLag;
+                _previousSkipAt = _lastSkipAt;
+                _lastSkipAt = _lastSimulatedTick; // the tick the worker resumes from: the ticks it simulates next come after it
             }
             long budget = CatchUpBudgetTimestamps;
             for (int n = 0; n < MaxCatchUpTicks && _lastSimulatedTick < derived; n++)
@@ -1189,8 +1207,28 @@ namespace Nebula
             _budgetSpent += BudgetClock() - start;
         }
 
+        /// <summary>The wall-clock ticks at which the last two catch-ups skipped tick numbers (0: never).</summary>
+        private uint _lastSkipAt, _previousSkipAt;
+        private int _profileReplaysWithheld;
+        private uint _lastRanTick;
+
+        /// <summary>
+        /// Skips closer together than this (a second) mean the worker is overloaded rather than past a hitch: predicted entities
+        /// then are not stepped through the ticks it skipped (<see cref="PredictedBehaviourBase.ReplaySkippedTicks"/>), and their owners
+        /// are corrected instead, so the work the worker could not afford is not added back on top of the next tick.
+        /// </summary>
+        public static uint SustainedSkipTicks => (uint)NetworkTime.SecondsToTicks(1.0);
+
+        /// <summary>Whether the worker is skipping ticks again and again: twice within <see cref="SustainedSkipTicks"/>, the last of them that recently.</summary>
+        internal bool SkippingSustained(uint tick) =>
+            _previousSkipAt != 0 && _lastSkipAt - _previousSkipAt <= SustainedSkipTicks && tick >= _lastSkipAt && tick - _lastSkipAt <= SustainedSkipTicks;
+
         private void RunTick(uint tick)
         {
+            bool replay = !SkippingSustained(tick);
+            if (!replay && _lastRanTick != 0 && tick > _lastRanTick + 1) _profileReplaysWithheld++;
+            _lastRanTick = tick;
+            PredictedBehaviourBase.ReplaySkippedTicks = replay;
             // Everything between two ticks that is not ours: the physics step, Update (transport poll, control
             // plane), the engine's own frame work. Reported as 'gap' so the tick's share of the core is visible.
             long start = Stopwatch.GetTimestamp();
@@ -1221,8 +1259,9 @@ namespace Nebula
         private string ResolveCounters(int ticks)
         {
             double t = Math.Max(1, ticks);
-            var s = $"visited={_passVisited / t:0.0} due={_passDue / t:0.0} pinned={_passPinned / t:0.0} fast={ContainerRegistry.FastResolves / t:0.0} full={ContainerRegistry.FullResolves / t:0.0} (nocur={ContainerRegistry.RefusedNoCurrent / t:0.0} frame={ContainerRegistry.RefusedFrame / t:0.0} outside={ContainerRegistry.RefusedOutside / t:0.0} neighbour={ContainerRegistry.RefusedNeighbour / t:0.0} moving={ContainerRegistry.RefusedMoving / t:0.0})";
+            var s = $"visited={_passVisited / t:0.0} due={_passDue / t:0.0} pinned={_passPinned / t:0.0} fast={ContainerRegistry.FastResolves / t:0.0} full={ContainerRegistry.FullResolves / t:0.0} (nocur={ContainerRegistry.RefusedNoCurrent / t:0.0} frame={ContainerRegistry.RefusedFrame / t:0.0} outside={ContainerRegistry.RefusedOutside / t:0.0} neighbour={ContainerRegistry.RefusedNeighbour / t:0.0} moving={ContainerRegistry.RefusedMoving / t:0.0}) content frames={PhysicsFrames.All.Count} clones={PhysicsFrames.ClonesVisited / t:0.0} reposed={PhysicsFrames.ClonesReposed / t:0.0} boxes runtime={ContainerRegistry.Runtime.Count} dynamic={ContainerRegistry.Dynamic.Count} movingRuntime={ContainerRegistry.MovingRuntimeCount}";
             _passVisited = _passDue = _passPinned = 0;
+            PhysicsFrames.ClonesVisited = PhysicsFrames.ClonesReposed = 0;
             ContainerRegistry.ResetResolveCounters();
             return s;
         }
@@ -1244,7 +1283,7 @@ namespace Nebula
             ProfUntimed.Calls = _profileTicks;
             string frameText = frame.Frames > 0 ? $" | frame avg {frame.AvgMs:0.0}ms p90 {frame.P90Ms:0.0}ms max {frame.MaxMs:0.0}ms: {_lastFrameSplit}" : "";
             string sections = NebulaProfiler.ReportAndReset(_profileTicks, out _lastProfileSections);
-            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} budget {_profileBudgetCuts} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} dormant {DormantCount} resolve {ResolveCounters(_profileTicks)} rpcRejected {NebulaDiagnostics.RejectedAuthorityRpcSends} mem rss={WorkerMemorySampler.Mb(_lastMemory.ResidentBytes)}MB native={WorkerMemorySampler.Mb(_lastMemory.NativeAllocatedBytes)}MB managed={WorkerMemorySampler.Mb(_lastMemory.ManagedBytes)}MB | {sections}{frameText}");
+            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} budget {_profileBudgetCuts} noreplay {_profileReplaysWithheld} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} dormant {DormantCount} resolve {ResolveCounters(_profileTicks)} rpcRejected {NebulaDiagnostics.RejectedAuthorityRpcSends} mem rss={WorkerMemorySampler.Mb(_lastMemory.ResidentBytes)}MB native={WorkerMemorySampler.Mb(_lastMemory.NativeAllocatedBytes)}MB managed={WorkerMemorySampler.Mb(_lastMemory.ManagedBytes)}MB | {sections}{frameText}");
             _profileTicks = 0;
             _profileFrames = 0;
             _profileMaxMs = 0f;
@@ -1252,6 +1291,7 @@ namespace Nebula
             _profileDuplicateTicks = 0;
             _profileSkippedTicks = 0;
             _profileBudgetCuts = 0;
+            _profileReplaysWithheld = 0;
         }
 
         // ---------------------------------------------------------------------------------------- the tick
@@ -1267,6 +1307,7 @@ namespace Nebula
             // Which entities update on this tick (NetworkIdentity.UpdateInterval), decided once for every pass below,
             // and which fall asleep or wake on it (docs/server-owned-entities.md §6).
             int dormant = 0;
+            long tb0 = Stopwatch.GetTimestamp();
             for (int i = 0; i < _authoritative.Count; i++)
             {
                 var e = _authoritative[i];
@@ -1275,11 +1316,19 @@ namespace Nebula
                 if (e.IsDormant) dormant++;
             }
             DormantCount = dormant;
+            long tb1 = Stopwatch.GetTimestamp();
             UpdateInstancePreparations();
-            ContainerRegistry.RefreshCaches();
+            ContainerRegistry.RefreshMovingCaches();
+            long tb2 = Stopwatch.GetTimestamp();
             UpdatePortals();
+            long tb3 = Stopwatch.GetTimestamp();
             // Interior colliders of every physics frame follow their sources (a ramp lowering, a door opening).
             PhysicsFrames.SyncAllContent();
+            long tb4 = Stopwatch.GetTimestamp();
+            ProfBEntities.Add(tb1 - tb0);
+            ProfBCaches.Add(tb2 - tb1);
+            ProfBPortals.Add(tb3 - tb2);
+            ProfBContent.Add(tb4 - tb3);
             ProfBegin.End();
 
             // 1. Ghosts follow the stream they are driven by (kinematic: no solve of their own).
@@ -1329,8 +1378,13 @@ namespace Nebula
                     long simStart = Stopwatch.GetTimestamp();
                     for (int b = 0; b < behaviours.Length; b++)
                     {
+                        // Per behaviour type, nested in 'simulate' (sim.<Type> on the profile line and in a Unity capture): what each kind of
+                        // entity costs the tick, which the game's own spans do not add up to.
+                        var section = SimSectionOf(behaviours[b]);
+                        section.Begin();
                         try { behaviours[b].NetworkTick(tick, delta); }
                         catch (Exception ex) { NebulaLog.Error($"NetworkTick on {e} threw: {ex}"); }
+                        section.End();
                     }
                     _costMeter.AddSimulation(e.Container, Stopwatch.GetTimestamp() - simStart);
                     if (e.Carried != null) carrierTicked = true;
@@ -1347,14 +1401,23 @@ namespace Nebula
             ProfSimulate.End();
             ProfFrameSim.Begin();
             // Proxies across portals are posed before the scenes step (docs/portals.md D26), so contacts get their velocity.
+            long tf0 = Stopwatch.GetTimestamp();
             if (_portalPhysics != null || Portals.All.Count > 0) PortalPhysics.Step(tick);
+            long tf1 = Stopwatch.GetTimestamp();
             InstanceScenes.Simulate(dt);
+            long tf2 = Stopwatch.GetTimestamp();
             // Every physics frame is its own scene, still in its own coordinates; and every frame's motion is sampled
             // once the carriers have moved this tick (docs/container-tree.md D14).
             PhysicsFrames.Simulate(dt);
+            long tf3 = Stopwatch.GetTimestamp();
             PhysicsFrames.UpdateStates(tick, dt);
             // Each frame's floating origin stays near what this worker simulates in it (docs/container-tree.md D19).
             PhysicsFrames.AutoShift(_frameOriginPositions ??= FrameOriginPositions);
+            long tf4 = Stopwatch.GetTimestamp();
+            ProfFPortals.Add(tf1 - tf0);
+            ProfFInstances.Add(tf2 - tf1);
+            ProfFFrames.Add(tf3 - tf2);
+            ProfFStates.Add(tf4 - tf3);
             ProfFrameSim.End();
 
             // Remember where what we simulate ended up this tick, for lag-compensated hit tests and time-sensitive
@@ -1526,6 +1589,16 @@ namespace Nebula
             }
             _transport.Flush();
             ProfPublish.End();
+        }
+
+        private static readonly Dictionary<Type, ProfileSection> SimSections = new Dictionary<Type, ProfileSection>();
+
+        /// <summary>The 'sim.&lt;Type&gt;' section of a behaviour's type (one per type, made on first use).</summary>
+        private static ProfileSection SimSectionOf(NetworkBehaviour behaviour)
+        {
+            var type = behaviour.GetType();
+            if (!SimSections.TryGetValue(type, out var s)) SimSections[type] = s = NebulaProfiler.Section("sim." + type.Name);
+            return s;
         }
 
         /// <summary>Forget identities in <see cref="_scratchEntities"/> whose objects were destroyed without a despawn.</summary>
@@ -1914,7 +1987,10 @@ namespace Nebula
             // before the ship can cross, and that needs the ship's targets decided first.
             // Bounded by the set we own rather than by a constant (design D71): a shuttle nine deep must still
             // be held warm by the neighbour before the carrier it is in can cross.
-            for (int depth = 0; depth <= _authoritative.Count; depth++)
+            // A worker with no peer worker connected has nobody to ghost to (Ghost sends to a connected peer only): the pass, every due
+            // entity's neighbours and a seam distance each, is skipped. 0.5 ms a tick at 50 players on a one-worker mesh.
+            int depths = _workerPeersById.Count > 0 ? _authoritative.Count : -1;
+            for (int depth = 0; depth <= depths; depth++)
             {
                 bool deeper = false;
                 for (int i = 0; i < _authoritative.Count; i++)
@@ -2591,7 +2667,7 @@ namespace Nebula
             e.Interpolator?.Clear();
             SetGhostPhysics(e, false);
             _handedOff.Remove(e.NetId);
-            if (msg.Crossing) _crossingHold[e.NetId] = CurrentTick + CrossingHoldTicks;
+            if (msg.Crossing) _crossingHold[e.NetId] = CurrentTick + (uint)CrossingHoldTicks;
             if (!_authoritative.Contains(e)) _authoritative.Add(e);
             if (e.OwnerClientId != 0)
             {
@@ -2863,11 +2939,132 @@ namespace Nebula
         /// </summary>
         private void EvaluateSyncAudiences(uint tick)
         {
+            // Perf: the candidates of an entity are the pawns within one cell of it (NebulaConfig.SyncAudienceCellMetres) in its own
+            // space, plus every pawn in another space (aboard a ship: few, and their distance needs the full conversion anyway).
+            // Evaluating every pawn for every crate and pouch cost a worker players x items predicate calls: 3.3 ms a tick at 75 players.
+            bool bucketed = false;
             for (int i = 0; i < _authoritative.Count; i++)
             {
                 var e = _authoritative[i];
-                if (e != null && e.HasCustomAudience) e.EvaluateSyncAudiences(tick, _players, _audienceScratch);
+                if (e == null || !e.HasCustomAudience || !e.AnyAudienceDue(tick)) continue;
+                if (!bucketed) { BucketPlayersForAudiences(); bucketed = true; }
+                GatherAudienceCandidates(e, _audienceCandidates);
+                e.EvaluateSyncAudiences(tick, _audienceCandidates, _audienceScratch);
             }
+        }
+
+        private sealed class AudienceSpace
+        {
+            public readonly List<KeyValuePair<ulong, NetworkIdentity>> All = new List<KeyValuePair<ulong, NetworkIdentity>>();
+            public readonly Dictionary<long, List<KeyValuePair<ulong, NetworkIdentity>>> Cells = new Dictionary<long, List<KeyValuePair<ulong, NetworkIdentity>>>();
+        }
+
+        private readonly Dictionary<Container, AudienceSpace> _audienceSpaces = new Dictionary<Container, AudienceSpace>();
+        private AudienceSpace _audienceRootSpace;
+        private readonly List<KeyValuePair<ulong, NetworkIdentity>> _audienceCandidates = new List<KeyValuePair<ulong, NetworkIdentity>>();
+        private readonly Stack<List<KeyValuePair<ulong, NetworkIdentity>>> _audienceListPool = new Stack<List<KeyValuePair<ulong, NetworkIdentity>>>();
+
+        private float AudienceCell => Config != null && Config.SyncAudienceCellMetres > 0f ? Config.SyncAudienceCellMetres : 64f;
+
+        private static long AudienceCellKey(Vector3 p, float cell)
+        {
+            long x = (long)Math.Floor(p.x / cell), y = (long)Math.Floor(p.y / cell), z = (long)Math.Floor(p.z / cell);
+            return ((x & 0x1FFFFF) << 42) | ((y & 0x1FFFFF) << 21) | (z & 0x1FFFFF);
+        }
+
+        private AudienceSpace SpaceBucket(Container space)
+        {
+            if (space == null)
+            {
+                _audienceRootSpace ??= new AudienceSpace();
+                return _audienceRootSpace;
+            }
+            if (!_audienceSpaces.TryGetValue(space, out var s)) _audienceSpaces[space] = s = new AudienceSpace();
+            return s;
+        }
+
+        private void BucketPlayersForAudiences()
+        {
+            _audienceTrees.Clear();
+            foreach (var s in _audienceSpaces.Values) ResetSpace(s);
+            if (_audienceRootSpace != null) ResetSpace(_audienceRootSpace);
+            float cell = AudienceCell;
+            foreach (var kv in _players)
+            {
+                if (kv.Key == 0 || kv.Value == null) continue;
+                var s = SpaceBucket(kv.Value.Space);
+                s.All.Add(kv);
+                long key = AudienceCellKey(kv.Value.transform.position, cell);
+                if (!s.Cells.TryGetValue(key, out var list)) s.Cells[key] = list = _audienceListPool.Count > 0 ? _audienceListPool.Pop() : new List<KeyValuePair<ulong, NetworkIdentity>>();
+                list.Add(kv);
+            }
+        }
+
+        private void ResetSpace(AudienceSpace s)
+        {
+            s.All.Clear();
+            foreach (var list in s.Cells.Values) { list.Clear(); _audienceListPool.Push(list); }
+            s.Cells.Clear();
+        }
+
+        private void GatherAudienceCandidates(NetworkIdentity e, List<KeyValuePair<ulong, NetworkIdentity>> into)
+        {
+            into.Clear();
+            var own = e.Space;
+            var ownBucket = own == null ? _audienceRootSpace : (_audienceSpaces.TryGetValue(own, out var sb) ? sb : null);
+            if (ownBucket != null && ownBucket.Cells.Count > 0)
+            {
+                float cell = AudienceCell;
+                var p = e.transform.position;
+                long cx = (long)Math.Floor(p.x / cell), cy = (long)Math.Floor(p.y / cell), cz = (long)Math.Floor(p.z / cell);
+                for (long dx = -1; dx <= 1; dx++)
+                    for (long dy = -1; dy <= 1; dy++)
+                        for (long dz = -1; dz <= 1; dz++)
+                        {
+                            long key = (((cx + dx) & 0x1FFFFF) << 42) | (((cy + dy) & 0x1FFFFF) << 21) | ((cz + dz) & 0x1FFFFF);
+                            if (ownBucket.Cells.TryGetValue(key, out var list)) into.AddRange(list);
+                        }
+            }
+            // Pawns in another space (aboard a carrier, or on the ground while this entity rides one): the predicate converts their place itself.
+            // Perf: not those of an unrelated frame tree of the same scope (another planet, a ship out in space far from this entity's): every
+            // crate on one planet asked every player on the other planets, with the dear cross-space conversion each time (replicate 0.8 -> 4.7 ms
+            // a tick from 50 to 125 players over four planets). A frame tree is the outermost framed container a space hangs under; two trees
+            // whose outer boxes come within AudienceTreeSlack of each other (a ship beside a station) still see each other's pawns, and a pawn
+            // of another scope is always a candidate, as before.
+            var ownTree = AudienceTreeOf(own);
+            if (_audienceRootSpace != null && own != null) into.AddRange(_audienceRootSpace.All);
+            foreach (var kv in _audienceSpaces)
+            {
+                if (kv.Key == own) continue;
+                var tree = AudienceTreeOf(kv.Key);
+                if (tree == ownTree || ownTree == null || tree == null || TreesNear(ownTree, tree)) { into.AddRange(kv.Value.All); continue; }
+                var list = kv.Value.All;
+                for (int i = 0; i < list.Count; i++) if (list[i].Value != null && list[i].Value.InstanceId != e.InstanceId) into.Add(list[i]);
+            }
+        }
+
+        /// <summary>Metres two frame trees' outer boxes may be apart and still share audiences (rounding of large coordinates included).</summary>
+        private const float AudienceTreeSlack = 512f;
+
+        private readonly Dictionary<Container, Container> _audienceTrees = new Dictionary<Container, Container>();
+
+        /// <summary>The outermost framed container <paramref name="space"/> hangs under (itself when it is outermost); null for the scope's own space. Cached for the tick's audiences.</summary>
+        private Container AudienceTreeOf(Container space)
+        {
+            if (space == null) return null;
+            if (_audienceTrees.TryGetValue(space, out var tree)) return tree;
+            tree = space;
+            int hops = 0;
+            for (var s = space.Space; s != null && hops <= ContainerRegistry.ChainBound; s = s.Space, hops++) tree = s;
+            _audienceTrees[space] = tree;
+            return tree;
+        }
+
+        private static bool TreesNear(Container a, Container b)
+        {
+            var ba = a.WorldBounds;
+            ba.Expand(2f * AudienceTreeSlack);
+            return ba.Intersects(b.WorldBounds);
         }
 
         private void OnGhostSyncState(Peer from, EntitySyncMsg msg)
@@ -3072,6 +3269,8 @@ namespace Nebula
                     _scratch.Reset();
                     e.Predicted.WriteOwnerState(_scratch);
                     _writer.Reset();
+                    uint droppedFrom = 0, droppedTo = 0;
+                    bool dropped = (Config == null || Config.ReportDroppedTicks) && e.Predicted.TryGetDroppedTicks(tick, out droppedFrom, out droppedTo); // NEB-484
                     new OwnerStateMsg
                     {
                         NetId = e.NetId,
@@ -3083,6 +3282,8 @@ namespace Nebula
                         Container = e.ContainerRef,
                         State = _scratch.ToArray(),
                         Events = e.Predicted.TakeServerEventsForReport(),
+                        DroppedFrom = dropped ? droppedFrom : 0,
+                        DroppedTo = dropped ? droppedTo : 0,
                     }.Write(_writer);
                     // Owner state has exactly one destination client, so it is the gateway's relay cost rather
                     // than replication: it grows with players in the container, not with entities in it.

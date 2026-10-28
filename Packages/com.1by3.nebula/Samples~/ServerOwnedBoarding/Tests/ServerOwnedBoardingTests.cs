@@ -18,7 +18,7 @@ namespace NebulaSamples.Tests
     public sealed class ServerOwnedBoardingTests
     {
         private const BindingFlags Members = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
-        private const float Dt = NetworkTime.TickInterval;
+        private static float Dt => NetworkTime.TickInterval;
         private readonly List<GameObject> _objects = new List<GameObject>();
         private NebulaWorker _worker;
         private NebulaConfig _config;

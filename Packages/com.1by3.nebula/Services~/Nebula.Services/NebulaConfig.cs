@@ -85,7 +85,9 @@ namespace Nebula
         public float GhostBandMargin = 4f;
         public float HandoverHysteresis = 0.35f;
         public float GhostLingerSeconds = 2f;
-        public int StateHistoryTicks = 32;
+        public float StateHistorySeconds = 32f / NetworkTime.DefaultTickRate;
+        /// <summary>The mesh's simulation rate (docs/tick-rate.md). Mirrors the Unity-side field; -nebula-tick-rate or NEBULA_TICK_RATE overrides.</summary>
+        public int TickRate = NetworkTime.DefaultTickRate;
         public int AuthorityCallMaxHops = 3;
         public string PersistenceMode = "auto";
         public string PersistenceLocalFile = "";
@@ -117,6 +119,8 @@ namespace Nebula
         public int InterestMaxExplicitPerClient = 16;
         public int InterestFarMaxEntities = 64;
         public float InterestMaxFocusSpeed = 12f;
+        public float InterestMaxTravelPerUpdate = 4f;
+        public float InterestFocusLeadSeconds = 0.5f;
         public int PartitionWarnEntities = 2000;
         public float PartitionWarnFilterMs = 2f;
         public bool ChunkedWorld = false;
@@ -131,6 +135,9 @@ namespace Nebula
         public RelevanceTierBands InterestLowTiers;
         public RelevanceTierBands InterestBackgroundTiers;
         public int InterpolationDelayTicks = 3;
+        public bool AdaptiveInterpolationDelay = true;
+        public float InterpolationJitterPercentile = 95f;
+        public int MaxStreamLagTicks = 12;
         public int SlowUpdateMaxDelayTicks = 30;
         public int InputLeadMarginTicks = 2;
         public int InputLeadTargetTicks = 3;

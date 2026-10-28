@@ -147,8 +147,12 @@ namespace Nebula
         public const float ApertureThickness = 2f * Portal.CrossDepth;
         /// <summary>The most static copies a link's throat holds on either side. Past it the rest are left out and said so once.</summary>
         public const int MaxThroatColliders = 128;
-        /// <summary>How many ticks pass between two looks at whether a body in a band is admitted.</summary>
-        public const uint AdmitCheckTicks = 6;
+        /// <summary>How many ticks pass between two looks at whether a body in a band is admitted: a tenth of a second.</summary>
+        public static uint AdmitCheckTicks => (uint)NetworkTime.SecondsToTicks(0.1);
+
+        /// <summary>How often, in ticks, the cached body descriptions are pruned (every two seconds), and how old one may get first (ten seconds).</summary>
+        internal static uint BodiesPruneEveryTicks => (uint)NetworkTime.SecondsToTicks(2.0);
+        internal static uint BodiesPruneAgeTicks => (uint)NetworkTime.SecondsToTicks(10.0);
 
         private readonly NebulaWorker _worker;
         private readonly bool _isClient;

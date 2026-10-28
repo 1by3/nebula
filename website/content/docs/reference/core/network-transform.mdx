@@ -142,11 +142,35 @@ public bool UseQuaternionCompression;
 
 With quaternion synchronization: smallest-three compression, 4 bytes per rotation.
 
+### SyncAngularVelocity [#syncangularvelocity]
+
+```csharp
+public bool SyncAngularVelocity = true;
+```
+
+Root only: send the angular velocity (derived from the rotation's change between updates) so remote copies keep turning between updates and when an update is late.
+
+### PreciseRotation [#preciserotation]
+
+```csharp
+public bool PreciseRotation = true;
+```
+
+Root only, with quaternion compression: 15 bits per smallest-three component (6 bytes, about 0.005 degrees) instead of 10 (4 bytes, about 0.16 degrees). Clients older than protocol 30 receive 10 bits.
+
 ### Interpolate [#interpolate]
 
 ```csharp
 public bool Interpolate = true;
 ```
+
+### VelocityAwareInterpolation [#velocityawareinterpolation]
+
+```csharp
+public bool VelocityAwareInterpolation = true;
+```
+
+Root only: between two buffered updates, follow a curve through their velocities (cubic Hermite) instead of a straight line, and turn through their angular velocities. Falls back to a straight line when the velocities do not explain the move (a teleport, a collision).
 
 ### Interpolation [#interpolation]
 

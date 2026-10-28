@@ -62,6 +62,126 @@ namespace Nebula.Tests
             foreach (var go in _objects) Object.DestroyImmediate(go);
             _objects.Clear();
             ContainerRegistry.Rebuild();
+            PhysicsFrames.DrainPool();
+            PhysicsFrames.SceneFactory = null;
+            PhysicsFrames.SceneDisposer = null;
+        }
+
+        /// <summary>A planet: a carried box with a physics frame of its own, and four runtime chunks of ground fixed in its frame.</summary>
+        private NetworkIdentity MakePlanet(out List<Container> chunks)
+        {
+            PhysicsFrames.SceneFactory = () => UnityEditor.SceneManagement.EditorSceneManager.NewPreviewScene();
+            PhysicsFrames.SceneDisposer = s => UnityEditor.SceneManagement.EditorSceneManager.ClosePreviewScene(s);
+            var go = new GameObject("planet");
+            go.transform.position = new Vector3(0, 0, 30000f);
+            _objects.Add(go);
+            var identity = go.AddComponent<NetworkIdentity>();
+            var box = go.AddComponent<Container>();
+            box.ContainerId = "planet";
+            box.Size = new Vector3(8000f, 1000f, 8000f);
+            box.Center = new Vector3(0f, 100f, 0f);
+            box.OwnPhysicsFrame = true;
+            box.FrameInterest = FrameInterestMode.OwnRegions;
+            go.AddComponent<NetworkTransform>();
+            identity.Initialize();
+            identity.NetId = 7;
+            identity.SetContainer(ContainerRegistry.Find(go.transform.position, box));
+            identity.InvokeSpawn();
+            Assume.That(identity.Carried, Is.SameAs(box));
+            Assume.That(box.Frame, Is.Not.Null, "the planet's frame");
+            chunks = new List<Container>();
+            for (int i = 0; i < 4; i++)
+            {
+                var chunk = ContainerRegistry.RegisterRuntime(2000UL + (ulong)i,
+                    ContainerPlacement.Child(box.ContainerId, new Vector3(-3000f + 2000f * i, 100f, 0f), new Vector3(2000f, 1000f, 8000f), ContainerAuthority.Leased));
+                Assert.IsNotNull(chunk);
+                Assume.That(chunk.FixedInFrame, Is.True);
+                chunks.Add(chunk);
+            }
+            return identity;
+        }
+
+        [Test]
+        public void WalkingAcrossChunksFixedInAPlanetsFrameMatchesTheFullSearchAndTakesTheShortcut()
+        {
+            MakePlanet(out var chunks);
+            Assume.That(chunks[1].Neighbors.Contains(chunks[0]) && chunks[1].Neighbors.Contains(chunks[2]), Is.True, "chunks of one frame are linked");
+            foreach (float h in new[] { 0f, 0.35f, 2f })
+            {
+                var fast = chunks[0]; var slow = chunks[0];
+                ContainerRegistry.ResetResolveCounters();
+                int searched = 0; // full searches the shortcut path took (the reference always searches)
+                // In the frame's own coordinates: across all four chunks and back.
+                for (float x = -3900f; x <= 2900f; x += 4f)
+                {
+                    var p = new Vector3(x, 1f, 0.5f);
+                    int before = ContainerRegistry.FullResolves;
+                    fast = ContainerRegistry.Resolve(p, fast, h);
+                    searched += ContainerRegistry.FullResolves - before;
+                    slow = Reference(p, slow, h);
+                    Assert.AreSame(slow, fast, $"x={x} h={h}");
+                }
+                for (float x = 2900f; x >= -3900f; x -= 4f)
+                {
+                    var p = new Vector3(x, 1f, 0.5f);
+                    int before = ContainerRegistry.FullResolves;
+                    fast = ContainerRegistry.Resolve(p, fast, h);
+                    searched += ContainerRegistry.FullResolves - before;
+                    slow = Reference(p, slow, h);
+                    Assert.AreSame(slow, fast, $"back x={x} h={h}");
+                }
+                Assert.Greater(ContainerRegistry.FastResolves, searched * 10, $"h={h}: most steps are well inside a chunk and skip the search");
+            }
+        }
+
+        [Test]
+        public void OverlappingChunksOfAPlanetResolveByTheirClaimAndStillTakeTheShortcut()
+        {
+            // A curved grid's cells have boxes that overlap their neighbours' (D22): each claims the half of the overlap nearer its centre.
+            MakePlanet(out var chunks);
+            for (int i = 0; i < 4; i++)
+                ContainerRegistry.RegisterRuntime(2000UL + (ulong)i,
+                    ContainerPlacement.Child("planet", new Vector3(-3000f + 2000f * i, 100f, 0f), new Vector3(2600f, 1000f, 8000f), ContainerAuthority.Leased));
+            ContainerRegistry.RuntimeClaims = (c, p) =>
+            {
+                float best = float.MaxValue; Container owner = null;
+                foreach (var k in chunks) { float d = Mathf.Abs(p.x - k.transform.localPosition.x); if (d < best) { best = d; owner = k; } }
+                return owner == c;
+            };
+            try
+            {
+                foreach (float h in new[] { 0f, 0.35f })
+                {
+                    var fast = chunks[0]; var slow = chunks[0];
+                    ContainerRegistry.ResetResolveCounters();
+                    int searched = 0;
+                    for (float x = -3900f; x <= 2900f; x += 4f)
+                    {
+                        var p = new Vector3(x, 1f, 0.5f);
+                        int before = ContainerRegistry.FullResolves;
+                        fast = ContainerRegistry.Resolve(p, fast, h);
+                        searched += ContainerRegistry.FullResolves - before;
+                        slow = Reference(p, slow, h);
+                        Assert.AreSame(slow, fast, $"x={x} h={h}");
+                    }
+                    Assert.Greater(ContainerRegistry.FastResolves, searched * 10, $"h={h}: a point in the overlap the current cell claims skips the search");
+                }
+            }
+            finally { ContainerRegistry.RuntimeClaims = null; }
+        }
+
+        [Test]
+        public void AStationaryEntityInAPlanetChunkIsNotSearched()
+        {
+            MakePlanet(out var chunks);
+            ContainerRegistry.ResetResolveCounters();
+            for (int i = 0; i < 100; i++) Assert.AreSame(chunks[1], ContainerRegistry.Resolve(new Vector3(-1000f, 1f, 0f), chunks[1], 0.35f));
+            Assert.AreEqual(100, ContainerRegistry.FastResolves);
+            Assert.AreEqual(0, ContainerRegistry.FullResolves);
+            // Leaving the frame through its top takes the search, whatever chunk the entity is over.
+            ContainerRegistry.ResetResolveCounters();
+            ContainerRegistry.Resolve(new Vector3(-1000f, 650f, 0f), chunks[1], 0.35f);
+            Assert.AreEqual(1, ContainerRegistry.FullResolves);
         }
 
         private static Container Reference(Vector3 p, Container current, float h, NetworkIdentity subject = null)

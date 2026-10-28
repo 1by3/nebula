@@ -192,6 +192,7 @@ Connect a player to the gateway, predict the local entity, and display replicate
 | [NebulaClient](/docs/reference/client/nebula-client) | Class. The game client. |
 | [NebulaTitleScreen](/docs/reference/client/nebula-title-screen) | Class. Optional IMGUI panel where a player enters the gateway address and a display name before connecting. |
 | [SceneRenderOrigin](/docs/reference/client/scene-render-origin) | Static class. A client's render origin for the whole scene (docs/container-tree.md D25): while cameras draw, the scene's top-level objects and the cameras are moved by -Offset, the camera's position snapped to Step, so everything near the camera is dr... |
+| [StreamLateness](/docs/reference/client/stream-lateness) | Class. How late a client's world-state streams arrive, for the adaptive part of the render delay (NebulaConfig.AdaptiveInterpolationDelay). |
 
 ## Gateway
 
@@ -438,6 +439,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [SpawnPlayerMsg](/docs/reference/protocol/spawn-player-msg) | Struct. Gateway -\> worker: a client wants a pawn. |
 | [SyncAudienceMsg](/docs/reference/protocol/sync-audience-msg) | Struct. Worker to gateway (MsgId.SyncAudience, protocol 20): the member sets of an entity's SyncAudience.Custom behaviors changed. |
 | [TransformFields](/docs/reference/protocol/transform-fields) | Enum. Selected axes and encoding of a root transform update. |
+| [TransformFieldsExt](/docs/reference/protocol/transform-fields-ext) | Enum. Protocol 30 additions to a root transform update, in a byte written after TransformFields to peers of HelloMsg.MotionFidelityVersion or newer. |
 | [WelcomeMsg](/docs/reference/protocol/welcome-msg) | Struct. Carries the welcome protocol message. |
 | [WorldStateMsg](/docs/reference/protocol/world-state-msg) | Static class. Batched transforms for one tick from one worker. |
 

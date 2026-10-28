@@ -39,6 +39,18 @@ namespace Nebula.Tests
         /// <summary>True: the worker steps this walker through ticks it skipped (NEB-412). Off by default, like the real thing.</summary>
         public bool StepSkipped;
         protected override bool StepSkippedServerTicks => StepSkipped;
+        /// <summary>True: drawn between its last two predicted ticks (<see cref="PredictedBehaviourBase.RenderBetweenTicks"/>).</summary>
+        public bool BetweenTicks;
+        /// <summary>Degrees of yaw each <c>Simulate</c> adds (not simulation state: both copies must be given the same).</summary>
+        public float TurnDegreesPerTick;
+        /// <summary>True: <c>Simulate</c> keeps <see cref="NetworkMotionState.Velocity"/> up to date, so the reports carry the speed (speed-aware reconciliation).</summary>
+        public bool ReportVelocity;
+        /// <summary>Overrides of the speed-aware reconciliation factors; negative keeps Nebula's default.</summary>
+        public float ThresholdTickFraction = -1f, SnapSeconds = -1f, SmoothingDoublingSpeed = -1f;
+        protected override float CorrectionThresholdTickFraction => ThresholdTickFraction >= 0f ? ThresholdTickFraction : base.CorrectionThresholdTickFraction;
+        protected override float CorrectionSnapSeconds => SnapSeconds >= 0f ? SnapSeconds : base.CorrectionSnapSeconds;
+        protected override float CorrectionSmoothingDoublingSpeed => SmoothingDoublingSpeed >= 0f ? SmoothingDoublingSpeed : base.CorrectionSmoothingDoublingSpeed;
+        protected override bool RenderBetweenTicks => BetweenTicks;
         protected override float CorrectionSmoothingSeconds => Smoothing;
         protected override float CorrectionSnapDistance => Snap;
         protected override WalkInput GatherInput() => new WalkInput { Move = Hands };
@@ -51,7 +63,8 @@ namespace Nebula.Tests
                 Drift += shove.Velocity;
                 ShovesSeen.Add((tick, IsReplaying));
             }
-            Identity.SetLocalPose(Identity.Container, Identity.LocalPosition + (input.Move + Drift) * deltaTime, Identity.LocalRotation);
+            Identity.SetLocalPose(Identity.Container, Identity.LocalPosition + (input.Move + Drift) * deltaTime, Identity.LocalRotation * Quaternion.Euler(0f, TurnDegreesPerTick, 0f));
+            if (ReportVelocity) Identity.Motion.Velocity = input.Move + Drift;
         }
 
         protected override void WriteState(NetworkWriter writer)
@@ -98,6 +111,8 @@ namespace Nebula.Tests
         public Action<uint> AfterWorkerTick;
         /// <summary>False: the worker simulates and records its reports, but the owner does not hear them.</summary>
         public bool DeliverReports = true;
+        /// <summary>False: the owner is not told which ticks the worker dropped (NEB-484), as a client of protocol 30 is not.</summary>
+        public bool ReportDropped = true;
 
         public PredictedPairRig(int lag, float smoothing = 0.1f, float snap = 3f)
         {
@@ -135,9 +150,10 @@ namespace Nebula.Tests
             Worker.Identity.SetLocalPose(Worker.Identity.Container, Worker.Identity.LocalPosition + meters, Worker.Identity.LocalRotation);
         }
 
-        /// <summary>One tick and one rendered frame of <paramref name="frameSeconds"/>.</summary>
-        public void Advance(float frameSeconds = NetworkTime.TickInterval)
+        /// <summary>One tick and one rendered frame of <paramref name="frameSeconds"/> (one tick when 0 or less).</summary>
+        public void Advance(float frameSeconds = 0f)
         {
+            if (frameSeconds <= 0f) frameSeconds = NetworkTime.TickInterval;
             _step++;
             NetworkTime.Tick = _step;
             var input = new NetworkWriter(32);
@@ -159,6 +175,7 @@ namespace Nebula.Tests
                 if (DeliverReports)
                 {
                     Client.ReceiveServerEvents(events);
+                    if (ReportDropped && Worker.TryGetDroppedTicks(s, out uint droppedFrom, out uint droppedTo)) Client.NoteDroppedTicks(droppedFrom, droppedTo);
                     Client.ClientReconcile(s, new NetworkReader(state.ToSegment()));
                 }
             }

@@ -909,6 +909,22 @@ public float InterestMaxFocusSpeed = 12f;
 
 The fastest a player is expected to travel, in metres per second. Only used to check that InterestSubscribeMargin covers one evaluation of travel.
 
+### InterestMaxTravelPerUpdate [#interestmaxtravelperupdate]
+
+```csharp
+public float InterestMaxTravelPerUpdate = 4f;
+```
+
+Interest for fast movers: the most metres an entity may travel between two updates a client receives. The gateway sends a fast entity more often than its distance tier says, so that at its speed it never moves further than this between updates (400 m/s: every tick; 60 m/s: every 4th). Slow entities keep their tiers. 0 turns it off.
+
+### InterestFocusLeadSeconds [#interestfocusleadseconds]
+
+```csharp
+public float InterestFocusLeadSeconds = 0.5f;
+```
+
+Interest for fast movers: seconds of travel ahead of a moving pawn at which the gateway adds a second focus, so entities ahead are in the client's set before the pawn reaches them. Added only when the lead is longer than InterestExitMargin. 0 turns it off.
+
 ### PartitionWarnEntities [#partitionwarnentities]
 
 ```csharp
@@ -1020,6 +1036,30 @@ public int InterpolationDelayTicks = 3;
 ```
 
 Render delay for remote entities, in ticks.
+
+### AdaptiveInterpolationDelay [#adaptiveinterpolationdelay]
+
+```csharp
+public bool AdaptiveInterpolationDelay = true;
+```
+
+Client: add to [`InterpolationDelayTicks`](#interpolationdelayticks) what the world-state streams' measured lateness needs: the [`InterpolationJitterPercentile`](#interpolationjitterpercentile)th percentile, over the last two seconds, of how many ticks late each packet arrived against the client's clock, taken per worker, highest worker first, rounded down. A clean stream adds nothing; a jittery link or a worker that runs behind gets the buffer it needs, so the interpolator does not run past its newest sample and snap back. The delay rises at once and falls a tick every half second. Off: the delay grows by the slowest worker's lag behind the newest stream, as before. Either way at most [`MaxStreamLagTicks`](#maxstreamlagticks).
+
+### InterpolationJitterPercentile [#interpolationjitterpercentile]
+
+```csharp
+public float InterpolationJitterPercentile = 95f;
+```
+
+Client: the percentile of packet lateness the adaptive render delay covers ([`AdaptiveInterpolationDelay`](#adaptiveinterpolationdelay)), 50 to 100. Default 95.
+
+### MaxStreamLagTicks [#maxstreamlagticks]
+
+```csharp
+public int MaxStreamLagTicks = 12;
+```
+
+Client: the most ticks the measured stream lateness (or lag) may add to [`InterpolationDelayTicks`](#interpolationdelayticks). Default 12 (200 ms at 60 Hz); it was a fixed 6.
 
 ### SlowUpdateMaxDelayTicks [#slowupdatemaxdelayticks]
 

@@ -16,10 +16,10 @@ One entity's selected transform fields inside a WorldState/GhostState batch.
 ### WireSize [#wiresize]
 
 ```csharp
-public const int WireSize = 8 + 4 + ContainerRef.MaxWireSize + 2 + 12 + 16 + 12 + 6;
+public const int WireSize = 8 + 4 + ContainerRef.MaxWireSize + 2 + 1 + 12 + 16 + 12 + 6 + 6;
 ```
 
-Largest serialized size of one entry, for sizing Sequenced batches: id, epoch, container reference (two bytes for a static container, ten for a dynamic one), field mask, position, rotation, scale, and velocity. Only selected axes are serialized. Position, rotation, and scale precision follows NetworkTransform; velocity uses three half floats when enabled.
+Largest serialized size of one entry, for sizing Sequenced batches: id, epoch, container reference (two bytes for a static container, ten for a dynamic one), field mask, extension byte, position, rotation, scale, velocity and angular velocity. Only selected axes are serialized. Position, rotation, and scale precision follows NetworkTransform; velocity and angular velocity use three half floats when enabled.
 
 ### NetId [#netid]
 
@@ -69,6 +69,22 @@ public Vector3 LocalScale;
 public TransformFields Fields;
 ```
 
+### Ext [#ext]
+
+```csharp
+public TransformFieldsExt Ext;
+```
+
+Protocol 30 additions; dropped when the entry is written for an older peer.
+
+### AngularVelocity [#angularvelocity]
+
+```csharp
+public Vector3 AngularVelocity;
+```
+
+Angular velocity in the container's local space, radians per second ([`TransformFieldsExt.AngularVelocity`](/docs/reference/protocol/transform-fields-ext#angularvelocity)).
+
 ## Properties
 
 ### Reliable [#reliable]
@@ -89,10 +105,16 @@ public static EntityStateEntry Snapshot(NetworkIdentity e);
 
 ```csharp
 public void Write(NetworkWriter w);
+public void Write(NetworkWriter w, ushort version);
 ```
+
+Write the entry as a peer of protocol `version` reads it: before 30, without [`Ext`](#ext) and what it announces.
 
 ### Read [#read]
 
 ```csharp
 public static EntityStateEntry Read(NetworkReader r);
+public static EntityStateEntry Read(NetworkReader r, ushort version);
 ```
+
+Read an entry written for protocol `version` ([`Write`](#write)).

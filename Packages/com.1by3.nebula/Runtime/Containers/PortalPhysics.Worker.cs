@@ -48,7 +48,7 @@ namespace Nebula
                 SweepRig(rig);
                 if (rig.IsLive && rig.Pairs.Count + rig.Tracked.Count > 1) ResolvePairs(rig);
             }
-            if (tick % 120 == 0) Bodies.Prune(tick, 600);
+            if (tick % BodiesPruneEveryTicks == 0) Bodies.Prune(tick, BodiesPruneAgeTicks);
             NebulaDiagnostics.PortalProxies = LiveProxies;
         }
 

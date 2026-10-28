@@ -558,6 +558,8 @@ namespace Nebula
         {
             string args = $"-nebula-control-plane {ControlPlaneUrl()} -nebula-gateway {Config.GatewayAddress}:{Config.GatewayPort} -nebula-telemetry {TelemetryUrl()}";
             if (!string.IsNullOrEmpty(Config.MeshToken)) args += $" -nebula-token {Config.MeshToken}";
+            // Every role of a mesh runs at one tick rate (docs/tick-rate.md): the orchestrator's, whatever set it.
+            args += $" -nebula-tick-rate {NetworkTime.TickRate}";
             // The gateway decides who may join; it gets the same answer the orchestrator was configured with.
             if (!string.IsNullOrEmpty(Config.AuthIssuers)) args += $" -nebula-auth-issuers {Config.AuthIssuers.Replace(" ", ",")}";
             if (!string.IsNullOrEmpty(Config.AuthAudience)) args += $" -nebula-auth-audience {Config.AuthAudience}";

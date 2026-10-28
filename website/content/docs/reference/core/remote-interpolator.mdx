@@ -49,6 +49,22 @@ public bool HasSamples { get; }
 public Vector3 LatestScale { get; } = Vector3.one;
 ```
 
+### LatestAngularVelocity [#latestangularvelocity]
+
+```csharp
+public Vector3 LatestAngularVelocity { get; }
+```
+
+Angular velocity of the newest sample, in its container's local space, radians per second (zero when the stream does not carry one).
+
+### LatestHasAngularVelocity [#latesthasangularvelocity]
+
+```csharp
+public bool LatestHasAngularVelocity { get; }
+```
+
+Whether the newest sample carried an angular velocity (protocol 30, [`NetworkTransform.SyncAngularVelocity`](/docs/reference/core/network-transform#syncangularvelocity)).
+
 ### LatestVelocity [#latestvelocity]
 
 ```csharp
@@ -105,6 +121,7 @@ public static void ResetStats();
 
 ```csharp
 public void Push(uint tick, Container container, Vector3 localPosition, Quaternion localRotation, Vector3 velocity, Vector3? scale = null);
+public void Push(uint tick, Container container, Vector3 localPosition, Quaternion localRotation, Vector3 velocity, Vector3 angularVelocity, bool hasAngularVelocity, bool hasVelocity, Vector3? scale = null);
 public void Push(uint tick, Vector3 position, Quaternion rotation, Vector3 velocity);
 ```
 

@@ -436,6 +436,15 @@ namespace Nebula
         private bool _hasRenderOffset;
         /// <summary>How fast the render clock's offset closes on its target: the fraction of the remaining error removed per second (a 1/3 s time constant).</summary>
         private const double RenderOffsetRatePerSecond = 3.0;
+
+        /// <summary>How far the render clock may be from its target before it jumps instead of easing: 1/6 s (10 ticks at 60 Hz), in ticks.</summary>
+        private static double RenderSnapTicks => NetworkTime.SecondsToTicksExact(10.0 / NetworkTime.DefaultTickRate);
+
+        /// <summary>The prediction tick jumps to its target when it is this far behind it (8 ticks at 60 Hz, 4 at 30) ...</summary>
+        private static uint PredictJumpTicks => (uint)Math.Max(2, NetworkTime.SecondsToTicks(8.0 / NetworkTime.DefaultTickRate));
+
+        /// <summary>... and holds a step when it is this far ahead (4 ticks at 60 Hz, 2 at 30).</summary>
+        private static uint PredictStallTicks => (uint)Math.Max(2, NetworkTime.SecondsToTicks(4.0 / NetworkTime.DefaultTickRate));
         private float _maxFrameMs;
         private int _fixedThisFrame, _maxFixedPerFrame;
         /// <summary>Gaps in the local pawn's own state stream (which the gateway sends every tick) longer than this many ticks.</summary>
@@ -448,9 +457,21 @@ namespace Nebula
         private int _ageCount;
         /// <summary>How far behind the newest tick heard the world-state stream of the slowest worker currently runs (ticks), over the last two seconds.</summary>
         public int StreamLagTicks => Math.Max(_lagBucket, _lagPreviousBucket);
-        /// <summary>The render delay in use: <see cref="NebulaConfig.InterpolationDelayTicks"/> plus the measured stream lag.</summary>
+        /// <summary>The render delay in use: <see cref="NebulaConfig.InterpolationDelayTicks"/> plus the measured stream lateness (or lag; see <see cref="NebulaConfig.AdaptiveInterpolationDelay"/>).</summary>
         public int RenderDelayTicks { get; private set; }
-        private const int MaxStreamLagTicks = 6;
+        /// <summary>
+        /// The world-state streams' lateness in ticks at <see cref="NebulaConfig.InterpolationJitterPercentile"/>, the worst
+        /// worker's, over the last two seconds (<see cref="StreamLateness"/>). With <see cref="NebulaConfig.AdaptiveInterpolationDelay"/>
+        /// the render delay grows by it, rounded down.
+        /// </summary>
+        public float StreamLatenessTicks { get; private set; }
+        /// <summary>The ticks the adaptive render delay currently adds (<see cref="NebulaConfig.AdaptiveInterpolationDelay"/>).</summary>
+        public int AdaptiveDelayTicks => _adaptiveDelayTicks;
+        private readonly StreamLateness _lateness = new StreamLateness();
+        private int _adaptiveDelayTicks;
+        private float _nextLatenessAt, _nextAdaptiveDecreaseAt;
+        /// <summary>How often the lateness percentile is recomputed, and how often the adaptive delay may fall by a tick.</summary>
+        private const float LatenessRefreshSeconds = 0.25f, AdaptiveDecreaseSeconds = 0.5f;
         private int _lagBucket, _lagPreviousBucket;
         private float _lagBucketEnds;
         // The carrier the local pawn rides (a ship): frame-to-frame jumps of its rendered hull beyond what its velocity explains.
@@ -1062,7 +1083,7 @@ namespace Nebula
             // Streams from different workers arrive with different lateness (each worker publishes its tick at its own
             // point in its frame): the clock anchors on the newest tick heard, so the configured delay alone would leave
             // the slowest worker's entities with almost no buffer. Interpolate behind the slowest current stream.
-            RenderDelayTicks = Config.InterpolationDelayTicks + Math.Min(StreamLagTicks, MaxStreamLagTicks);
+            RenderDelayTicks = Config.InterpolationDelayTicks + Math.Min(AdaptiveOrLagTicks(), Math.Max(0, Config.MaxStreamLagTicks));
             double targetRender = _serverTickEstimate - halfRttTicks - RenderDelayTicks;
             // The render clock advances with real time; only its offset from the target is smoothed, at a rate in
             // seconds. Smoothing the tick itself toward a target that moves every frame lags behind it by
@@ -1071,7 +1092,7 @@ namespace Nebula
             // twice a second. Fast clients never saw it; a client rendering a busy scene saw nothing else.
             double now = Time.unscaledTimeAsDouble * NetworkTime.TickRate;
             double desiredOffset = targetRender - now;
-            if (!_hasRenderOffset || Math.Abs(desiredOffset - _renderOffset) > 10) { _renderOffset = desiredOffset; _hasRenderOffset = true; }
+            if (!_hasRenderOffset || Math.Abs(desiredOffset - _renderOffset) > RenderSnapTicks) { _renderOffset = desiredOffset; _hasRenderOffset = true; }
             else _renderOffset += (desiredOffset - _renderOffset) * Math.Min(1.0, RenderOffsetRatePerSecond * Time.unscaledDeltaTime);
             _renderTick = now + _renderOffset;
             NetworkTime.RenderTick = _renderTick;
@@ -1098,6 +1119,26 @@ namespace Nebula
             ApplyDrawnOffsets(Time.unscaledDeltaTime);
         }
 
+        /// <summary>
+        /// The ticks the render delay adds to <see cref="NebulaConfig.InterpolationDelayTicks"/> before the cap: the measured
+        /// lateness percentile with <see cref="NebulaConfig.AdaptiveInterpolationDelay"/>, raised at once and lowered a tick per
+        /// half second so the delay does not chase every quiet second; the slowest worker's lag behind the newest stream without it.
+        /// </summary>
+        private int AdaptiveOrLagTicks()
+        {
+            if (!Config.AdaptiveInterpolationDelay) return StreamLagTicks;
+            float now = Time.unscaledTime;
+            if (now >= _nextLatenessAt)
+            {
+                _nextLatenessAt = now + LatenessRefreshSeconds;
+                StreamLatenessTicks = _lateness.Percentile(Time.unscaledTimeAsDouble, Mathf.Clamp(Config.InterpolationJitterPercentile, 50f, 100f));
+            }
+            int wanted = Math.Max(0, (int)Math.Floor(StreamLatenessTicks));
+            if (wanted > _adaptiveDelayTicks) { _adaptiveDelayTicks = wanted; _nextAdaptiveDecreaseAt = now + AdaptiveDecreaseSeconds; }
+            else if (wanted < _adaptiveDelayTicks && now >= _nextAdaptiveDecreaseAt) { _adaptiveDelayTicks--; _nextAdaptiveDecreaseAt = now + AdaptiveDecreaseSeconds; }
+            return _adaptiveDelayTicks;
+        }
+
         /// <summary>Put the predicted entities back at their simulated poses; see <see cref="PredictedBehaviourBase.CorrectionOffset"/>.</summary>
         private void RemoveDrawnOffsets()
         {
@@ -1109,9 +1150,16 @@ namespace Nebula
         private void ApplyDrawnOffsets(float deltaTime)
         {
             if (ConnectionState != State.InGame) return;
-            if (LocalPlayer != null && LocalPlayer.Predicted != null) LocalPlayer.Predicted.ApplyDrawnOffset(deltaTime);
-            for (int i = 0; i < _driven.Count; i++) if (_driven[i] != null && _driven[i].Predicted != null) _driven[i].Predicted.ApplyDrawnOffset(deltaTime);
+            // How far this frame is into the fixed step after the last prediction: predicted entities that render between
+            // ticks are drawn that far from their previous tick to their newest (PredictedBehaviourBase.RenderBetweenTicks).
+            float step = Time.fixedDeltaTime;
+            float fraction = step > 0f && _predictedAtTime >= 0f ? Mathf.Clamp01((Time.time - _predictedAtTime) / step) : 1f;
+            if (LocalPlayer != null && LocalPlayer.Predicted != null) LocalPlayer.Predicted.ApplyDrawnOffset(deltaTime, fraction);
+            for (int i = 0; i < _driven.Count; i++) if (_driven[i] != null && _driven[i].Predicted != null) _driven[i].Predicted.ApplyDrawnOffset(deltaTime, fraction);
         }
+
+        /// <summary>The game time of the fixed step that last predicted (<c>Time.fixedTime</c>), or -1 before the first.</summary>
+        private float _predictedAtTime = -1f;
 
         /// <summary>The scope whose instance content this client last showed.</summary>
         private ulong _viewScope;
@@ -1172,13 +1220,13 @@ namespace Nebula
             uint target = (uint)Math.Round(_serverTickEstimate) + (uint)InputLeadTicks;
             uint first;
             int steps = 1;
-            if (_predictTick == 0 || target > _predictTick + 8)
+            if (_predictTick == 0 || target > _predictTick + PredictJumpTicks)
             {
                 // Way behind: jump. The worker's next lead reports describe the ticks we skipped, so ignore them.
                 first = target;
                 _leadHoldUntil = Time.unscaledTime + Mathf.Max(0.1f, RttMs / 1000f) + 0.2f;
             }
-            else if (target + 4 < _predictTick) return;                                     // way ahead: stall one tick
+            else if (target + PredictStallTicks < _predictTick) return;                     // way ahead: stall one tick
             else
             {
                 // A little behind (the lead just grew): predict two ticks per FixedUpdate until caught up. Simply
@@ -1232,6 +1280,7 @@ namespace Nebula
                 }
             }
             finally { if (!PhysicsFrames.HoldThroughFixedSteps) PhysicsFrames.ReleaseSimulationPose(); }
+            _predictedAtTime = Time.fixedTime;
 
             if (pawn)
             {
@@ -1318,11 +1367,15 @@ namespace Nebula
             e.IsLocallyDriven = false;
         }
 
+        private int _lastRebases;
+
         private void ReportTelemetry()
         {
             var predicted = LocalPlayer != null ? LocalPlayer.Predicted : null;
             int corrections = predicted != null ? predicted.Corrections - _lastCorrections : 0;
             if (predicted != null) _lastCorrections = predicted.Corrections;
+            int rebases = predicted != null ? predicted.Rebases - _lastRebases : 0; // NEB-484
+            if (predicted != null) _lastRebases = predicted.Rebases;
             // The hull under the pawn predicts on its own (a driven carrier): its corrections are its own, and the pawn riding
             // container-local inside it never shows them.
             var carrierPredicted = _carrier != null ? _carrier.Predicted : null;
@@ -1330,7 +1383,7 @@ namespace Nebula
             int carrierCorrections = carrierPredicted != null ? carrierPredicted.Corrections - _lastCarrierCorrections : 0;
             if (carrierPredicted != null) _lastCarrierCorrections = carrierPredicted.Corrections;
             float seconds = TelemetryIntervalSeconds;
-            NebulaLog.Info($"client {_frames / seconds:0} fps replicas {_entities.Count} (+{SpawnsReceived / seconds:0.0}/s -{DespawnsReceived / seconds:0.0}/s) entities {_entities.Count} in {_packetsIn / seconds:0} pkt/s {_bytesIn / seconds / 1024f:0.0} KB/s {_stateEntriesIn / seconds:0} states/s (msgs: state {_statePacketsIn / seconds:0} rpc {_rpcPacketsIn / seconds:0} vars {_varsPacketsIn / seconds:0}) rtt {RttMs}ms lead {InputLeadTicks} (adj {InputLeadAdjustTicks}, worker saw {LastReportedInputLead}) corrections {corrections}{(predicted != null && corrections > 0 ? $" last {predicted.LastCorrectionMagnitude:0.00}m" : "")} | full-rate interp: depth {(RemoteInterpolator.Samples > 0 ? RemoteInterpolator.DepthSum / RemoteInterpolator.Samples : 0):0.0} ticks, starved {(RemoteInterpolator.Samples > 0 ? 100.0 * RemoteInterpolator.Starved / RemoteInterpolator.Samples : 0):0.0}% worst +{RemoteInterpolator.MaxOvershoot:0.0} | frame max {_maxFrameMs:0.0}ms fixed/frame max {_maxFixedPerFrame} | gaps>{StateGapThresholdTicks}t {_stateGaps} worst {_worstStateGap}t | render delay {RenderDelayTicks}t (stream lag {StreamLagTicks}t) | snapshot age ms min {(_ageCount > 0 ? _ageMin : 0):0.0} avg {(_ageCount > 0 ? _ageSum / _ageCount : 0):0.0} max {_ageMax:0.0}{(_carrier != null ? $" | carrier hitches {_carrierHitches} worst +{_carrierWorstJump:0.00}m, container changes {_carrierContainerChanges}, epoch changes {_carrierEpochChanges}{(carrierPredicted != null ? $", corrections {carrierCorrections}{(carrierCorrections > 0 ? $" last {carrierPredicted.LastCorrectionMagnitude:0.00}m" : "")}" : "")}" : "")}");
+            NebulaLog.Info($"client {_frames / seconds:0} fps replicas {_entities.Count} (+{SpawnsReceived / seconds:0.0}/s -{DespawnsReceived / seconds:0.0}/s) entities {_entities.Count} in {_packetsIn / seconds:0} pkt/s {_bytesIn / seconds / 1024f:0.0} KB/s {_stateEntriesIn / seconds:0} states/s (msgs: state {_statePacketsIn / seconds:0} rpc {_rpcPacketsIn / seconds:0} vars {_varsPacketsIn / seconds:0}) rtt {RttMs}ms lead {InputLeadTicks} (adj {InputLeadAdjustTicks}, worker saw {LastReportedInputLead}) corrections {corrections}{(predicted != null && corrections > 0 ? $" last {predicted.LastCorrectionMagnitude:0.00}m" : "")}{(predicted != null ? $" (total {predicted.Corrections}, largest {predicted.MaxCorrectionMagnitude:0.00}m)" : "")} rebases {rebases}{(predicted != null ? $" (total {predicted.Rebases}, largest {predicted.MaxRebaseMagnitude:0.00}m)" : "")} | full-rate interp: depth {(RemoteInterpolator.Samples > 0 ? RemoteInterpolator.DepthSum / RemoteInterpolator.Samples : 0):0.0} ticks, starved {(RemoteInterpolator.Samples > 0 ? 100.0 * RemoteInterpolator.Starved / RemoteInterpolator.Samples : 0):0.0}% worst +{RemoteInterpolator.MaxOvershoot:0.0} | frame max {_maxFrameMs:0.0}ms fixed/frame max {_maxFixedPerFrame} | gaps>{StateGapThresholdTicks}t {_stateGaps} worst {_worstStateGap}t | render delay {RenderDelayTicks}t (stream lag {StreamLagTicks}t, lateness p{Config.InterpolationJitterPercentile:0} {StreamLatenessTicks:0.0}t, adaptive +{_adaptiveDelayTicks}t) | snapshot age ms min {(_ageCount > 0 ? _ageMin : 0):0.0} avg {(_ageCount > 0 ? _ageSum / _ageCount : 0):0.0} max {_ageMax:0.0}{(_carrier != null ? $" | carrier hitches {_carrierHitches} worst +{_carrierWorstJump:0.00}m, container changes {_carrierContainerChanges}, epoch changes {_carrierEpochChanges}{(carrierPredicted != null ? $", corrections {carrierCorrections}{(carrierCorrections > 0 ? $" last {carrierPredicted.LastCorrectionMagnitude:0.00}m" : "")}" : "")}" : "")}");
             SpawnsReceived = DespawnsReceived = 0;
             _carrierHitches = _carrierContainerChanges = _carrierEpochChanges = 0; _carrierWorstJump = 0;
             _ageMin = double.MaxValue; _ageMax = 0; _ageSum = 0; _ageCount = 0;
@@ -1348,6 +1401,37 @@ namespace Nebula
             _varsPacketsIn = 0;
         }
 
+        /// <summary>
+        /// Run at the tick rate the gateway welcomed this client with: the simulation rate, the fixed step and every
+        /// tick count derived from seconds follow it. A change drops the server clock and the prediction tick, which
+        /// counted at the old rate; the welcome's own tick anchors them again. 0 (a gateway that never wrote the byte)
+        /// is the default rate.
+        /// </summary>
+        internal void AdoptTickRate(byte welcomed)
+        {
+            int rate = NetworkTime.ClampRate(welcomed);
+            if (rate == NetworkTime.TickRate) return;
+            int was = NetworkTime.TickRate;
+            NetworkTime.Configure(rate);
+            if (Config != null) Config.TickRate = rate;
+            Time.fixedDeltaTime = NetworkTime.TickInterval;
+            _latestServerTick = 0;
+            _serverTickAnchor = 0;
+            _serverTickAnchorTime = 0;
+            _serverTickEstimate = 0;
+            _predictTick = 0;
+            _hasRenderOffset = false;
+            _adaptiveDelayTicks = 0;
+            InputLeadAdjustTicks = 0;
+            NebulaLog.Info($"tick rate {rate} Hz (the gateway's; this build ran at {was})");
+        }
+
+        /// <summary>
+        /// How far the server clock estimate may be off before it snaps to a fresh tick instead of easing toward it:
+        /// 50 ms, in ticks at the running rate.
+        /// </summary>
+        private static double ClockSnapTicks => NetworkTime.SecondsToTicksExact(0.05);
+
         private void NoteServerTick(uint tick)
         {
             if (tick <= _latestServerTick) return;
@@ -1357,7 +1441,7 @@ namespace Nebula
             double now = Time.unscaledTimeAsDouble;
             double fresh = tick + halfRtt;
             double current = _serverTickAnchor + (now - _serverTickAnchorTime) * NetworkTime.TickRate;
-            if (_serverTickAnchorTime == 0 || Math.Abs(fresh - current) > 3) _serverTickAnchor = fresh;
+            if (_serverTickAnchorTime == 0 || Math.Abs(fresh - current) > ClockSnapTicks) _serverTickAnchor = fresh;
             else _serverTickAnchor = current + (fresh - current) * 0.1;
             _serverTickAnchorTime = now;
         }
@@ -1500,6 +1584,9 @@ namespace Nebula
                     SessionReclaimed = w.Reclaimed;
                     // A gateway that does not write the field speaks exactly the protocol this build sent it.
                     NegotiatedProtocolVersion = w.NegotiatedVersion != 0 ? w.NegotiatedVersion : HelloMsg.ProtocolVersion;
+                    // The mesh's tick rate, before anything reads a tick (docs/tick-rate.md): every tick number the
+                    // gateway sends from now on counts at that rate.
+                    AdoptTickRate(w.TickRate);
                     NoteServerTick(w.ServerTick);
                     _outageReported = false;
                     _retries = 0;
@@ -2126,8 +2213,17 @@ namespace Nebula
         private void OnWorldState(NetworkReader r)
         {
             WorldStateMsg.ReadHeader(r, out uint tick, out ushort workerIndex, out ushort count);
+            // How late this packet is against the clock, before the clock takes it in: the tick it should be bringing now
+            // (the clock's estimate of the server's tick, less the half round trip a snapshot travels) minus its own.
+            if (_serverTickAnchorTime != 0)
+            {
+                double now = Time.unscaledTimeAsDouble;
+                double halfRtt = RttMs > 0 ? RttMs * 0.5 / 1000.0 * NetworkTime.TickRate : 0.5;
+                double expected = _serverTickAnchor + (now - _serverTickAnchorTime) * NetworkTime.TickRate - halfRtt;
+                _lateness.Add(workerIndex, now, (float)(expected - tick));
+            }
             NoteServerTick(tick);
-            int lag = (int)Math.Min(_latestServerTick - tick, 30);
+            int lag = (int)Math.Min(_latestServerTick - tick, (uint)NetworkTime.SecondsToTicks(0.5));
             if (Time.unscaledTime >= _lagBucketEnds) { _lagPreviousBucket = _lagBucket; _lagBucket = 0; _lagBucketEnds = Time.unscaledTime + 1f; }
             if (lag > _lagBucket) _lagBucket = lag;
             double age = (NetworkTime.DerivedTickExact - tick) * NetworkTime.TickInterval * 1000.0;
@@ -2135,9 +2231,10 @@ namespace Nebula
             if (age > _ageMax) _ageMax = age;
             _ageSum += age; _ageCount++;
             _stateEntriesIn += count;
+            ushort protocol = NegotiatedProtocolVersion != 0 ? NegotiatedProtocolVersion : HelloMsg.ProtocolVersion;
             for (int i = 0; i < count; i++)
             {
-                var entry = EntityStateEntry.Read(r);
+                var entry = EntityStateEntry.Read(r, protocol);
                 if (!_entities.TryGetValue(entry.NetId, out var e) || entry.Epoch < e.Epoch) continue;
                 if (e == LocalPlayer)
                 {
@@ -2194,6 +2291,7 @@ namespace Nebula
             target.Epoch = msg.Epoch;
             // Before the state: the replay it may start applies these on their ticks.
             if (msg.Events != null) target.Predicted.ReceiveServerEvents(msg.Events);
+            if (msg.DroppedTo != 0) target.Predicted.NoteDroppedTicks(msg.DroppedFrom, msg.DroppedTo); // NEB-484: re-base on the first report after them
             if (msg.InputLead != OwnerStateMsg.NoInputLead) NoteInputLead(msg.InputLead);
             if (msg.Tick == 0) return;
             // The state is in the worker's container frame for that tick; move there first, or a seam crossing
@@ -2279,17 +2377,21 @@ namespace Nebula
                 _leadHoldUntil = now + hold;
                 _leadRelaxAt = now + 3f;
             }
-            else if (lead > target + 3 && InputLeadAdjustTicks > 0 && now >= _leadRelaxAt)
+            else if (lead > target + LeadRelaxMarginTicks && InputLeadAdjustTicks > 0 && now >= _leadRelaxAt)
             {
                 // Comfortably early: come down, faster the further above target, once a second.
-                int sub = Math.Min(InputLeadAdjustTicks, Math.Max(1, (lead - target - 3) / 2));
+                int sub = Math.Min(InputLeadAdjustTicks, Math.Max(1, (lead - target - LeadRelaxMarginTicks) / 2));
                 InputLeadAdjustTicks -= sub;
                 _leadRelaxAt = now + 1f;
                 _leadHoldUntil = now + hold;
             }
         }
 
-        private const int MaxLeadStep = 8;
+        /// <summary>The most one late report may raise the input lead by: 8 ticks at 60 Hz (133 ms), in ticks at the running rate.</summary>
+        private static int MaxLeadStep => NetworkTime.SecondsToTicksCeil(8.0 / NetworkTime.DefaultTickRate);
+
+        /// <summary>How far above its target the lead must be before it relaxes: 3 ticks at 60 Hz (50 ms), in ticks at the running rate.</summary>
+        private static int LeadRelaxMarginTicks => NetworkTime.SecondsToTicksCeil(3.0 / NetworkTime.DefaultTickRate);
 
         /// <summary>
         /// The far tier's entries (<see cref="MsgId.FarEntities"/>): enter or update an entity's marker, or take it away. An
@@ -2371,6 +2473,8 @@ namespace Nebula
             _warming.Clear();
             Portals.ResetClient();
             _hasRenderOffset = false;
+            _lateness.Clear();
+            _adaptiveDelayTicks = 0;
             _hasServerState = false;
             EndStall();
             if (Join != JoinState.None)

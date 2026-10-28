@@ -89,6 +89,9 @@ namespace Nebula
             if (Config == null) Config = NebulaConfig.Load();
             NebulaRuntime.Reset();
             Config = ApplyCommandLineOverrides(Config);
+            // The mesh's tick rate, before anything converts a duration to ticks (docs/tick-rate.md). A client starts at
+            // its own build's rate and takes its gateway's from the welcome (NebulaClient).
+            Config.TickRate = NetworkTime.Configure(Config.TickRate);
             NebulaRuntime.Config = Config;
             if (Config.WorldManifest != null && Config.RuntimeWorld != null)
                 NebulaLog.Error("both WorldManifest and RuntimeWorld are assigned; using the baked WorldManifest");
@@ -118,6 +121,8 @@ namespace Nebula
             }
 
             Application.targetFrameRate = NebulaRuntime.IsClient ? -1 : NebulaConfig.ServerFrameRateOf(Config);
+            // One fixed step is one tick, on every role: the worker ticks in FixedUpdate and physics steps right after it,
+            // and a client predicts one tick per FixedUpdate (docs/tick-rate.md, "Physics").
             Time.fixedDeltaTime = NetworkTime.TickInterval;
             Physics.simulationMode = SimulationMode.FixedUpdate;
 
@@ -653,8 +658,13 @@ namespace Nebula
             cfg.AuthorityCallMaxHops = CommandLine.GetInt("nebula-authority-call-hops", cfg.AuthorityCallMaxHops);
             cfg.ServerFrameRate = CommandLine.GetInt("nebula-server-fps", cfg.ServerFrameRate);
             cfg.WorkerPollBeforeTick = CommandLine.GetBool("nebula-poll-before-tick", cfg.WorkerPollBeforeTick);
+            if (System.Environment.GetEnvironmentVariable("NEBULA_REPORT_DROPPED_TICKS") == "0") cfg.ReportDroppedTicks = false;
+            cfg.ReportDroppedTicks = CommandLine.GetBool("nebula-report-dropped-ticks", cfg.ReportDroppedTicks);
             cfg.FlushRpcsImmediately = CommandLine.GetBool("nebula-flush-rpcs", cfg.FlushRpcsImmediately);
-            cfg.StateHistoryTicks = CommandLine.GetInt("nebula-state-history", cfg.StateHistoryTicks);
+            cfg.TickRate = NetworkTime.ClampRate(NetworkTime.ResolveRate(cfg.TickRate));
+            // -nebula-state-history is a tick count at the rate this process runs at.
+            if (CommandLine.Has("nebula-state-history"))
+                cfg.StateHistorySeconds = Mathf.Max(0, CommandLine.GetInt("nebula-state-history", 0)) / (float)cfg.TickRate;
             // Interest is the knob a load test or a soak run wants to sweep without rebuilding.
             cfg.InterestRadius = CommandLine.GetFloat("nebula-interest-radius", cfg.InterestRadius);
             cfg.InterestCellSize = CommandLine.GetFloat("nebula-interest-cell", cfg.InterestCellSize);

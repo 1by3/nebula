@@ -35,7 +35,52 @@ namespace Nebula
         /// <summary>The largest correction since <see cref="ResetCorrectionStats"/> (or spawn): one big snap hides among many small ones otherwise.</summary>
         public float MaxCorrectionMagnitude { get; protected set; }
 
-        public void ResetCorrectionStats() { Corrections = 0; LastCorrectionMagnitude = 0f; MaxCorrectionMagnitude = 0f; }
+        public void ResetCorrectionStats() { Corrections = 0; LastCorrectionMagnitude = 0f; MaxCorrectionMagnitude = 0f; Rebases = 0; LastRebaseMagnitude = 0f; MaxRebaseMagnitude = 0f; }
+
+        /// <summary>
+        /// Owning client (NEB-484): reports that came after ticks the worker did not simulate this entity through, which the client took as its new
+        /// base instead of counting a correction. The magnitude is how far the prediction of that tick was from the worker's: the motion of the
+        /// inputs the worker dropped, the real divergence, applied at once (it is not eased like a misprediction).
+        /// </summary>
+        public int Rebases { get; protected set; }
+        public float LastRebaseMagnitude { get; protected set; }
+        public float MaxRebaseMagnitude { get; protected set; }
+
+        /// <summary>Authority (NEB-484): the latest range of ticks this entity was not stepped through, inclusive (0 and 0: none).</summary>
+        internal uint DroppedFrom, DroppedTo;
+        /// <summary>Authority (NEB-484): ticks the dropped range is repeated in the owner's reports after it, so a lost report does not lose it: half a second (NEB-381).</summary>
+        internal static uint DroppedReportTicks => (uint)NetworkTime.SecondsToTicks(0.5);
+        /// <summary>Authority (NEB-484): ticks this entity was not stepped through since spawn.</summary>
+        public int TicksDropped { get; protected set; }
+
+        /// <summary>Authority (NEB-484): the dropped range to send with the report of <paramref name="tick"/>, while it is recent.</summary>
+        internal bool TryGetDroppedTicks(uint tick, out uint from, out uint to)
+        {
+            from = DroppedFrom;
+            to = DroppedTo;
+            return to != 0 && tick > to && tick - to <= DroppedReportTicks;
+        }
+
+        /// <summary>Owning client (NEB-484): the newest dropped range a report named, and the end of the last one re-based on.</summary>
+        private protected uint _droppedFrom, _droppedTo, _rebasedTo;
+
+        /// <summary>Owning client (NEB-484): a report named ticks the worker dropped; the first reconcile after them re-bases.</summary>
+        internal void NoteDroppedTicks(uint from, uint to)
+        {
+            if (to == 0 || to < from || to <= _droppedTo) return;
+            _droppedFrom = from;
+            _droppedTo = to;
+        }
+
+        /// <summary>Owning client (NEB-484): a dropped range not re-based on yet lies before <paramref name="serverTick"/>; it is taken as re-based.</summary>
+        private protected bool TakeRebase(uint serverTick)
+        {
+            if (_droppedTo <= _rebasedTo || serverTick <= _droppedTo) return false;
+            _rebasedTo = _droppedTo;
+            return true;
+        }
+
+        private protected void ResetDroppedTicks() { _droppedFrom = _droppedTo = _rebasedTo = 0; }
 
         // ---- correction smoothing -----------------------------------------------------------------------------
 
@@ -54,6 +99,59 @@ namespace Nebula
         /// smoothed; the entity teleports (a respawn, a long server-side move). Default 3.
         /// </summary>
         protected virtual float CorrectionSnapDistance => 3f;
+
+        // ---- speed-aware reconciliation -------------------------------------------------------------------------
+
+        /// <summary>
+        /// Owning client: the speed, in meters per second, that scales the correction threshold, the snap distance and
+        /// the smoothing time below. Read on the worker's reported state of the tick being reconciled. Default: the
+        /// magnitude of <see cref="NetworkMotionState.Velocity"/>, which the default <c>WriteState</c> carries; a game
+        /// whose state keeps its velocity elsewhere overrides this. Return 0 to make all three speed-independent.
+        /// </summary>
+        protected virtual float CorrectionSpeed => Identity != null ? Identity.Motion.Velocity.magnitude : 0f;
+
+        /// <summary>
+        /// Owning client: the correction threshold grows to this fraction of the distance the entity travels in one tick
+        /// at <see cref="CorrectionSpeed"/>, when that is larger than <c>CorrectionThreshold</c>. At 400 m/s a tick is
+        /// 6.7 m, so a fixed 5 cm threshold replays on errors no player can see. Default 0.25 (no change below about
+        /// 12 m/s at 60 Hz); 0 keeps the threshold fixed.
+        /// </summary>
+        protected virtual float CorrectionThresholdTickFraction => 0.25f;
+
+        /// <summary>
+        /// Owning client: the snap distance grows to the distance the entity travels in this many seconds at
+        /// <see cref="CorrectionSpeed"/>, when that is larger than <see cref="CorrectionSnapDistance"/>: a 3 m correction is
+        /// 7 ms of flight at 400 m/s and should be eased, not snapped. Default 0.25; 0 keeps the snap distance fixed.
+        /// </summary>
+        protected virtual float CorrectionSnapSeconds => 0.25f;
+
+        /// <summary>
+        /// Owning client: the speed, in meters per second, at which the smoothing time has doubled. The smoothing time is
+        /// <c>CorrectionSmoothingSeconds × (1 + speed / this)</c>, at most three times <see cref="CorrectionSmoothingSeconds"/>:
+        /// a correction at speed is eased over a longer time so the drawn pose does not visibly accelerate. Default 1500
+        /// (104 ms at 60 m/s, 127 ms at 400 m/s, 300 ms from 3 km/s, with the 100 ms default); 0 keeps it fixed.
+        /// </summary>
+        protected virtual float CorrectionSmoothingDoublingSpeed => 1500f;
+
+        /// <summary>Owning client: <see cref="CorrectionSpeed"/> at the most recent reconcile, which sizes the snap distance and smoothing time of the offset it left.</summary>
+        public float LastCorrectionSpeed { get; private protected set; }
+
+        /// <summary>The snap distance at <paramref name="speed"/>; see <see cref="CorrectionSnapSeconds"/>.</summary>
+        internal float SnapDistanceAt(float speed)
+        {
+            float snap = CorrectionSnapDistance;
+            float seconds = CorrectionSnapSeconds;
+            return seconds > 0f && speed > 0f ? Mathf.Max(snap, speed * seconds) : snap;
+        }
+
+        /// <summary>The smoothing time at <paramref name="speed"/>; see <see cref="CorrectionSmoothingDoublingSpeed"/>.</summary>
+        internal float SmoothingSecondsAt(float speed)
+        {
+            float seconds = CorrectionSmoothingSeconds;
+            float doubling = CorrectionSmoothingDoublingSpeed;
+            if (seconds <= 0f || doubling <= 0f || speed <= 0f) return seconds;
+            return seconds * Mathf.Min(3f, 1f + speed / doubling);
+        }
 
         // The offset from the simulated pose to the drawn one, in _offsetContainer's local space: drawn position = simulated
         // position + offset, drawn rotation = rotation offset * simulated rotation. Container-local, so it follows the
@@ -85,7 +183,8 @@ namespace Nebula
 
         /// <summary>
         /// Owning client: the world position the entity is drawn at, which is the simulated position plus the
-        /// correction offset still being eased. Cameras and anything else that follows the entity on screen should
+        /// correction offset still being eased (and, with <see cref="RenderBetweenTicks"/>, moved back between the last two
+        /// predicted ticks). Cameras and anything else that follows the entity on screen should
         /// read this, or <c>transform.position</c> during a frame, where Nebula has already moved the transform to
         /// the drawn pose (it moves it back before the next <c>Simulate</c>). Equal to <c>transform.position</c> when nothing is being eased.
         /// </summary>
@@ -93,10 +192,13 @@ namespace Nebula
         {
             get
             {
-                if (_offsetApplied || !HasCorrectionOffset) return Identity.transform.position;
+                if (_offsetApplied) return Identity.transform.position;
+                bool blending = ComputeTickBlend();
+                if (!HasCorrectionOffset && !blending) return Identity.transform.position;
                 ConvertOffsetToCurrentContainer();
                 var container = Identity.Container;
-                return Identity.transform.position + (container != null ? container.Rotation * _drawnOffset : _drawnOffset);
+                var offset = _drawnOffset + _blendOffset;
+                return Identity.transform.position + (container != null ? container.Rotation * offset : offset);
             }
         }
 
@@ -105,13 +207,116 @@ namespace Nebula
         {
             get
             {
-                if (_offsetApplied || !HasCorrectionOffset) return Identity.transform.rotation;
+                if (_offsetApplied) return Identity.transform.rotation;
+                bool blending = ComputeTickBlend();
+                if (!HasCorrectionOffset && !blending) return Identity.transform.rotation;
                 ConvertOffsetToCurrentContainer();
                 var container = Identity.Container;
-                if (container == null) return _drawnRotationOffset * Identity.transform.rotation;
+                var local = _drawnRotationOffset * _blendRotation;
+                if (container == null) return local * Identity.transform.rotation;
                 var c = container.Rotation;
-                return c * _drawnRotationOffset * Quaternion.Inverse(c) * Identity.transform.rotation;
+                return c * local * Quaternion.Inverse(c) * Identity.transform.rotation;
             }
+        }
+
+        // ---- between-tick rendering -------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Owning client: draw the entity between the poses of its last two predicted ticks instead of at the newest one.
+        /// Prediction runs in fixed steps (60 Hz by default), so a fast predicted entity drawn at its newest tick moves in
+        /// 16.7 ms steps whatever the frame rate: at 144 Hz three frames show one pose and the fourth jumps, and a frame
+        /// with two fixed steps jumps twice as far. With this on, every frame draws the entity at
+        /// <c>Lerp(previous tick, newest tick, fraction)</c>, where the fraction is how far the frame is into the current
+        /// fixed step (Unity's own <c>RigidbodyInterpolation.Interpolate</c>, done here because a predicted body is
+        /// stepped by Nebula and its interpolation must stay off). Rotation is slerped the same way.
+        /// <para>
+        /// The blend is part of the drawn pose (<see cref="DrawnPosition"/>): Nebula moves the transform there at the end of
+        /// its <c>Update</c>, so renderers and a camera that follows the transform in <c>LateUpdate</c> see the blended
+        /// pose, and moves it back before the next <c>Simulate</c>, which never sees it. The cost is up to one tick (8 ms on
+        /// average at 60 Hz) of extra visual latency on the entity. Nothing is blended across a container change, a
+        /// teleport (a move outside <c>Simulate</c>), or a step longer than both <see cref="CorrectionSnapDistance"/> and two ticks at the entity's <c>Motion.Velocity</c>.
+        /// Default false: a game that already interpolates its own view (an eye position of its own) keeps doing so.
+        /// </para>
+        /// </summary>
+        protected virtual bool RenderBetweenTicks => false;
+
+        /// <summary>Owning client: how far the last drawn frame was into the current fixed step, 0 to 1 (1: at the newest tick). Diagnostics.</summary>
+        public float RenderTickFraction => _tickFraction;
+
+        // The poses after the last two predicted (or replayed) ticks, container-local in _tickPoseContainer.
+        private bool _hasTickPose, _hasPreviousTickPose;
+        private Container _tickPoseContainer;
+        private Vector3 _tickPosition, _previousTickPosition;
+        private Quaternion _tickRotation = Quaternion.identity, _previousTickRotation = Quaternion.identity;
+        private float _tickFraction = 1f;
+        // This frame's between-tick offset from the simulated pose, container-local: drawn = simulated + correction + blend.
+        private Vector3 _blendOffset;
+        private Quaternion _blendRotation = Quaternion.identity;
+        // The between-tick offset ApplyDrawnOffset applied, for taking it off again when something moved the entity in between.
+        private Vector3 _appliedBlendOffset;
+        private Quaternion _appliedBlendRotation = Quaternion.identity;
+
+        private bool AtTickPose()
+        {
+            if (Identity.Container != _tickPoseContainer) return false;
+            if ((Identity.LocalPosition - _tickPosition).sqrMagnitude > 1e-8f) return false;
+            return Mathf.Abs(Quaternion.Dot(Identity.LocalRotation, _tickRotation)) > 0.9999999f;
+        }
+
+        private void RecordTickPose(bool keepPrevious)
+        {
+            var container = Identity.Container;
+            if (keepPrevious && _hasTickPose && container == _tickPoseContainer)
+            {
+                _previousTickPosition = _tickPosition;
+                _previousTickRotation = _tickRotation;
+                _hasPreviousTickPose = true;
+            }
+            else _hasPreviousTickPose = false;
+            _tickPoseContainer = container;
+            _tickPosition = Identity.LocalPosition;
+            _tickRotation = Identity.LocalRotation;
+            _hasTickPose = true;
+        }
+
+        /// <summary>A predicted tick is about to be simulated: a move made since the last one (a teleport) starts the blend afresh.</summary>
+        private protected void BeginPredictedTickPose()
+        {
+            if (!RenderBetweenTicks) return;
+            if (!_hasTickPose || !AtTickPose()) RecordTickPose(false);
+        }
+
+        /// <summary>A predicted or replayed tick was simulated: its pose becomes the newest, the one before it the previous.</summary>
+        private protected void EndPredictedTickPose()
+        {
+            if (!RenderBetweenTicks) return;
+            RecordTickPose(true);
+        }
+
+        /// <summary>The simulated pose was replaced (a reconcile): it is the newest tick pose, with nothing before it until the replay adds some.</summary>
+        private protected void ResetPredictedTickPose()
+        {
+            if (!RenderBetweenTicks) { _hasTickPose = _hasPreviousTickPose = false; return; }
+            RecordTickPose(false);
+        }
+
+        private protected void ClearPredictedTickPose() => _hasTickPose = _hasPreviousTickPose = false;
+
+        /// <summary>This frame's between-tick offset (<see cref="_blendOffset"/>, <see cref="_blendRotation"/>) from the simulated pose; false when there is none.</summary>
+        private bool ComputeTickBlend()
+        {
+            _blendOffset = Vector3.zero;
+            _blendRotation = Quaternion.identity;
+            if (!RenderBetweenTicks || !_hasPreviousTickPose || _tickFraction >= 1f || Identity == null) return false;
+            if (!AtTickPose()) return false;
+            // A step much longer than the entity's speed explains is a jump made inside Simulate (a respawn): not blended.
+            var step = _tickPosition - _previousTickPosition;
+            float longest = Mathf.Max(CorrectionSnapDistance, Identity.Motion.Velocity.magnitude * NetworkTime.TickInterval * 2f);
+            if (step.sqrMagnitude > longest * longest) return false;
+            float back = 1f - _tickFraction;
+            _blendOffset = -step * back;
+            _blendRotation = Quaternion.Slerp(_previousTickRotation, _tickRotation, _tickFraction) * Quaternion.Inverse(_tickRotation);
+            return _blendOffset.sqrMagnitude > 0f || _blendRotation != Quaternion.identity;
         }
 
         private bool HasCorrectionOffset => _drawnOffset.sqrMagnitude > 0f || _drawnRotationOffset != Quaternion.identity;
@@ -146,38 +351,52 @@ namespace Nebula
                 return;
             }
             // Something else moved it in between (or it changed container): take the offset off where it is now.
+            bool sameContainer = container == _appliedContainer;
             ConvertOffsetToCurrentContainer();
-            Identity.SetLocalPose(container, position - _drawnOffset, Quaternion.Inverse(_drawnRotationOffset) * rotation);
+            var blend = sameContainer ? _appliedBlendOffset : Vector3.zero;
+            var blendRotation = sameContainer ? _appliedBlendRotation : Quaternion.identity;
+            Identity.SetLocalPose(container, position - _drawnOffset - blend, Quaternion.Inverse(_drawnRotationOffset * blendRotation) * rotation);
         }
 
         /// <summary>
         /// Once a frame, after the frame's messages and before anything draws: decay the offset by <paramref name="deltaTime"/>
         /// seconds and move the entity to the simulated pose plus what is left of it. A correction made during this frame is
-        /// drawn in full first and decays from the next frame on.
+        /// drawn in full first and decays from the next frame on. <paramref name="tickFraction"/> is how far this frame is into
+        /// the current fixed step (0 to 1); with <see cref="RenderBetweenTicks"/> the entity is drawn that far between its
+        /// previous and newest predicted tick, and at 1 (the default) at the newest.
         /// </summary>
-        internal void ApplyDrawnOffset(float deltaTime)
+        internal void ApplyDrawnOffset(float deltaTime, float tickFraction = 1f)
         {
             RemoveDrawnOffset();
-            if (!HasCorrectionOffset) return;
-            ConvertOffsetToCurrentContainer();
-            float seconds = CorrectionSmoothingSeconds;
-            if (seconds <= 0f) { ClearCorrectionOffset(); return; }
-            if (_offsetFresh) _offsetFresh = false;
-            else
+            _tickFraction = Mathf.Clamp01(tickFraction);
+            bool blending = ComputeTickBlend();
+            if (!HasCorrectionOffset && !blending) return;
+            if (HasCorrectionOffset)
             {
-                float k = Mathf.Exp(-DecayLn * Mathf.Max(0f, deltaTime) / seconds);
-                _drawnOffset *= k;
-                _drawnRotationOffset = Quaternion.Slerp(Quaternion.identity, _drawnRotationOffset, k);
-            }
-            if (_drawnOffset.sqrMagnitude < OffsetEpsilonMeters * OffsetEpsilonMeters && CorrectionOffsetDegrees < OffsetEpsilonDegrees)
-            {
-                ClearCorrectionOffset();
-                return;
+                ConvertOffsetToCurrentContainer();
+                float seconds = SmoothingSecondsAt(LastCorrectionSpeed);
+                if (seconds <= 0f) ClearCorrectionOffset();
+                else
+                {
+                    if (_offsetFresh) _offsetFresh = false;
+                    else
+                    {
+                        float k = Mathf.Exp(-DecayLn * Mathf.Max(0f, deltaTime) / seconds);
+                        _drawnOffset *= k;
+                        _drawnRotationOffset = Quaternion.Slerp(Quaternion.identity, _drawnRotationOffset, k);
+                    }
+                    if (_drawnOffset.sqrMagnitude < OffsetEpsilonMeters * OffsetEpsilonMeters && CorrectionOffsetDegrees < OffsetEpsilonDegrees)
+                        ClearCorrectionOffset();
+                }
+                if (!HasCorrectionOffset && !blending) return;
             }
             _appliedContainer = Identity.Container;
             _simulatedPosition = Identity.LocalPosition;
             _simulatedRotation = Identity.LocalRotation;
-            Identity.SetLocalPose(_appliedContainer, _simulatedPosition + _drawnOffset, _drawnRotationOffset * _simulatedRotation);
+            _appliedBlendOffset = blending ? _blendOffset : Vector3.zero;
+            _appliedBlendRotation = blending ? _blendRotation : Quaternion.identity;
+            Identity.SetLocalPose(_appliedContainer, _simulatedPosition + _drawnOffset + _appliedBlendOffset,
+                _drawnRotationOffset * _appliedBlendRotation * _simulatedRotation);
             _drawnPositionLocal = Identity.LocalPosition;
             _drawnRotationLocal = Identity.LocalRotation;
             _offsetApplied = true;
@@ -197,7 +416,7 @@ namespace Nebula
         /// A correction moved the simulated pose from (<paramref name="previousPosition"/>, <paramref name="previousRotation"/>), in
         /// <paramref name="previousContainer"/>, to where it is now. The entity keeps being drawn where it was: the offset becomes
         /// the old drawn pose minus the new simulated one, on top of whatever was still being eased, unless that is further than
-        /// <see cref="CorrectionSnapDistance"/> (or smoothing is off), when the drawn pose follows at once.
+        /// <see cref="CorrectionSnapDistance"/> (scaled by <see cref="CorrectionSnapSeconds"/> at <see cref="LastCorrectionSpeed"/>; or smoothing is off), when the drawn pose follows at once.
         /// </summary>
         internal void NoteCorrection(Container previousContainer, Vector3 previousPosition, Quaternion previousRotation)
         {
@@ -214,7 +433,7 @@ namespace Nebula
             }
             ConvertOffsetToCurrentContainer();
             var offset = _drawnOffset + (previousPosition - position);
-            if (CorrectionSmoothingSeconds <= 0f || offset.magnitude > CorrectionSnapDistance)
+            if (CorrectionSmoothingSeconds <= 0f || offset.magnitude > SnapDistanceAt(LastCorrectionSpeed))
             {
                 ClearCorrectionOffset();
                 return;
@@ -282,16 +501,27 @@ namespace Nebula
         /// <summary>Authority: ticks run as part of a catch-up after the worker skipped their numbers (NEB-412).</summary>
         public int SkippedTicksStepped { get; protected set; }
 
+        /// <summary>
+        /// Whether the authority steps skipped ticks at all (<see cref="StepSkippedServerTicks"/>), set by the worker before each tick:
+        /// true after an occasional hitch, false while the worker skips ticks again and again (overloaded). Stepping each pawn through
+        /// the ticks the worker could not afford doubled what the pawns cost it once it fell behind, which kept it behind: at 75
+        /// players a worker skipping 1.4 ticks per tick spent 2.4 pawn steps per pawn per tick.
+        /// </summary>
+        internal static bool ReplaySkippedTicks = true;
+
         // ---- server events ---------------------------------------------------------------------------------------
 
         /// <summary>The most server events that can apply on one tick of one entity. More are refused and counted in <see cref="ServerEventsDropped"/>.</summary>
         public const int MaxServerEventsPerTick = 4;
 
         /// <summary>
-        /// For how many ticks after the tick it applies on a server event keeps being sent in the owner's reports, so a lost packet does
-        /// not lose it. The owner ignores the repeats.
+        /// For how long after the tick it applies on a server event keeps being sent in the owner's reports, so a lost packet does
+        /// not lose it: half a second. The owner ignores the repeats.
         /// </summary>
-        public const int ServerEventRepeatTicks = 30;
+        public const float ServerEventRepeatSeconds = 0.5f;
+
+        /// <summary><see cref="ServerEventRepeatSeconds"/> in ticks at the running rate (30 at 60 Hz).</summary>
+        public static int ServerEventRepeatTicks => NetworkTime.SecondsToTicks(ServerEventRepeatSeconds);
 
         /// <summary>Authority: server events accepted by <see cref="PostServerEvent{TEvent}"/> since spawn.</summary>
         public int ServerEventsPosted { get; private set; }
@@ -557,8 +787,19 @@ namespace Nebula
         /// <summary>The input consumed by the most recent <see cref="Simulate"/> call.</summary>
         public TInput LastInput { get; private set; }
 
-        /// <summary>Positional error above which the client snaps to the server's state and replays.</summary>
+        /// <summary>
+        /// Positional error above which the client snaps to the server's state and replays. At speed the threshold in
+        /// use grows with <see cref="PredictedBehaviourBase.CorrectionThresholdTickFraction"/>; see <see cref="CorrectionThresholdAt"/>.
+        /// </summary>
         protected virtual float CorrectionThreshold => 0.05f;
+
+        /// <summary>The correction threshold at <paramref name="speed"/> meters per second: <see cref="CorrectionThreshold"/>, or the fraction of a tick's travel <see cref="PredictedBehaviourBase.CorrectionThresholdTickFraction"/> asks for when that is larger.</summary>
+        public float CorrectionThresholdAt(float speed)
+        {
+            float threshold = CorrectionThreshold;
+            float fraction = CorrectionThresholdTickFraction;
+            return fraction > 0f && speed > 0f ? Mathf.Max(threshold, speed * NetworkTime.TickInterval * fraction) : threshold;
+        }
         /// <summary>Diagnostics: log every correction with the server and predicted positions (owning client).</summary>
         public static bool LogCorrections;
 
@@ -623,8 +864,17 @@ namespace Nebula
             // NEB-412: the worker skipped tick numbers (it fell more than MaxLagTicks behind the wall clock). The owner
             // predicted those ticks with the inputs it sent for them; step through each one whose input is waiting,
             // oldest first, so this tick starts from where the owner has the entity instead of a correction.
-            if (_lastTickedServerTick != 0 && tick > _lastTickedServerTick + 1 && StepSkippedServerTicks
-                && (Identity.OwnerClientId != 0 || Identity.DriverClientId != 0))
+            // Not while the worker keeps skipping (ReplaySkippedTicks): then every replay adds a tick's work to a worker that could not
+            // afford the ticks it skipped. NEB-484: an entity not stepped through them tells its owner which ticks were dropped instead,
+            // and the owner re-bases on the next report rather than counting a misprediction.
+            bool controlled = Identity.OwnerClientId != 0 || Identity.DriverClientId != 0;
+            if (_lastTickedServerTick != 0 && tick > _lastTickedServerTick + 1 && controlled && !(StepSkippedServerTicks && ReplaySkippedTicks))
+            {
+                DroppedFrom = _lastTickedServerTick + 1;
+                DroppedTo = tick - 1;
+                TicksDropped += (int)(DroppedTo - DroppedFrom + 1);
+            }
+            if (_lastTickedServerTick != 0 && tick > _lastTickedServerTick + 1 && StepSkippedServerTicks && ReplaySkippedTicks && controlled)
             {
                 uint from = _lastTickedServerTick + 1;
                 if (tick - from >= BufferSize) from = tick - (BufferSize - 1);
@@ -689,6 +939,7 @@ namespace Nebula
         {
             // A portal is a teleport: nothing is eased across it.
             ClearCorrectionOffset();
+            ClearPredictedTickPose();
             for (int i = 0; i < BufferSize; i++)
             {
                 if (!_history[i].Valid) continue;
@@ -718,6 +969,7 @@ namespace Nebula
                 for (int i = 0; i < BufferSize; i++) _history[i].Valid = false;
                 _lastReconciledTick = 0;
                 ClearCorrectionOffset();
+                ClearPredictedTickPose();
                 ClearServerEvents();
             }
             try { OnDriverChanged(previous, current); }
@@ -851,9 +1103,11 @@ namespace Nebula
             _clientTick = tick;
             input.Serialize(inputOut);
             LastInput = input;
+            BeginPredictedTickPose();
             BeginClientEventTick(tick);
             try { Simulate(tick, in input, NetworkTime.TickInterval); }
             finally { EndEventTick(tick); }
+            EndPredictedTickPose();
             ref var h = ref _history[tick % BufferSize];
             h.Tick = tick;
             h.Input = input;
@@ -880,6 +1134,7 @@ namespace Nebula
                 // on every report for a round trip, until the reports reached the ticks it had predicted.
                 ReadState(state);
                 Replay(serverTick);
+                TakeRebase(serverTick); // NEB-484: adopted already
                 return;
             }
             var previousContainer = Identity.Container;
@@ -893,28 +1148,45 @@ namespace Nebula
             WriteState(OwnSnapshot);
             ReadState(state);
             var serverPos = Identity.LocalPosition;
+            // The worker's speed at that tick sizes the threshold, and the snap distance and smoothing of any offset left.
+            LastCorrectionSpeed = Mathf.Max(0f, CorrectionSpeed);
+            float threshold = CorrectionThresholdAt(LastCorrectionSpeed);
             // The prediction was recorded in the container the client was in at that tick; the worker may have moved
             // the pawn to another (a seam, a ship's door) since. Compare in the worker's frame, or every crossing
             // would look like a snap the size of the distance between the two origins.
             var predicted = h.Position;
             if (h.Container != Identity.Container) predicted = Rehome(h.Container, Identity.Container, predicted, serverTick);
             float error = (serverPos - predicted).magnitude;
+            // NEB-484: the worker did not simulate this entity through ticks before this one (it skipped their numbers), so its state here
+            // is not what the client's inputs for them make: take it as the new base and predict again from it with the inputs after it,
+            // counting no misprediction. The pose moves by the dropped inputs' own motion, the real divergence, at once: not eased.
+            if (TakeRebase(serverTick))
+            {
+                Rebases++;
+                LastRebaseMagnitude = error;
+                if (error > MaxRebaseMagnitude) MaxRebaseMagnitude = error;
+                if (LogCorrections) NebulaLog.Info($"re-base on {Identity} tick {serverTick} after dropped ticks {_droppedFrom}-{_droppedTo}: {error:0.000} m");
+                h.Position = serverPos;
+                h.Container = Identity.Container;
+                Replay(serverTick);
+                return;
+            }
             // The prediction agrees with the worker, but the report brought an event for a tick already simulated without it: the
             // worker's state is right, so replay from it, now with the event on its tick, instead of waiting for the error to show.
-            bool eventReplay = error <= CorrectionThreshold && HasUnappliedServerEvents(serverTick, _clientTick);
+            bool eventReplay = error <= threshold && HasUnappliedServerEvents(serverTick, _clientTick);
             // The worker moved the entity to another container since this tick was predicted (a seam, a carrier's box). The
             // prediction agrees, but the present state the client holds was carried into the new container through where the
             // containers are drawn now, not where they will be when it is simulated, and with its velocity unconverted
             // (a client converts nothing between spaces): re-predict from the worker's state in the new container instead,
             // which nothing counts as a correction (NEB-496).
             bool moved = h.Container != Identity.Container;
-            if (error <= CorrectionThreshold && !eventReplay && !moved)
+            if (error <= threshold && !eventReplay && !moved)
             {
                 OwnSnapshotReader.Set(OwnSnapshot.ToSegment());
                 ReadState(OwnSnapshotReader);
                 return;
             }
-            if (error <= CorrectionThreshold && !eventReplay)
+            if (error <= threshold && !eventReplay)
             {
                 h.Position = serverPos;
                 h.Container = Identity.Container;
@@ -933,7 +1205,7 @@ namespace Nebula
             }
             // Snap to the server's state at serverTick (ReadState left us there) and replay every input after it.
             Corrections++;
-            if (LogCorrections) NebulaLog.Info($"correction on {Identity} tick {serverTick} error {error:0.000} m: server {serverPos:F3} predicted {predicted:F3} (recorded in {(h.Container != null ? h.Container.ContainerId : "world")}, now in {(Identity.Container != null ? Identity.Container.ContainerId : "world")})");
+            if (LogCorrections) NebulaLog.Info($"correction on {Identity} tick {serverTick} error {error:0.000} m (threshold {threshold:0.000} m at {LastCorrectionSpeed:0.#} m/s): server {serverPos:F3} predicted {predicted:F3} (recorded in {(h.Container != null ? h.Container.ContainerId : "world")}, now in {(Identity.Container != null ? Identity.Container.ContainerId : "world")})");
             LastCorrectionMagnitude = error;
             if (error > MaxCorrectionMagnitude) MaxCorrectionMagnitude = error;
             h.Position = serverPos;
@@ -1013,6 +1285,8 @@ namespace Nebula
         /// <summary>Re-run every predicted tick after <paramref name="serverTick"/> from the state just applied, recording where each ended.</summary>
         private void Replay(uint serverTick)
         {
+            // The pose the replay starts from is the worker's at serverTick: the tick poses are rebuilt from it.
+            ResetPredictedTickPose();
             if (_clientTick <= serverTick) return;
             IsReplaying = true;
             try
@@ -1026,6 +1300,7 @@ namespace Nebula
                     BeginClientEventTick(t);
                     try { Simulate(t, in r.Input, NetworkTime.TickInterval); }
                     finally { EndEventTick(t); }
+                    EndPredictedTickPose();
                     r.Position = Identity.LocalPosition;
                     r.Container = Identity.Container;
                 }
@@ -1037,9 +1312,11 @@ namespace Nebula
         {
             for (int i = 0; i < BufferSize; i++) { _history[i].Valid = false; _serverInputs[i].Valid = false; }
             _lastReconciledTick = 0;
+            ResetDroppedTicks();
             _hasLastServerInput = false;
             _newestServerInputTick = 0;
             ClearCorrectionOffset();
+            ClearPredictedTickPose();
             ClearServerEvents();
         }
     }

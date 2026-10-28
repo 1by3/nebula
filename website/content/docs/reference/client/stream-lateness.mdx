@@ -1,0 +1,58 @@
+---
+title: "StreamLateness"
+description: "How late a client's world-state streams arrive, for the adaptive part of the render delay (NebulaConfig.AdaptiveInterpolationDelay)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Client/StreamLateness.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Client/StreamLateness.cs)</div>
+
+```csharp
+public sealed class StreamLateness
+```
+
+How late a client's world-state streams arrive, for the adaptive part of the render delay ([`NebulaConfig.AdaptiveInterpolationDelay`](/docs/reference/core/nebula-config#adaptiveinterpolationdelay)). Each packet's lateness is how many ticks older it is than the tick the client's clock expected to arrive at that moment; on a clean stream it hovers around zero, and a worker that runs behind, or a link that bunches packets, shows up as positive values. The render delay must cover the lateness of nearly every packet or the interpolator runs past its newest sample and extrapolates: this keeps a window of samples per stream (per worker, since one slow worker's entities are a small share of the packets) and reports the highest per-stream percentile.
+
+Pure and allocation-free after warm-up, so it is tested on its own.
+
+## Fields
+
+### Capacity [#capacity]
+
+```csharp
+public const int Capacity = 256;
+```
+
+Samples kept per stream; older ones fall out of the window by age first.
+
+### WindowSeconds [#windowseconds]
+
+```csharp
+public double WindowSeconds = 2.0;
+```
+
+Seconds of samples each percentile is taken over. Default 2.
+
+## Methods
+
+### Add [#add]
+
+```csharp
+public void Add(int stream, double now, float lateTicks);
+```
+
+Record that a packet of stream `stream` (a worker index) arrived `lateTicks` late at `now` seconds.
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```
+
+Forget every stream (a reconnect).
+
+### Percentile [#percentile]
+
+```csharp
+public float Percentile(double now, float percentile);
+```
+
+The highest, over the streams heard within the window, of each stream's `percentile`th percentile (0 to 100) of lateness in the last [`WindowSeconds`](#windowseconds), in ticks; 0 when nothing was heard. A stream silent for longer than the window is dropped.

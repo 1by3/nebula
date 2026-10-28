@@ -31,6 +31,7 @@ namespace Nebula.Tests
         {
             Object.DestroyImmediate(_host);
             NetworkTime.Tick = 0;
+            PredictedBehaviourBase.ReplaySkippedTicks = true;
         }
 
         private static long Ms(double ms) => (long)(ms / 1000.0 * Stopwatch.Frequency);
@@ -110,6 +111,23 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void SkippedTicksAreSteppedAfterAHitchButNotWhileTheWorkerKeepsSkipping()
+        {
+            _tickCost = Ms(1);
+            Frame(0, 100, 1);
+            Frame(1, 101, 1);
+            Frame(2, 141, 1); // one long frame: 40 ticks elapsed, 25 of them past the lag limit
+            Assert.Greater(Field("_profileSkippedTicks"), 0);
+            Assert.IsTrue(PredictedBehaviourBase.ReplaySkippedTicks, "a single skip is a hitch: predicted entities step the skipped ticks");
+            Frame(3, 170, 1); // and again within a second: the worker is overloaded
+            Assert.IsFalse(PredictedBehaviourBase.ReplaySkippedTicks, "while it keeps skipping, it does not add the skipped ticks back");
+            uint derived = 170;
+            for (int frame = 4; frame < 80; frame++) Frame(frame, ++derived, 3); // it catches up and keeps up for over a second
+            Assert.AreEqual(0, _worker.SkippingSustained(derived) ? 1 : 0);
+            Assert.IsTrue(PredictedBehaviourBase.ReplaySkippedTicks, "caught up: the next hitch is stepped again");
+        }
+
+        [Test]
         public void ABudgetOfZeroIsOff()
         {
             var config = ScriptableObject.CreateInstance<NebulaConfig>();
@@ -145,7 +163,8 @@ namespace Nebula.Tests
         [Test]
         public void ByDefaultTheSameSkipIsACorrection()
         {
-            using var rig = new PredictedPairRig(lag: 3);
+            // Told nothing of the dropped ticks (NEB-484 tells a client of protocol 31, DroppedTickRebaseTests).
+            using var rig = new PredictedPairRig(lag: 3) { ReportDropped = false };
             rig.Client.Hands = new Vector3(6f, 0f, 3f);
             rig.Advance(20);
             int corrections = rig.Client.Corrections;

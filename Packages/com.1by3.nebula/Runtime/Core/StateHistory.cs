@@ -16,7 +16,7 @@ namespace Nebula
     /// }
     /// </code>
     /// Recording happens only on a worker (<see cref="NebulaRuntime.IsServer"/>) and only while
-    /// <see cref="NebulaConfig.StateHistoryTicks"/> is above zero. See <c>docs/state-history.md</c>.
+    /// <see cref="NebulaConfig.StateHistorySeconds"/> is above zero. See <c>docs/state-history.md</c>.
     /// </summary>
     [AttributeUsage(AttributeTargets.Field, Inherited = true, AllowMultiple = false)]
     public sealed class SyncHistoryAttribute : Attribute
@@ -97,8 +97,11 @@ namespace Nebula
     /// </summary>
     public sealed class StateHistory
     {
-        /// <summary>Ticks kept per entity when the game does not say otherwise (<see cref="NebulaConfig.StateHistoryTicks"/>).</summary>
+        /// <summary>Ticks kept per entity at 60 Hz when the game does not say otherwise (<see cref="NebulaConfig.StateHistorySeconds"/>).</summary>
         public const int DefaultWindowTicks = 32;
+
+        /// <summary>Seconds kept per entity when the game does not say otherwise: <see cref="DefaultWindowTicks"/> at 60 Hz, about half a second.</summary>
+        public const float DefaultWindowSeconds = DefaultWindowTicks / (float)NetworkTime.DefaultTickRate;
 
         /// <summary>The most ticks a window may be asked for. A larger value is clamped to this.</summary>
         public const int MaxWindowTicks = 1024;
@@ -106,12 +109,13 @@ namespace Nebula
         /// <summary>
         /// How far <see cref="TryGetStateAt"/> looks either side of the asked-for tick when that tick itself was not
         /// recorded (a ghost whose owner sent nothing that tick because nothing moved). The entry returned says which
-        /// tick it is; nothing is interpolated or extrapolated.
+        /// tick it is; nothing is interpolated or extrapolated. A count of missing records, not a duration, so it is
+        /// the same at every tick rate.
         /// </summary>
         public const int GapToleranceTicks = 4;
 
         /// <summary>
-        /// Ticks of history every entity in this process keeps, from <see cref="NebulaConfig.StateHistoryTicks"/>.
+        /// Ticks of history every entity in this process keeps, from <see cref="NebulaConfig.StateHistorySeconds"/> at the running tick rate.
         /// Zero turns recording off entirely. Set by <see cref="NebulaWorker"/> at start-up; a client leaves it at
         /// zero, because history is a worker-side facility (the client has <see cref="RemoteInterpolator"/>).
         /// </summary>

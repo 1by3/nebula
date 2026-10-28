@@ -283,7 +283,7 @@ namespace Nebula.Tests
             a.transform.position = new Vector3(12, 25, 36);
             Assert.IsTrue(a.RootTransform.CaptureRoot(1, out var entry));
             entry = Wire(entry, out int bytes);
-            Assert.AreEqual(8 + 4 + 2 + 2 + 4, bytes);
+            Assert.AreEqual(8 + 4 + 2 + 2 + 1 + 4, bytes, "id, epoch, container, fields, the protocol 30 extension byte, one position axis");
             Assert.IsTrue(b.ReceiveState(1, 2, entry));
             Assert.AreEqual(new Vector3(12, 7, 9), b.transform.position);
             Assert.AreEqual(Vector3.one * 3, b.transform.localScale);

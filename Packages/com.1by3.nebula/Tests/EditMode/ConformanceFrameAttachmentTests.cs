@@ -22,7 +22,7 @@ namespace Nebula.Tests
     [Category("Conformance")]
     public sealed class ConformanceFrameAttachmentTests
     {
-        private const float Dt = NetworkTime.TickInterval;
+        private static float Dt => NetworkTime.TickInterval;
 
         private ConformanceMesh _mesh;
         private LocalPersistenceStore _store;

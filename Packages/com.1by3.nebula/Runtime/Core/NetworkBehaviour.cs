@@ -232,11 +232,11 @@ namespace Nebula
 
         /// <summary>
         /// For the <c>Custom</c> audience only: how often, in ticks, the authority evaluates the audience again
-        /// without being asked. The default is 30, half a second at the 60 Hz tick rate. Return 0 to evaluate only when
+        /// without being asked. The default is half a second (30 ticks at 60 Hz, 15 at 30). Return 0 to evaluate only when
         /// the entity gains authority and after <see cref="MarkSyncAudienceDirty"/>. That suits a rule that changes
         /// only on events, such as a player opening or closing a container.
         /// </summary>
-        public virtual uint SyncAudienceRefreshTicks => 30;
+        public virtual uint SyncAudienceRefreshTicks => (uint)NetworkTime.SecondsToTicks(0.5);
 
         /// <summary>
         /// For the <c>Custom</c> audience only, on the authority: the answer of <see cref="IsInSyncAudience"/>

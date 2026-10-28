@@ -181,6 +181,14 @@ public float ReadHalf();
 public Quaternion ReadCompressedQuaternion();
 ```
 
+### ReadPreciseQuaternion [#readprecisequaternion]
+
+```csharp
+public Quaternion ReadPreciseQuaternion();
+```
+
+A quaternion written by [`NetworkWriter.WritePreciseQuaternion`](/docs/reference/serialization/network-writer#writeprecisequaternion) (6 bytes).
+
 ### ReadColor [#readcolor]
 
 ```csharp

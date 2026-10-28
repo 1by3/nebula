@@ -149,6 +149,22 @@ public float MaxFocusSpeed;
 
 The fastest a focus is expected to move, in meters per second. Only used to validate [`SubscribeMargin`](#subscribemargin).
 
+### MaxTravelPerUpdate [#maxtravelperupdate]
+
+```csharp
+public float MaxTravelPerUpdate;
+```
+
+The most meters an entity may travel between two updates a client receives: the gateway sends a fast entity more often than its distance tier says ([`RelevanceTiers.CapForSpeed`](/docs/reference/interest/relevance-tiers#capforspeed)). 0 turns it off.
+
+### FocusLeadSeconds [#focusleadseconds]
+
+```csharp
+public float FocusLeadSeconds;
+```
+
+Seconds of travel ahead of a moving pawn at which the gateway adds a second focus ([`LeadOffset`](#leadoffset)), so entities ahead of a fast pawn are in its set before it reaches them. 0 turns it off.
+
 ### NearRadius [#nearradius]
 
 ```csharp
@@ -276,6 +292,14 @@ public RelevanceTierBands TiersFor(RelevancePriority priority);
 ```
 
 The distance tiers an entity of `priority` is sent by: its own when the config overrides them ([`HighTiers`](#hightiers), [`LowTiers`](#lowtiers), [`BackgroundTiers`](#backgroundtiers)), otherwise the global ones ([`NearRadius`](#nearradius), [`FarRadius`](#farradius), [`MidDivisor`](#middivisor), [`FarDivisor`](#fardivisor)) shifted as [`RelevancePriority`](/docs/reference/interest/relevance-priority) describes. [`RelevancePriority.Normal`](/docs/reference/interest/relevance-priority#normal) is always the global tiers.
+
+### LeadOffset [#leadoffset]
+
+```csharp
+public Double3 LeadOffset(Double3 velocity);
+```
+
+Where a lead focus goes for a pawn moving at `velocity`, relative to the pawn: [`FocusLeadSeconds`](#focusleadseconds) of travel ahead. Zero (no lead focus) when that is no further than [`ExitMargin`](#exitmargin), which the pawn's own focus already covers, or when the lead is off.
 
 ### NearCells [#nearcells]
 

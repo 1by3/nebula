@@ -1731,8 +1731,31 @@ namespace Nebula
             entry.Write(_writer);
             WorldStateMsg.End(_writer, slot, 1);
             var reliable = _writer.ToSegment();
-            for (int o = rec.Observers.Count - 1; o >= 0; o--) { AppendReliable(rec.Observers[o], reliable); _wsSent++; }
+            ArraySegment<byte> legacy = default;
+            bool hasLegacy = false;
+            for (int o = rec.Observers.Count - 1; o >= 0; o--)
+            {
+                var c = rec.Observers[o];
+                if (c.ProtocolVersion < HelloMsg.MotionFidelityVersion)
+                {
+                    // A client from before protocol 30 reads the entry without its extensions.
+                    if (!hasLegacy)
+                    {
+                        _legacyEntryWriter.Reset();
+                        int legacySlot = WorldStateMsg.Begin(_legacyEntryWriter, MsgId.WorldState, tick, worker);
+                        entry.Write(_legacyEntryWriter, c.ProtocolVersion);
+                        WorldStateMsg.End(_legacyEntryWriter, legacySlot, 1);
+                        legacy = _legacyEntryWriter.ToSegment();
+                        hasLegacy = true;
+                    }
+                    AppendReliable(c, legacy);
+                }
+                else AppendReliable(c, reliable);
+                _wsSent++;
+            }
         }
+
+        private readonly NetworkWriter _legacyEntryWriter = new NetworkWriter(EntityStateEntry.WireSize + 16);
 
         /// <summary>
         /// A worker sends its tick as several small batches (one Sequenced packet each). Re-emitting each batch after
@@ -1752,7 +1775,7 @@ namespace Nebula
                 c.PendingTick = tick;
                 c.PendingWorker = workerIndex;
             }
-            entry.Write(c.Pending);
+            entry.Write(c.Pending, c.ProtocolVersion);
             c.PendingCount++;
             // Reserve the envelope even for plaintext peers so every batch fits the minimum UDP MTU.
             if (c.Pending.Length + EntityStateEntry.WireSize > WorldStateMsg.BatchBytes - EncryptedTransport.PacketOverhead) FlushWorldState(c);
@@ -1802,7 +1825,11 @@ namespace Nebula
                     if (d2 < best) best = d2;
                 }
             int p = (int)rec.Priority;
-            return RelevanceTiers.DivisorAt(in _tiers[p < _tiers.Length ? p : 0], best);
+            int divisor = RelevanceTiers.DivisorAt(in _tiers[p < _tiers.Length ? p : 0], best);
+            // A fast entity is sent often enough that it never moves more than InterestMaxTravelPerUpdate between updates.
+            if (divisor > 1 && _interest.MaxTravelPerUpdate > 0f)
+                divisor = RelevanceTiers.CapForSpeed(divisor, rec.LastSpawn.Velocity.magnitude, _interest.MaxTravelPerUpdate, NetworkTime.TickInterval);
+            return divisor;
         }
 
         private bool TryGetPawnPosition(ClientConn c, out Vector3 position)
@@ -1938,7 +1965,7 @@ namespace Nebula
             if (!_clientsById.TryGetValue(msg.OwnerClientId, out var c) || !c.Visible.Contains(msg.NetId)) return;
             _writer.Reset();
             // The server events section is for clients that read it (protocol 29); an older client gets the bytes it always did.
-            msg.Write(_writer, c.ProtocolVersion >= HelloMsg.ServerEventsVersion);
+            msg.Write(_writer, c.ProtocolVersion >= HelloMsg.ServerEventsVersion, c.ProtocolVersion >= HelloMsg.DroppedTicksVersion); // NEB-484: the dropped range for 31
             Send(c.PeerId, Delivery.Sequenced, _writer.ToSegment());
         }
 
@@ -1993,11 +2020,13 @@ namespace Nebula
                 // ---- NEB-228 compatibility window (docs/compatibility-policy.md). Refuse with a code the game
                 // can turn into "update required" or "this server is older than your build", and record the
                 // negotiated protocol on the session: everything sent to this client is encoded at that version.
-                if (!ProtocolCompatibility.ClientProtocolAccepted(hello.Version))
+                // A mesh at another tick rate than 60 admits only clients that honour WelcomeMsg.TickRate (docs/tick-rate.md).
+                if (!ProtocolCompatibility.ClientProtocolAccepted(hello.Version, NetworkTime.TickRate))
                 {
-                    Reject(c, hello.Version < HelloMsg.MinProtocolVersion
-                        ? $"this game server speaks protocol {ProtocolCompatibility.WindowText()}; your client speaks {hello.Version} and needs updating"
-                        : $"this game server speaks protocol {ProtocolCompatibility.WindowText()} and has not been updated to your client's {hello.Version}",
+                    string window = ProtocolCompatibility.WindowText(NetworkTime.TickRate);
+                    Reject(c, hello.Version < ProtocolCompatibility.MinClientProtocol(NetworkTime.TickRate)
+                        ? $"this game server speaks protocol {window}{(hello.Version >= HelloMsg.MinProtocolVersion ? $" at {NetworkTime.TickRate} Hz" : "")}; your client speaks {hello.Version} and needs updating"
+                        : $"this game server speaks protocol {window} and has not been updated to your client's {hello.Version}",
                         false, JoinRejectReason.ProtocolUnsupported);
                     return;
                 }
@@ -2167,7 +2196,7 @@ namespace Nebula
                 Reason = reason, Retry = retry, Code = code, Saturation = saturation,
                 // Every refusal carries the window and the content version, so a client that was refused for
                 // another reason still learns whether an update is waiting for it.
-                SupportedMinVersion = HelloMsg.MinProtocolVersion, SupportedMaxVersion = HelloMsg.ProtocolVersion,
+                SupportedMinVersion = ProtocolCompatibility.MinClientProtocol(NetworkTime.TickRate), SupportedMaxVersion = HelloMsg.ProtocolVersion,
                 ServerContentVersion = Config.GameContentVersion,
             }.Write(_writer);
             Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
@@ -2353,7 +2382,7 @@ namespace Nebula
                 ExpiresAt = JsonWebToken.UnixNow() + SessionTokenLifetimeSeconds,
             });
             _writer.Reset();
-            new WelcomeMsg { ClientId = c.ClientId, TickRate = NetworkTime.TickRate, ServerTick = NetworkTime.DerivedTick, Identity = c.Identity, Token = issuedToken, SessionToken = sessionToken, Reclaimed = c.Reclaimed, NegotiatedVersion = c.ProtocolVersion }.Write(_writer);
+            new WelcomeMsg { ClientId = c.ClientId, TickRate = (byte)NetworkTime.TickRate, ServerTick = NetworkTime.DerivedTick, Identity = c.Identity, Token = issuedToken, SessionToken = sessionToken, Reclaimed = c.Reclaimed, NegotiatedVersion = c.ProtocolVersion }.Write(_writer);
             Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
             // A session taken over through identity coordination rather than a token never went through
             // TryReclaim, so the pawn it already owns has to be found here. With interest management the pawn is

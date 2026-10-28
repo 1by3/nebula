@@ -53,6 +53,8 @@ Every field lives on `NebulaConfig` (`Resources/NebulaConfig.asset`), with a mat
 | `InterestMaxExplicitPerClient` | 16 | Most entities one client's policy may subscribe to by ID (party members, quest targets). |
 | `InterestFarMaxEntities` | 64 | Most entities one client holds in the [far tier](#see-ships-and-outposts-from-far-away) at once, nearest first. `0` turns the far tier off. |
 | `InterestMaxFocusSpeed` | 12 m/s | The fastest a player is expected to travel. Used only to check that `InterestSubscribeMargin` covers the distance a focus can move between two evaluations. |
+| `InterestMaxTravelPerUpdate` | 4 m | The most an entity may travel between two updates a client receives. A fast entity is sent more often than its distance tier says. See [Fast movers](#fast-movers). `0` turns it off. |
+| `InterestFocusLeadSeconds` | 0.5 s | Seconds of travel ahead of a moving pawn at which the gateway adds a second focus. See [Fast movers](#fast-movers). `0` turns it off. |
 | `PartitionWarnEntities` | 2,000 | A worker warns when one container holds more entities than this. `0` disables the warning. |
 | `PartitionWarnFilterMs` | 2 ms | A worker warns when filtering entities for its gateways takes longer than this per tick. `0` disables the warning. |
 | `InterestNearRadius` | 30 m | Full update rate within this distance, for an entity of `Normal` priority. |
@@ -100,6 +102,15 @@ An entity's `NetworkIdentity.RelevancePriority` shifts these tiers for every cli
 "None" stops the client's updates without despawning the entity there. The client keeps the replica where it was last told and still receives the entity's reliable updates: the pose it comes to rest at, a teleport, and a change of container. A client's own pawn always receives every update. See [Run crowds of server-owned entities](/docs/guides/server-owned-entities).
 
 To give `High`, `Low` or `Background` entities tiers of their own instead of the shift, set `InterestHighTiers`, `InterestLowTiers` or `InterestBackgroundTiers` with `Override` on: two radii and a divisor for each band, where `0` is none. `Normal` always uses the four settings above. This lets a crowd use slow tiers while players keep the default ones; see [Set the distance tiers for a crowd](/docs/guides/server-owned-entities#set-the-distance-tiers-for-a-crowd). A behavior can also have its sync state follow these tiers, with `NetworkBehaviour.SyncDistanceRating`.
+
+### Fast movers
+
+Distance tiers suit walking speeds. A vehicle at 400 m/s, 100 m from a client, would be sent every 12th tick and move 80 m between updates, and a pawn that fast crosses the whole interest radius in a fraction of a second. Two settings adjust interest for fast entities:
+
+- **Speed floor on the update rate.** The gateway lowers an entity's divisor until the entity travels no more than `InterestMaxTravelPerUpdate` meters between two updates, using the velocity in its latest state. With the 4 m default, a walker at 5 m/s keeps its tiers, an entity at 60 m/s is sent at least every fourth tick, and one at 400 m/s every tick. A band whose divisor is `0` (none) stays none, and the floor never makes a tier slower.
+- **Lead focus.** When a client's pawn, or the ship it rides, moves fast enough that `InterestFocusLeadSeconds` of travel is longer than `InterestExitMargin`, the gateway adds a second focus that far ahead, in the pawn's own space. Entities ahead join the set, and their regions are subscribed, before the pawn reaches them. With the defaults, a pawn needs to move faster than 32 m/s to get one. The lead is capped at `InterestMaxRadius`, ignores height in a planar world, and counts toward `InterestMaxFoci`.
+
+Both settings cost bandwidth only for entities and pawns that move fast. Raise `InterestMaxFocusSpeed` too if your pawns are that fast, so validation sizes `InterestSubscribeMargin` for them.
 
 ## Per-prefab overrides
 

@@ -143,7 +143,7 @@ namespace Nebula.Tests
         /// <summary>Corrections and missed inputs are counted from here: before it the input lead is still finding its level.</summary>
         public const double SettleSeconds = 1.0;
 
-        private const double Tick = NetworkTime.TickInterval;
+        private static double Tick => NetworkTime.TickInterval;
         private const int InterpolationDelayTicks = 3;
         private const int InputLeadMarginTicks = 2;
         private const int InputLeadTargetTicks = 3;
@@ -216,7 +216,7 @@ namespace Nebula.Tests
         public void Run()
         {
             // The worker ticks at k/60; the client's frames sit 0.37 of a tick later, so nothing lines up by accident.
-            const double ClientPhase = 0.37 * Tick;
+            double ClientPhase = 0.37 * Tick;
             double end = _s.Seconds;
             _serverTick = 1000;
             double serverEpoch = -_serverTick * Tick; // server tick k happens at time serverEpoch + k * Tick
