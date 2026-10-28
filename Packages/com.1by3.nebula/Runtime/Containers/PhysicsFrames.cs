@@ -155,6 +155,37 @@ namespace Nebula
             public Vector3 Position;
             public Quaternion Rotation;
         }
+        /// <summary>
+        /// Every transform between a copy's source and the owner, each once and parents first (copies share their parents), with the
+        /// local pose last read and the pose relative to the owner composed from it. The sync reads each link's local pose once a
+        /// tick and composes again only below a link that changed, so a copy is re-posed only when its pose relative to the owner did.
+        /// </summary>
+        internal readonly List<ContentLink> Links = new List<ContentLink>();
+        /// <summary>Per copy, in the order of <see cref="Clones"/>: its source's link, its source's GameObject and whether the copy is enabled.</summary>
+        internal readonly List<CloneState> CloneStates = new List<CloneState>();
+
+        internal struct ContentLink
+        {
+            public Transform Transform;
+            public Transform Parent;
+            /// <summary>The parent's index in <see cref="Links"/>, or -1 when the parent is the owner.</summary>
+            public int Up;
+            public Vector3 Position;
+            public Quaternion Rotation;
+            public Vector3 Scale;
+            /// <summary>This transform's pose relative to the owner.</summary>
+            public Matrix4x4 Relative;
+            /// <summary>It, or a link above it, changed in this sync.</summary>
+            public bool Changed;
+        }
+
+        internal struct CloneState
+        {
+            /// <summary>The source's index in <see cref="Links"/>, or -1 for a collider on the owner itself.</summary>
+            public int Link;
+            public GameObject Source;
+            public bool Enabled;
+        }
         internal GameObject Content;
         internal bool OwnsScene;
 
@@ -602,6 +633,8 @@ namespace Nebula
             if (frame.Pivot != null) Destroy(frame.Pivot.gameObject);
             foreach (var pair in frame.Clones) if (!ReferenceEquals(pair.Value, null)) CloneSources.Remove(pair.Value);
             frame.Clones.Clear();
+            frame.Links.Clear();
+            frame.CloneStates.Clear();
             frame.MovingClones.Clear();
             if (frame.OwnsScene) ReturnScene(frame.Scene);
             frame.Scene = default;
@@ -749,18 +782,29 @@ namespace Nebula
 
         /// <param name="frame">The frame whose copies follow their sources.</param>
         /// <param name="placing">The frame is being built: every copy is put in place, and none counts as moving.</param>
-        /// <summary>The source-side transforms whose <see cref="Transform.hasChanged"/> a sync read as set, cleared once the frame's copies are in place.</summary>
-        private static readonly HashSet<Transform> ChangedSources = new HashSet<Transform>();
-
         /// <summary>Copies visited and copies re-posed by <see cref="SyncAllContent"/> since the counters were last read (the worker's profile line).</summary>
         public static long ClonesVisited, ClonesReposed;
+
+        private static readonly Dictionary<Transform, int> LinkIndex = new Dictionary<Transform, int>();
 
         private static void SyncContent(PhysicsFrame frame, bool placing)
         {
             if (frame.Clones.Count == 0 || frame.Owner == null) return;
             var owner = frame.Owner.transform;
             bool steps = !placing && frame.OwnsScene && !RendersFrames && frame.Root != null;
-            ChangedSources.Clear();
+            // A copy is composed and re-posed only when its source's pose relative to the owner changed: each transform between the
+            // sources and the owner is read once (copies share their parents) and compared with what the last sync read. A ship's
+            // interior has hundreds of copies; composing every one every tick cost a worker 0.2-0.3 ms a tick per ship, and the
+            // owner's own motion (an NPC ship flying) sets Transform.hasChanged on all of them, so that flag cannot tell.
+            bool all = placing;
+            if (frame.CloneStates.Count != frame.Clones.Count || !ReadLinks(frame, force: false))
+            {
+                BuildLinks(frame, owner);
+                ReadLinks(frame, force: true);
+                all = true;
+            }
+            var links = frame.Links;
+            var states = frame.CloneStates;
             for (int i = frame.Clones.Count - 1; i >= 0; i--)
             {
                 var pair = frame.Clones[i];
@@ -769,69 +813,107 @@ namespace Nebula
                     if (!ReferenceEquals(pair.Value, null)) { CloneSources.Remove(pair.Value); frame.MovingClones.Remove(pair.Value); }
                     if (pair.Value != null) Destroy(pair.Value.gameObject);
                     frame.Clones.RemoveAt(i);
+                    states.RemoveAt(i);
                     continue;
                 }
-                // Only a copy whose source, or a transform between it and the owner, was written since the last sync is composed and
-                // re-posed: Unity sets Transform.hasChanged on every write, and the sync clears it below on the transforms it read, which
-                // are the owner's own geometry (a rider's are never in a chain, and the owner's flag is the container's, left alone).
-                // A frame with hundreds of copies (a ship's interior) otherwise cost 0.3 ms a tick each on a worker, moving or not.
                 ClonesVisited++;
-                if (!placing && !SourceChanged(pair.Key.transform, owner))
+                var state = states[i];
+                if (all || (state.Link >= 0 && links[state.Link].Changed))
                 {
-                    bool still = pair.Key.enabled && pair.Key.gameObject.activeInHierarchy;
-                    if (pair.Value.enabled != still) pair.Value.enabled = still;
-                    continue;
-                }
-                ClonesReposed++;
-                var m = RelativeTo(pair.Key.transform, owner);
-                var t = pair.Value.transform;
-                var position = (Vector3)m.GetColumn(3);
-                var rotation = m.rotation;
-                var scale = m.lossyScale;
-                if (t.localScale != scale) t.localScale = scale;
-                if (frame.MovingClones.TryGetValue(pair.Value, out var moving) && moving.Body != null)
-                {
-                    // A kinematic copy's transform reaches its target when the scene steps, and reads back from the
-                    // body with rounding: compare with the target instead, exactly (the pose is composed from local
-                    // poses, so it does not jitter), so a slow part moves every tick and a part at rest sleeps.
-                    if (!moving.Position.Equals(position) || !moving.Rotation.Equals(rotation)) MoveKinematic(frame, pair.Value, position, rotation);
-                }
-                else if (t.localPosition != position || t.localRotation != rotation)
-                {
-                    if (steps) MoveKinematic(frame, pair.Value, position, rotation);
-                    else
+                    ClonesReposed++;
+                    var m = state.Link >= 0 ? links[state.Link].Relative : Matrix4x4.identity;
+                    var t = pair.Value.transform;
+                    var position = (Vector3)m.GetColumn(3);
+                    var rotation = m.rotation;
+                    var scale = m.lossyScale;
+                    if (t.localScale != scale) t.localScale = scale;
+                    if (frame.MovingClones.TryGetValue(pair.Value, out var moving) && moving.Body != null)
                     {
-                        t.localPosition = position;
-                        t.localRotation = rotation;
+                        // A kinematic copy's transform reaches its target when the scene steps, and reads back from the
+                        // body with rounding: compare with the target instead, exactly (the pose is composed from local
+                        // poses, so it does not jitter), so a slow part moves every tick and a part at rest sleeps.
+                        if (!moving.Position.Equals(position) || !moving.Rotation.Equals(rotation)) MoveKinematic(frame, pair.Value, position, rotation);
+                    }
+                    else if (t.localPosition != position || t.localRotation != rotation)
+                    {
+                        if (steps) MoveKinematic(frame, pair.Value, position, rotation);
+                        else
+                        {
+                            t.localPosition = position;
+                            t.localRotation = rotation;
+                        }
                     }
                 }
-                bool enabled = pair.Key.enabled && pair.Key.gameObject.activeInHierarchy;
-                if (pair.Value.enabled != enabled) pair.Value.enabled = enabled;
+                bool enabled = pair.Key.enabled && state.Source.activeInHierarchy;
+                if (state.Enabled != enabled)
+                {
+                    pair.Value.enabled = enabled;
+                    state.Enabled = enabled;
+                    states[i] = state;
+                }
             }
-            // Cleared after the loop: copies share the parents they hang under, and each must still read the change.
-            foreach (var t in ChangedSources) if (t != null) t.hasChanged = false;
-            ChangedSources.Clear();
         }
 
-        /// <summary>Whether <paramref name="source"/> or any transform between it and <paramref name="owner"/> was written since the last sync (noted for clearing).</summary>
-        private static bool SourceChanged(Transform source, Transform owner)
+        /// <summary>The links of every copy's source chain, parents first, and each copy's link (a frame built, or its sources reparented).</summary>
+        private static void BuildLinks(PhysicsFrame frame, Transform owner)
         {
-            bool changed = false;
-            for (var t = source; t != null && t != owner; t = t.parent)
-                if (t.hasChanged) { changed = true; ChangedSources.Add(t); }
-            return changed;
+            frame.Links.Clear();
+            frame.CloneStates.Clear();
+            LinkIndex.Clear();
+            for (int i = 0; i < frame.Clones.Count; i++)
+            {
+                var pair = frame.Clones[i];
+                var source = pair.Key;
+                frame.CloneStates.Add(new PhysicsFrame.CloneState
+                {
+                    Link = source != null ? LinkOf(frame, source.transform, owner) : -1,
+                    Source = source != null ? source.gameObject : null,
+                    Enabled = pair.Value != null && pair.Value.enabled,
+                });
+            }
+            LinkIndex.Clear();
+        }
+
+        private static int LinkOf(PhysicsFrame frame, Transform t, Transform owner)
+        {
+            if (t == null || t == owner) return -1;
+            if (LinkIndex.TryGetValue(t, out int index)) return index;
+            var parent = t.parent;
+            int up = LinkOf(frame, parent, owner);
+            index = frame.Links.Count;
+            frame.Links.Add(new PhysicsFrame.ContentLink { Transform = t, Parent = parent, Up = up });
+            LinkIndex[t] = index;
+            return index;
         }
 
         /// <summary>
-        /// <paramref name="source"/>'s pose relative to <paramref name="owner"/>, composed from the local poses in
-        /// between. Going through world space instead would subtract two large positions for a carrier far from the
-        /// origin and turn a part at rest into one that jitters by rounding error.
+        /// Read every link's local pose, note which changed (or sit below one that did) and compose their poses relative to the owner
+        /// again. False when a link's transform is gone or has another parent: the links are built again.
         /// </summary>
-        private static Matrix4x4 RelativeTo(Transform source, Transform owner)
+        private static bool ReadLinks(PhysicsFrame frame, bool force)
         {
-            var m = Matrix4x4.identity;
-            for (var t = source; t != null && t != owner; t = t.parent) m = Matrix4x4.TRS(t.localPosition, t.localRotation, t.localScale) * m;
-            return m;
+            var links = frame.Links;
+            for (int i = 0; i < links.Count; i++)
+            {
+                var link = links[i];
+                var t = link.Transform;
+                if (t == null || t.parent != link.Parent) return false;
+                t.GetLocalPositionAndRotation(out var p, out var r);
+                var s = t.localScale;
+                bool above = link.Up >= 0 && links[link.Up].Changed;
+                bool own = force || !p.Equals(link.Position) || !r.Equals(link.Rotation) || !s.Equals(link.Scale);
+                link.Changed = own || above;
+                if (link.Changed)
+                {
+                    link.Position = p;
+                    link.Rotation = r;
+                    link.Scale = s;
+                    var local = Matrix4x4.TRS(p, r, s);
+                    link.Relative = link.Up >= 0 ? links[link.Up].Relative * local : local;
+                }
+                links[i] = link;
+            }
+            return true;
         }
 
         /// <summary>Move a copy to a frame-local pose as a kinematic body, turning it into one the first time.</summary>
