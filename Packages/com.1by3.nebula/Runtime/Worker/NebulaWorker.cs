@@ -253,7 +253,17 @@ namespace Nebula
         private static readonly ProfileSection ProfGap = NebulaProfiler.Section("gap");
         // The passes between the sections above, so the sections add up to the tick; 'untimed' is what is still left.
         private static readonly ProfileSection ProfBegin = NebulaProfiler.Section("begin");
+        // The parts of 'begin' (nested, like c.*): the entities' BeginTick, the container caches (and instance preparations), the portals, the frames' content.
+        private static readonly ProfileSection ProfBEntities = NebulaProfiler.Section("b.entities");
+        private static readonly ProfileSection ProfBCaches = NebulaProfiler.Section("b.caches");
+        private static readonly ProfileSection ProfBPortals = NebulaProfiler.Section("b.portals");
+        private static readonly ProfileSection ProfBContent = NebulaProfiler.Section("b.content");
         private static readonly ProfileSection ProfFrameSim = NebulaProfiler.Section("frames.sim");
+        // The parts of 'frames.sim' (nested): portal proxies, the instance scenes' step, the physics frames' step, the frames' state sampling and origin shift.
+        private static readonly ProfileSection ProfFPortals = NebulaProfiler.Section("f.portals");
+        private static readonly ProfileSection ProfFInstances = NebulaProfiler.Section("f.instances");
+        private static readonly ProfileSection ProfFFrames = NebulaProfiler.Section("f.frames");
+        private static readonly ProfileSection ProfFStates = NebulaProfiler.Section("f.states");
         private static readonly ProfileSection ProfReplicate = NebulaProfiler.Section("replicate");
         private static readonly ProfileSection ProfUntimed = NebulaProfiler.Section("untimed");
         private long _lastTickEnd;
@@ -1267,6 +1277,7 @@ namespace Nebula
             // Which entities update on this tick (NetworkIdentity.UpdateInterval), decided once for every pass below,
             // and which fall asleep or wake on it (docs/server-owned-entities.md §6).
             int dormant = 0;
+            long tb0 = Stopwatch.GetTimestamp();
             for (int i = 0; i < _authoritative.Count; i++)
             {
                 var e = _authoritative[i];
@@ -1275,11 +1286,19 @@ namespace Nebula
                 if (e.IsDormant) dormant++;
             }
             DormantCount = dormant;
+            long tb1 = Stopwatch.GetTimestamp();
             UpdateInstancePreparations();
             ContainerRegistry.RefreshMovingCaches();
+            long tb2 = Stopwatch.GetTimestamp();
             UpdatePortals();
+            long tb3 = Stopwatch.GetTimestamp();
             // Interior colliders of every physics frame follow their sources (a ramp lowering, a door opening).
             PhysicsFrames.SyncAllContent();
+            long tb4 = Stopwatch.GetTimestamp();
+            ProfBEntities.Add(tb1 - tb0);
+            ProfBCaches.Add(tb2 - tb1);
+            ProfBPortals.Add(tb3 - tb2);
+            ProfBContent.Add(tb4 - tb3);
             ProfBegin.End();
 
             // 1. Ghosts follow the stream they are driven by (kinematic: no solve of their own).
@@ -1347,14 +1366,23 @@ namespace Nebula
             ProfSimulate.End();
             ProfFrameSim.Begin();
             // Proxies across portals are posed before the scenes step (docs/portals.md D26), so contacts get their velocity.
+            long tf0 = Stopwatch.GetTimestamp();
             if (_portalPhysics != null || Portals.All.Count > 0) PortalPhysics.Step(tick);
+            long tf1 = Stopwatch.GetTimestamp();
             InstanceScenes.Simulate(dt);
+            long tf2 = Stopwatch.GetTimestamp();
             // Every physics frame is its own scene, still in its own coordinates; and every frame's motion is sampled
             // once the carriers have moved this tick (docs/container-tree.md D14).
             PhysicsFrames.Simulate(dt);
+            long tf3 = Stopwatch.GetTimestamp();
             PhysicsFrames.UpdateStates(tick, dt);
             // Each frame's floating origin stays near what this worker simulates in it (docs/container-tree.md D19).
             PhysicsFrames.AutoShift(_frameOriginPositions ??= FrameOriginPositions);
+            long tf4 = Stopwatch.GetTimestamp();
+            ProfFPortals.Add(tf1 - tf0);
+            ProfFInstances.Add(tf2 - tf1);
+            ProfFFrames.Add(tf3 - tf2);
+            ProfFStates.Add(tf4 - tf3);
             ProfFrameSim.End();
 
             // Remember where what we simulate ended up this tick, for lag-compensated hit tests and time-sensitive
