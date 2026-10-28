@@ -1572,7 +1572,10 @@ namespace Nebula
             for (int i = 0; i < neighbors.Count; i++)
             {
                 var n = neighbors[i];
-                if (n != null && MightHold(n, p) && Claims(n, p)) { RefusedNeighbour++; return false; }
+                // A neighbour is static in these coordinates, its cached box exact: asked whether it holds the point, as Find asks
+                // (the enclosing sphere of a turned cube-sphere chunk holds most points near its edges, and each sent the point to
+                // the dearer claims test).
+                if (n != null && n.Contains(p) && Claims(n, p)) { RefusedNeighbour++; return false; }
             }
             for (int i = 0; i < MovingRuntime.Count; i++)
             {
@@ -1597,12 +1600,7 @@ namespace Nebula
         /// is not: the bounds are its size about its centre, not turned with it, so a rotated ship's real box reaches
         /// outside them, and the answer is the sphere that encloses it however it is turned: conservative.
         /// </summary>
-        private static bool MightHold(Container c, Vector3 p)
-        {
-            var b = c.WorldBounds;
-            if (c.IsAxisAligned) return b.Contains(p);
-            return (p - b.center).sqrMagnitude <= b.extents.sqrMagnitude;
-        }
+        private static bool MightHold(Container c, Vector3 p) => c.MightHold(p);
 
         /// <summary>The hysteresis rule between the current box and the best candidate, both measured in <paramref name="space"/>.</summary>
         private static Container ResolveAmong(Vector3 p, Container current, Container candidate, float hysteresis, Container space)

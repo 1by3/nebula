@@ -530,6 +530,17 @@ namespace Nebula
 
         public Bounds WorldBounds { get { EnsureCached(); return _worldBounds; } }
 
+        /// <summary>
+        /// Whether the point could be in the box (the registry's broad test): its <see cref="WorldBounds"/> when it is not turned, else the sphere
+        /// that encloses it however it is turned. One cache check for both reads: the resolve shortcut asks it of every moving box, every resolve.
+        /// </summary>
+        internal bool MightHold(Vector3 p)
+        {
+            EnsureCached();
+            if (_axisAligned) return _worldBounds.Contains(p);
+            return (p - _worldBounds.center).sqrMagnitude <= _worldBounds.extents.sqrMagnitude;
+        }
+
         /// <summary>The box is not turned in world space (cached with <see cref="WorldBounds"/>), so <see cref="WorldBounds"/> is the box itself and not only a size about its centre.</summary>
         internal bool IsAxisAligned { get { EnsureCached(); return _axisAligned; } }
         private bool _axisAligned;
