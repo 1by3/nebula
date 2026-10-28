@@ -480,7 +480,34 @@ namespace Nebula
             {
                 int hops = 0;
                 for (var c = this; c != null && hops <= ContainerRegistry.ChainBound; c = c.Parent, hops++)
+                {
+                    // A box fixed inside a physics frame lives under the frame's root, in the frame's own
+                    // coordinates: the carrier moving in the space around the frame does not move it. On a worker
+                    // the root only moves on an origin shift, which refreshes every cache itself; a client poses the
+                    // root for rendering as the carrier moves, so there the carrier's flag still stands for the root's.
+                    if (c != this && c.OwnPhysicsFrame && !PhysicsFrames.RendersFrames) return false;
                     if (c.IsDynamic && c.transform.hasChanged) return true;
+                }
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// The box is fixed inside a physics frame (a chunk of a planet's ground, a room fixed in a framed ship): it
+        /// lives in the frame's coordinates and moves only when the frame's root does, never on its own, so the
+        /// registry hashes it in those coordinates and resolves against it like against a static box.
+        /// </summary>
+        internal bool FixedInFrame
+        {
+            get
+            {
+                if (IsDynamic) return false;
+                int hops = 0;
+                for (var p = FixedParent; p != null && hops <= ContainerRegistry.ChainBound; p = p.Parent, hops++)
+                {
+                    if (p.OwnPhysicsFrame) return true;
+                    if (p.IsDynamic) return false;
+                }
                 return false;
             }
         }

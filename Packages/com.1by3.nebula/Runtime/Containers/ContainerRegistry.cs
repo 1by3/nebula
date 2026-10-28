@@ -70,10 +70,14 @@ namespace Nebula
         private static readonly HashSet<ulong> RuntimeKeep = new HashSet<ulong>();
         private static readonly List<ulong> RuntimeScratchIds = new List<ulong>();
         private static Transform _runtimeRoot;
-        // Runtime containers that move without being re-registered (fixed children of a carried container, and
-        // anything inside a physics frame) cannot live in the spatial hash: their boxes change every tick. They
-        // are few, and scanned linearly like carried containers.
+        // Runtime containers that move without being re-registered (fixed children of a carried container that has
+        // no physics frame of its own) cannot live in the spatial hash: their boxes change every tick. They are few,
+        // and scanned linearly like carried containers.
         private static readonly List<Container> MovingRuntime = new List<Container>();
+        // Runtime containers fixed inside a physics frame (a planet's chunks: hundreds, and most of what stands
+        // anywhere stands in one) are hashed per frame in the frame root's own coordinates, which never change
+        // however the root is shifted on a worker or posed on a client. Keyed by the framed container, then by bucket.
+        private static readonly Dictionary<Container, Dictionary<Vector3Int, List<Container>>> FrameHash = new Dictionary<Container, Dictionary<Vector3Int, List<Container>>>();
         private struct PendingChild { public ContainerPlacement Placement; public InstanceContainerInfo Instance; }
         /// <summary>Runtime rows whose parent is not resolvable here yet, by runtime id; registered when it arrives (D2).</summary>
         private static readonly Dictionary<ulong, PendingChild> PendingChildren = new Dictionary<ulong, PendingChild>();
@@ -172,6 +176,7 @@ namespace Nebula
             RuntimeById.Clear();
             RuntimeHash.Clear();
             MovingRuntime.Clear();
+            FrameHash.Clear();
             PendingChildren.Clear();
             _runtimeRoot = null;
             Rebuilt = null;
@@ -208,6 +213,7 @@ namespace Nebula
             for (int i = 0; i < Containers.Count; i++) if (Containers[i] != null && Containers[i].Frame != null) PhysicsFrames.Release(Containers[i]);
             PendingChildren.Clear(); // children detached above wait for parents that are not coming back
             MovingRuntime.Clear();
+            FrameHash.Clear();
             for (int i = 0; i < DynamicList.Count; i++) PhysicsFrames.Release(DynamicList[i]);
             Containers.Clear();
             ById.Clear();
@@ -400,6 +406,29 @@ namespace Nebula
             for (int i = 0; i < RuntimeList.Count; i++) RuntimeList[i].RefreshCache();
             for (int i = 0; i < DynamicList.Count; i++) DynamicList[i].RefreshCache();
             _dynamicHashDirty = true; // the boxes just moved: the broad phase is rebuilt on the next query
+        }
+
+        /// <summary>
+        /// <see cref="RefreshCaches"/> for the boxes that can have moved since the last tick: carried containers and
+        /// what is fixed in them. A box fixed inside a physics frame moves only with the frame's root, which is
+        /// refreshed where it is shifted; it is read again on first use in a frame anyway (<see cref="Container.WorldBounds"/>),
+        /// so the eager read is spared for the hundreds of chunks nobody stands in this tick.
+        /// </summary>
+        public static void RefreshMovingCaches()
+        {
+            for (int i = 0; i < RuntimeList.Count; i++)
+            {
+                var c = RuntimeList[i];
+                if (c != null && c.FixedParent != null && !c.FixedInFrame) c.RefreshCache();
+            }
+            for (int i = 0; i < DynamicList.Count; i++) DynamicList[i].RefreshCache();
+            _dynamicHashDirty = true;
+        }
+
+        /// <summary>A physics frame was created or released: what is fixed under it is hashed in its coordinates from now on, or no longer.</summary>
+        internal static void FrameChanged()
+        {
+            if (RuntimeList.Count > 0) RehashRuntime();
         }
 
         /// <summary>The static or runtime container with this id, or the dynamic container currently registered under it (<c>label#netId</c>), or null.</summary>
@@ -1024,10 +1053,20 @@ namespace Nebula
         {
             if (c.MayMove)
             {
-                if (!MovingRuntime.Contains(c)) MovingRuntime.Add(c);
+                var hash = FrameHashOf(c, out var inFrame);
+                if (hash == null)
+                {
+                    if (!MovingRuntime.Contains(c)) MovingRuntime.Add(c);
+                    return;
+                }
+                AddToHash(hash, c, inFrame);
                 return;
             }
-            var b = c.WorldBounds;
+            AddToHash(RuntimeHash, c, c.WorldBounds);
+        }
+
+        private static void AddToHash(Dictionary<Vector3Int, List<Container>> hash, Container c, Bounds b)
+        {
             var min = BucketOf(b.min);
             var max = BucketOf(b.max);
             for (int x = min.x; x <= max.x; x++)
@@ -1035,7 +1074,7 @@ namespace Nebula
                     for (int z = min.z; z <= max.z; z++)
                     {
                         var key = new Vector3Int(x, y, z);
-                        if (!RuntimeHash.TryGetValue(key, out var list)) RuntimeHash[key] = list = new List<Container>();
+                        if (!hash.TryGetValue(key, out var list)) hash[key] = list = new List<Container>();
                         list.Add(c);
                     }
         }
@@ -1043,7 +1082,24 @@ namespace Nebula
         private static void RemoveFromHash(Container c)
         {
             if (MovingRuntime.Remove(c)) return;
-            var b = c.WorldBounds;
+            if (c.MayMove)
+            {
+                // Hashed in its frame's coordinates, which it still has (the frame is released after this).
+                var hash = FrameHashOf(c, out var inFrame);
+                if (hash != null) RemoveFromHash(hash, c, inFrame);
+                else foreach (var kv in FrameHash) RemoveFromHash(kv.Value, c, default, everywhere: true);
+                return;
+            }
+            RemoveFromHash(RuntimeHash, c, c.WorldBounds);
+        }
+
+        private static void RemoveFromHash(Dictionary<Vector3Int, List<Container>> hash, Container c, Bounds b, bool everywhere = false)
+        {
+            if (everywhere)
+            {
+                foreach (var list in hash.Values) list.Remove(c);
+                return;
+            }
             var min = BucketOf(b.min);
             var max = BucketOf(b.max);
             for (int x = min.x; x <= max.x; x++)
@@ -1051,9 +1107,9 @@ namespace Nebula
                     for (int z = min.z; z <= max.z; z++)
                     {
                         var key = new Vector3Int(x, y, z);
-                        if (!RuntimeHash.TryGetValue(key, out var list)) continue;
+                        if (!hash.TryGetValue(key, out var list)) continue;
                         list.Remove(c);
-                        if (list.Count == 0) RuntimeHash.Remove(key);
+                        if (list.Count == 0) hash.Remove(key);
                     }
         }
 
@@ -1061,7 +1117,52 @@ namespace Nebula
         {
             RuntimeHash.Clear();
             MovingRuntime.Clear();
+            FrameHash.Clear();
             for (int i = 0; i < RuntimeList.Count; i++) if (RuntimeList[i] != null) AddToHash(RuntimeList[i]);
+        }
+
+        /// <summary>
+        /// The per-frame hash a box fixed inside a physics frame belongs in, and its box in the frame root's
+        /// coordinates (<paramref name="inFrame"/>), or null for a box that moves on its own or whose frame has no
+        /// root on this process (then it is scanned linearly, as before).
+        /// </summary>
+        private static Dictionary<Vector3Int, List<Container>> FrameHashOf(Container c, out Bounds inFrame)
+        {
+            inFrame = default;
+            if (!c.FixedInFrame) return null;
+            var space = c.Space;
+            var root = space != null && space.Frame != null ? space.Frame.Root : null;
+            if (root == null) return null;
+            inFrame = InRoot(root.worldToLocalMatrix, c.transform.localToWorldMatrix, c.Center, c.Size);
+            if (!FrameHash.TryGetValue(space, out var hash)) FrameHash[space] = hash = new Dictionary<Vector3Int, List<Container>>();
+            return hash;
+        }
+
+        /// <summary>A box (<paramref name="center"/>, <paramref name="size"/> in its own coordinates) as a box in a frame root's coordinates: exact when it is not turned there, its enclosing sphere otherwise.</summary>
+        private static Bounds InRoot(Matrix4x4 worldToRoot, Matrix4x4 localToWorld, Vector3 center, Vector3 size)
+        {
+            var m = worldToRoot * localToWorld;
+            var c = m.MultiplyPoint3x4(center);
+            var s = Vector3.Scale(size, m.lossyScale);
+            s = new Vector3(Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Abs(s.z));
+            if (Mathf.Abs(m.rotation.w) > 0.99999f) return new Bounds(c, s);
+            float d = s.magnitude; // the sphere about the centre that holds the box however it is turned
+            return new Bounds(c, new Vector3(d, d, d));
+        }
+
+        /// <summary>A box of world coordinates as the box of a frame root's coordinates that holds it (the world box's corners, mapped).</summary>
+        private static Bounds InRoot(Transform root, Bounds world)
+        {
+            var m = root.worldToLocalMatrix;
+            var c = m.MultiplyPoint3x4(world.center);
+            var e = world.extents;
+            // The extents along each root axis: the absolute values of the matrix rows, applied to the world extents.
+            var r0 = m.GetRow(0); var r1 = m.GetRow(1); var r2 = m.GetRow(2);
+            var ext = new Vector3(
+                Mathf.Abs(r0.x) * e.x + Mathf.Abs(r0.y) * e.y + Mathf.Abs(r0.z) * e.z,
+                Mathf.Abs(r1.x) * e.x + Mathf.Abs(r1.y) * e.y + Mathf.Abs(r1.z) * e.z,
+                Mathf.Abs(r2.x) * e.x + Mathf.Abs(r2.y) * e.y + Mathf.Abs(r2.z) * e.z);
+            return new Bounds(c, ext * 2f);
         }
 
         /// <summary>
@@ -1110,22 +1211,60 @@ namespace Nebula
             DynamicSeen.Clear();
         }
 
-        /// <summary>Distinct runtime containers hashed into any bucket <paramref name="bounds"/> overlaps, into <paramref name="result"/> (cleared first).</summary>
-        private static void CollectRuntimeIn(Bounds bounds, List<Container> result)
+        /// <summary>
+        /// Distinct runtime containers hashed into any bucket <paramref name="bounds"/> overlaps, into <paramref name="result"/>
+        /// (cleared first), plus every runtime box that moves on its own. <paramref name="bounds"/> and
+        /// <paramref name="space"/> are the box and the space it is measured in (null: the scope's own space): the
+        /// scope's hash is searched for the scope's space, a frame's hash in the frame root's coordinates for a frame.
+        /// </summary>
+        private static void CollectRuntimeIn(Bounds bounds, Container space, List<Container> result)
         {
             result.Clear();
             for (int i = 0; i < MovingRuntime.Count; i++) if (MovingRuntime[i] != null) result.Add(MovingRuntime[i]);
-            if (RuntimeHash.Count == 0) return;
+            if (space == null)
+            {
+                if (RuntimeHash.Count == 0) return;
+                RuntimeSeen.Clear();
+                CollectHashed(RuntimeHash, RuntimeSeen, BucketOf(bounds.min), BucketOf(bounds.max), result);
+                RuntimeSeen.Clear();
+                return;
+            }
+            if (!FrameHash.TryGetValue(space, out var hash) || hash.Count == 0) return;
+            var root = space.Frame != null ? space.Frame.Root : null;
+            if (root == null) return;
+            var local = InRoot(root, bounds);
             RuntimeSeen.Clear();
-            CollectHashed(RuntimeHash, RuntimeSeen, BucketOf(bounds.min), BucketOf(bounds.max), result);
+            CollectHashed(hash, RuntimeSeen, BucketOf(local.min), BucketOf(local.max), result);
             RuntimeSeen.Clear();
         }
 
-        /// <summary>Runtime containers hashed into the bucket holding <paramref name="p"/> and the 26 around it.</summary>
-        private static void CollectRuntimeAround(Vector3 p, List<Container> result)
+        /// <summary>
+        /// <see cref="CollectRuntimeIn(Bounds, Container, List{Container})"/> for a box whose space is not known: the
+        /// scope's hash and every frame's, each asked in its own coordinates. A broad phase only, as before: the
+        /// caller tests each candidate's box exactly.
+        /// </summary>
+        private static void CollectRuntimeIn(Bounds bounds, List<Container> result)
+        {
+            CollectRuntimeIn(bounds, null, result);
+            if (FrameHash.Count == 0) return;
+            RuntimeSeen.Clear();
+            for (int i = 0; i < result.Count; i++) RuntimeSeen.Add(result[i]);
+            foreach (var kv in FrameHash)
+            {
+                var space = kv.Key;
+                var root = space != null && space.Frame != null ? space.Frame.Root : null;
+                if (root == null || kv.Value.Count == 0) continue;
+                var local = InRoot(root, bounds);
+                CollectHashed(kv.Value, RuntimeSeen, BucketOf(local.min), BucketOf(local.max), result);
+            }
+            RuntimeSeen.Clear();
+        }
+
+        /// <summary>Runtime containers of <paramref name="space"/> hashed into the bucket holding <paramref name="p"/> and the 26 around it, and the moving ones.</summary>
+        private static void CollectRuntimeAround(Vector3 p, Container space, List<Container> result)
         {
             float s = _runtimeBucketSize;
-            CollectRuntimeIn(new Bounds(p, new Vector3(2f * s, 2f * s, 2f * s)), result);
+            CollectRuntimeIn(new Bounds(p, new Vector3(2f * s, 2f * s, 2f * s)), space, result);
         }
 
         /// <summary>Recompute the adjacency of a runtime container to every baked and runtime container whose box touches it, both ways.</summary>
@@ -1151,7 +1290,7 @@ namespace Nebula
             {
                 for (int i = 0; i < Containers.Count; i++) if (a.Intersects(Containers[i].WorldBounds)) Link(c, Containers[i]);
             }
-            CollectRuntimeIn(a, RuntimeCandidates);
+            CollectRuntimeIn(a, c.Space, RuntimeCandidates);
             for (int i = 0; i < RuntimeCandidates.Count; i++)
             {
                 var o = RuntimeCandidates[i];
@@ -1179,22 +1318,24 @@ namespace Nebula
             if (container == null) return;
             var bounds = container.WorldBounds;
             bounds.Expand(0.05f);
-            if (!container.MayMove)
+            var space = container.Space;
+            if (!container.MayMove || container.FixedInFrame)
             {
+                // A static box, or one fixed in a physics frame: its static neighbours are kept by registration.
                 result.AddRange(container.Neighbors);
                 // Only the carriers whose broad-phase buckets reach this box: a world with hundreds of vehicles
-                // used to cost every static container a full scan of all of them, every tick, per entity.
+                // used to cost every static container a full scan of all of them, every tick, per entity. A box of
+                // another space is measured in other coordinates and cannot touch this one.
                 CollectDynamicIn(bounds, DynamicCandidates);
                 for (int i = 0; i < DynamicCandidates.Count; i++)
                 {
                     var d = DynamicCandidates[i];
-                    if (d != container && d.InstanceId == container.InstanceId && bounds.Intersects(d.WorldBounds)) result.Add(d);
+                    if (d != container && d.InstanceId == container.InstanceId && d.Space == space && bounds.Intersects(d.WorldBounds)) result.Add(d);
                 }
                 return;
             }
             var enclosing = container.Parent;
             if (enclosing != null) result.Add(enclosing);
-            var space = container.Space;
             if (_grid != null)
             {
                 CollectAround(WorldOrigin.CellOf(bounds.center), Candidates);
@@ -1210,7 +1351,7 @@ namespace Nebula
             }
             if (RuntimeList.Count > 0)
             {
-                CollectRuntimeIn(bounds, RuntimeCandidates);
+                CollectRuntimeIn(bounds, space, RuntimeCandidates);
                 for (int i = 0; i < RuntimeCandidates.Count; i++)
                 {
                     var c = RuntimeCandidates[i];
@@ -1265,7 +1406,7 @@ namespace Nebula
             else FindAmong(Containers, worldPosition, exclude, instanceId, null, space, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             if (RuntimeList.Count > 0)
             {
-                CollectRuntimeAround(worldPosition, RuntimeCandidates);
+                CollectRuntimeAround(worldPosition, space, RuntimeCandidates);
                 // A runtime box can be in the subject's subtree too (a room fixed in a ship): same check.
                 FindAmong(RuntimeCandidates, worldPosition, exclude, instanceId, subject, space, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             }
@@ -1354,7 +1495,7 @@ namespace Nebula
             if (current != null && subject != null && current.IsCarriedBy(subject))
                 return Find(worldPosition, current, current.InstanceId, subject, current.Space, nearestFallback: true);
             if (current == null) { FullResolves++; RefusedNoCurrent++; return EnterFrames(Find(worldPosition, null, 0, subject), null, worldPosition, 0, subject); }
-            if (!DisableFastResolve && StillAlone(worldPosition, current)) { FastResolves++; return current; }
+            if (!DisableFastResolve && StillAlone(worldPosition, current, hysteresis)) { FastResolves++; return current; }
             FullResolves++;
             ulong instanceId = current.InstanceId;
             var space = current.InnerSpace;
@@ -1395,11 +1536,25 @@ namespace Nebula
         /// or it moves (carried or fixed in a carrier, scanned linearly like <see cref="Find"/> does); each is
         /// rejected by the sphere around its bounds (<see cref="MightHold"/>), which encloses the box however it is rotated. Anything unusual (a frame, a
         /// moving current box, the point outside it) takes the full search.
+        /// <para>
+        /// A box fixed inside a physics frame (a planet's chunk) is static in the frame's coordinates, which is what
+        /// the point is in: it takes the shortcut too, as long as the point is not leaving the frame by the
+        /// hysteresis (then the search decides where in the space around it goes), and only boxes of the same
+        /// space, measured in the same coordinates, are asked whether they might hold the point.
+        /// </para>
         /// </summary>
-        private static bool StillAlone(Vector3 p, Container current)
+        private static bool StillAlone(Vector3 p, Container current, float hysteresis)
         {
-            if (current.Index == ushort.MaxValue || current.OwnPhysicsFrame || current.MayMove || current.Space != null) { RefusedFrame++; return false; }
+            if (current.Index == ushort.MaxValue || current.OwnPhysicsFrame) { RefusedFrame++; return false; }
+            Container space = null;
+            if (current.MayMove)
+            {
+                if (!current.FixedInFrame) { RefusedFrame++; return false; }
+                space = current.Space;
+                if (space == null || space.Frame == null) { RefusedFrame++; return false; }
+            }
             if (!current.Contains(p)) { RefusedOutside++; return false; }
+            if (space != null && space.SignedDistanceInner(p) > hysteresis) { RefusedFrame++; return false; }
             var neighbors = current.Neighbors;
             for (int i = 0; i < neighbors.Count; i++)
             {
@@ -1409,12 +1564,12 @@ namespace Nebula
             for (int i = 0; i < MovingRuntime.Count; i++)
             {
                 var m = MovingRuntime[i];
-                if (m != null && m != current && MightHold(m, p)) { RefusedMoving++; return false; }
+                if (m != null && m != current && m.Space == space && MightHold(m, p)) { RefusedMoving++; return false; }
             }
             for (int i = 0; i < DynamicList.Count; i++)
             {
                 var d = DynamicList[i];
-                if (d != null && d != current && MightHold(d, p)) { RefusedMoving++; return false; }
+                if (d != null && d != current && d.Space == space && MightHold(d, p)) { RefusedMoving++; return false; }
             }
             return true;
         }

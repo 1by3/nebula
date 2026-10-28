@@ -554,6 +554,7 @@ namespace Nebula
             frame.ResetMotion();
             Frames.Add(frame);
             if (RendersFrames) PoseForRender(frame);
+            ContainerRegistry.FrameChanged(); // what is fixed under the owner is hashed in the root's coordinates from now on
             try { Created?.Invoke(frame); }
             catch (Exception e) { NebulaLog.Error($"PhysicsFrames.Created threw: {e}"); }
             return frame;
@@ -604,6 +605,7 @@ namespace Nebula
             frame.MovingClones.Clear();
             if (frame.OwnsScene) ReturnScene(frame.Scene);
             frame.Scene = default;
+            ContainerRegistry.FrameChanged();
         }
 
         /// <summary>Release every frame whose owner was destroyed without being unregistered (a scene torn down around it).</summary>

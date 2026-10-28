@@ -1276,7 +1276,7 @@ namespace Nebula
             }
             DormantCount = dormant;
             UpdateInstancePreparations();
-            ContainerRegistry.RefreshCaches();
+            ContainerRegistry.RefreshMovingCaches();
             UpdatePortals();
             // Interior colliders of every physics frame follow their sources (a ramp lowering, a door opening).
             PhysicsFrames.SyncAllContent();
