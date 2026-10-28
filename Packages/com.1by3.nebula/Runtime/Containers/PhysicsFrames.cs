@@ -749,11 +749,15 @@ namespace Nebula
 
         /// <param name="frame">The frame whose copies follow their sources.</param>
         /// <param name="placing">The frame is being built: every copy is put in place, and none counts as moving.</param>
+        /// <summary>The source-side transforms whose <see cref="Transform.hasChanged"/> a sync read as set, cleared once the frame's copies are in place.</summary>
+        private static readonly HashSet<Transform> ChangedSources = new HashSet<Transform>();
+
         private static void SyncContent(PhysicsFrame frame, bool placing)
         {
             if (frame.Clones.Count == 0 || frame.Owner == null) return;
             var owner = frame.Owner.transform;
             bool steps = !placing && frame.OwnsScene && !RendersFrames && frame.Root != null;
+            ChangedSources.Clear();
             for (int i = frame.Clones.Count - 1; i >= 0; i--)
             {
                 var pair = frame.Clones[i];
@@ -762,6 +766,16 @@ namespace Nebula
                     if (!ReferenceEquals(pair.Value, null)) { CloneSources.Remove(pair.Value); frame.MovingClones.Remove(pair.Value); }
                     if (pair.Value != null) Destroy(pair.Value.gameObject);
                     frame.Clones.RemoveAt(i);
+                    continue;
+                }
+                // Only a copy whose source, or a transform between it and the owner, was written since the last sync is composed and
+                // re-posed: Unity sets Transform.hasChanged on every write, and the sync clears it below on the transforms it read, which
+                // are the owner's own geometry (a rider's are never in a chain, and the owner's flag is the container's, left alone).
+                // A frame with hundreds of copies (a ship's interior) otherwise cost 0.3 ms a tick each on a worker, moving or not.
+                if (!placing && !SourceChanged(pair.Key.transform, owner))
+                {
+                    bool still = pair.Key.enabled && pair.Key.gameObject.activeInHierarchy;
+                    if (pair.Value.enabled != still) pair.Value.enabled = still;
                     continue;
                 }
                 var m = RelativeTo(pair.Key.transform, owner);
@@ -789,6 +803,18 @@ namespace Nebula
                 bool enabled = pair.Key.enabled && pair.Key.gameObject.activeInHierarchy;
                 if (pair.Value.enabled != enabled) pair.Value.enabled = enabled;
             }
+            // Cleared after the loop: copies share the parents they hang under, and each must still read the change.
+            foreach (var t in ChangedSources) if (t != null) t.hasChanged = false;
+            ChangedSources.Clear();
+        }
+
+        /// <summary>Whether <paramref name="source"/> or any transform between it and <paramref name="owner"/> was written since the last sync (noted for clearing).</summary>
+        private static bool SourceChanged(Transform source, Transform owner)
+        {
+            bool changed = false;
+            for (var t = source; t != null && t != owner; t = t.parent)
+                if (t.hasChanged) { changed = true; ChangedSources.Add(t); }
+            return changed;
         }
 
         /// <summary>
