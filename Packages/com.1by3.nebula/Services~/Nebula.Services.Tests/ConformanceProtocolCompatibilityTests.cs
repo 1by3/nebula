@@ -296,6 +296,32 @@ public class ConformanceProtocolCompatibilityTests
     }
 
     /// <summary>
+    /// A mesh that runs at another tick rate than 60 (docs/tick-rate.md) admits only clients of <see cref="HelloMsg.TickRateVersion"/>
+    /// and later, which run at the rate the welcome carries: a client of 29 would count every tick at 60 Hz. It is refused with the
+    /// narrowed window; a current client is welcomed with the mesh's rate.
+    /// </summary>
+    [Test]
+    public void AMeshAt30HzRefusesAProtocol29ClientAndWelcomesACurrentOneWithItsRate()
+    {
+        NetworkTime.Configure(30);
+        try
+        {
+            using var world = new ScaleWorld(1);
+            using var fleet = new Fleet(gateways: 1);
+            fleet.Worker.SpawnIntoRequestedContainer = true;
+            var old = fleet.Connect(0, "protocol-29-at-30hz");
+            old.AnnounceVersion = 29;
+            var current = fleet.Connect(0, "current-at-30hz");
+            Assert.That(fleet.Run(() => old.Rejected != null && current.Welcome != null, seconds: 20), Is.True);
+            Assert.That(old.Rejected!.Value.Code, Is.EqualTo(JoinRejectReason.ProtocolUnsupported));
+            Assert.That(old.Rejected!.Value.SupportedMinVersion, Is.EqualTo(HelloMsg.TickRateVersion));
+            Assert.That(old.Welcome, Is.Null);
+            Assert.That(current.Welcome!.Value.TickRate, Is.EqualTo((byte)30));
+        }
+        finally { NetworkTime.Configure(NetworkTime.DefaultTickRate); }
+    }
+
+    /// <summary>
     /// Protocol 19 was not additive: removing the obsolete DynamicContainer behaviour renumbered every carrier prefab's
     /// behaviours, so a protocol-18 client would address RPCs, variables and sync state to the wrong behaviour. The
     /// recorded protocol-18 client is refused before it reaches a worker, with the range the gateway accepts.

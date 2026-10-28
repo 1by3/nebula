@@ -1401,6 +1401,37 @@ namespace Nebula
             _varsPacketsIn = 0;
         }
 
+        /// <summary>
+        /// Run at the tick rate the gateway welcomed this client with: the simulation rate, the fixed step and every
+        /// tick count derived from seconds follow it. A change drops the server clock and the prediction tick, which
+        /// counted at the old rate; the welcome's own tick anchors them again. 0 (a gateway that never wrote the byte)
+        /// is the default rate.
+        /// </summary>
+        internal void AdoptTickRate(byte welcomed)
+        {
+            int rate = NetworkTime.ClampRate(welcomed);
+            if (rate == NetworkTime.TickRate) return;
+            int was = NetworkTime.TickRate;
+            NetworkTime.Configure(rate);
+            if (Config != null) Config.TickRate = rate;
+            Time.fixedDeltaTime = NetworkTime.TickInterval;
+            _latestServerTick = 0;
+            _serverTickAnchor = 0;
+            _serverTickAnchorTime = 0;
+            _serverTickEstimate = 0;
+            _predictTick = 0;
+            _hasRenderOffset = false;
+            _adaptiveDelayTicks = 0;
+            InputLeadAdjustTicks = 0;
+            NebulaLog.Info($"tick rate {rate} Hz (the gateway's; this build ran at {was})");
+        }
+
+        /// <summary>
+        /// How far the server clock estimate may be off before it snaps to a fresh tick instead of easing toward it:
+        /// 50 ms, in ticks at the running rate.
+        /// </summary>
+        private static double ClockSnapTicks => NetworkTime.SecondsToTicksExact(0.05);
+
         private void NoteServerTick(uint tick)
         {
             if (tick <= _latestServerTick) return;
@@ -1410,7 +1441,7 @@ namespace Nebula
             double now = Time.unscaledTimeAsDouble;
             double fresh = tick + halfRtt;
             double current = _serverTickAnchor + (now - _serverTickAnchorTime) * NetworkTime.TickRate;
-            if (_serverTickAnchorTime == 0 || Math.Abs(fresh - current) > 3) _serverTickAnchor = fresh;
+            if (_serverTickAnchorTime == 0 || Math.Abs(fresh - current) > ClockSnapTicks) _serverTickAnchor = fresh;
             else _serverTickAnchor = current + (fresh - current) * 0.1;
             _serverTickAnchorTime = now;
         }
@@ -1553,6 +1584,9 @@ namespace Nebula
                     SessionReclaimed = w.Reclaimed;
                     // A gateway that does not write the field speaks exactly the protocol this build sent it.
                     NegotiatedProtocolVersion = w.NegotiatedVersion != 0 ? w.NegotiatedVersion : HelloMsg.ProtocolVersion;
+                    // The mesh's tick rate, before anything reads a tick (docs/tick-rate.md): every tick number the
+                    // gateway sends from now on counts at that rate.
+                    AdoptTickRate(w.TickRate);
                     NoteServerTick(w.ServerTick);
                     _outageReported = false;
                     _retries = 0;

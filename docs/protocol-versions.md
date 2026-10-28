@@ -41,7 +41,7 @@ Protocol numbers are read from `HelloMsg.ProtocolVersion` at each release tag (`
 | never released | 27 | an instance's pose against its host (NEB-426, `docs/scope-frames.md` D12), a trailing section of `ContainerOwnership`; **additive**, so the window was 26..27 |
 | v0.1.0-beta.2 | 28 | portals (NEB-428, `docs/portals.md` D45, D46): messages `Portals` (27), `PortalLinks` (28) and `PortalWarm` (29) and a trailing link id on `InstancePrepare` and `InstanceReady`; additive bytes but not meaning, so **closes the window to 28..28**, pre-1.0 |
 | unreleased | 29 | tick-stamped server events on predicted entities (NEB-474): a trailing events section of `OwnerState` and of the handover's pending inputs; **additive**, so the window is 28..29 |
-| unreleased | 30 | motion fidelity on the identity stream (NEB-406): an extension byte, angular velocity and precise rotation in `EntityStateEntry`; **additive**, so the window is 29..30 |
+| unreleased | 30 | motion fidelity on the identity stream (NEB-406): an extension byte, angular velocity and precise rotation in `EntityStateEntry`; **additive**, so the window is 29..30. Also: a client of 30 runs at `WelcomeMsg.TickRate` (NEB-381, `docs/tick-rate.md`); a gateway whose mesh is not at 60 Hz narrows the window to 30..30 |
 
 Every step in that table was breaking, because until now there was no window to be additive inside: a gateway
 required an exact match, and `HelloMsg.Write` could not even announce a version other than the one it was built
@@ -155,6 +155,10 @@ of 4. A gateway writes the extension only to a client that negotiated 30 (`Hello
 29 the protocol-29 entry, with the 4-byte rotation (`ConformanceProtocolCompatibilityTests.AProtocol29ClientIsSentStateEntriesItCanRead`).
 Workers match exactly. The window is 29..30: `MinProtocolVersion` moves to 29 (N-1, D1), so clients of 28 are refused; the
 protocol-29 recording replays as N-1 through a frozen protocol-29 decoder, and `protocol-30-handshake.json` was recorded for the next bump.
+Protocol 30 also means the client runs at the rate the gateway's `Welcome` carries (`HelloMsg.TickRateVersion`, NEB-381): the byte
+was always written, as 60, and a client of 29 ignores it. A gateway at the default 60 Hz keeps the window 29..30; a gateway at any
+other rate admits 30 only and refuses 29 with `ProtocolUnsupported` (`ProtocolCompatibility.MinClientProtocol`,
+`ConformanceProtocolCompatibilityTests.AMeshAt30HzRefusesAProtocol29ClientAndWelcomesACurrentOneWithItsRate`).
 
 ## Bumping the protocol
 

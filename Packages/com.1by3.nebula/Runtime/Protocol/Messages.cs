@@ -266,6 +266,12 @@ namespace Nebula
         public const ushort DroppedTicksVersion = 31;
         /// <summary>The first protocol whose clients are sent <see cref="EntityStateEntry"/> extensions (<see cref="TransformFieldsExt"/>).</summary>
         public const ushort MotionFidelityVersion = 30;
+        /// <summary>
+        /// The first protocol whose clients run at the rate in <see cref="WelcomeMsg.TickRate"/> (docs/tick-rate.md). Older
+        /// clients ignore the byte and count ticks at 60 Hz, so a gateway whose mesh runs at another rate refuses them
+        /// (<see cref="ProtocolCompatibility.MinClientProtocol"/>); at the default rate they are admitted as before.
+        /// </summary>
+        public const ushort TickRateVersion = 30;
         /// <summary>The first protocol whose clients are sent the server events trailing <see cref="OwnerStateMsg"/>.</summary>
         public const ushort ServerEventsVersion = 29;
         /// <summary>The first protocol whose clients are sent <see cref="MsgId.FarEntities"/>.</summary>
@@ -356,6 +362,7 @@ namespace Nebula
         /// lives, including across a reconnection through another gateway (see <see cref="SessionToken"/>).
         /// </summary>
         public ulong ClientId;
+        /// <summary>The mesh's simulation rate in ticks per second (<see cref="NetworkTime.TickRate"/>). Clients of <see cref="HelloMsg.TickRateVersion"/> and later run at it.</summary>
         public byte TickRate;
         public uint ServerTick;
         /// <summary>The player's identity for this and every later session (<see cref="PlayerIdentity"/>).</summary>

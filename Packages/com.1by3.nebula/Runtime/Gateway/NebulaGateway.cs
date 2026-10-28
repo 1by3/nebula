@@ -2020,11 +2020,13 @@ namespace Nebula
                 // ---- NEB-228 compatibility window (docs/compatibility-policy.md). Refuse with a code the game
                 // can turn into "update required" or "this server is older than your build", and record the
                 // negotiated protocol on the session: everything sent to this client is encoded at that version.
-                if (!ProtocolCompatibility.ClientProtocolAccepted(hello.Version))
+                // A mesh at another tick rate than 60 admits only clients that honour WelcomeMsg.TickRate (docs/tick-rate.md).
+                if (!ProtocolCompatibility.ClientProtocolAccepted(hello.Version, NetworkTime.TickRate))
                 {
-                    Reject(c, hello.Version < HelloMsg.MinProtocolVersion
-                        ? $"this game server speaks protocol {ProtocolCompatibility.WindowText()}; your client speaks {hello.Version} and needs updating"
-                        : $"this game server speaks protocol {ProtocolCompatibility.WindowText()} and has not been updated to your client's {hello.Version}",
+                    string window = ProtocolCompatibility.WindowText(NetworkTime.TickRate);
+                    Reject(c, hello.Version < ProtocolCompatibility.MinClientProtocol(NetworkTime.TickRate)
+                        ? $"this game server speaks protocol {window}{(hello.Version >= HelloMsg.MinProtocolVersion ? $" at {NetworkTime.TickRate} Hz" : "")}; your client speaks {hello.Version} and needs updating"
+                        : $"this game server speaks protocol {window} and has not been updated to your client's {hello.Version}",
                         false, JoinRejectReason.ProtocolUnsupported);
                     return;
                 }
@@ -2194,7 +2196,7 @@ namespace Nebula
                 Reason = reason, Retry = retry, Code = code, Saturation = saturation,
                 // Every refusal carries the window and the content version, so a client that was refused for
                 // another reason still learns whether an update is waiting for it.
-                SupportedMinVersion = HelloMsg.MinProtocolVersion, SupportedMaxVersion = HelloMsg.ProtocolVersion,
+                SupportedMinVersion = ProtocolCompatibility.MinClientProtocol(NetworkTime.TickRate), SupportedMaxVersion = HelloMsg.ProtocolVersion,
                 ServerContentVersion = Config.GameContentVersion,
             }.Write(_writer);
             Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
