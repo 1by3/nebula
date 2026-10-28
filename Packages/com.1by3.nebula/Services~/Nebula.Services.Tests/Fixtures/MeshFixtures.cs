@@ -47,6 +47,10 @@ public sealed class FakeWorker : IDisposable
         public float FarRadius;
         /// <summary>Its far updates per second.</summary>
         public float FarRate = 1f;
+        /// <summary>Its far class (<c>NetworkIdentity.FarClass</c>, D110).</summary>
+        public byte FarClass;
+        /// <summary>Its rotation, for the far tier's entries.</summary>
+        public Quaternion Rotation = Quaternion.identity;
         public ushort PrefabId;
     }
 
@@ -483,9 +487,11 @@ public sealed class FakeWorker : IDisposable
         _far.ExitMargin = Settings.ExitMargin;
         _far.Begin(now);
         bool any = false;
+        var classes = FarClassTable.From(Settings);
         foreach (var e in _entities.Values)
         {
-            if (!(e.FarRadius > 0f) || _index.CarrierOf(e.NetId) != 0) continue;
+            classes.Resolve(e.FarClass, e.FarRadius, e.FarRate, out float farRadius, out float farRate);
+            if (!(farRadius > 0f) || _index.CarrierOf(e.NetId) != 0) continue;
             any = true;
             if (!_far.IsDue(e.NetId)) { _far.Keep(e.NetId); continue; }
             var box = ContainerRegistry.Resolve(e.Container);
@@ -493,8 +499,8 @@ public sealed class FakeWorker : IDisposable
             _far.Offer(new FarEntityEntry
             {
                 NetId = e.NetId, Epoch = e.Epoch, Kind = FarEntryKind.State, PrefabId = e.PrefabId, InterestGroup = e.InterestGroup,
-                Radius = e.FarRadius, UpdateRate = FarRelevance.ClampRate(e.FarRate), OwnerClientId = e.OwnerClientId,
-                X = absolute.X, Y = absolute.Y, Z = absolute.Z, Rotation = Quaternion.identity,
+                Radius = farRadius, UpdateRate = farRate, OwnerClientId = e.OwnerClientId, FarClass = e.FarClass,
+                X = absolute.X, Y = absolute.Y, Z = absolute.Z, Rotation = e.Rotation,
             }, RegionKeys.SaltOf(0UL), _publisher, Grid);
         }
         _far.End();
@@ -1192,7 +1198,19 @@ public sealed class FakeClient : IDisposable
     public readonly List<ulong> FarGone = new(), FarPromoted = new();
     /// <summary>Far entries for an entity this client held as a replica at the time: the tier leaking into the normal one.</summary>
     public int FarWhileReplicated;
+    /// <summary>Protocol 31: compact far poses received (D111), the slots they name by, and the anchor each is an offset from.</summary>
+    public int FarPosesReceived, FarPosesUnresolved;
+    public readonly Dictionary<ushort, ulong> FarSlots = new();
+    private readonly Dictionary<ulong, (double X, double Y, double Z)> _farAnchors = new();
+    /// <summary>Protocol 31: far markers sent ahead of a replica's despawn (D112), and the ones that took over when it landed.</summary>
+    public readonly Dictionary<ulong, FarEntityEntry> FarHandoversPending = new();
+    public readonly List<ulong> FarHandedOver = new();
+    /// <summary>Despawns of a far-relevant replica that left this client with neither a replica nor a marker, while the gateway held it far.</summary>
+    public int FarHandoverGaps;
+    /// <summary>Bytes of far-tier messages received (full and compact).</summary>
+    public long FarBytes;
     private readonly List<FarEntityEntry> _farIn = new();
+    private readonly List<FarPose> _farPosesIn = new();
     /// <summary>
     /// Every sync chunk this client was sent, in arrival order, with how it came: <c>spawn</c>, <c>reliable</c> or
     /// <c>sequenced</c>. What the audience tests read: a restricted chunk a client may not have shows up here.
@@ -1434,15 +1452,44 @@ public sealed class FakeClient : IDisposable
             }
             case MsgId.FarEntities:
             {
+                FarBytes += r.Remaining + 1;
                 FarEntitiesMsg.Read(r, _farIn);
                 foreach (var entry in _farIn)
                 {
-                    Wire.Add((entry.Kind == FarEntryKind.Gone ? "far-gone " : "far ") + entry.NetId);
-                    if (entry.Kind == FarEntryKind.Gone) { if (Far.Remove(entry.NetId)) FarGone.Add(entry.NetId); continue; }
-                    if (Replicas.Contains(entry.NetId)) { FarWhileReplicated++; continue; }
-                    Far[entry.NetId] = entry;
-                    FarStatesOf.TryGetValue(entry.NetId, out int n);
-                    FarStatesOf[entry.NetId] = n + 1;
+                    Wire.Add((entry.Kind == FarEntryKind.Gone ? "far-gone " : entry.FromReplica ? "far-handover " : "far ") + entry.NetId);
+                    if (entry.Kind == FarEntryKind.Gone)
+                    {
+                        FarHandoversPending.Remove(entry.NetId);
+                        if (Far.Remove(entry.NetId)) FarGone.Add(entry.NetId);
+                        continue;
+                    }
+                    if (Replicas.Contains(entry.NetId))
+                    {
+                        if (entry.FromReplica) FarHandoversPending[entry.NetId] = entry;
+                        else FarWhileReplicated++;
+                        continue;
+                    }
+                    KeepFar(entry);
+                }
+                break;
+            }
+            case MsgId.FarPoses:
+            {
+                FarBytes += r.Remaining + 1;
+                FarPosesMsg.Read(r, _farPosesIn);
+                foreach (var pose in _farPosesIn)
+                {
+                    FarPosesReceived++;
+                    if (!FarSlots.TryGetValue(pose.Slot, out ulong netId) || !Far.TryGetValue(netId, out var held)) { FarPosesUnresolved++; continue; }
+                    var anchor = _farAnchors[netId];
+                    held.X = anchor.X + pose.DX;
+                    held.Y = anchor.Y + pose.DY;
+                    held.Z = anchor.Z + pose.DZ;
+                    held.Velocity = pose.Velocity;
+                    Far[netId] = held;
+                    Wire.Add("far-pose " + netId);
+                    FarStatesOf.TryGetValue(netId, out int n);
+                    FarStatesOf[netId] = n + 1;
                 }
                 break;
             }
@@ -1485,6 +1532,7 @@ public sealed class FakeClient : IDisposable
                 Despawned.Add(msg.NetId);
                 Wire.Add("despawn " + msg.NetId);
                 Replicas.Remove(msg.NetId);
+                if (FarHandoversPending.Remove(msg.NetId, out var handover)) { KeepFar(handover); FarHandedOver.Add(msg.NetId); }
                 break;
             }
             case MsgId.WorldState:
@@ -1566,6 +1614,16 @@ public sealed class FakeClient : IDisposable
         Record?.Add((true, w.ToSegment().ToArray()));
         Transport.Send(_peer, Delivery.ReliableOrdered, w.ToSegment());
         Transport.Flush();
+    }
+
+    private void KeepFar(in FarEntityEntry entry)
+    {
+        if (Far.TryGetValue(entry.NetId, out var old) && old.Slot != 0 && FarSlots.TryGetValue(old.Slot, out ulong holder) && holder == entry.NetId) FarSlots.Remove(old.Slot);
+        Far[entry.NetId] = entry;
+        _farAnchors[entry.NetId] = (entry.X, entry.Y, entry.Z);
+        if (entry.Slot != 0) FarSlots[entry.Slot] = entry.NetId;
+        FarStatesOf.TryGetValue(entry.NetId, out int n);
+        FarStatesOf[entry.NetId] = n + 1;
     }
 
     /// <summary>Say goodbye, as <c>NebulaClient.Leave</c> does, and keep the link open for the gateway to close.</summary>

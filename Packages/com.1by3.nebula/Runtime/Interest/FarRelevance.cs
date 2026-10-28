@@ -64,13 +64,15 @@ namespace Nebula
             public ulong Mask;
             public double NextAt;
             public uint Epoch;
-            public bool Offered;
+            /// <summary>The tick (<see cref="_tick"/>) it was last offered or kept in: a stamp, so a tick needs no pass to reset it.</summary>
+            public uint OfferedTick;
         }
 
         private readonly Dictionary<ulong, Track> _tracks = new Dictionary<ulong, Track>();
         private readonly List<ulong> _scratch = new List<ulong>();
         private double _now, _nextEval;
         private bool _evaluate;
+        private uint _tick;
 
         /// <summary>Sends decided this tick, in order (a <see cref="FarEntryKind.Gone"/> before the next state of anything).</summary>
         public readonly List<Outgoing> Out = new List<Outgoing>();
@@ -91,16 +93,8 @@ namespace Nebula
             _now = now;
             _evaluate = now >= _nextEval;
             if (_evaluate) _nextEval = now + EvalInterval;
-            if (_tracks.Count == 0) return;
-            _scratch.Clear();
-            foreach (var kv in _tracks) if (kv.Value.Offered) _scratch.Add(kv.Key);
-            for (int i = 0; i < _scratch.Count; i++)
-            {
-                var t = _tracks[_scratch[i]];
-                t.Offered = false;
-                _tracks[_scratch[i]] = t;
-            }
-            _scratch.Clear();
+            // Tick 0 is "never offered": skip it when the counter wraps.
+            if (++_tick == 0) _tick = 1;
         }
 
         /// <summary>Whether this tick has anything to do for the entity, so the host can skip working out its pose.</summary>
@@ -113,7 +107,7 @@ namespace Nebula
         public void Keep(ulong netId)
         {
             if (!_tracks.TryGetValue(netId, out var t)) return;
-            t.Offered = true;
+            t.OfferedTick = _tick;
             _tracks[netId] = t;
         }
 
@@ -132,8 +126,9 @@ namespace Nebula
                 ulong next = 0;
                 if (publisher != null && entry.Radius > 0)
                 {
-                    ulong enter = publisher.WideMaskSalted(grid, scopeSalt, entry.X, entry.Y, entry.Z, entry.Radius);
-                    ulong stay = mask == 0 ? 0 : publisher.WideMaskSalted(grid, scopeSalt, entry.X, entry.Y, entry.Z, entry.Radius + FarRelevance.StayMargin(entry.Radius, ExitMargin));
+                    ulong enter, stay;
+                    if (mask == 0) { enter = publisher.WideMaskSalted(grid, scopeSalt, entry.X, entry.Y, entry.Z, entry.Radius); stay = 0; }
+                    else publisher.WideMasksSalted(grid, scopeSalt, entry.X, entry.Y, entry.Z, entry.Radius, entry.Radius + FarRelevance.StayMargin(entry.Radius, ExitMargin), out enter, out stay);
                     next = enter | (mask & stay);
                 }
                 ulong gone = mask & ~next;
@@ -151,7 +146,7 @@ namespace Nebula
             }
             t.Mask = mask;
             t.Epoch = entry.Epoch;
-            t.Offered = true;
+            t.OfferedTick = _tick;
             _tracks[entry.NetId] = t;
         }
 
@@ -163,7 +158,7 @@ namespace Nebula
         {
             if (_tracks.Count == 0) return;
             _scratch.Clear();
-            foreach (var kv in _tracks) if (!kv.Value.Offered) _scratch.Add(kv.Key);
+            foreach (var kv in _tracks) if (kv.Value.OfferedTick != _tick) _scratch.Add(kv.Key);
             for (int i = 0; i < _scratch.Count; i++)
             {
                 var t = _tracks[_scratch[i]];

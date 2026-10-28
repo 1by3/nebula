@@ -44,9 +44,18 @@ namespace Nebula
         [Min(0f)] public float FarRelevanceRadius = 0f;
         [Tooltip("Far-tier pose updates per second (default 1). Only used when FarRelevanceRadius is set; clamped to 0.1..30.")]
         [Min(0f)] public float FarUpdateRate = 1f;
+        [Tooltip("The far tier class this entity is counted in (0, the default class, budgeted by InterestFarMaxEntities). Classes are configured in NebulaConfig.InterestFarClasses, each with its own budget per client, rate, radius and priority, so a crowd of distant people never pushes ships out of a client's far tier. A class's rate and radius, when set, replace this entity's own; a class with a radius makes the entity far relevant even with FarRelevanceRadius 0. See docs/interest-management.md section 16 (D110).")]
+        public byte FarClass;
 
         /// <summary><see cref="FarUpdateRate"/> clamped to <see cref="FarRelevance.MinRate"/>..<see cref="FarRelevance.MaxRate"/>.</summary>
         public float EffectiveFarUpdateRate => FarRelevance.ClampRate(FarUpdateRate);
+
+        /// <summary>Whether this entity is in the far tier at all, once its class has had its say (<see cref="FarClassTable.Resolve"/>).</summary>
+        public bool IsFarRelevant(FarClassTable classes)
+        {
+            if (FarRelevanceRadius > 0f) return true;
+            return classes != null && FarClass != 0 && classes.Of(FarClass).Radius > 0f;
+        }
 
         [Header("Relevance")]
         [Tooltip("Ticks between two updates of this entity on the worker that owns it: its NetworkTick, its container and seam checks, and its transform stream. 1 (the default) is every tick. 6 is 10 updates a second; 60 is one. For the many entities that do not need a player's rate: townsfolk, traffic, wildlife. See https://nebula.1by3.co/docs/guides/server-owned-entities")]

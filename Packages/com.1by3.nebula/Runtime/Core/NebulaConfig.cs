@@ -321,6 +321,10 @@ namespace Nebula
         public int InterestMaxExplicitPerClient = 16;
         [Tooltip("Most entities one client holds in the far relevance tier at once (entities with a FarRelevanceRadius, seen as markers beyond the normal radius). The nearest are kept. 0 turns the far tier off for every client.")]
         public int InterestFarMaxEntities = 64;
+        [Tooltip("Far tier classes: each has its own budget per client, update rate, radius and priority, so a busy class (a crowd of distant people) never pushes another (ships, buildings) out of a client's far tier. An entity names its class with NetworkIdentity.FarClass; class 0 is the default, budgeted by InterestFarMaxEntities. A class's rate and radius, when set, replace its entities' own. See docs/interest-management.md section 16 (D110).")]
+        public FarClass[] InterestFarClasses = new FarClass[0];
+        [Tooltip("Most far entities one client holds over every class together, served by class priority. 0 (the default) caps each class by its own budget only.")]
+        public int InterestFarMaxTotal = 0;
         [Tooltip("The fastest a player is expected to travel, in metres per second. Only used to check that InterestSubscribeMargin covers one evaluation of travel.")]
         public float InterestMaxFocusSpeed = 12f;
         [Tooltip("Interest for fast movers: the most metres an entity may travel between two updates a client receives. The gateway sends a fast entity more often than its distance tier says, so that at its speed it never moves further than this between updates (400 m/s: every tick; 60 m/s: every 4th). Slow entities keep their tiers. 0 turns it off.")]

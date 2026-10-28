@@ -184,6 +184,12 @@ namespace Nebula
         /// (<see cref="PortalHandoffMsg"/>, <c>docs/portals.md</c> D44, D45). On a crash nothing is sent and the links read closed.
         /// </summary>
         PortalHandoff = 52,
+        /// <summary>
+        /// Gateway -> client: compact far updates for entities the client already holds in its far tier
+        /// (<see cref="FarPosesMsg"/>, protocol 31, <c>docs/interest-management.md</c> D111). Sent only to clients that
+        /// negotiated 31 or later; older ones get every update as a full <see cref="MsgId.FarEntities"/> entry.
+        /// </summary>
+        FarPoses = 53,
     }
 
     public enum PeerRole : byte
@@ -238,10 +244,13 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 30;
+        public const ushort ProtocolVersion = 31;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 29, one behind (the window is N and N-1, docs/compatibility-policy.md D1).
-        /// Protocol 30 (motion fidelity on the identity stream) is additive: an <see cref="EntityStateEntry"/> gains a byte of
+        /// The oldest client protocol the gateway accepts: 30, one behind (the window is N and N-1, docs/compatibility-policy.md D1).
+        /// Protocol 31 (far classes, <c>docs/interest-management.md</c> D110 to D112) is additive: a far entry gains optional
+        /// class, slot, age and hand-over fields behind new flag bits, and a new message (<see cref="MsgId.FarPoses"/>) carries
+        /// compact far updates; a gateway writes neither to a client of 30 (<see cref="FarClassesVersion"/>), which is sent the
+        /// far entries it always was. Clients of 29 and older are refused. Protocol 30 (motion fidelity on the identity stream) is additive: an <see cref="EntityStateEntry"/> gains a byte of
         /// <see cref="TransformFieldsExt"/> after its field mask, an angular velocity, and 15-bit smallest-three rotations,
         /// which a gateway writes only to clients that negotiated 30 (<see cref="MotionFidelityVersion"/>); a client of 29 is
         /// sent the entries it always was. Clients of 28 and older are refused. Protocol 29 (tick-stamped server events on predicted entities,
@@ -258,7 +267,9 @@ namespace Nebula
         /// drives something (<see cref="MsgId.DriveInput"/>). Gateway-to-worker and worker-to-worker connections require
         /// <see cref="ProtocolVersion"/> exactly.
         /// </summary>
-        public const ushort MinProtocolVersion = 29;
+        public const ushort MinProtocolVersion = 30;
+        /// <summary>The first protocol whose clients are sent far classes, slots, ages, hand-overs and <see cref="MsgId.FarPoses"/>.</summary>
+        public const ushort FarClassesVersion = 31;
         /// <summary>The first protocol whose clients are sent <see cref="EntityStateEntry"/> extensions (<see cref="TransformFieldsExt"/>).</summary>
         public const ushort MotionFidelityVersion = 30;
         /// <summary>The first protocol whose clients are sent the server events trailing <see cref="OwnerStateMsg"/>.</summary>

@@ -46,8 +46,32 @@ namespace Nebula
         public Quaternion Rotation { get; internal set; }
         /// <summary>Velocity in its scope's own space, m/s (half precision).</summary>
         public Vector3 Velocity { get; internal set; }
-        /// <summary><see cref="Time.unscaledTimeAsDouble"/> when the newest update arrived.</summary>
+        /// <summary>
+        /// <see cref="Time.unscaledTimeAsDouble"/> when the newest pose was taken, as near as this client can tell: when it
+        /// arrived, less the age the gateway reported for a pose it had stored (protocol 31).
+        /// </summary>
         public double ReceivedAt { get; internal set; }
+        /// <summary>Its far class (<see cref="NetworkIdentity.FarClass"/>, D110): pick what to draw by it. 0 from a gateway older than protocol 31.</summary>
+        public byte FarClass { get; internal set; }
+        /// <summary>The way it faces, a unit vector in its scope's own space (<see cref="Rotation"/> times forward).</summary>
+        public Vector3 Forward { get; internal set; }
+        /// <summary>
+        /// It came from a replica this client held (D112): the replica left the set and this marker took over in the same
+        /// message, so a game that draws both never shows neither. <see cref="PredictedWorldPosition"/> eases from where the
+        /// replica was drawn to the far pose over <see cref="HandoverBlendSeconds"/>.
+        /// </summary>
+        public bool FromReplica { get; internal set; }
+        /// <summary>Where the replica was drawn (this client's Unity space) when this marker took over from it.</summary>
+        public Vector3 HandoverFrom { get; internal set; }
+        /// <summary><see cref="Time.unscaledTimeAsDouble"/> when this marker took over from a replica (negative infinity when it did not).</summary>
+        public double HandoverAt { get; internal set; } = double.NegativeInfinity;
+
+        /// <summary>Seconds over which a marker that took over from a replica eases from the replica's last drawn spot onto its far pose.</summary>
+        public const float HandoverBlendSeconds = 0.3f;
+
+        /// <summary>The slot compact poses name it by (protocol 31), and the position they are offsets from.</summary>
+        internal ushort Slot;
+        internal Double3 Anchor;
 
         /// <summary><see cref="Position"/> in this client's Unity space (its floating origin taken off, in double).</summary>
         public Vector3 WorldPosition => ContainerRegistry.ToFrame(Position, InstanceId);
@@ -64,7 +88,17 @@ namespace Nebula
             if (ahead < 0) ahead = 0;
             if (ahead > limit) ahead = limit;
             var p = Position;
-            return ContainerRegistry.ToFrame(new Double3(p.X + Velocity.x * ahead, p.Y + Velocity.y * ahead, p.Z + Velocity.z * ahead), InstanceId);
+            var target = ContainerRegistry.ToFrame(new Double3(p.X + Velocity.x * ahead, p.Y + Velocity.y * ahead, p.Z + Velocity.z * ahead), InstanceId);
+            double since = now - HandoverAt;
+            if (since >= 0 && since < HandoverBlendSeconds)
+            {
+                // Carry the replica's last drawn spot on by the same velocity, and ease from it onto the far pose.
+                var from = HandoverFrom + Velocity * (float)since;
+                float t = (float)(since / HandoverBlendSeconds);
+                t = t * t * (3f - 2f * t);
+                return Vector3.LerpUnclamped(from, target, t);
+            }
+            return target;
         }
 
         internal void Apply(in FarEntityEntry e, double now)
@@ -79,7 +113,22 @@ namespace Nebula
             UpdateRate = e.UpdateRate;
             Position = new Double3(e.X, e.Y, e.Z);
             Rotation = e.Rotation;
+            Forward = e.Rotation * Vector3.forward;
             Velocity = e.Velocity;
+            ReceivedAt = now - Mathf.Max(0f, e.Age);
+            FarClass = e.FarClass;
+            Slot = e.Slot;
+            Anchor = Position;
+        }
+
+        /// <summary>A compact pose (protocol 31, D111): an offset from the anchor; an upright body keeps its up axis.</summary>
+        internal void Apply(in FarPose p, double now)
+        {
+            Position = new Double3(Anchor.X + p.DX, Anchor.Y + p.DY, Anchor.Z + p.DZ);
+            if (p.Upright) Rotation = FarPosesMsg.UprightRotation(p.Forward, Rotation * Vector3.up, Rotation);
+            else Rotation = p.Rotation;
+            Forward = p.Forward;
+            Velocity = p.Velocity;
             ReceivedAt = now;
         }
 
