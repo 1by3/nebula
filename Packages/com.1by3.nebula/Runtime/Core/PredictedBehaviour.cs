@@ -48,8 +48,8 @@ namespace Nebula
 
         /// <summary>Authority (NEB-484): the latest range of ticks this entity was not stepped through, inclusive (0 and 0: none).</summary>
         internal uint DroppedFrom, DroppedTo;
-        /// <summary>Authority (NEB-484): ticks the dropped range is repeated in the owner's reports after it, so a lost report does not lose it.</summary>
-        internal const uint DroppedReportTicks = 30;
+        /// <summary>Authority (NEB-484): ticks the dropped range is repeated in the owner's reports after it, so a lost report does not lose it: half a second (NEB-381).</summary>
+        internal static uint DroppedReportTicks => (uint)NetworkTime.SecondsToTicks(0.5);
         /// <summary>Authority (NEB-484): ticks this entity was not stepped through since spawn.</summary>
         public int TicksDropped { get; protected set; }
 

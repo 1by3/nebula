@@ -1,7 +1,7 @@
 # A configurable tick rate — design
 
-Status: implemented on branch `perf/tick-rate` (NEB-381). Protocol stays **30**: honouring the welcome's rate is part of
-protocol 30, which has not been released. Tests: `TickRateTests` (EditMode),
+Status: implemented on branch `perf/tick-rate` (NEB-381), on top of protocol 31 (NEB-484). No bump of its own:
+honouring the welcome's rate is part of protocol 30, which had not been released. Tests: `TickRateTests` (EditMode),
 `ConformanceProtocolCompatibilityTests.AMeshAt30HzRefusesAProtocol29ClientAndWelcomesACurrentOneWithItsRate` (services).
 
 ## 0. Purpose
@@ -91,8 +91,9 @@ says otherwise.
 **Compatibility.** A client of protocol 29 ignores the byte and counts at 60 Hz. Honouring it is part of protocol 30
 (`HelloMsg.TickRateVersion`), which has not shipped, so no bump: a gateway at the default rate admits 29 and 30 as
 before; a gateway at any other rate admits 30 only (`ProtocolCompatibility.MinClientProtocol(rate)`) and refuses 29
-with `ProtocolUnsupported` and the narrowed window in `SupportedMinVersion`. Gateways and workers of a mesh must run
-the same build, as before.
+with `ProtocolUnsupported` and the narrowed window in `SupportedMinVersion`. Since protocol 31 (NEB-484) the window is
+30..31, so every client a gateway admits honours the rate; the narrowing matters again only if a window ever reaches
+back past 30. Gateways and workers of a mesh must run the same build, as before.
 
 ## 4. Physics (D4)
 
