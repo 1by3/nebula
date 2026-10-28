@@ -456,6 +456,14 @@ namespace Nebula
         /// <summary>Authority: ticks run as part of a catch-up after the worker skipped their numbers (NEB-412).</summary>
         public int SkippedTicksStepped { get; protected set; }
 
+        /// <summary>
+        /// Whether the authority steps skipped ticks at all (<see cref="StepSkippedServerTicks"/>), set by the worker before each tick:
+        /// true after an occasional hitch, false while the worker skips ticks again and again (overloaded). Stepping each pawn through
+        /// the ticks the worker could not afford doubled what the pawns cost it once it fell behind, which kept it behind: at 75
+        /// players a worker skipping 1.4 ticks per tick spent 2.4 pawn steps per pawn per tick.
+        /// </summary>
+        internal static bool ReplaySkippedTicks = true;
+
         // ---- server events ---------------------------------------------------------------------------------------
 
         /// <summary>The most server events that can apply on one tick of one entity. More are refused and counted in <see cref="ServerEventsDropped"/>.</summary>
@@ -808,7 +816,9 @@ namespace Nebula
             // NEB-412: the worker skipped tick numbers (it fell more than MaxLagTicks behind the wall clock). The owner
             // predicted those ticks with the inputs it sent for them; step through each one whose input is waiting,
             // oldest first, so this tick starts from where the owner has the entity instead of a correction.
-            if (_lastTickedServerTick != 0 && tick > _lastTickedServerTick + 1 && StepSkippedServerTicks
+            // Not while the worker keeps skipping (ReplaySkippedTicks): then every replay adds a tick's work to a worker that could not
+            // afford the ticks it skipped, and the entity is corrected instead.
+            if (_lastTickedServerTick != 0 && tick > _lastTickedServerTick + 1 && StepSkippedServerTicks && ReplaySkippedTicks
                 && (Identity.OwnerClientId != 0 || Identity.DriverClientId != 0))
             {
                 uint from = _lastTickedServerTick + 1;

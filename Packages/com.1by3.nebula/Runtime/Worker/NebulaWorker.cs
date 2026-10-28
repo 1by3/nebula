@@ -1183,6 +1183,8 @@ namespace Nebula
             {
                 _profileSkippedTicks += (int)(behind - MaxLagTicks);
                 _lastSimulatedTick = derived - MaxLagTicks;
+                _previousSkipAt = _lastSkipAt;
+                _lastSkipAt = _lastSimulatedTick; // the tick the worker resumes from: the ticks it simulates next come after it
             }
             long budget = CatchUpBudgetTimestamps;
             for (int n = 0; n < MaxCatchUpTicks && _lastSimulatedTick < derived; n++)
@@ -1199,8 +1201,28 @@ namespace Nebula
             _budgetSpent += BudgetClock() - start;
         }
 
+        /// <summary>The wall-clock ticks at which the last two catch-ups skipped tick numbers (0: never).</summary>
+        private uint _lastSkipAt, _previousSkipAt;
+        private int _profileReplaysWithheld;
+        private uint _lastRanTick;
+
+        /// <summary>
+        /// Skips closer together than this (a second at 60 Hz) mean the worker is overloaded rather than past a hitch: predicted entities
+        /// then are not stepped through the ticks it skipped (<see cref="PredictedBehaviourBase.ReplaySkippedTicks"/>), and their owners
+        /// are corrected instead, so the work the worker could not afford is not added back on top of the next tick.
+        /// </summary>
+        public const uint SustainedSkipTicks = 60;
+
+        /// <summary>Whether the worker is skipping ticks again and again: twice within <see cref="SustainedSkipTicks"/>, the last of them that recently.</summary>
+        internal bool SkippingSustained(uint tick) =>
+            _previousSkipAt != 0 && _lastSkipAt - _previousSkipAt <= SustainedSkipTicks && tick >= _lastSkipAt && tick - _lastSkipAt <= SustainedSkipTicks;
+
         private void RunTick(uint tick)
         {
+            bool replay = !SkippingSustained(tick);
+            if (!replay && _lastRanTick != 0 && tick > _lastRanTick + 1) _profileReplaysWithheld++;
+            _lastRanTick = tick;
+            PredictedBehaviourBase.ReplaySkippedTicks = replay;
             // Everything between two ticks that is not ours: the physics step, Update (transport poll, control
             // plane), the engine's own frame work. Reported as 'gap' so the tick's share of the core is visible.
             long start = Stopwatch.GetTimestamp();
@@ -1255,7 +1277,7 @@ namespace Nebula
             ProfUntimed.Calls = _profileTicks;
             string frameText = frame.Frames > 0 ? $" | frame avg {frame.AvgMs:0.0}ms p90 {frame.P90Ms:0.0}ms max {frame.MaxMs:0.0}ms: {_lastFrameSplit}" : "";
             string sections = NebulaProfiler.ReportAndReset(_profileTicks, out _lastProfileSections);
-            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} budget {_profileBudgetCuts} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} dormant {DormantCount} resolve {ResolveCounters(_profileTicks)} rpcRejected {NebulaDiagnostics.RejectedAuthorityRpcSends} mem rss={WorkerMemorySampler.Mb(_lastMemory.ResidentBytes)}MB native={WorkerMemorySampler.Mb(_lastMemory.NativeAllocatedBytes)}MB managed={WorkerMemorySampler.Mb(_lastMemory.ManagedBytes)}MB | {sections}{frameText}");
+            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} budget {_profileBudgetCuts} noreplay {_profileReplaysWithheld} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} dormant {DormantCount} resolve {ResolveCounters(_profileTicks)} rpcRejected {NebulaDiagnostics.RejectedAuthorityRpcSends} mem rss={WorkerMemorySampler.Mb(_lastMemory.ResidentBytes)}MB native={WorkerMemorySampler.Mb(_lastMemory.NativeAllocatedBytes)}MB managed={WorkerMemorySampler.Mb(_lastMemory.ManagedBytes)}MB | {sections}{frameText}");
             _profileTicks = 0;
             _profileFrames = 0;
             _profileMaxMs = 0f;
@@ -1263,6 +1285,7 @@ namespace Nebula
             _profileDuplicateTicks = 0;
             _profileSkippedTicks = 0;
             _profileBudgetCuts = 0;
+            _profileReplaysWithheld = 0;
         }
 
         // ---------------------------------------------------------------------------------------- the tick
