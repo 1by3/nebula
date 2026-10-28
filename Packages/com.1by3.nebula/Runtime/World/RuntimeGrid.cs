@@ -278,7 +278,7 @@ namespace Nebula.World
             Vector3Int parsed;
             if (IsHosted)
             {
-                if (!ChunkKeys.TryParseHostedPartId(partId, out var key, out parsed) || !string.Equals(key, GridKey, StringComparison.Ordinal)) return false;
+                if (!ChunkKeys.TryParseHostedPartIdOf(partId, GridKey, out parsed)) return false;
             }
             else if (!ChunkKeys.TryParsePartId(partId, out parsed)) return false;
             parsed = Normalize(parsed);

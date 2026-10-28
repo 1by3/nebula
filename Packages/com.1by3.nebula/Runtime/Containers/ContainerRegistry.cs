@@ -561,8 +561,18 @@ namespace Nebula
         public static bool TryParseRuntimeId(string id, out ulong runtimeId)
         {
             runtimeId = 0;
-            return id != null && id.Length > RuntimeIdPrefix.Length && id.StartsWith(RuntimeIdPrefix, StringComparison.Ordinal)
-                && ulong.TryParse(id.Substring(RuntimeIdPrefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out runtimeId);
+            if (id == null || id.Length <= RuntimeIdPrefix.Length || !id.StartsWith(RuntimeIdPrefix, StringComparison.Ordinal)) return false;
+            // Read in place (as ulong.TryParse with NumberStyles.None, without the substring): the worker asks for every lease row it walks.
+            ulong v = 0;
+            for (int i = RuntimeIdPrefix.Length; i < id.Length; i++)
+            {
+                int d = id[i] - '0';
+                if (d < 0 || d > 9) return false;
+                if (v > (ulong.MaxValue - (ulong)d) / 10UL) return false;
+                v = v * 10UL + (ulong)d;
+            }
+            runtimeId = v;
+            return true;
         }
 
         /// <summary>The runtime container registered as <paramref name="id"/> on this process, or null.</summary>
