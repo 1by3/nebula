@@ -6,7 +6,7 @@ The policy itself, and why it is shaped this way, is `docs/compatibility-policy.
 ## The rule, in one paragraph
 
 A **client** may talk to a **gateway** that accepts its protocol: the accepted range is
-`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 28..29; protocols 27 and older are not supported. Anything outside that is refused
+`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 29..30; protocols 28 and older are not supported. Anything outside that is refused
 with `JoinRejectReason.ProtocolUnsupported` and the gateway's range, so the client can tell "update the game"
 from "this server has not been upgraded yet". A **gateway, worker and orchestrator of one mesh** must speak the
 **same** protocol, exactly; a mismatch is refused with a logged reason. The game's own content version is a
@@ -41,6 +41,7 @@ Protocol numbers are read from `HelloMsg.ProtocolVersion` at each release tag (`
 | never released | 27 | an instance's pose against its host (NEB-426, `docs/scope-frames.md` D12), a trailing section of `ContainerOwnership`; **additive**, so the window was 26..27 |
 | v0.1.0-beta.2 | 28 | portals (NEB-428, `docs/portals.md` D45, D46): messages `Portals` (27), `PortalLinks` (28) and `PortalWarm` (29) and a trailing link id on `InstancePrepare` and `InstanceReady`; additive bytes but not meaning, so **closes the window to 28..28**, pre-1.0 |
 | unreleased | 29 | tick-stamped server events on predicted entities (NEB-474): a trailing events section of `OwnerState` and of the handover's pending inputs; **additive**, so the window is 28..29 |
+| unreleased | 30 | motion fidelity on the identity stream (NEB-406): an extension byte, angular velocity and precise rotation in `EntityStateEntry`; **additive**, so the window is 29..30 |
 
 Every step in that table was breaking, because until now there was no window to be additive inside: a gateway
 required an exact match, and `HelloMsg.Write` could not even announce a version other than the one it was built
@@ -146,6 +147,14 @@ frame without events is the bytes it always was. A gateway writes the section on
 `AuthorityTransfer` gains a trailing section after the state (`u32 last_event_tick`, then the same event list), written only when the entity
 holds events; workers match exactly. The window is 28..29: `MinProtocolVersion` stays 28, the protocol-28 recording replays as N-1 through
 the frozen protocol-28 decoder, and `protocol-29-handshake.json` was recorded for the next bump.
+
+30 is additive: motion fidelity on the identity stream (the Network Transform guide). Nothing a client sends changes. Each
+`EntityStateEntry` gains a `u8 ext` after its field mask (`TransformFieldsExt`): `AngularVelocity` appends three `f16` of
+container-local angular velocity, and `PreciseRotation` writes a compressed quaternion in 6 bytes (15 bits a component) instead
+of 4. A gateway writes the extension only to a client that negotiated 30 (`HelloMsg.MotionFidelityVersion`) and writes a client of
+29 the protocol-29 entry, with the 4-byte rotation (`ConformanceProtocolCompatibilityTests.AProtocol29ClientIsSentStateEntriesItCanRead`).
+Workers match exactly. The window is 29..30: `MinProtocolVersion` moves to 29 (N-1, D1), so clients of 28 are refused; the
+protocol-29 recording replays as N-1 through a frozen protocol-29 decoder, and `protocol-30-handshake.json` was recorded for the next bump.
 
 ## Bumping the protocol
 

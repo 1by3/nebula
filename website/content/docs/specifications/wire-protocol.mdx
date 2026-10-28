@@ -1,17 +1,19 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 29, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 30, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 29. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 30. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `29`. Every `Hello` carries the version its sender speaks.
+The current protocol version is `30`. Every `Hello` carries the version its sender speaks.
 
-A gateway accepts clients of protocol 28 and 29: `HelloMsg.MinProtocolVersion` is `28` and `HelloMsg.ProtocolVersion` is `29`, and a client of 27 or older is refused with `ProtocolUnsupported` and the gateway's range. Gateway-to-worker and worker-to-worker connections MUST match protocol `29` exactly. Before 1.0 a protocol change may close the client window to the new version; protocols 23 and 28 did, and protocols 24 to 27 and 29 did not.
+A gateway accepts clients of protocol 29 and 30: `HelloMsg.MinProtocolVersion` is `29` and `HelloMsg.ProtocolVersion` is `30`, and a client of 28 or older is refused with `ProtocolUnsupported` and the gateway's range. Gateway-to-worker and worker-to-worker connections MUST match protocol `30` exactly. Before 1.0 a protocol change may close the client window to the new version; protocols 23 and 28 did, and protocols 24 to 27, 29 and 30 did not.
+
+Protocol 30 added motion fidelity to the [batched transform state](#batched-transform-state): an `ext` byte after each entry's `fields`, an optional angular velocity, and a 6-byte precise compressed quaternion. A gateway writes entries for a client of 29 without them, in the protocol-29 layout. Because the client window is N and N-1, clients of 28 are refused from protocol 30 on.
 
 Protocol 29 added [server events](/docs/guides/prediction#apply-server-events) on predicted entities. `OwnerState` gains a trailing events section, and the `pending_inputs` of `AuthorityTransfer` gains a trailing section after `state`. A gateway sends the `OwnerState` section only to clients that negotiated 29; a client of 28 is sent the message without it and predicts without the events.
 
@@ -105,6 +107,10 @@ q = clamp(round_to_nearest(((clamp(v, -r, r) + r) / (2 * r)) * 1023), 0, 1023)
 
 Decode each ten-bit value with `(q / 1023) * (2 * r) - r`. Reconstruct the omitted, nonnegative component as `sqrt(max(0, 1 - a*a - b*b - c*c))`.
 
+### Precise compressed quaternion
+
+Protocol 30 adds a precise form of six bytes: a `u16` holding bits 47–32, then a `u32` holding bits 31–0 of a 48-bit value. Bits 46–45 hold the omitted component's index, chosen and signed as for the compressed form, and bits 44–30, 29–15 and 14–0 hold the remaining components, each quantised to fifteen bits with `32767` in place of `1023`. Bit 47 is zero. The error is about 0.005°.
+
 ## Shared identifiers and structures
 
 ### Entity identifiers and epochs
@@ -142,7 +148,7 @@ Positions and rotations are relative to this container unless a behavior's docum
 | `EntityFlags.OwnerDisconnected` | 4 | The owning client is disconnected and the worker is keeping the entity for the reclaim grace. The worker announces the entity again, in place, when the bit changes. |
 | `EntityFlags.PortalGhost` | 8 | A ghost spawn only: the sender ghosts the entity because it is in the band of a portal face whose other side the receiver holds. The receiver keeps it as a proxy only, posed through the link in its own scene. |
 
-Unknown flag bits are reserved. A version 29 sender MUST write them as zero.
+Unknown flag bits are reserved. A version 30 sender MUST write them as zero.
 
 ## Message registry
 
@@ -203,7 +209,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 51 | `PortalAdjacency` | `W-W` | Reliable ordered | [`PortalAdjacency`](#portal-adjacency-and-handoff) |
 | 52 | `PortalHandoff` | `W-W` | Reliable ordered | [`PortalHandoff`](#portal-adjacency-and-handoff) |
 
-IDs not listed in this table are reserved. A version 29 sender MUST NOT use them.
+IDs not listed in this table are reserved. A version 30 sender MUST NOT use them.
 
 ## Message layouts
 
@@ -428,7 +434,7 @@ A worker remembers applied call IDs for at most 4096 calls and 600 ticks. Beyond
 ```text
 StateBatchBody   := u32 tick, u16 worker_index, u16 entry_count, EntityStateEntry[entry_count]
 EntityStateEntry := u64 net_id, u32 entity_epoch, ContainerRef container,
-                    u16 fields, conditional_transform_fields
+                    u16 fields, u8 ext (protocol 30 and later), conditional_transform_fields
 ```
 
 `WorldState` and `GhostState` share this body. Writers group entries with the `Reliable` flag into reliable ordered packets and all other entries into sequenced packets. A packet MUST NOT mix the two classes.
@@ -460,6 +466,16 @@ After `fields`, write data in this order:
 2. Rotation, only when at least one rotation bit is set. Without `Quaternion`, write the selected Euler axes in X/Y/Z order and honor `Half`. With `Quaternion | Compressed`, write one compressed `u32`. With `Quaternion | Half`, write four `f16` components. With `Quaternion` alone, write a normal quaternion.
 3. Selected scale axes, X then Y then Z, honoring `Half`.
 4. When `Velocity` is set, write X, Y, and Z as three `f16` values regardless of `Half`.
+5. When `ext` has `AngularVelocity`, write the angular velocity's X, Y, and Z, in the container's local frame and radians per second, as three `f16` values.
+
+The `ext` byte is present only between peers of protocol 30 or later. A gateway writing to a client of 29 omits it, writes a precise rotation as the 4-byte compressed form, and omits the angular velocity.
+
+| Bit | Hex | Name | Meaning |
+| ---: | ---: | --- | --- |
+| 0 | `0x01` | `AngularVelocity` | Append the angular velocity (step 5). |
+| 1 | `0x02` | `PreciseRotation` | With `Quaternion \| Compressed`, write the rotation in the [precise form](#precise-compressed-quaternion) instead of the `u32` form. |
+
+Bits 2–7 of `ext` are reserved and MUST be zero.
 
 ### Prediction messages
 

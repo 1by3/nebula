@@ -191,6 +191,44 @@ namespace Nebula
             WriteUInt(packed);
         }
 
+        /// <summary>
+        /// Smallest-three quaternion compression at 15 bits per component: 6 bytes, worst-case error about 0.005 degrees
+        /// (<see cref="WriteCompressedQuaternion"/> is 4 bytes and about 0.1 to 0.16 degrees). Read it with
+        /// <see cref="NetworkReader.ReadPreciseQuaternion"/>.
+        /// </summary>
+        public void WritePreciseQuaternion(Quaternion q)
+        {
+            q.Normalize();
+            int largest = 0;
+            float lx = Mathf.Abs(q.x), ly = Mathf.Abs(q.y), lz = Mathf.Abs(q.z), lw = Mathf.Abs(q.w);
+            float max = lx;
+            if (ly > max) { max = ly; largest = 1; }
+            if (lz > max) { max = lz; largest = 2; }
+            if (lw > max) { max = lw; largest = 3; }
+            float sign = (largest == 0 ? q.x : largest == 1 ? q.y : largest == 2 ? q.z : q.w) < 0f ? -1f : 1f;
+            ulong packed = (ulong)largest << 45;
+            int shift = 30;
+            for (int i = 0; i < 4; i++)
+            {
+                if (i == largest) continue;
+                float v = (i == 0 ? q.x : i == 1 ? q.y : i == 2 ? q.z : q.w) * sign;
+                packed |= (ulong)QuantizePrecise(v) << shift;
+                shift -= 15;
+            }
+            WriteUShort((ushort)(packed >> 32));
+            WriteUInt((uint)packed);
+        }
+
+        private const int PreciseLevels = 32767;
+
+        internal static int QuantizePrecise(float v)
+        {
+            float t = (Mathf.Clamp(v, -SmallestThreeRange, SmallestThreeRange) + SmallestThreeRange) / (2f * SmallestThreeRange);
+            return Mathf.Clamp(Mathf.RoundToInt(t * PreciseLevels), 0, PreciseLevels);
+        }
+
+        internal static float DequantizePrecise(int q) => (q / (float)PreciseLevels) * (2f * SmallestThreeRange) - SmallestThreeRange;
+
         private const float SmallestThreeRange = 0.70710678f; // 1/sqrt(2)
 
         internal static int QuantizeSmallestThree(float v)

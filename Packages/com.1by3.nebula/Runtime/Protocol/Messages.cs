@@ -238,9 +238,13 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 29;
+        public const ushort ProtocolVersion = 30;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 28. Protocol 29 (tick-stamped server events on predicted entities,
+        /// The oldest client protocol the gateway accepts: 29, one behind (the window is N and N-1, docs/compatibility-policy.md D1).
+        /// Protocol 30 (motion fidelity on the identity stream) is additive: an <see cref="EntityStateEntry"/> gains a byte of
+        /// <see cref="TransformFieldsExt"/> after its field mask, an angular velocity, and 15-bit smallest-three rotations,
+        /// which a gateway writes only to clients that negotiated 30 (<see cref="MotionFidelityVersion"/>); a client of 29 is
+        /// sent the entries it always was. Clients of 28 and older are refused. Protocol 29 (tick-stamped server events on predicted entities,
         /// the Prediction guide) is additive: <see cref="OwnerStateMsg"/> gains a trailing events section that a gateway
         /// writes only to clients that negotiated 29 (<see cref="ServerEventsVersion"/>), so a client of 28 is sent exactly the bytes it was and
         /// predicts without the events. Protocol 28 (portals,
@@ -254,7 +258,9 @@ namespace Nebula
         /// drives something (<see cref="MsgId.DriveInput"/>). Gateway-to-worker and worker-to-worker connections require
         /// <see cref="ProtocolVersion"/> exactly.
         /// </summary>
-        public const ushort MinProtocolVersion = 28;
+        public const ushort MinProtocolVersion = 29;
+        /// <summary>The first protocol whose clients are sent <see cref="EntityStateEntry"/> extensions (<see cref="TransformFieldsExt"/>).</summary>
+        public const ushort MotionFidelityVersion = 30;
         /// <summary>The first protocol whose clients are sent the server events trailing <see cref="OwnerStateMsg"/>.</summary>
         public const ushort ServerEventsVersion = 29;
         /// <summary>The first protocol whose clients are sent <see cref="MsgId.FarEntities"/>.</summary>
@@ -1229,16 +1235,30 @@ namespace Nebula
         Axes = Position | Rotation | Scale,
     }
 
+    /// <summary>
+    /// Protocol 30 additions to a root transform update, in a byte written after <see cref="TransformFields"/> to peers of
+    /// <see cref="HelloMsg.MotionFidelityVersion"/> or newer. An older client is sent neither the byte nor what it announces.
+    /// </summary>
+    [Flags]
+    public enum TransformFieldsExt : byte
+    {
+        None = 0,
+        /// <summary>The entry carries the entity's angular velocity, container-local, in radians per second, as three half floats.</summary>
+        AngularVelocity = 1,
+        /// <summary>A compressed quaternion uses 15 bits per smallest-three component (6 bytes, about 0.005 degrees) instead of 10 (4 bytes, about 0.16 degrees).</summary>
+        PreciseRotation = 2,
+    }
+
     /// <summary>One entity's selected transform fields inside a WorldState/GhostState batch.</summary>
     public struct EntityStateEntry
     {
         /// <summary>
         /// Largest serialized size of one entry, for sizing Sequenced batches: id, epoch, container reference (two
-        /// bytes for a static container, ten for a dynamic one), field mask, position, rotation, scale, and velocity.
-        /// Only selected axes are serialized. Position, rotation, and scale precision follows NetworkTransform;
-        /// velocity uses three half floats when enabled.
+        /// bytes for a static container, ten for a dynamic one), field mask, extension byte, position, rotation, scale,
+        /// velocity and angular velocity. Only selected axes are serialized. Position, rotation, and scale precision
+        /// follows NetworkTransform; velocity and angular velocity use three half floats when enabled.
         /// </summary>
-        public const int WireSize = 8 + 4 + ContainerRef.MaxWireSize + 2 + 12 + 16 + 12 + 6;
+        public const int WireSize = 8 + 4 + ContainerRef.MaxWireSize + 2 + 1 + 12 + 16 + 12 + 6 + 6;
 
         public ulong NetId;
         public uint Epoch;
@@ -1248,6 +1268,10 @@ namespace Nebula
         public Vector3 Velocity;
         public Vector3 LocalScale;
         public TransformFields Fields;
+        /// <summary>Protocol 30 additions; dropped when the entry is written for an older peer.</summary>
+        public TransformFieldsExt Ext;
+        /// <summary>Angular velocity in the container's local space, radians per second (<see cref="TransformFieldsExt.AngularVelocity"/>).</summary>
+        public Vector3 AngularVelocity;
         public bool Reliable => (Fields & TransformFields.Reliable) != 0;
 
 #if !NEBULA_SERVICE
@@ -1294,17 +1318,26 @@ namespace Nebula
             velocity = (Fields & TransformFields.Velocity) != 0 ? Velocity : Vector3.zero;
         }
 
-        public void Write(NetworkWriter w)
+        public void Write(NetworkWriter w) => Write(w, HelloMsg.ProtocolVersion);
+
+        /// <summary>Write the entry as a peer of protocol <paramref name="version"/> reads it: before 30, without <see cref="Ext"/> and what it announces.</summary>
+        public void Write(NetworkWriter w, ushort version)
         {
+            var ext = version >= HelloMsg.MotionFidelityVersion ? Ext : TransformFieldsExt.None;
             w.WriteULong(NetId);
             w.WriteUInt(Epoch);
             Container.Write(w);
             w.WriteUShort((ushort)Fields);
+            if (version >= HelloMsg.MotionFidelityVersion) w.WriteByte((byte)ext);
             WriteVector(w, LocalPosition, 0);
             if ((Fields & TransformFields.Rotation) != 0)
             {
                 if ((Fields & TransformFields.Quaternion) == 0) WriteVector(w, LocalRotation.eulerAngles, 3);
-                else if ((Fields & TransformFields.Compressed) != 0) w.WriteCompressedQuaternion(LocalRotation);
+                else if ((Fields & TransformFields.Compressed) != 0)
+                {
+                    if ((ext & TransformFieldsExt.PreciseRotation) != 0) w.WritePreciseQuaternion(LocalRotation);
+                    else w.WriteCompressedQuaternion(LocalRotation);
+                }
                 else if ((Fields & TransformFields.Half) != 0)
                 { w.WriteHalf(LocalRotation.x); w.WriteHalf(LocalRotation.y); w.WriteHalf(LocalRotation.z); w.WriteHalf(LocalRotation.w); }
                 else w.WriteQuaternion(LocalRotation);
@@ -1312,23 +1345,31 @@ namespace Nebula
             WriteVector(w, LocalScale, 6);
             if ((Fields & TransformFields.Velocity) != 0)
             { w.WriteHalf(Velocity.x); w.WriteHalf(Velocity.y); w.WriteHalf(Velocity.z); }
+            if ((ext & TransformFieldsExt.AngularVelocity) != 0)
+            { w.WriteHalf(AngularVelocity.x); w.WriteHalf(AngularVelocity.y); w.WriteHalf(AngularVelocity.z); }
         }
 
-        public static EntityStateEntry Read(NetworkReader r)
+        public static EntityStateEntry Read(NetworkReader r) => Read(r, HelloMsg.ProtocolVersion);
+
+        /// <summary>Read an entry written for protocol <paramref name="version"/> (<see cref="Write(NetworkWriter, ushort)"/>).</summary>
+        public static EntityStateEntry Read(NetworkReader r, ushort version)
         {
             var e = new EntityStateEntry { NetId = r.ReadULong(), Epoch = r.ReadUInt(), Container = ContainerRef.Read(r) };
             e.Fields = (TransformFields)r.ReadUShort();
+            if (version >= HelloMsg.MotionFidelityVersion) e.Ext = (TransformFieldsExt)r.ReadByte();
             e.LocalPosition = e.ReadVector(r, 0);
             e.LocalRotation = Quaternion.identity;
             if ((e.Fields & TransformFields.Rotation) != 0)
             {
                 if ((e.Fields & TransformFields.Quaternion) == 0) e.LocalRotation = Quaternion.Euler(e.ReadVector(r, 3));
-                else if ((e.Fields & TransformFields.Compressed) != 0) e.LocalRotation = r.ReadCompressedQuaternion();
+                else if ((e.Fields & TransformFields.Compressed) != 0)
+                    e.LocalRotation = (e.Ext & TransformFieldsExt.PreciseRotation) != 0 ? r.ReadPreciseQuaternion() : r.ReadCompressedQuaternion();
                 else if ((e.Fields & TransformFields.Half) != 0) e.LocalRotation = new Quaternion(r.ReadHalf(), r.ReadHalf(), r.ReadHalf(), r.ReadHalf()).normalized;
                 else e.LocalRotation = r.ReadQuaternion();
             }
             e.LocalScale = e.ReadVector(r, 6);
             if ((e.Fields & TransformFields.Velocity) != 0) e.Velocity = new Vector3(r.ReadHalf(), r.ReadHalf(), r.ReadHalf());
+            if ((e.Ext & TransformFieldsExt.AngularVelocity) != 0) e.AngularVelocity = new Vector3(r.ReadHalf(), r.ReadHalf(), r.ReadHalf());
             return e;
         }
     }

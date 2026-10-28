@@ -2143,9 +2143,10 @@ namespace Nebula
             if (age > _ageMax) _ageMax = age;
             _ageSum += age; _ageCount++;
             _stateEntriesIn += count;
+            ushort protocol = NegotiatedProtocolVersion != 0 ? NegotiatedProtocolVersion : HelloMsg.ProtocolVersion;
             for (int i = 0; i < count; i++)
             {
-                var entry = EntityStateEntry.Read(r);
+                var entry = EntityStateEntry.Read(r, protocol);
                 if (!_entities.TryGetValue(entry.NetId, out var e) || entry.Epoch < e.Epoch) continue;
                 if (e == LocalPlayer)
                 {

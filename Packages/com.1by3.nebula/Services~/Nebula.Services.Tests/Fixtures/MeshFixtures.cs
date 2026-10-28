@@ -1492,7 +1492,7 @@ public sealed class FakeClient : IDisposable
                 WorldStateMsg.ReadHeader(r, out _, out _, out ushort count);
                 for (int i = 0; i < count; i++)
                 {
-                    var entry = EntityStateEntry.Read(r);
+                    var entry = EntityStateEntry.Read(r, Welcome.HasValue && Welcome.Value.NegotiatedVersion != 0 ? Welcome.Value.NegotiatedVersion : AnnounceVersion != 0 ? AnnounceVersion : HelloMsg.ProtocolVersion);
                     Note(entry.NetId); Named(entry.NetId, entry.Container); StatesReceived++;
                     StatesOf.TryGetValue(entry.NetId, out int n);
                     StatesOf[entry.NetId] = n + 1;

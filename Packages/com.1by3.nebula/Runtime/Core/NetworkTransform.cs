@@ -78,8 +78,16 @@ namespace Nebula
         [Tooltip("With quaternion synchronization: smallest-three compression, 4 bytes per rotation.")]
         public bool UseQuaternionCompression;
 
+        [Header("Motion fidelity (protocol 30)")]
+        [Tooltip("Root only: send the angular velocity (derived from the rotation's change between updates) so remote copies keep turning between updates and when an update is late.")]
+        public bool SyncAngularVelocity = true;
+        [Tooltip("Root only, with quaternion compression: 15 bits per smallest-three component (6 bytes, about 0.005 degrees) instead of 10 (4 bytes, about 0.16 degrees). Clients older than protocol 30 receive 10 bits.")]
+        public bool PreciseRotation = true;
+
         [Header("Interpolation (non-authoritative copies)")]
         public bool Interpolate = true;
+        [Tooltip("Root only: between two buffered updates, follow a curve through their velocities (cubic Hermite) instead of a straight line, and turn through their angular velocities. Falls back to a straight line when the velocities do not explain the move (a teleport, a collision).")]
+        public bool VelocityAwareInterpolation = true;
         public InterpolationMode Interpolation = InterpolationMode.Buffered;
         [Tooltip("Spherically interpolate position between samples (curved paths, e.g. an orbiting object).")]
         public bool SlerpPosition;
@@ -127,6 +135,11 @@ namespace Nebula
         private bool _rootHasSent, _rootRecovery;
         private uint _rootRecoveryTick;
         private TransformFields _rootReceivedFields;
+        // The rotation of the previous root capture, for the angular velocity sent with the next one.
+        private Quaternion _angularFromRotation;
+        private uint _angularFromTick;
+        private ContainerRef _angularFromContainer;
+        private bool _hasAngularFrom;
 
         internal TransformFields RootFields
         {
@@ -151,6 +164,38 @@ namespace Nebula
                 }
                 return f;
             }
+        }
+
+        /// <summary>The protocol 30 additions this root sends (<see cref="TransformFieldsExt"/>).</summary>
+        internal TransformFieldsExt RootExt
+        {
+            get
+            {
+                var x = TransformFieldsExt.None;
+                if (SyncAngularVelocity && SyncsRotation) x |= TransformFieldsExt.AngularVelocity;
+                if (PreciseRotation && UseQuaternionSynchronization && UseQuaternionCompression && SyncsRotation) x |= TransformFieldsExt.PreciseRotation;
+                return x;
+            }
+        }
+
+        /// <summary>
+        /// The angular velocity, container-local, in radians per second, that took the root from the rotation of its previous
+        /// capture to <paramref name="rotation"/> over the ticks in between. Zero for the first capture, after a container
+        /// change, or a turn of more than 90 degrees between captures (a teleport is not a spin).
+        /// </summary>
+        private Vector3 AngularVelocitySinceLastCapture(uint tick, ContainerRef container, Quaternion rotation)
+        {
+            var w = Vector3.zero;
+            if (_hasAngularFrom && container == _angularFromContainer && tick > _angularFromTick)
+            {
+                var turn = RemoteInterpolator.RotationVector(rotation * Quaternion.Inverse(_angularFromRotation));
+                if (turn.magnitude <= Mathf.PI * 0.5f) w = turn / ((tick - _angularFromTick) * NetworkTime.TickInterval);
+            }
+            _angularFromRotation = rotation;
+            _angularFromTick = tick;
+            _angularFromContainer = container;
+            _hasAngularFrom = true;
+            return w;
         }
 
         /// <summary>A teleport is waiting to be sent: it goes out on the next tick, whatever the entity's update interval.</summary>
@@ -186,6 +231,9 @@ namespace Nebula
             if (!state.HasRotation) entry.Fields &= ~TransformFields.Rotation;
             if (!state.HasScale) entry.Fields &= ~TransformFields.Scale;
             _teleportPending = state.Teleport;
+            entry.Ext = state.HasRotation ? RootExt : TransformFieldsExt.None;
+            if ((entry.Ext & TransformFieldsExt.AngularVelocity) != 0)
+                entry.AngularVelocity = state.Teleport ? Vector3.zero : AngularVelocitySinceLastCapture(tick, entry.Container, entry.LocalRotation);
             if ((entry.Fields & TransformFields.Axes) == 0 && (!_rootHasSent || entry.Fields == _rootSent.Fields)) return false;
             var p = EntityStateEntry.MergeVector(_rootSent.LocalPosition, entry.LocalPosition, entry.Fields, 0);
             var s = EntityStateEntry.MergeVector(_rootSent.LocalScale, entry.LocalScale, entry.Fields, 6);
@@ -193,7 +241,7 @@ namespace Nebula
                 Quaternion.Euler(EntityStateEntry.MergeVector(_rootSent.LocalRotation.eulerAngles, entry.LocalRotation.eulerAngles, entry.Fields, 3));
             bool changed = !_rootHasSent || entry.Fields != _rootSent.Fields || entry.Container != _rootSent.Container ||
                 (p - _rootSent.LocalPosition).sqrMagnitude > PositionThreshold * PositionThreshold ||
-                Quaternion.Angle(r, _rootSent.LocalRotation) > RotAngleThreshold ||
+                RemoteInterpolator.AngleDegrees(r, _rootSent.LocalRotation) > RotAngleThreshold ||
                 (s - _rootSent.LocalScale).sqrMagnitude > ScaleThreshold * ScaleThreshold ||
                 ((entry.Fields & TransformFields.Velocity) != 0 && (entry.Velocity - _rootSent.Velocity).sqrMagnitude > 0.000001f);
             // Settled: nothing changed for SettleTicks since the last entry. A change on this tick is not settling,
@@ -235,13 +283,14 @@ namespace Nebula
             if (buffer.HasSamples && buffer.LatestContainer == container)
             { p = buffer.LatestLocalPosition; r = buffer.LatestLocalRotation; s = buffer.LatestScale; }
             entry.Merge(ref p, ref r, ref s, ref v);
+            bool hasAngular = (entry.Ext & TransformFieldsExt.AngularVelocity) != 0;
             _rootReceivedFields = entry.Fields;
             // A container change (a ship crossing a cell seam, an entity handed to another worker) is not a jump: the
             // sample carries its container and the interpolator bridges frames, so an interpolating copy keeps its
             // buffer and glides across the seam. Only a teleport, or a copy that does not interpolate, snaps.
             bool snap = !Interpolate || (entry.Fields & TransformFields.Teleport) != 0;
             if (snap) buffer.Clear();
-            buffer.Push(tick, container, p, r, v, s);
+            buffer.Push(tick, container, p, r, v, hasAngular ? entry.AngularVelocity : Vector3.zero, hasAngular, (entry.Fields & TransformFields.Velocity) != 0, s);
             if (snap) ApplyRoot(container, p, r, s);
             var state = new TransformState
             {
@@ -274,6 +323,7 @@ namespace Nebula
             var buffer = Identity.Interpolator;
             if (buffer == null) return;
             buffer.SlerpPosition = SlerpPosition;
+            buffer.VelocityAware = VelocityAwareInterpolation;
             if (!buffer.Sample(tick, out var c, out var p, out var r)) return;
             var s = buffer.SampleScale(tick);
             if (Interpolate && Interpolation == InterpolationMode.SmoothDamp)
@@ -353,6 +403,7 @@ namespace Nebula
 
         public override void OnNetworkSpawn()
         {
+            _hasAngularFrom = false;
             _hasLastSent = false;
             _hasLatest = false;
             _rootHasSent = false;
@@ -392,6 +443,7 @@ namespace Nebula
         public override void OnGainedAuthority()
         {
             base.OnGainedAuthority();
+            _hasAngularFrom = false;
             _rootHasSent = false;
             _rootRecovery = false;
             _hasLastSent = false;
@@ -421,7 +473,7 @@ namespace Nebula
             var selectedScale = EntityStateEntry.MergeVector(_lastSentScale, scale, f, 6);
             var selectedRot = UseQuaternionSynchronization ? rot : Quaternion.Euler(EntityStateEntry.MergeVector(_lastSentRotation.eulerAngles, rot.eulerAngles, f, 3));
             if (SyncsPosition && (selectedPos - _lastSentPosition).sqrMagnitude > PositionThreshold * PositionThreshold) _pending |= Fields.Position;
-            if (SyncsRotation && Quaternion.Angle(selectedRot, _lastSentRotation) > RotAngleThreshold) _pending |= Fields.Rotation;
+            if (SyncsRotation && RemoteInterpolator.AngleDegrees(selectedRot, _lastSentRotation) > RotAngleThreshold) _pending |= Fields.Rotation;
             if (SyncsScale && (selectedScale - _lastSentScale).sqrMagnitude > ScaleThreshold * ScaleThreshold) _pending |= Fields.Scale;
             if (_pending != Fields.None) MarkSyncDirty();
         }

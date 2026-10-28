@@ -52,7 +52,7 @@ The inspector groups the options as the source does. Defaults are in the third c
 | Field | Default | Notes |
 | --- | --- | --- |
 | `PositionThreshold` | 0.001 | Meters the position must move since the last send. |
-| `RotAngleThreshold` | 0.01 | Degrees (`Quaternion.Angle`) since the last send. |
+| `RotAngleThreshold` | 0.01 | Degrees turned since the last send, measured exactly. Before protocol 30 the check used `Quaternion.Angle`, which reports no turn below about 0.16°, so a smaller threshold had no effect. |
 | `ScaleThreshold` | 0.01 | Distance in scale space since the last send. |
 
 Thresholds compare against what was last sent, not the previous tick's value, so slow drift still accumulates into an update.
@@ -75,6 +75,14 @@ Root transforms send only when selected values cross a threshold. Once a root ha
 | `UseHalfFloatPrecision` | false | Positions, scales and uncompressed rotations as 16-bit halves. |
 | `UseQuaternionSynchronization` | false | Send the whole quaternion rather than the selected Euler angles. No gimbal issues; all three axes always. |
 | `UseQuaternionCompression` | false | With quaternion synchronization: smallest-three, 4 bytes per rotation. Takes precedence over half floats for the rotation. |
+| `PreciseRotation` | true | Root only, with quaternion compression: 15 bits per component, 6 bytes per rotation and about 0.005° of error, instead of 10 bits, 4 bytes and up to about 0.16°. A slow turn below the coarse step otherwise holds for several updates and then steps. Clients older than protocol 30 are sent the 4-byte form. |
+
+### Motion fidelity
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `SyncAngularVelocity` | true | Root only: send the angular velocity, measured from the change of rotation since the previous update, as three `f16` values in radians per second. Remote copies keep turning at it while they wait for a late update, and use it between updates (below). Adds 6 bytes to an update that carries a rotation. |
+| `VelocityAwareInterpolation` | true | Root only, buffered: between two updates, move along a cubic Hermite curve through both updates' velocities instead of a straight line, and turn through both updates' angular velocities. A turning or accelerating entity sent at 15 or 5 Hz then follows its path instead of turning a corner at each update. When the velocities do not explain the move (a teleport, a bounce, a stream without velocities), the copy falls back to the straight line, so it never overshoots. Inside a moving container (a ship, a turning planet) the position stays on the straight line, because velocities are in the scope's space; the rotation still curves. This is a receiver setting: each client reads it from its own copy of the prefab. |
 
 ### Interpolation (non-authoritative copies)
 
@@ -131,7 +139,7 @@ Handover is unaffected by the mode. The worker still moves the entity between co
 
 Non-authoritative copies (remote entities on a client, ghosts on a worker) present the state from `RemoteTick(renderTick)`. On a client that runs once per frame at `NetworkTime.RenderTick`, a few ticks behind the newest snapshot (`NebulaConfig.InterpolationDelayTicks`); on a worker it runs once per tick, one tick behind, before `Physics.SyncTransforms` so ghost colliders are in place for that tick's raycasts.
 
-**Buffered**: Nebula stores 64 received states by tick. `RemoteTick` interpolates between the states before and after `renderTick`. When no newer state is available, child transforms hold the latest sample. Root transforms can extrapolate briefly using the supplied velocity when `SyncVelocity` is enabled.
+**Buffered**: Nebula stores 64 received states by tick. `RemoteTick` interpolates between the states before and after `renderTick`. When no newer state is available, child transforms hold the latest sample. Root transforms can extrapolate briefly using the supplied velocity when `SyncVelocity` is enabled, and keep turning at the supplied angular velocity when `SyncAngularVelocity` is enabled. With `VelocityAwareInterpolation`, a root follows a curve through the velocities of the two states around `renderTick` rather than the straight line between them.
 
 On a client, an entity whose state arrives further apart than the render delay is drawn later than that, by its own gap. An entity updated every 6 ticks, or sent every 20th tick in a slow distance tier, would otherwise be drawn past its newest state for most of each gap: held there, or extrapolated by its velocity, until the next state pulls it into place. The client measures how far apart each entity's states arrive and draws that entity enough ticks further behind to have a state on each side of the render tick, so it interpolates across the gap. `renderTick` is then earlier for that entity, and every behavior on it is drawn at that tick.
 

@@ -1731,8 +1731,31 @@ namespace Nebula
             entry.Write(_writer);
             WorldStateMsg.End(_writer, slot, 1);
             var reliable = _writer.ToSegment();
-            for (int o = rec.Observers.Count - 1; o >= 0; o--) { AppendReliable(rec.Observers[o], reliable); _wsSent++; }
+            ArraySegment<byte> legacy = default;
+            bool hasLegacy = false;
+            for (int o = rec.Observers.Count - 1; o >= 0; o--)
+            {
+                var c = rec.Observers[o];
+                if (c.ProtocolVersion < HelloMsg.MotionFidelityVersion)
+                {
+                    // A client from before protocol 30 reads the entry without its extensions.
+                    if (!hasLegacy)
+                    {
+                        _legacyEntryWriter.Reset();
+                        int legacySlot = WorldStateMsg.Begin(_legacyEntryWriter, MsgId.WorldState, tick, worker);
+                        entry.Write(_legacyEntryWriter, c.ProtocolVersion);
+                        WorldStateMsg.End(_legacyEntryWriter, legacySlot, 1);
+                        legacy = _legacyEntryWriter.ToSegment();
+                        hasLegacy = true;
+                    }
+                    AppendReliable(c, legacy);
+                }
+                else AppendReliable(c, reliable);
+                _wsSent++;
+            }
         }
+
+        private readonly NetworkWriter _legacyEntryWriter = new NetworkWriter(EntityStateEntry.WireSize + 16);
 
         /// <summary>
         /// A worker sends its tick as several small batches (one Sequenced packet each). Re-emitting each batch after
@@ -1752,7 +1775,7 @@ namespace Nebula
                 c.PendingTick = tick;
                 c.PendingWorker = workerIndex;
             }
-            entry.Write(c.Pending);
+            entry.Write(c.Pending, c.ProtocolVersion);
             c.PendingCount++;
             // Reserve the envelope even for plaintext peers so every batch fits the minimum UDP MTU.
             if (c.Pending.Length + EntityStateEntry.WireSize > WorldStateMsg.BatchBytes - EncryptedTransport.PacketOverhead) FlushWorldState(c);
