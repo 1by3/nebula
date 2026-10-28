@@ -265,6 +265,8 @@ public class TransportEncryptionTests
         {
             NetId = 1, Container = ContainerRef.Dynamic(2),
             Fields = TransformFields.Position | TransformFields.Rotation | TransformFields.Quaternion | TransformFields.Scale | TransformFields.Velocity,
+            // The largest entry protocol 30 can write: with its angular velocity (EntityStateEntry.WireSize counts it).
+            Ext = TransformFieldsExt.AngularVelocity, AngularVelocity = new Nebula.ServicePrimitives.Vector3(0.1f, 0.2f, 0.3f),
         };
         var writer = new NetworkWriter();
         entry.Write(writer);
