@@ -163,7 +163,8 @@ namespace Nebula.Tests
         [Test]
         public void ByDefaultTheSameSkipIsACorrection()
         {
-            using var rig = new PredictedPairRig(lag: 3);
+            // Told nothing of the dropped ticks (NEB-484 tells a client of protocol 31, DroppedTickRebaseTests).
+            using var rig = new PredictedPairRig(lag: 3) { ReportDropped = false };
             rig.Client.Hands = new Vector3(6f, 0f, 3f);
             rig.Advance(20);
             int corrections = rig.Client.Corrections;

@@ -3222,6 +3222,8 @@ namespace Nebula
                     _scratch.Reset();
                     e.Predicted.WriteOwnerState(_scratch);
                     _writer.Reset();
+                    uint droppedFrom = 0, droppedTo = 0;
+                    bool dropped = (Config == null || Config.ReportDroppedTicks) && e.Predicted.TryGetDroppedTicks(tick, out droppedFrom, out droppedTo); // NEB-484
                     new OwnerStateMsg
                     {
                         NetId = e.NetId,
@@ -3233,6 +3235,8 @@ namespace Nebula
                         Container = e.ContainerRef,
                         State = _scratch.ToArray(),
                         Events = e.Predicted.TakeServerEventsForReport(),
+                        DroppedFrom = dropped ? droppedFrom : 0,
+                        DroppedTo = dropped ? droppedTo : 0,
                     }.Write(_writer);
                     // Owner state has exactly one destination client, so it is the gateway's relay cost rather
                     // than replication: it grows with players in the container, not with entities in it.

@@ -220,6 +220,8 @@ namespace Nebula
         public int ServerFrameRate = 0;
         [Tooltip("A worker polls its network at the start of each frame's first FixedUpdate, before it simulates, so an input that arrived since the last Update is seen by the tick that follows (and by PredictedBehaviour.OnServerInputReceived) instead of one frame later. -nebula-poll-before-tick overrides.")]
         public bool WorkerPollBeforeTick = true;
+        [Tooltip("NEB-484: a worker tells the owner of a predicted entity which ticks it did not simulate the entity through (it skipped their numbers), so the owner re-bases instead of counting a misprediction. -nebula-report-dropped-ticks (or NEBULA_REPORT_DROPPED_TICKS=0) overrides.")]
+        public bool ReportDroppedTicks = true;
         [Tooltip("A Custom sync audience (SyncAudience.Custom) is evaluated against the pawns within one cell of this size (metres) of the entity in its own space, plus every pawn in another space, instead of every pawn the worker holds. A rule that admits pawns farther than this must raise it.")]
         public float SyncAudienceCellMetres = 64f;
         [Tooltip("Push a client RPC onto the wire as soon as it is sent when it goes to one client (OwnerRpc) or asks for Delivery.Sequenced, on the worker and again on the gateway that forwards it, instead of at the end of the tick or the loop. A gateway also pushes what it forwarded from a poll before it does its other work. -nebula-flush-rpcs overrides.")]

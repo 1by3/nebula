@@ -111,6 +111,8 @@ namespace Nebula.Tests
         public Action<uint> AfterWorkerTick;
         /// <summary>False: the worker simulates and records its reports, but the owner does not hear them.</summary>
         public bool DeliverReports = true;
+        /// <summary>False: the owner is not told which ticks the worker dropped (NEB-484), as a client of protocol 30 is not.</summary>
+        public bool ReportDropped = true;
 
         public PredictedPairRig(int lag, float smoothing = 0.1f, float snap = 3f)
         {
@@ -172,6 +174,7 @@ namespace Nebula.Tests
                 if (DeliverReports)
                 {
                     Client.ReceiveServerEvents(events);
+                    if (ReportDropped && Worker.TryGetDroppedTicks(s, out uint droppedFrom, out uint droppedTo)) Client.NoteDroppedTicks(droppedFrom, droppedTo);
                     Client.ClientReconcile(s, new NetworkReader(state.ToSegment()));
                 }
             }

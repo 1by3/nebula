@@ -653,6 +653,8 @@ namespace Nebula
             cfg.AuthorityCallMaxHops = CommandLine.GetInt("nebula-authority-call-hops", cfg.AuthorityCallMaxHops);
             cfg.ServerFrameRate = CommandLine.GetInt("nebula-server-fps", cfg.ServerFrameRate);
             cfg.WorkerPollBeforeTick = CommandLine.GetBool("nebula-poll-before-tick", cfg.WorkerPollBeforeTick);
+            if (System.Environment.GetEnvironmentVariable("NEBULA_REPORT_DROPPED_TICKS") == "0") cfg.ReportDroppedTicks = false;
+            cfg.ReportDroppedTicks = CommandLine.GetBool("nebula-report-dropped-ticks", cfg.ReportDroppedTicks);
             cfg.FlushRpcsImmediately = CommandLine.GetBool("nebula-flush-rpcs", cfg.FlushRpcsImmediately);
             cfg.StateHistoryTicks = CommandLine.GetInt("nebula-state-history", cfg.StateHistoryTicks);
             // Interest is the knob a load test or a soak run wants to sweep without rebuilding.

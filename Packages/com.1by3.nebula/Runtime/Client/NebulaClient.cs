@@ -1358,11 +1358,15 @@ namespace Nebula
             e.IsLocallyDriven = false;
         }
 
+        private int _lastRebases;
+
         private void ReportTelemetry()
         {
             var predicted = LocalPlayer != null ? LocalPlayer.Predicted : null;
             int corrections = predicted != null ? predicted.Corrections - _lastCorrections : 0;
             if (predicted != null) _lastCorrections = predicted.Corrections;
+            int rebases = predicted != null ? predicted.Rebases - _lastRebases : 0; // NEB-484
+            if (predicted != null) _lastRebases = predicted.Rebases;
             // The hull under the pawn predicts on its own (a driven carrier): its corrections are its own, and the pawn riding
             // container-local inside it never shows them.
             var carrierPredicted = _carrier != null ? _carrier.Predicted : null;
@@ -1370,7 +1374,7 @@ namespace Nebula
             int carrierCorrections = carrierPredicted != null ? carrierPredicted.Corrections - _lastCarrierCorrections : 0;
             if (carrierPredicted != null) _lastCarrierCorrections = carrierPredicted.Corrections;
             float seconds = TelemetryIntervalSeconds;
-            NebulaLog.Info($"client {_frames / seconds:0} fps replicas {_entities.Count} (+{SpawnsReceived / seconds:0.0}/s -{DespawnsReceived / seconds:0.0}/s) entities {_entities.Count} in {_packetsIn / seconds:0} pkt/s {_bytesIn / seconds / 1024f:0.0} KB/s {_stateEntriesIn / seconds:0} states/s (msgs: state {_statePacketsIn / seconds:0} rpc {_rpcPacketsIn / seconds:0} vars {_varsPacketsIn / seconds:0}) rtt {RttMs}ms lead {InputLeadTicks} (adj {InputLeadAdjustTicks}, worker saw {LastReportedInputLead}) corrections {corrections}{(predicted != null && corrections > 0 ? $" last {predicted.LastCorrectionMagnitude:0.00}m" : "")} | full-rate interp: depth {(RemoteInterpolator.Samples > 0 ? RemoteInterpolator.DepthSum / RemoteInterpolator.Samples : 0):0.0} ticks, starved {(RemoteInterpolator.Samples > 0 ? 100.0 * RemoteInterpolator.Starved / RemoteInterpolator.Samples : 0):0.0}% worst +{RemoteInterpolator.MaxOvershoot:0.0} | frame max {_maxFrameMs:0.0}ms fixed/frame max {_maxFixedPerFrame} | gaps>{StateGapThresholdTicks}t {_stateGaps} worst {_worstStateGap}t | render delay {RenderDelayTicks}t (stream lag {StreamLagTicks}t, lateness p{Config.InterpolationJitterPercentile:0} {StreamLatenessTicks:0.0}t, adaptive +{_adaptiveDelayTicks}t) | snapshot age ms min {(_ageCount > 0 ? _ageMin : 0):0.0} avg {(_ageCount > 0 ? _ageSum / _ageCount : 0):0.0} max {_ageMax:0.0}{(_carrier != null ? $" | carrier hitches {_carrierHitches} worst +{_carrierWorstJump:0.00}m, container changes {_carrierContainerChanges}, epoch changes {_carrierEpochChanges}{(carrierPredicted != null ? $", corrections {carrierCorrections}{(carrierCorrections > 0 ? $" last {carrierPredicted.LastCorrectionMagnitude:0.00}m" : "")}" : "")}" : "")}");
+            NebulaLog.Info($"client {_frames / seconds:0} fps replicas {_entities.Count} (+{SpawnsReceived / seconds:0.0}/s -{DespawnsReceived / seconds:0.0}/s) entities {_entities.Count} in {_packetsIn / seconds:0} pkt/s {_bytesIn / seconds / 1024f:0.0} KB/s {_stateEntriesIn / seconds:0} states/s (msgs: state {_statePacketsIn / seconds:0} rpc {_rpcPacketsIn / seconds:0} vars {_varsPacketsIn / seconds:0}) rtt {RttMs}ms lead {InputLeadTicks} (adj {InputLeadAdjustTicks}, worker saw {LastReportedInputLead}) corrections {corrections}{(predicted != null && corrections > 0 ? $" last {predicted.LastCorrectionMagnitude:0.00}m" : "")}{(predicted != null ? $" (total {predicted.Corrections}, largest {predicted.MaxCorrectionMagnitude:0.00}m)" : "")} rebases {rebases}{(predicted != null ? $" (total {predicted.Rebases}, largest {predicted.MaxRebaseMagnitude:0.00}m)" : "")} | full-rate interp: depth {(RemoteInterpolator.Samples > 0 ? RemoteInterpolator.DepthSum / RemoteInterpolator.Samples : 0):0.0} ticks, starved {(RemoteInterpolator.Samples > 0 ? 100.0 * RemoteInterpolator.Starved / RemoteInterpolator.Samples : 0):0.0}% worst +{RemoteInterpolator.MaxOvershoot:0.0} | frame max {_maxFrameMs:0.0}ms fixed/frame max {_maxFixedPerFrame} | gaps>{StateGapThresholdTicks}t {_stateGaps} worst {_worstStateGap}t | render delay {RenderDelayTicks}t (stream lag {StreamLagTicks}t, lateness p{Config.InterpolationJitterPercentile:0} {StreamLatenessTicks:0.0}t, adaptive +{_adaptiveDelayTicks}t) | snapshot age ms min {(_ageCount > 0 ? _ageMin : 0):0.0} avg {(_ageCount > 0 ? _ageSum / _ageCount : 0):0.0} max {_ageMax:0.0}{(_carrier != null ? $" | carrier hitches {_carrierHitches} worst +{_carrierWorstJump:0.00}m, container changes {_carrierContainerChanges}, epoch changes {_carrierEpochChanges}{(carrierPredicted != null ? $", corrections {carrierCorrections}{(carrierCorrections > 0 ? $" last {carrierPredicted.LastCorrectionMagnitude:0.00}m" : "")}" : "")}" : "")}");
             SpawnsReceived = DespawnsReceived = 0;
             _carrierHitches = _carrierContainerChanges = _carrierEpochChanges = 0; _carrierWorstJump = 0;
             _ageMin = double.MaxValue; _ageMax = 0; _ageSum = 0; _ageCount = 0;
@@ -2244,6 +2248,7 @@ namespace Nebula
             target.Epoch = msg.Epoch;
             // Before the state: the replay it may start applies these on their ticks.
             if (msg.Events != null) target.Predicted.ReceiveServerEvents(msg.Events);
+            if (msg.DroppedTo != 0) target.Predicted.NoteDroppedTicks(msg.DroppedFrom, msg.DroppedTo); // NEB-484: re-base on the first report after them
             if (msg.InputLead != OwnerStateMsg.NoInputLead) NoteInputLead(msg.InputLead);
             if (msg.Tick == 0) return;
             // The state is in the worker's container frame for that tick; move there first, or a seam crossing

@@ -262,11 +262,13 @@ If the expected input is missing, the worker repeats its most recent input inste
 
 ### Recover when the worker falls behind
 
-A worker that falls more than `NebulaWorker.MaxLagTicks` (15 ticks) behind the wall clock skips tick numbers instead of simulating them back to back. By default, an entity that skipped ticks is corrected: its owner predicted those ticks and the worker did not run them.
+A worker that falls more than `NebulaWorker.MaxLagTicks` (15 ticks) behind the wall clock skips tick numbers instead of simulating them back to back. By default, the worker then tells the owner which ticks it dropped for the entity (protocol 31), and the owner re-bases: it takes the worker's state on the next report as its new base and predicts on from it with the inputs after it. This is not counted as a misprediction (`Corrections`), and it isn't eased. The entity moves at once by what the dropped inputs had moved it, the real divergence. `Rebases` and `MaxRebaseMagnitude` count these on the owner, and `TicksDropped` counts the dropped ticks on the worker. A client of protocol 30, or a worker with `NebulaConfig.ReportDroppedTicks` off, counts a correction instead.
 
 To avoid the correction, override `StepSkippedServerTicks` to return `true`. When the entity next ticks, the worker then runs `Simulate` for each skipped tick that has an input waiting, oldest first, and then for the current tick. The entity ends where its owner predicted it. `SkippedTicksStepped` counts these extra steps.
 
-This is opt-in because it only suits an entity whose `Simulate` advances the entity itself and depends only on its state and the input, as replay already requires. If `Simulate` applies forces or sets the velocity of a Rigidbody and relies on Unity stepping physics between ticks, the skipped ticks would apply their forces back to back before one physics step and the entity would lurch. Leave `StepSkippedServerTicks` at `false` for those entities. They still get a correction after a skip.
+This is opt-in because it only suits an entity whose `Simulate` advances the entity itself and depends only on its state and the input, as replay already requires. If `Simulate` applies forces or sets the velocity of a Rigidbody and relies on Unity stepping physics between ticks, the skipped ticks would apply their forces back to back before one physics step and the entity would lurch. Leave `StepSkippedServerTicks` at `false` for those entities. They re-base after a skip.
+
+A worker that keeps skipping, twice within `NebulaWorker.SustainedSkipTicks` (a second at 60 Hz), is overloaded rather than past a hitch. Stepping every entity through the ticks it couldn't afford would only push it further behind, so it steps none of them while that lasts (`noreplay` on its profile line), and their owners re-base too.
 
 Use these values to diagnose timing:
 

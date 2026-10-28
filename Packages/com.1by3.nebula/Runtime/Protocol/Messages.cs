@@ -238,9 +238,12 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 30;
+        public const ushort ProtocolVersion = 31;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 29, one behind (the window is N and N-1, docs/compatibility-policy.md D1).
+        /// The oldest client protocol the gateway accepts: 30, one behind (the window is N and N-1, docs/compatibility-policy.md D1).
+        /// Protocol 31 (NEB-484, the ticks a worker dropped) is additive: <see cref="OwnerStateMsg"/> gains a trailing dropped-tick range, which
+        /// a gateway writes only to clients that negotiated 31 (<see cref="DroppedTicksVersion"/>); a client of 30 is sent the bytes it was and
+        /// counts a correction where a client of 31 re-bases. Clients of 29 and older are refused.
         /// Protocol 30 (motion fidelity on the identity stream) is additive: an <see cref="EntityStateEntry"/> gains a byte of
         /// <see cref="TransformFieldsExt"/> after its field mask, an angular velocity, and 15-bit smallest-three rotations,
         /// which a gateway writes only to clients that negotiated 30 (<see cref="MotionFidelityVersion"/>); a client of 29 is
@@ -258,7 +261,9 @@ namespace Nebula
         /// drives something (<see cref="MsgId.DriveInput"/>). Gateway-to-worker and worker-to-worker connections require
         /// <see cref="ProtocolVersion"/> exactly.
         /// </summary>
-        public const ushort MinProtocolVersion = 29;
+        public const ushort MinProtocolVersion = 30;
+        /// <summary>The first protocol whose clients are sent <see cref="OwnerStateMsg.DroppedFrom"/> and <see cref="OwnerStateMsg.DroppedTo"/> (NEB-484).</summary>
+        public const ushort DroppedTicksVersion = 31;
         /// <summary>The first protocol whose clients are sent <see cref="EntityStateEntry"/> extensions (<see cref="TransformFieldsExt"/>).</summary>
         public const ushort MotionFidelityVersion = 30;
         /// <summary>The first protocol whose clients are sent the server events trailing <see cref="OwnerStateMsg"/>.</summary>
@@ -1426,13 +1431,24 @@ namespace Nebula
         /// when there are some, and only to a client of protocol <see cref="HelloMsg.ServerEventsVersion"/> or newer.
         /// </summary>
         public byte[] Events;
+        /// <summary>
+        /// NEB-484: the latest range of ticks the worker did not simulate this entity through (it skipped their numbers and the entity does not
+        /// step skipped ticks, <see cref="PredictedBehaviourBase.StepsSkippedServerTicks"/>, or the worker withheld the replay while overloaded),
+        /// inclusive; 0 and 0 for none. The owner re-bases on the first report after it instead of counting a misprediction. Repeated for a few
+        /// reports, so one lost report does not lose it. Written after <see cref="Events"/> (an empty section when there are none), only to a
+        /// client of protocol <see cref="HelloMsg.DroppedTicksVersion"/> or newer.
+        /// </summary>
+        public uint DroppedFrom, DroppedTo;
 
         public const sbyte NoInputLead = sbyte.MinValue;
 
-        public void Write(NetworkWriter w) => Write(w, true);
+        public void Write(NetworkWriter w) => Write(w, true, true);
 
         /// <summary>Write the message; <paramref name="includeEvents"/> false leaves out the trailing <see cref="Events"/> section (a client that does not read it).</summary>
-        public void Write(NetworkWriter w, bool includeEvents)
+        public void Write(NetworkWriter w, bool includeEvents) => Write(w, includeEvents, false);
+
+        /// <summary>Write the message; <paramref name="includeDropped"/> false leaves out the dropped-tick range (a client of protocol 30).</summary>
+        public void Write(NetworkWriter w, bool includeEvents, bool includeDropped)
         {
             w.WriteByte((byte)MsgId.OwnerState);
             w.WriteULong(NetId);
@@ -1443,7 +1459,13 @@ namespace Nebula
             w.WriteULong(OwnerClientId);
             Container.Write(w);
             w.WriteBytes(State);
-            if (includeEvents && Events != null && Events.Length > 0) w.WriteBytes(Events);
+            bool dropped = includeEvents && includeDropped && DroppedTo != 0 && DroppedTo >= DroppedFrom;
+            if (includeEvents && ((Events != null && Events.Length > 0) || dropped)) w.WriteBytes(Events ?? System.Array.Empty<byte>());
+            if (dropped)
+            {
+                w.WriteUInt(DroppedFrom);
+                w.WriteUInt(DroppedTo);
+            }
         }
 
         public static OwnerStateMsg Read(NetworkReader r)
@@ -1459,7 +1481,16 @@ namespace Nebula
                 Container = ContainerRef.Read(r),
                 State = r.ReadBytes(),
             };
-            if (r.Remaining > 0) msg.Events = r.ReadBytes();
+            if (r.Remaining > 0)
+            {
+                var events = r.ReadBytes();
+                msg.Events = events.Length > 0 ? events : null;
+            }
+            if (r.Remaining >= 8)
+            {
+                msg.DroppedFrom = r.ReadUInt();
+                msg.DroppedTo = r.ReadUInt();
+            }
             return msg;
         }
     }

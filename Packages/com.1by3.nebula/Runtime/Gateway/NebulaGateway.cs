@@ -1965,7 +1965,7 @@ namespace Nebula
             if (!_clientsById.TryGetValue(msg.OwnerClientId, out var c) || !c.Visible.Contains(msg.NetId)) return;
             _writer.Reset();
             // The server events section is for clients that read it (protocol 29); an older client gets the bytes it always did.
-            msg.Write(_writer, c.ProtocolVersion >= HelloMsg.ServerEventsVersion);
+            msg.Write(_writer, c.ProtocolVersion >= HelloMsg.ServerEventsVersion, c.ProtocolVersion >= HelloMsg.DroppedTicksVersion); // NEB-484: the dropped range for 31
             Send(c.PeerId, Delivery.Sequenced, _writer.ToSegment());
         }
 
