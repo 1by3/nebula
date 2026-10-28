@@ -323,6 +323,10 @@ namespace Nebula
         public int InterestFarMaxEntities = 64;
         [Tooltip("The fastest a player is expected to travel, in metres per second. Only used to check that InterestSubscribeMargin covers one evaluation of travel.")]
         public float InterestMaxFocusSpeed = 12f;
+        [Tooltip("Interest for fast movers: the most metres an entity may travel between two updates a client receives. The gateway sends a fast entity more often than its distance tier says, so that at its speed it never moves further than this between updates (400 m/s: every tick; 60 m/s: every 4th). Slow entities keep their tiers. 0 turns it off.")]
+        public float InterestMaxTravelPerUpdate = 4f;
+        [Tooltip("Interest for fast movers: seconds of travel ahead of a moving pawn at which the gateway adds a second focus, so entities ahead are in the client's set before the pawn reaches them. Added only when the lead is longer than InterestExitMargin. 0 turns it off.")]
+        public float InterestFocusLeadSeconds = 0.5f;
         [Tooltip("A worker warns when one container holds more than this many entities: the world wants partitioning, because one container is one worker's simulation budget. 0 turns the warning off.")]
         public int PartitionWarnEntities = 2000;
         [Tooltip("A worker warns when filtering its entities for the gateways takes longer than this many milliseconds per tick. 0 turns the warning off.")]

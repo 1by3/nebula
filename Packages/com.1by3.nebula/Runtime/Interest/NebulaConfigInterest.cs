@@ -40,6 +40,8 @@ namespace Nebula
             MaxExplicitPerClient = InterestMaxExplicitPerClient,
             FarMaxEntities = InterestFarMaxEntities,
             MaxFocusSpeed = InterestMaxFocusSpeed,
+            MaxTravelPerUpdate = InterestMaxTravelPerUpdate,
+            FocusLeadSeconds = InterestFocusLeadSeconds,
             NearRadius = InterestNearRadius,
             FarRadius = InterestFarRadius,
             MidDivisor = InterestMidDivisor,

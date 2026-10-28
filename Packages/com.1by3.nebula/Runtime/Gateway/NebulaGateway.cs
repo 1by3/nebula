@@ -1825,7 +1825,11 @@ namespace Nebula
                     if (d2 < best) best = d2;
                 }
             int p = (int)rec.Priority;
-            return RelevanceTiers.DivisorAt(in _tiers[p < _tiers.Length ? p : 0], best);
+            int divisor = RelevanceTiers.DivisorAt(in _tiers[p < _tiers.Length ? p : 0], best);
+            // A fast entity is sent often enough that it never moves more than InterestMaxTravelPerUpdate between updates.
+            if (divisor > 1 && _interest.MaxTravelPerUpdate > 0f)
+                divisor = RelevanceTiers.CapForSpeed(divisor, rec.LastSpawn.Velocity.magnitude, _interest.MaxTravelPerUpdate, NetworkTime.TickInterval);
+            return divisor;
         }
 
         private bool TryGetPawnPosition(ClientConn c, out Vector3 position)

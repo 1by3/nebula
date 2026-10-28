@@ -117,6 +117,8 @@ namespace Nebula
         public int InterestMaxExplicitPerClient = 16;
         public int InterestFarMaxEntities = 64;
         public float InterestMaxFocusSpeed = 12f;
+        public float InterestMaxTravelPerUpdate = 4f;
+        public float InterestFocusLeadSeconds = 0.5f;
         public int PartitionWarnEntities = 2000;
         public float PartitionWarnFilterMs = 2f;
         public bool ChunkedWorld = false;

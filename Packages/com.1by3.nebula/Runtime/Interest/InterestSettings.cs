@@ -73,6 +73,16 @@ namespace Nebula
         public int FarMaxEntities;
         /// <summary>The fastest a focus is expected to move, in meters per second. Only used to validate <see cref="SubscribeMargin"/>.</summary>
         public float MaxFocusSpeed;
+        /// <summary>
+        /// The most meters an entity may travel between two updates a client receives: the gateway sends a fast entity more
+        /// often than its distance tier says (<see cref="RelevanceTiers.CapForSpeed"/>). 0 turns it off.
+        /// </summary>
+        public float MaxTravelPerUpdate;
+        /// <summary>
+        /// Seconds of travel ahead of a moving pawn at which the gateway adds a second focus (<see cref="LeadOffset"/>), so
+        /// entities ahead of a fast pawn are in its set before it reaches them. 0 turns it off.
+        /// </summary>
+        public float FocusLeadSeconds;
         /// <summary>Rate tier inside the set: entities within this radius get every tick.</summary>
         public float NearRadius;
         /// <summary>Rate tier inside the set: entities beyond this radius get every <see cref="FarDivisor"/>-th tick.</summary>
@@ -115,6 +125,8 @@ namespace Nebula
             MaxExplicitPerClient = 16,
             FarMaxEntities = 64,
             MaxFocusSpeed = 12f,
+            MaxTravelPerUpdate = 4f,
+            FocusLeadSeconds = 0.5f,
             NearRadius = 30f,
             FarRadius = 80f,
             MidDivisor = 4,
@@ -140,6 +152,24 @@ namespace Nebula
                 case RelevancePriority.Background: return RelevanceTiers.Resolve(priority, BackgroundTiers, NearRadius, FarRadius, MidDivisor, FarDivisor);
                 default: return RelevanceTiers.Resolve(RelevancePriority.Normal, default, NearRadius, FarRadius, MidDivisor, FarDivisor);
             }
+        }
+
+        /// <summary>
+        /// Where a lead focus goes for a pawn moving at <paramref name="velocity"/>, relative to the pawn:
+        /// <see cref="FocusLeadSeconds"/> of travel ahead. Zero (no lead focus) when that is no further than
+        /// <see cref="ExitMargin"/>, which the pawn's own focus already covers, or when the lead is off.
+        /// </summary>
+        public Double3 LeadOffset(Double3 velocity)
+        {
+            if (FocusLeadSeconds <= 0f) return default;
+            double x = velocity.X * FocusLeadSeconds, y = velocity.Y * FocusLeadSeconds, z = velocity.Z * FocusLeadSeconds;
+            if (Planar) y = 0;
+            double length = Math.Sqrt(x * x + y * y + z * z);
+            if (double.IsNaN(length) || length <= ExitMargin) return default;
+            // Never further than the largest radius the interest grid can match: beyond it the focus would only add cost.
+            double cap = Math.Max(Radius, MaxRadius);
+            if (length > cap) { double k = cap / length; x *= k; y *= k; z *= k; }
+            return new Double3(x, y, z);
         }
 
         /// <summary>Meters an entity must be outside before the linger clock even starts.</summary>
@@ -313,6 +343,8 @@ namespace Nebula
             if (e.MaxFoci < 1) { Warn(InterestMaxFociField, "InterestMaxFoci must be at least 1; using 1."); e.MaxFoci = 1; }
             if (e.MaxExplicitPerClient < 0) { Warn(InterestMaxExplicitPerClientField, "InterestMaxExplicitPerClient cannot be negative; using 0."); e.MaxExplicitPerClient = 0; }
             if (e.FarMaxEntities < 0) { Warn(InterestFarMaxEntitiesField, "InterestFarMaxEntities cannot be negative; using 0 (no far tier)."); e.FarMaxEntities = 0; }
+            if (e.MaxTravelPerUpdate < 0) { Warn(InterestMaxTravelPerUpdateField, "InterestMaxTravelPerUpdate cannot be negative; using 0 (fast movers keep their distance tiers)."); e.MaxTravelPerUpdate = 0; }
+            if (e.FocusLeadSeconds < 0) { Warn(InterestFocusLeadSecondsField, "InterestFocusLeadSeconds cannot be negative; using 0 (no lead focus)."); e.FocusLeadSeconds = 0; }
             if (e.HintMaxDistance < 0) { Warn(InterestHintMaxDistanceField, "InterestHintMaxDistance cannot be negative; using 0 (hints snap to the pawn)."); e.HintMaxDistance = 0; }
             if (e.HintMaxHz < 0) { Warn(InterestHintMaxHzField, "InterestHintMaxHz cannot be negative; using 0 (hints are ignored)."); e.HintMaxHz = 0; }
 
@@ -377,5 +409,7 @@ namespace Nebula
         private const string InterestHintMaxDistanceField = "InterestHintMaxDistance";
         private const string InterestHintMaxHzField = "InterestHintMaxHz";
         private const string InterestFarMaxEntitiesField = "InterestFarMaxEntities";
+        private const string InterestMaxTravelPerUpdateField = "InterestMaxTravelPerUpdate";
+        private const string InterestFocusLeadSecondsField = "InterestFocusLeadSeconds";
     }
 }

@@ -153,6 +153,8 @@ Entities carrying a `PersistentEntity` component are saved and restored. See [Pe
 | `InterestMaxExplicitPerClient` | `16` | Most entities one client's policy may subscribe to by ID. |
 | `InterestFarMaxEntities` | `64` | Most entities one client holds in the far tier at once, nearest first. `0` turns the far tier off. |
 | `InterestMaxFocusSpeed` | `12` m/s | The fastest a player is expected to travel, used to check `InterestSubscribeMargin`. |
+| `InterestMaxTravelPerUpdate` | `4` m | Send a fast entity often enough that it travels no more than this between two updates a client receives. `0` turns it off. See [Fast movers](/docs/guides/interest-management#fast-movers). |
+| `InterestFocusLeadSeconds` | `0.5` s | Add a focus this many seconds of travel ahead of a fast pawn, when that is further than `InterestExitMargin`. `0` turns it off. |
 | `PartitionWarnEntities` | `2000` | A worker warns when one container holds more entities than this. `0` disables the warning. |
 | `PartitionWarnFilterMs` | `2` ms | A worker warns when per-gateway filtering takes longer than this per tick. `0` disables the warning. |
 

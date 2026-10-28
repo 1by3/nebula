@@ -1,3 +1,5 @@
+using System;
+
 namespace Nebula
 {
     /// <summary>
@@ -160,6 +162,22 @@ namespace Nebula
         {
             int d = bands.DivisorOf(BandOf(sqrDistance, bands.NearRadius, bands.FarRadius));
             return d < 0 ? 1 : d;
+        }
+
+        /// <summary>
+        /// <paramref name="divisor"/>, lowered so that an entity moving at <paramref name="speed"/> meters per second travels no
+        /// more than <paramref name="maxTravelPerUpdate"/> meters between two updates (<see cref="InterestSettings.MaxTravelPerUpdate"/>):
+        /// a ship at 400 m/s 100 m away is sent every tick rather than every 12th, where it would move 80 m between updates.
+        /// Never below 1, never above <paramref name="divisor"/>; <see cref="Quiet"/> stays quiet (a priority that chose no updates
+        /// in a band keeps that choice), and a <paramref name="maxTravelPerUpdate"/> of 0 changes nothing.
+        /// </summary>
+        public static int CapForSpeed(int divisor, float speed, float maxTravelPerUpdate, float tickInterval)
+        {
+            if (divisor <= 1 || maxTravelPerUpdate <= 0f || speed <= 0f || tickInterval <= 0f || float.IsNaN(speed)) return divisor;
+            double ticks = maxTravelPerUpdate / ((double)speed * tickInterval);
+            // A hair of slack, so 4 m at 1 m a tick is 4 ticks and not 3 for a float's rounding.
+            int cap = ticks + 1e-4 >= divisor ? divisor : Math.Max(1, (int)Math.Floor(ticks + 1e-4));
+            return cap < divisor ? cap : divisor;
         }
 
         /// <summary>

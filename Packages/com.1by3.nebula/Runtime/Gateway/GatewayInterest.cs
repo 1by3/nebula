@@ -891,6 +891,7 @@ namespace Nebula
             AddPortalWindows(client, client.Query);
             AddEnclosingSpaceFoci(client, snapshot, client.Query);
             AddFrameApproachFoci(client, snapshot, client.Query);
+            AddLeadFocus(client, snapshot, client.Query);
             if (client.Query.Overflowed) WarnOnce(client, $"its policy asked for more than {_interest.MaxFoci} foci or {_interest.MaxExplicitPerClient} explicit entities; the rest are dropped.");
             if (client.Query.BoxesClamped) WarnOnce(client, $"a box focus was wider than InterestMaxRadius ({_interest.MaxRadius} m) and was shrunk to it about its center.");
 
@@ -973,6 +974,22 @@ namespace Nebula
             var position = new Double3(root.AbsX, root.AbsY, root.AbsZ);
             for (int hops = 0; hops < 8 && TryLiftOut(ref frame, ref position, ref key); hops++)
                 query.AddFocus(InterestFocus.Point(position.X, position.Y, position.Z, 1f, client.PawnNetId, key));
+        }
+
+        /// <summary>
+        /// A pawn moving fast enough gets a second focus <see cref="InterestSettings.FocusLeadSeconds"/> of travel ahead of it,
+        /// in its own space (<see cref="InterestSettings.LeadOffset"/>): entities ahead join its set, and their regions are
+        /// subscribed, before it gets there, instead of up to an evaluation interval plus a spawn round trip late. The velocity
+        /// is the pawn's root's (the ship it rides), as last reported.
+        /// </summary>
+        private void AddLeadFocus(ClientConn client, in InterestClient snapshot, InterestQuery query)
+        {
+            if (!snapshot.HasPawn || _interest.FocusLeadSeconds <= 0f || !_entities.TryGetValue(client.PawnNetId, out var pawn)) return;
+            var root = RootOf(pawn);
+            var v = root.LastSpawn.Velocity;
+            var lead = _interest.LeadOffset(new Double3(v.x, v.y, v.z));
+            if (lead.X == 0 && lead.Y == 0 && lead.Z == 0) return;
+            query.AddFocus(InterestFocus.Point(root.AbsX + lead.X, root.AbsY + lead.Y, root.AbsZ + lead.Z, 1f, client.PawnNetId, root.FrameKey));
         }
 
         private readonly ulong[] _chainKeys = new ulong[10];
