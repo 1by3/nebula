@@ -1348,8 +1348,13 @@ namespace Nebula
                     long simStart = Stopwatch.GetTimestamp();
                     for (int b = 0; b < behaviours.Length; b++)
                     {
+                        // Per behaviour type, nested in 'simulate' (sim.<Type> on the profile line and in a Unity capture): what each kind of
+                        // entity costs the tick, which the game's own spans do not add up to.
+                        var section = SimSectionOf(behaviours[b]);
+                        section.Begin();
                         try { behaviours[b].NetworkTick(tick, delta); }
                         catch (Exception ex) { NebulaLog.Error($"NetworkTick on {e} threw: {ex}"); }
+                        section.End();
                     }
                     _costMeter.AddSimulation(e.Container, Stopwatch.GetTimestamp() - simStart);
                     if (e.Carried != null) carrierTicked = true;
@@ -1554,6 +1559,16 @@ namespace Nebula
             }
             _transport.Flush();
             ProfPublish.End();
+        }
+
+        private static readonly Dictionary<Type, ProfileSection> SimSections = new Dictionary<Type, ProfileSection>();
+
+        /// <summary>The 'sim.&lt;Type&gt;' section of a behaviour's type (one per type, made on first use).</summary>
+        private static ProfileSection SimSectionOf(NetworkBehaviour behaviour)
+        {
+            var type = behaviour.GetType();
+            if (!SimSections.TryGetValue(type, out var s)) SimSections[type] = s = NebulaProfiler.Section("sim." + type.Name);
+            return s;
         }
 
         /// <summary>Forget identities in <see cref="_scratchEntities"/> whose objects were destroyed without a despawn.</summary>
