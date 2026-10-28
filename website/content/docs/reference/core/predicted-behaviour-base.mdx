@@ -96,6 +96,46 @@ protected virtual float CorrectionSnapDistance { get; }
 
 Owning client: a correction that would leave the drawn pose further than this from the simulated one, in meters, is not smoothed; the entity teleports (a respawn, a long server-side move). Default 3.
 
+### CorrectionSpeed [#correctionspeed]
+
+```csharp
+protected virtual float CorrectionSpeed { get; }
+```
+
+Owning client: the speed, in meters per second, that scales the correction threshold, the snap distance and the smoothing time below. Read on the worker's reported state of the tick being reconciled. Default: the magnitude of [`NetworkMotionState.Velocity`](/docs/reference/core/network-motion-state#velocity), which the default `WriteState` carries; a game whose state keeps its velocity elsewhere overrides this. Return 0 to make all three speed-independent.
+
+### CorrectionThresholdTickFraction [#correctionthresholdtickfraction]
+
+```csharp
+protected virtual float CorrectionThresholdTickFraction { get; }
+```
+
+Owning client: the correction threshold grows to this fraction of the distance the entity travels in one tick at [`CorrectionSpeed`](#correctionspeed), when that is larger than `CorrectionThreshold`. At 400 m/s a tick is 6.7 m, so a fixed 5 cm threshold replays on errors no player can see. Default 0.25 (no change below about 12 m/s at 60 Hz); 0 keeps the threshold fixed.
+
+### CorrectionSnapSeconds [#correctionsnapseconds]
+
+```csharp
+protected virtual float CorrectionSnapSeconds { get; }
+```
+
+Owning client: the snap distance grows to the distance the entity travels in this many seconds at [`CorrectionSpeed`](#correctionspeed), when that is larger than [`CorrectionSnapDistance`](#correctionsnapdistance): a 3 m correction is 7 ms of flight at 400 m/s and should be eased, not snapped. Default 0.25; 0 keeps the snap distance fixed.
+
+### CorrectionSmoothingDoublingSpeed [#correctionsmoothingdoublingspeed]
+
+```csharp
+protected virtual float CorrectionSmoothingDoublingSpeed { get; }
+```
+
+Owning client: the speed, in meters per second, at which the smoothing time has doubled. The smoothing time is `CorrectionSmoothingSeconds × (1 + speed / this)`, at most three times [`CorrectionSmoothingSeconds`](#correctionsmoothingseconds): a correction at speed is eased over a longer time so the drawn pose does not visibly accelerate. Default 1500 (104 ms at 60 m/s, 127 ms at 400 m/s, 300 ms from 3 km/s, with the 100 ms default); 0 keeps it fixed.
+
+### LastCorrectionSpeed [#lastcorrectionspeed]
+
+```csharp
+public float LastCorrectionSpeed { get; }
+```
+
+Owning client: [`CorrectionSpeed`](#correctionspeed) at the most recent reconcile, which sizes the snap distance and smoothing time of the offset it left.
+
 ### CorrectionOffset [#correctionoffset]
 
 ```csharp
@@ -134,7 +174,7 @@ Owning client: the angle of [`CorrectionRotationOffset`](#correctionrotationoffs
 public Vector3 DrawnPosition { get; }
 ```
 
-Owning client: the world position the entity is drawn at, which is the simulated position plus the correction offset still being eased. Cameras and anything else that follows the entity on screen should read this, or `transform.position` during a frame, where Nebula has already moved the transform to the drawn pose (it moves it back before the next `Simulate`). Equal to `transform.position` when nothing is being eased.
+Owning client: the world position the entity is drawn at, which is the simulated position plus the correction offset still being eased (and, with [`RenderBetweenTicks`](#renderbetweenticks), moved back between the last two predicted ticks). Cameras and anything else that follows the entity on screen should read this, or `transform.position` during a frame, where Nebula has already moved the transform to the drawn pose (it moves it back before the next `Simulate`). Equal to `transform.position` when nothing is being eased.
 
 ### DrawnRotation [#drawnrotation]
 
@@ -143,6 +183,24 @@ public Quaternion DrawnRotation { get; }
 ```
 
 Owning client: the world rotation the entity is drawn with; see [`DrawnPosition`](#drawnposition).
+
+### RenderBetweenTicks [#renderbetweenticks]
+
+```csharp
+protected virtual bool RenderBetweenTicks { get; }
+```
+
+Owning client: draw the entity between the poses of its last two predicted ticks instead of at the newest one. Prediction runs in fixed steps (60 Hz by default), so a fast predicted entity drawn at its newest tick moves in 16.7 ms steps whatever the frame rate: at 144 Hz three frames show one pose and the fourth jumps, and a frame with two fixed steps jumps twice as far. With this on, every frame draws the entity at `Lerp(previous tick, newest tick, fraction)`, where the fraction is how far the frame is into the current fixed step (Unity's own `RigidbodyInterpolation.Interpolate`, done here because a predicted body is stepped by Nebula and its interpolation must stay off). Rotation is slerped the same way.
+
+The blend is part of the drawn pose ([`DrawnPosition`](#drawnposition)): Nebula moves the transform there at the end of its `Update`, so renderers and a camera that follows the transform in `LateUpdate` see the blended pose, and moves it back before the next `Simulate`, which never sees it. The cost is up to one tick (8 ms on average at 60 Hz) of extra visual latency on the entity. Nothing is blended across a container change, a teleport (a move outside `Simulate`), or a step longer than both [`CorrectionSnapDistance`](#correctionsnapdistance) and two ticks at the entity's `Motion.Velocity`. Default false: a game that already interpolates its own view (an eye position of its own) keeps doing so.
+
+### RenderTickFraction [#rendertickfraction]
+
+```csharp
+public float RenderTickFraction { get; }
+```
+
+Owning client: how far the last drawn frame was into the current fixed step, 0 to 1 (1: at the newest tick). Diagnostics.
 
 ### InputLeadMin [#inputleadmin]
 

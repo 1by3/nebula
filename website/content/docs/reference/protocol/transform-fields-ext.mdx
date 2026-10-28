@@ -1,0 +1,21 @@
+---
+title: "TransformFieldsExt"
+description: "Protocol 30 additions to a root transform update, in a byte written after TransformFields to peers of HelloMsg.MotionFidelityVersion or newer."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+[Flags]
+public enum TransformFieldsExt : byte
+```
+
+Protocol 30 additions to a root transform update, in a byte written after [`TransformFields`](/docs/reference/protocol/transform-fields) to peers of [`HelloMsg.MotionFidelityVersion`](/docs/reference/protocol/hello-msg#motionfidelityversion) or newer. An older client is sent neither the byte nor what it announces.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` | `0` |  |
+| <span id="angularvelocity"></span>`AngularVelocity` | `1` | The entry carries the entity's angular velocity, container-local, in radians per second, as three half floats. |
+| <span id="preciserotation"></span>`PreciseRotation` | `2` | A compressed quaternion uses 15 bits per smallest-three component (6 bytes, about 0.005 degrees) instead of 10 (4 bytes, about 0.16 degrees). |

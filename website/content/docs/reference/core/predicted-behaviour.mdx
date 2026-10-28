@@ -41,7 +41,7 @@ The input consumed by the most recent [`Simulate`](#simulate) call.
 protected virtual float CorrectionThreshold { get; }
 ```
 
-Positional error above which the client snaps to the server's state and replays.
+Positional error above which the client snaps to the server's state and replays. At speed the threshold in use grows with [`PredictedBehaviourBase.CorrectionThresholdTickFraction`](/docs/reference/core/predicted-behaviour-base#correctionthresholdtickfraction); see [`CorrectionThresholdAt`](#correctionthresholdat).
 
 ### IsReplaying [#isreplaying]
 
@@ -52,6 +52,14 @@ protected bool IsReplaying { get; }
 True while [`Simulate`](#simulate) is re-running already-predicted ticks after a server correction. One-shot side effects that are not part of the simulated state (tracers, sounds) should be skipped while this is set.
 
 ## Methods
+
+### CorrectionThresholdAt [#correctionthresholdat]
+
+```csharp
+public float CorrectionThresholdAt(float speed);
+```
+
+The correction threshold at `speed` meters per second: [`CorrectionThreshold`](#correctionthreshold), or the fraction of a tick's travel [`PredictedBehaviourBase.CorrectionThresholdTickFraction`](/docs/reference/core/predicted-behaviour-base#correctionthresholdtickfraction) asks for when that is larger.
 
 ### GatherInput [#gatherinput]
 

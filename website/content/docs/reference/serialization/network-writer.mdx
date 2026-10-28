@@ -190,6 +190,14 @@ public void WriteCompressedQuaternion(Quaternion q);
 
 Smallest-three quaternion compression: 4 bytes instead of 16. The largest component is dropped (its sign is normalised away) and the other three are quantised to 10 bits each in \[-1/sqrt2, 1/sqrt2\]; worst-case error is about 0.1 degrees.
 
+### WritePreciseQuaternion [#writeprecisequaternion]
+
+```csharp
+public void WritePreciseQuaternion(Quaternion q);
+```
+
+Smallest-three quaternion compression at 15 bits per component: 6 bytes, worst-case error about 0.005 degrees ([`WriteCompressedQuaternion`](#writecompressedquaternion) is 4 bytes and about 0.1 to 0.16 degrees). Read it with [`NetworkReader.ReadPreciseQuaternion`](/docs/reference/serialization/network-reader#readprecisequaternion).
+
 ### WriteColor [#writecolor]
 
 ```csharp

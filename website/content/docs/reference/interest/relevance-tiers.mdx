@@ -87,6 +87,14 @@ public static int DivisorAt(in RelevanceTierBands bands, double sqrDistance);
 
 Ticks per update window for a client at squared distance `sqrDistance` from an entity whose priority resolved to `bands` ([`Resolve`](#resolve)); [`Quiet`](#quiet) is none.
 
+### CapForSpeed [#capforspeed]
+
+```csharp
+public static int CapForSpeed(int divisor, float speed, float maxTravelPerUpdate, float tickInterval);
+```
+
+`divisor`, lowered so that an entity moving at `speed` meters per second travels no more than `maxTravelPerUpdate` meters between two updates ([`InterestSettings.MaxTravelPerUpdate`](/docs/reference/interest/interest-settings#maxtravelperupdate)): a ship at 400 m/s 100 m away is sent every tick rather than every 12th, where it would move 80 m between updates. Never below 1, never above `divisor`; [`Quiet`](#quiet) stays quiet (a priority that chose no updates in a band keeps that choice), and a `maxTravelPerUpdate` of 0 changes nothing.
+
 ### StartsWindow [#startswindow]
 
 ```csharp
