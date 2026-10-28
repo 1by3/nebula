@@ -2907,11 +2907,94 @@ namespace Nebula
         /// </summary>
         private void EvaluateSyncAudiences(uint tick)
         {
+            // Perf: the candidates of an entity are the pawns within one cell of it (NebulaConfig.SyncAudienceCellMetres) in its own
+            // space, plus every pawn in another space (aboard a ship: few, and their distance needs the full conversion anyway).
+            // Evaluating every pawn for every crate and pouch cost a worker players x items predicate calls: 3.3 ms a tick at 75 players.
+            bool bucketed = false;
             for (int i = 0; i < _authoritative.Count; i++)
             {
                 var e = _authoritative[i];
-                if (e != null && e.HasCustomAudience) e.EvaluateSyncAudiences(tick, _players, _audienceScratch);
+                if (e == null || !e.HasCustomAudience || !e.AnyAudienceDue(tick)) continue;
+                if (!bucketed) { BucketPlayersForAudiences(); bucketed = true; }
+                GatherAudienceCandidates(e, _audienceCandidates);
+                e.EvaluateSyncAudiences(tick, _audienceCandidates, _audienceScratch);
             }
+        }
+
+        private sealed class AudienceSpace
+        {
+            public readonly List<KeyValuePair<ulong, NetworkIdentity>> All = new List<KeyValuePair<ulong, NetworkIdentity>>();
+            public readonly Dictionary<long, List<KeyValuePair<ulong, NetworkIdentity>>> Cells = new Dictionary<long, List<KeyValuePair<ulong, NetworkIdentity>>>();
+        }
+
+        private readonly Dictionary<Container, AudienceSpace> _audienceSpaces = new Dictionary<Container, AudienceSpace>();
+        private AudienceSpace _audienceRootSpace;
+        private readonly List<KeyValuePair<ulong, NetworkIdentity>> _audienceCandidates = new List<KeyValuePair<ulong, NetworkIdentity>>();
+        private readonly Stack<List<KeyValuePair<ulong, NetworkIdentity>>> _audienceListPool = new Stack<List<KeyValuePair<ulong, NetworkIdentity>>>();
+
+        private float AudienceCell => Config != null && Config.SyncAudienceCellMetres > 0f ? Config.SyncAudienceCellMetres : 64f;
+
+        private static long AudienceCellKey(Vector3 p, float cell)
+        {
+            long x = (long)Math.Floor(p.x / cell), y = (long)Math.Floor(p.y / cell), z = (long)Math.Floor(p.z / cell);
+            return ((x & 0x1FFFFF) << 42) | ((y & 0x1FFFFF) << 21) | (z & 0x1FFFFF);
+        }
+
+        private AudienceSpace SpaceBucket(Container space)
+        {
+            if (space == null)
+            {
+                _audienceRootSpace ??= new AudienceSpace();
+                return _audienceRootSpace;
+            }
+            if (!_audienceSpaces.TryGetValue(space, out var s)) _audienceSpaces[space] = s = new AudienceSpace();
+            return s;
+        }
+
+        private void BucketPlayersForAudiences()
+        {
+            foreach (var s in _audienceSpaces.Values) ResetSpace(s);
+            if (_audienceRootSpace != null) ResetSpace(_audienceRootSpace);
+            float cell = AudienceCell;
+            foreach (var kv in _players)
+            {
+                if (kv.Key == 0 || kv.Value == null) continue;
+                var s = SpaceBucket(kv.Value.Space);
+                s.All.Add(kv);
+                long key = AudienceCellKey(kv.Value.transform.position, cell);
+                if (!s.Cells.TryGetValue(key, out var list)) s.Cells[key] = list = _audienceListPool.Count > 0 ? _audienceListPool.Pop() : new List<KeyValuePair<ulong, NetworkIdentity>>();
+                list.Add(kv);
+            }
+        }
+
+        private void ResetSpace(AudienceSpace s)
+        {
+            s.All.Clear();
+            foreach (var list in s.Cells.Values) { list.Clear(); _audienceListPool.Push(list); }
+            s.Cells.Clear();
+        }
+
+        private void GatherAudienceCandidates(NetworkIdentity e, List<KeyValuePair<ulong, NetworkIdentity>> into)
+        {
+            into.Clear();
+            var own = e.Space;
+            var ownBucket = own == null ? _audienceRootSpace : (_audienceSpaces.TryGetValue(own, out var sb) ? sb : null);
+            if (ownBucket != null && ownBucket.Cells.Count > 0)
+            {
+                float cell = AudienceCell;
+                var p = e.transform.position;
+                long cx = (long)Math.Floor(p.x / cell), cy = (long)Math.Floor(p.y / cell), cz = (long)Math.Floor(p.z / cell);
+                for (long dx = -1; dx <= 1; dx++)
+                    for (long dy = -1; dy <= 1; dy++)
+                        for (long dz = -1; dz <= 1; dz++)
+                        {
+                            long key = (((cx + dx) & 0x1FFFFF) << 42) | (((cy + dy) & 0x1FFFFF) << 21) | ((cz + dz) & 0x1FFFFF);
+                            if (ownBucket.Cells.TryGetValue(key, out var list)) into.AddRange(list);
+                        }
+            }
+            // Pawns in another space (aboard a carrier, or on the ground while this entity rides one): the predicate converts their place itself.
+            if (_audienceRootSpace != null && own != null) into.AddRange(_audienceRootSpace.All);
+            foreach (var kv in _audienceSpaces) if (kv.Key != own) into.AddRange(kv.Value.All);
         }
 
         private void OnGhostSyncState(Peer from, EntitySyncMsg msg)

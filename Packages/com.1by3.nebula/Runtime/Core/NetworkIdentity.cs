@@ -1586,6 +1586,36 @@ namespace Nebula
         /// </summary>
         internal bool EvaluateSyncAudiences(uint tick, Dictionary<ulong, NetworkIdentity> candidates, List<ulong> scratch)
         {
+            if (!HasCustomAudience || !AnyAudienceDue(tick)) return false;
+            _candidateScratch.Clear();
+            if (candidates != null) foreach (var kv in candidates) _candidateScratch.Add(kv);
+            return EvaluateSyncAudiences(tick, _candidateScratch, scratch);
+        }
+
+        private static readonly List<KeyValuePair<ulong, NetworkIdentity>> _candidateScratch = new List<KeyValuePair<ulong, NetworkIdentity>>();
+
+        /// <summary>Whether any Custom behaviour of this entity is due for an evaluation on <paramref name="tick"/> (so the caller can skip gathering candidates).</summary>
+        internal bool AnyAudienceDue(uint tick)
+        {
+            if (!HasCustomAudience) return false;
+            for (int i = 0; i < SyncBehaviours.Length; i++)
+            {
+                var b = SyncBehaviours[i];
+                if (b.Audience != SyncAudience.Custom) continue;
+                uint refresh = 0;
+                try { refresh = b.SyncAudienceRefreshTicks; } catch { }
+                if (b.AudienceDirty || (refresh != 0 && tick >= b.AudienceNextTick)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// As <see cref="EvaluateSyncAudiences(uint, Dictionary{ulong, NetworkIdentity}, List{ulong})"/>, with the candidates already narrowed
+        /// by the caller (the worker passes the pawns within <see cref="NebulaConfig.SyncAudienceCellMetres"/> of this entity, and every pawn in
+        /// another space): the cost was one predicate call per pawn per due behaviour, players x items on a worker full of crates and pouches.
+        /// </summary>
+        internal bool EvaluateSyncAudiences(uint tick, List<KeyValuePair<ulong, NetworkIdentity>> candidates, List<ulong> scratch)
+        {
             if (!HasCustomAudience) return false;
             bool changed = false;
             for (int i = 0; i < SyncBehaviours.Length; i++)
@@ -1601,8 +1631,9 @@ namespace Nebula
                 scratch.Clear();
                 if (candidates != null)
                 {
-                    foreach (var kv in candidates)
+                    for (int c = 0; c < candidates.Count; c++)
                     {
+                        var kv = candidates[c];
                         if (kv.Key == 0 || kv.Value == null) continue;
                         if (b.EvaluateAudienceMember(kv.Key, kv.Value)) scratch.Add(kv.Key);
                     }
