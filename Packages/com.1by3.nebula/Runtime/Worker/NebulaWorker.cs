@@ -238,6 +238,8 @@ namespace Nebula
         private static readonly ProfileSection ProfGhosts = NebulaProfiler.Section("ghosts");
         private static readonly ProfileSection ProfSyncTransforms = NebulaProfiler.Section("physics.sync");
         private static readonly ProfileSection ProfSimulate = NebulaProfiler.Section("simulate");
+        /// <summary>NEB-501: the simulation batches flushed at the end of each depth (nested in 'simulate', like sim.*).</summary>
+        private static readonly ProfileSection ProfBatches = NebulaProfiler.Section("sim.batches");
         private static readonly ProfileSection ProfRecordPose = NebulaProfiler.Section("poses");
         private static readonly ProfileSection ProfContainers = NebulaProfiler.Section("containers");
         // What the containers pass spends, per entity gathered in locals and added once per pass; they add up to "containers".
@@ -1388,6 +1390,8 @@ namespace Nebula
             // have to be where the hull moved to this tick: otherwise the cockpit of a ship at speed sweeps through
             // the pawn a tick late and the depenetration shoves the pawn out of the ship.
             ProfSimulate.Begin();
+            SimulationBatches.Deferring = true; // NEB-501: steps may be batched and flushed at the end of each depth
+            try {
             // However deep the nesting goes (design D71): a constant here would tick the bottom of a deep ship
             // out of order, or - worse - in the same pass as the hull it is standing on. There cannot be more
             // distinct depths than entities, so the set we own is the bound, and the loop leaves as soon as
@@ -1421,6 +1425,10 @@ namespace Nebula
                     _costMeter.AddSimulation(e.Container, Stopwatch.GetTimestamp() - simStart);
                     if (e.Carried != null) carrierTicked = true;
                 }
+                // NEB-501: what this depth's entities batched runs now, before the scene is synced for the depth below.
+                ProfBatches.Begin();
+                SimulationBatches.FlushAll(tick);
+                ProfBatches.End();
                 if (!deeper) break;
                 if (carrierTicked)
                 {
@@ -1430,6 +1438,7 @@ namespace Nebula
                     ProfSimulate.Elapsed -= ProfSyncTransforms.LastSpan; // counted under physics.sync, not twice
                 }
             }
+            } finally { SimulationBatches.Deferring = false; }
             ProfSimulate.End();
             ProfFrameSim.Begin();
             // Proxies across portals are posed before the scenes step (docs/portals.md D26), so contacts get their velocity.
