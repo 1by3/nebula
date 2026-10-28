@@ -73,12 +73,12 @@ A low worker tick time does not mean players see smooth motion: a snapshot still
 The client writes one line every five seconds (`nebula logs bot1`, or the player log):
 
 ```text
-[nebula] client 142 fps entities 1016 in 866 pkt/s 285.0 KB/s 4901 states/s (msgs: state 1788 rpc 279 vars 810) rtt 0ms lead 5 (adj 2, worker saw 4) corrections 2 last 0.10m | full-rate interp: depth 3.8 ticks, starved 3.0% worst +2.0 | frame max 17.8ms fixed/frame max 1 | gaps>3t 1 worst 176t | render delay 4t (stream lag 1t) | snapshot age ms min 6.5 avg 17.6 max 35.0
+[nebula] client 142 fps entities 1016 in 866 pkt/s 285.0 KB/s 4901 states/s (msgs: state 1788 rpc 279 vars 810) rtt 0ms lead 5 (adj 2, worker saw 4) corrections 2 last 0.10m | full-rate interp: depth 3.8 ticks, starved 3.0% worst +2.0 | frame max 17.8ms fixed/frame max 1 | gaps>3t 1 worst 176t | render delay 4t (stream lag 1t, lateness p95 1.3t, adaptive +1t) | snapshot age ms min 6.5 avg 17.6 max 35.0
 ```
 
 - `corrections` counts reconciliation snaps of the local pawn; steady non-zero counts with a large `last` distance mean prediction and simulation disagree.
 - `full-rate interp` covers entities the gateway sends every tick. `depth` is how many ticks of buffer the interpolator has; `starved` is the share of frames that had to extrapolate past the newest sample. Starvation is what a player sees as remote entities stuttering or rubberbanding.
-- `render delay` is `InterpolationDelayTicks` plus `stream lag`, the lateness measured on the slowest worker's stream.
+- `render delay` is `InterpolationDelayTicks` plus `adaptive`, the ticks the measured lateness adds. `lateness` is the percentile (`InterpolationJitterPercentile`) of how late world-state packets arrived, for the worst worker; `stream lag` is the slowest worker's lag behind the newest stream, which is what the delay used with `AdaptiveInterpolationDelay` off.
 - `snapshot age` is the age of world-state packets on arrival, against the wall clock the workers derive ticks from. On one machine the numbers are exact; across machines read the spread between `min` and `max`, which is the jitter the interpolation delay has to cover.
 - `frame max` and `fixed/frame max` show whether the client itself is stalling.
 - `carrier hitches` appears while the local pawn rides a carrier (a ship): frame-to-frame jumps of the hull that its reported velocity does not explain, with the carrier's container and epoch changes in the same window. A pilot feels every one of these.

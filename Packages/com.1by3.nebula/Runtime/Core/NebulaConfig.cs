@@ -368,6 +368,22 @@ namespace Nebula
         [Tooltip("Render delay for remote entities, in ticks.")]
         public int InterpolationDelayTicks = 3;
         /// <summary>
+        /// Client: add to <see cref="InterpolationDelayTicks"/> what the world-state streams' measured lateness needs: the
+        /// <see cref="InterpolationJitterPercentile"/>th percentile, over the last two seconds, of how many ticks late each
+        /// packet arrived against the client's clock, taken per worker, highest worker first, rounded down. A clean stream adds
+        /// nothing; a jittery link or a worker that runs behind gets the buffer it needs, so the interpolator does not run past
+        /// its newest sample and snap back. The delay rises at once and falls a tick every half second. Off: the delay grows by
+        /// the slowest worker's lag behind the newest stream, as before. Either way at most <see cref="MaxStreamLagTicks"/>.
+        /// </summary>
+        [Tooltip("Client: grow the render delay by the measured lateness of the world-state streams (a jitter percentile per worker) instead of the slowest worker's lag behind the newest one.")]
+        public bool AdaptiveInterpolationDelay = true;
+        /// <summary>Client: the percentile of packet lateness the adaptive render delay covers (<see cref="AdaptiveInterpolationDelay"/>), 50 to 100. Default 95.</summary>
+        [Tooltip("Client: the percentile of packet lateness the adaptive render delay covers, 50 to 100. Higher buffers more and extrapolates less.")]
+        public float InterpolationJitterPercentile = 95f;
+        /// <summary>Client: the most ticks the measured stream lateness (or lag) may add to <see cref="InterpolationDelayTicks"/>. Default 12 (200 ms at 60 Hz); it was a fixed 6.</summary>
+        [Tooltip("Client: the most ticks the measured stream lateness may add to the render delay.")]
+        public int MaxStreamLagTicks = 12;
+        /// <summary>
         /// The most extra render delay, in ticks, a client gives a remote entity whose state arrives further apart than
         /// the render delay (an entity updated every few ticks, or sent in a slow distance tier), so it interpolates
         /// across its own gap instead of being extrapolated past its newest state and snapping back. Entities sent

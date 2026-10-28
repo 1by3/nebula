@@ -131,6 +131,9 @@ namespace Nebula
         public RelevanceTierBands InterestLowTiers;
         public RelevanceTierBands InterestBackgroundTiers;
         public int InterpolationDelayTicks = 3;
+        public bool AdaptiveInterpolationDelay = true;
+        public float InterpolationJitterPercentile = 95f;
+        public int MaxStreamLagTicks = 12;
         public int SlowUpdateMaxDelayTicks = 30;
         public int InputLeadMarginTicks = 2;
         public int InputLeadTargetTicks = 3;
