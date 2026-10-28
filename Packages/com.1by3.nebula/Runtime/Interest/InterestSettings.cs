@@ -142,8 +142,15 @@ namespace Nebula
         /// ones (<see cref="NearRadius"/>, <see cref="FarRadius"/>, <see cref="MidDivisor"/>, <see cref="FarDivisor"/>)
         /// shifted as <see cref="RelevancePriority"/> describes. <see cref="RelevancePriority.Normal"/> is always the
         /// global tiers.
+        /// <para>
+        /// Divisors are configured in ticks at 60 Hz (<see cref="NetworkTime.DefaultTickRate"/>). At another tick rate the
+        /// bands returned here are rescaled (<see cref="RelevanceTiers.AtTickRate"/>) so each keeps its rate in updates per
+        /// second: a middle band of 4 (15 Hz) is every 2nd tick at 30 Hz, a far band of 12 (5 Hz) every 6th.
+        /// </para>
         /// </summary>
-        public RelevanceTierBands TiersFor(RelevancePriority priority)
+        public RelevanceTierBands TiersFor(RelevancePriority priority) => RelevanceTiers.AtTickRate(TiersAt60(priority), NetworkTime.TickRate);
+
+        private RelevanceTierBands TiersAt60(RelevancePriority priority)
         {
             switch (priority)
             {

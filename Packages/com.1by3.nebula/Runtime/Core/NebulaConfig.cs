@@ -374,9 +374,9 @@ namespace Nebula
         public float InterestNearRadius = 30f;
         [Tooltip("Entities between the near and far radius get every InterestMidDivisor-th tick.")]
         public float InterestFarRadius = 80f;
-        [Tooltip("Send every Nth tick for entities between the near and far radius (1 = every tick).")]
+        [Tooltip("Send every Nth tick for entities between the near and far radius (1 = every tick). Counted at 60 Hz: at another tick rate it is rescaled so the band keeps its updates per second (4 is 15 Hz at any rate).")]
         public int InterestMidDivisor = 4;
-        [Tooltip("Send every Nth tick for entities beyond the far radius (1 = every tick). Clients without a pawn yet get this rate for everything.")]
+        [Tooltip("Send every Nth tick for entities beyond the far radius (1 = every tick), counted at 60 Hz and rescaled at other tick rates. Clients without a pawn yet get this rate for everything.")]
         public int InterestFarDivisor = 12;
 
         [Header("Rate tiers per relevance priority")]
