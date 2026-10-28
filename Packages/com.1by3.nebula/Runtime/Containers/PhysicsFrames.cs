@@ -752,6 +752,9 @@ namespace Nebula
         /// <summary>The source-side transforms whose <see cref="Transform.hasChanged"/> a sync read as set, cleared once the frame's copies are in place.</summary>
         private static readonly HashSet<Transform> ChangedSources = new HashSet<Transform>();
 
+        /// <summary>Copies visited and copies re-posed by <see cref="SyncAllContent"/> since the counters were last read (the worker's profile line).</summary>
+        public static long ClonesVisited, ClonesReposed;
+
         private static void SyncContent(PhysicsFrame frame, bool placing)
         {
             if (frame.Clones.Count == 0 || frame.Owner == null) return;
@@ -772,12 +775,14 @@ namespace Nebula
                 // re-posed: Unity sets Transform.hasChanged on every write, and the sync clears it below on the transforms it read, which
                 // are the owner's own geometry (a rider's are never in a chain, and the owner's flag is the container's, left alone).
                 // A frame with hundreds of copies (a ship's interior) otherwise cost 0.3 ms a tick each on a worker, moving or not.
+                ClonesVisited++;
                 if (!placing && !SourceChanged(pair.Key.transform, owner))
                 {
                     bool still = pair.Key.enabled && pair.Key.gameObject.activeInHierarchy;
                     if (pair.Value.enabled != still) pair.Value.enabled = still;
                     continue;
                 }
+                ClonesReposed++;
                 var m = RelativeTo(pair.Key.transform, owner);
                 var t = pair.Value.transform;
                 var position = (Vector3)m.GetColumn(3);

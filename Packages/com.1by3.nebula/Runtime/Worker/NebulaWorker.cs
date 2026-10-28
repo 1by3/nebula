@@ -1231,8 +1231,9 @@ namespace Nebula
         private string ResolveCounters(int ticks)
         {
             double t = Math.Max(1, ticks);
-            var s = $"visited={_passVisited / t:0.0} due={_passDue / t:0.0} pinned={_passPinned / t:0.0} fast={ContainerRegistry.FastResolves / t:0.0} full={ContainerRegistry.FullResolves / t:0.0} (nocur={ContainerRegistry.RefusedNoCurrent / t:0.0} frame={ContainerRegistry.RefusedFrame / t:0.0} outside={ContainerRegistry.RefusedOutside / t:0.0} neighbour={ContainerRegistry.RefusedNeighbour / t:0.0} moving={ContainerRegistry.RefusedMoving / t:0.0})";
+            var s = $"visited={_passVisited / t:0.0} due={_passDue / t:0.0} pinned={_passPinned / t:0.0} fast={ContainerRegistry.FastResolves / t:0.0} full={ContainerRegistry.FullResolves / t:0.0} (nocur={ContainerRegistry.RefusedNoCurrent / t:0.0} frame={ContainerRegistry.RefusedFrame / t:0.0} outside={ContainerRegistry.RefusedOutside / t:0.0} neighbour={ContainerRegistry.RefusedNeighbour / t:0.0} moving={ContainerRegistry.RefusedMoving / t:0.0}) content frames={PhysicsFrames.All.Count} clones={PhysicsFrames.ClonesVisited / t:0.0} reposed={PhysicsFrames.ClonesReposed / t:0.0}";
             _passVisited = _passDue = _passPinned = 0;
+            PhysicsFrames.ClonesVisited = PhysicsFrames.ClonesReposed = 0;
             ContainerRegistry.ResetResolveCounters();
             return s;
         }
