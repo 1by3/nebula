@@ -1981,7 +1981,10 @@ namespace Nebula
             // before the ship can cross, and that needs the ship's targets decided first.
             // Bounded by the set we own rather than by a constant (design D71): a shuttle nine deep must still
             // be held warm by the neighbour before the carrier it is in can cross.
-            for (int depth = 0; depth <= _authoritative.Count; depth++)
+            // A worker with no peer worker connected has nobody to ghost to (Ghost sends to a connected peer only): the pass, every due
+            // entity's neighbours and a seam distance each, is skipped. 0.5 ms a tick at 50 players on a one-worker mesh.
+            int depths = _workerPeersById.Count > 0 ? _authoritative.Count : -1;
+            for (int depth = 0; depth <= depths; depth++)
             {
                 bool deeper = false;
                 for (int i = 0; i < _authoritative.Count; i++)
