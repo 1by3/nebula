@@ -167,6 +167,7 @@ namespace Nebula.World
             if (definitionChanged) return;
             bool retiring = scope?.State == ScopeState.Retiring;
             seenThisTick.Clear();
+            MarkPawns.Begin();
             // A hosted grid's coordinates are its host's: with the host not here, nothing can be placed in them.
             var host = grid.IsHosted ? grid.Host : null;
             if (MayAllocate(scope) && (!grid.IsHosted || host != null))
@@ -188,6 +189,8 @@ namespace Nebula.World
             foreach (var entry in lastSeen) if (!seenThisTick.Contains(entry.Key)) seenScratch.Add(entry.Key);
             foreach (var id in seenScratch) lastSeen.Remove(id);
 
+            MarkPawns.End();
+            MarkRequest.Begin();
             foreach (var id in wanted)
             {
                 lastWanted[id] = unscaledTime;
@@ -195,6 +198,8 @@ namespace Nebula.World
                 Request(id, coord, pinnedOnly.Contains(id));
             }
 
+            MarkRequest.End();
+            MarkRetire.Begin();
             scratch.Clear();
             foreach (var c in ContainerRegistry.Runtime)
             {
@@ -215,7 +220,13 @@ namespace Nebula.World
             scratch.Clear();
             foreach (var entry in lastWanted) if (!wanted.Contains(entry.Key) && ContainerRegistry.GetRuntime(entry.Key) == null) scratch.Add(entry.Key);
             foreach (var id in scratch) { lastWanted.Remove(id); instances?.Remove(id); }
+            MarkRetire.End();
         }
+
+        // The parts of a tick, named for a capture (NebulaChunkedWorld.Update was 1.4 ms a frame at 125 players with nothing inside it named).
+        private static readonly Unity.Profiling.ProfilerMarker MarkPawns = new Unity.Profiling.ProfilerMarker("nebula.alloc.pawns");
+        private static readonly Unity.Profiling.ProfilerMarker MarkRequest = new Unity.Profiling.ProfilerMarker("nebula.alloc.request");
+        private static readonly Unity.Profiling.ProfilerMarker MarkRetire = new Unity.Profiling.ProfilerMarker("nebula.alloc.retire");
 
         /// <summary>
         /// Whether releasing <paramref name="chunk"/>, an owned chunk nobody has wanted for long enough, would still

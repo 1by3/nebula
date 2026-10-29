@@ -116,6 +116,14 @@ namespace Nebula
         /// </summary>
         public bool IsDormant { get; private set; }
 
+        /// <summary>
+        /// Worker (the containers pass): where this entity was when its container was last resolved to <see cref="Container"/>, and the registry's
+        /// <see cref="ContainerRegistry.TopologyVersion"/> then. Unmoved, with the same boxes and no moving box near, the answer is the same.
+        /// </summary>
+        internal Vector3 ResolvedAt;
+        internal Container ResolvedIn;
+        internal uint ResolvedVersion;
+
         /// <summary>Whether this dormant entity wakes by itself as soon as a gateway watches it (see <see cref="Sleep"/>).</summary>
         public bool WakesOnInterest { get; private set; }
 

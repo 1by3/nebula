@@ -29,6 +29,8 @@ namespace Nebula
         /// (<c>docs/server-owned-entities.md</c> §6), instead of asking every one of them every tick.
         /// </summary>
         internal static uint OwnershipVersion;
+        /// <summary>Bumped when a box is registered or forgotten, or the runtime hash is rebuilt: what a remembered resolve (NebulaWorker) depends on besides the point and the moving boxes.</summary>
+        internal static uint TopologyVersion;
 
         private static readonly List<Container> Containers = new List<Container>();
         private static readonly Dictionary<string, Container> ById = new Dictionary<string, Container>();
@@ -241,6 +243,7 @@ namespace Nebula
                 c.RefreshCache();
                 c.Neighbors.Clear();
                 Containers.Add(c);
+                TopologyVersion++;
                 ById[c.ContainerId] = c;
                 if (_grid != null)
                 {
@@ -480,6 +483,7 @@ namespace Nebula
             container.Neighbors.Clear();
             container.RefreshCache();
             DynamicList.Add(container);
+            TopologyVersion++;
             DynamicByNetId[carrier.NetId] = container;
             _dynamicHashDirty = true;
             if (container.OwnPhysicsFrame) PhysicsFrames.Create(container);
@@ -506,6 +510,7 @@ namespace Nebula
             ulong scope = container.InstanceId;
             ulong netId = container.CarrierNetId;
             if (!DynamicList.Remove(container)) return;
+            TopologyVersion++;
             _dynamicHashDirty = true;
             if (netId != 0 && DynamicByNetId.TryGetValue(netId, out var same) && same == container) DynamicByNetId.Remove(netId);
             DynamicUnregistering?.Invoke(container);
@@ -728,6 +733,7 @@ namespace Nebula
             if (c.OwnPhysicsFrame) PhysicsFrames.Create(c);
             RuntimeList.Add(c);
             RuntimeById[id] = c;
+            TopologyVersion++;
             ById[c.ContainerId] = c;
             AddToHash(c);
             RelinkRuntimeNeighbors(c);
@@ -833,6 +839,7 @@ namespace Nebula
             InstanceScenes.Release(c);
             RuntimeById.Remove(id);
             RuntimeList.Remove(c);
+            TopologyVersion++;
             ById.Remove(c.ContainerId);
             RemoveFromHash(c);
             foreach (var n in c.Neighbors) n.Neighbors.Remove(c);
@@ -1127,6 +1134,7 @@ namespace Nebula
 
         private static void RehashRuntime()
         {
+            TopologyVersion++;
             RuntimeHash.Clear();
             MovingRuntime.Clear();
             FrameHash.Clear();
@@ -1609,6 +1617,31 @@ namespace Nebula
         /// outside them, and the answer is the sphere that encloses it however it is turned: conservative.
         /// </summary>
         private static bool MightHold(Container c, Vector3 p) => c.MightHold(p);
+
+        /// <summary>The carried and moving runtime boxes as they stand now (bounds, axis flag), for <see cref="AnyMovingBoxMightHold"/>.</summary>
+        internal static void SnapshotMovingBoxes()
+        {
+            MovingSnapshot.Clear();
+            for (int i = 0; i < DynamicList.Count; i++) { var d = DynamicList[i]; if (d != null) MovingSnapshot.Add((d, d.Space, d.WorldBounds, d.IsAxisAligned)); }
+            for (int i = 0; i < MovingRuntime.Count; i++) { var m = MovingRuntime[i]; if (m != null) MovingSnapshot.Add((m, m.Space, m.WorldBounds, m.IsAxisAligned)); }
+        }
+
+        /// <summary>
+        /// Whether a carried or moving runtime box of space <paramref name="space"/> other than <paramref name="except"/> might hold the point (in
+        /// that space's coordinates), as <see cref="SnapshotMovingBoxes"/> took them.
+        /// </summary>
+        internal static bool AnyMovingBoxMightHold(Vector3 p, Container except, Container space)
+        {
+            for (int i = 0; i < MovingSnapshot.Count; i++)
+            {
+                var (c, s, b, axis) = MovingSnapshot[i];
+                if (c == except || s != space) continue;
+                if (axis ? b.Contains(p) : (p - b.center).sqrMagnitude <= b.extents.sqrMagnitude) return true;
+            }
+            return false;
+        }
+
+        private static readonly List<(Container, Container, Bounds, bool)> MovingSnapshot = new List<(Container, Container, Bounds, bool)>();
 
         /// <summary>The hysteresis rule between the current box and the best candidate, both measured in <paramref name="space"/>.</summary>
         private static Container ResolveAmong(Vector3 p, Container current, Container candidate, float hysteresis, Container space)
