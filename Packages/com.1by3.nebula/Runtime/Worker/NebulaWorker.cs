@@ -265,6 +265,9 @@ namespace Nebula
         private static readonly ProfileSection ProfFFrames = NebulaProfiler.Section("f.frames");
         private static readonly ProfileSection ProfFStates = NebulaProfiler.Section("f.states");
         private static readonly ProfileSection ProfReplicate = NebulaProfiler.Section("replicate");
+        // The parts of 'replicate' (nested): every authoritative entity's transform entry, and the Custom audiences.
+        private static readonly ProfileSection ProfRPrepare = NebulaProfiler.Section("r.prepare");
+        private static readonly ProfileSection ProfRAudiences = NebulaProfiler.Section("r.audiences");
         private static readonly ProfileSection ProfUntimed = NebulaProfiler.Section("untimed");
         private long _lastTickEnd;
         private float _nextProfileReport;
@@ -1604,9 +1607,13 @@ namespace Nebula
             ProfCLoop.Add(passTotal - tCopy - tResolve - tBoundary - tLease - tHandover);
 
             ProfReplicate.Begin();
+            ProfRPrepare.Begin();
             foreach (var e in _authoritative) e.PrepareReplication(tick, e.DueThisTick);
+            ProfRPrepare.End();
             // Who may see each Custom behaviour, decided before anything of this tick is written to anyone.
+            ProfRAudiences.Begin();
             EvaluateSyncAudiences(tick);
+            ProfRAudiences.End();
             ProfReplicate.End();
 
             // 4. Ghost band: create neighboring copies before an entity can cross.
