@@ -19,8 +19,11 @@ namespace Nebula
         /// <summary>Longest a single <see cref="HoldContainer(string, float)"/> can defer rebalancing, in seconds.</summary>
         public const float MaxHoldSeconds = 120f;
 
-        /// <summary>Container id -> the <see cref="Time.unscaledTime"/> at which its hold expires.</summary>
-        private readonly Dictionary<string, float> _holds = new Dictionary<string, float>();
+        /// <summary>
+        /// Container id -> the <see cref="Time.unscaledTimeAsDouble"/> at which its hold expires. In double: after a few hours of
+        /// uptime a float clock rounds a 120 s hold to 120.000008 s, past the cap.
+        /// </summary>
+        private readonly Dictionary<string, double> _holds = new Dictionary<string, double>();
         private readonly List<string> _expiredHolds = new List<string>();
 
         /// <summary>One container this worker is asking the orchestrator not to move, and for how much longer.</summary>
@@ -53,8 +56,8 @@ namespace Nebula
             if (string.IsNullOrEmpty(containerId)) return;
             if (seconds <= 0f) { _holds.Remove(containerId); return; }
             if (seconds > MaxHoldSeconds) seconds = MaxHoldSeconds;
-            float until = Time.unscaledTime + seconds;
-            _holds[containerId] = _holds.TryGetValue(containerId, out float current) && current > until ? current : until;
+            double until = Time.unscaledTimeAsDouble + seconds;
+            _holds[containerId] = _holds.TryGetValue(containerId, out double current) && current > until ? current : until;
         }
 
         /// <summary>Hold a container object (see <see cref="HoldContainer(string, float)"/>).</summary>
@@ -72,9 +75,9 @@ namespace Nebula
         /// <summary>Seconds this worker's hold on a container still has to run, or 0 when it holds none.</summary>
         public float HoldRemaining(string containerId)
         {
-            if (containerId == null || !_holds.TryGetValue(containerId, out float until)) return 0f;
-            float left = until - Time.unscaledTime;
-            return left > 0f ? left : 0f;
+            if (containerId == null || !_holds.TryGetValue(containerId, out double until)) return 0f;
+            double left = until - Time.unscaledTimeAsDouble;
+            return left > 0.0 ? Mathf.Min((float)left, MaxHoldSeconds) : 0f;
         }
 
         /// <summary>How many containers this worker is holding right now (expired holds are dropped when read).</summary>
@@ -97,13 +100,13 @@ namespace Nebula
         {
             result.Clear();
             if (_holds.Count == 0) return;
-            float now = Time.unscaledTime;
+            double now = Time.unscaledTimeAsDouble;
             _expiredHolds.Clear();
             foreach (var kv in _holds)
             {
-                float left = kv.Value - now;
-                if (left <= 0f) _expiredHolds.Add(kv.Key);
-                else result.Add(new ContainerHold(kv.Key, left));
+                double left = kv.Value - now;
+                if (left <= 0.0) _expiredHolds.Add(kv.Key);
+                else result.Add(new ContainerHold(kv.Key, Mathf.Min((float)left, MaxHoldSeconds)));
             }
             for (int i = 0; i < _expiredHolds.Count; i++) _holds.Remove(_expiredHolds[i]);
             _expiredHolds.Clear();
