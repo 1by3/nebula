@@ -14,10 +14,10 @@ namespace Nebula.ServiceTests;
 /// <para>
 /// The replay half is the part that cannot be faked: <c>Fixtures/protocol-28-handshake.json</c> holds the exact
 /// bytes a client sent and a gateway answered, recorded from these fixtures, and the test pushes those bytes at a
-/// gateway built from today's source. The window is 30..31: protocol 31 (far classes and compact far poses) is additive and moved the minimum to N-1, 30; protocol 30 (motion fidelity) was additive; protocol 29 (server events) was additive; protocol 28 (portals, <c>docs/portals.md</c> D46) closed the window, because
+/// gateway built from today's source. The window is 31..32: protocol 32 (far classes and compact far poses) is additive and moved the minimum to N-1, 31; protocols 29, 30 and 31 were additive; protocol 28 (portals, <c>docs/portals.md</c> D46) closed the window, because
 /// the meaning of its messages is not additive even though their bytes are, so a client of 27 is refused, and the protocol-27
-/// recording proves it as the protocol-18 one proved the step from 18. Replaying the protocol-28 recording proves that a change
-/// inside 29 still answers a client of 28 (N-1) the same way; the protocol-30 recording is the one this build replays for N-1, and the protocol-31 recording is the one the next additive bump replays. The step from 18
+/// recording proves it as the protocol-18 one proved the step from 18. This build replays the protocol-31 recording for N-1, and the protocol-32 recording is the one the next additive bump replays. The protocol-30 recording
+/// proves that a client that fell out of the window is refused with the gateway's range. The step from 18
 /// was not additive (it renumbered carrier behaviours), so the protocol-18 recording is kept to prove that such a client is
 /// refused with the gateway's range rather than admitted.
 /// </para>
@@ -181,13 +181,13 @@ public class ConformanceProtocolCompatibilityTests
     /// <b>The conformance scenario.</b> A recorded client stream is pushed, byte for byte, at a gateway built
     /// from today's source: it is welcomed, the gateway records the version it announced and echoes it back as
     /// the negotiated version, and the client goes on to join and receive its pawn. Then the recorded gateway
-    /// stream and the newly generated replies are parsed by an independent, frozen protocol-30 decoder.
+    /// stream and the newly generated replies are parsed by an independent, frozen protocol-31 decoder.
     /// This covers public-container handshake, spawn and transform framing, not every game message or payload.
     /// </summary>
     [Test]
     public void ARecordedClientStreamIsAdmittedAndAnsweredByAGatewayOfThisBuild()
     {
-        var fixture = ProtocolFixture.Load(ProtocolFixture.PathFor(30));
+        var fixture = ProtocolFixture.Load(ProtocolFixture.PathFor(31));
         Assert.That(ProtocolCompatibility.ClientProtocolAccepted(fixture.ProtocolVersion), Is.True,
             $"the checked-in recording is protocol {fixture.ProtocolVersion}, outside this build's window " +
             $"{ProtocolCompatibility.WindowText()}; record a fresh one with RecordTheHandshakeFixture");
@@ -210,27 +210,27 @@ public class ConformanceProtocolCompatibilityTests
         fleet.OnPump = () => fleet.Worker.PublishStates();
         Assert.That(fleet.Run(() => replayed.StatesReceived > 0, seconds: 10), Is.True);
 
-        void AssertHandshake(Protocol30GatewayDecoder decoded)
+        void AssertHandshake(Protocol31GatewayDecoder decoded)
         {
             Assert.That(decoded.Welcomes, Is.EqualTo(1));
             Assert.That(decoded.Joined, Is.True);
-            Assert.That(decoded.NegotiatedVersion, Is.EqualTo(30));
+            Assert.That(decoded.NegotiatedVersion, Is.EqualTo(31));
             Assert.That(decoded.Containers, Does.Contain("c0"));
             Assert.That(decoded.Spawns, Contains.Key(1000ul));
             Assert.That(decoded.Spawns[1000], Is.EqualTo((decoded.ClientId, decoded.Identity)),
                 "the frozen reader must recover the pawn's owner and identity, not merely consume its bytes");
         }
 
-        var recorded = new Protocol30GatewayDecoder();
+        var recorded = new Protocol31GatewayDecoder();
         foreach (var frame in fixture.GatewayFrames()) recorded.Read(frame);
         AssertHandshake(recorded);
 
-        var current = new Protocol30GatewayDecoder();
+        var current = new Protocol31GatewayDecoder();
         foreach (var (outbound, bytes) in replayed.Record)
             if (!outbound) current.Read(bytes);
         AssertHandshake(current);
-        Assert.That(current.StateEntities, Does.Contain(1000ul), "new gateway transforms must decode with the frozen protocol-30 layout");
-        Assert.That(current.UninspectedMessageIds, Does.Not.Contain((byte)MsgId.FarPoses), "protocol 31's compact far poses are never sent to a client of 30");
+        Assert.That(current.StateEntities, Does.Contain(1000ul), "new gateway transforms must decode with the frozen protocol-31 layout");
+        Assert.That(current.UninspectedMessageIds, Does.Not.Contain((byte)53), "protocol 32's compact far poses are never sent to a client of 31");
         Assert.That(current.Positions[1000], Is.EqualTo((1.25f, 2.5f, 3.75f)),
             "the frozen reader must recover distinct position axes from the new gateway's snapshot");
     }
@@ -246,8 +246,8 @@ public class ConformanceProtocolCompatibilityTests
         var fixture = ProtocolFixture.Load(ProtocolFixture.PathFor(27));
         Assert.That(fixture.ProtocolVersion, Is.EqualTo((ushort)27));
         Assert.That(ProtocolCompatibility.ClientProtocolAccepted(fixture.ProtocolVersion), Is.False);
-        Assert.That(HelloMsg.MinProtocolVersion, Is.EqualTo((ushort)30), "protocol 28 closed the window; 31 moved it to N-1, 30");
-        Assert.That(ProtocolCompatibility.ClientProtocolAccepted(28), Is.False, "a client of 28 is outside the window of 31 too");
+        Assert.That(HelloMsg.MinProtocolVersion, Is.EqualTo((ushort)31), "protocol 28 closed the window; 32 moved it to N-1, 31");
+        Assert.That(ProtocolCompatibility.ClientProtocolAccepted(28), Is.False, "a client of 28 is outside the window of 32 too");
         Assert.That(ProtocolCompatibility.ClientProtocolAccepted(29), Is.False, "and so is a client of 29");
 
         using var world = new ScaleWorld(1);
@@ -265,13 +265,42 @@ public class ConformanceProtocolCompatibilityTests
     }
 
     /// <summary>
-    /// Protocol 31 (far classes, <c>docs/interest-management.md</c> D110 to D112) is additive: a far entry gains a class, a
-    /// slot, an age and a hand-over flag behind new flag bits, and compact far poses travel in a message of their own
-    /// (<see cref="MsgId.FarPoses"/>), which the gateway writes only to a client that negotiated 31. A client of 30 (N-1) is
-    /// sent every far update as the full protocol-26 entry it always read, and its state entries keep protocol 30's layout.
+    /// A client of 30 fell out of the window when 32 moved it (N and N-1, <c>docs/compatibility-policy.md</c> D1). Nothing it
+    /// reads changed, but the additive rule is only audited across one step. The recorded protocol-30 client is refused before it
+    /// reaches a worker, with the range the gateway accepts.
     /// </summary>
     [Test]
-    public void AProtocol30ClientIsSentFarEntriesItCanRead()
+    public void ARecordedProtocol30ClientIsRefusedWithTheGatewaysRange()
+    {
+        var fixture = ProtocolFixture.Load(ProtocolFixture.PathFor(30));
+        Assert.That(fixture.ProtocolVersion, Is.EqualTo((ushort)30));
+        Assert.That(ProtocolCompatibility.ClientProtocolAccepted(fixture.ProtocolVersion), Is.False);
+
+        using var world = new ScaleWorld(1);
+        using var fleet = new Fleet(gateways: 1);
+        fleet.Worker.SpawnIntoRequestedContainer = true;
+        var replayed = fleet.Connect(0, "recorded-30");
+        replayed.Replay = fixture.ClientFrames();
+        Assert.That(fleet.Run(() => replayed.Rejected != null, seconds: 20), Is.True, "a protocol-30 client was not refused");
+        var rejected = replayed.Rejected!.Value;
+        Assert.That(rejected.Code, Is.EqualTo(JoinRejectReason.ProtocolUnsupported));
+        Assert.That(rejected.Retry, Is.False);
+        Assert.That(rejected.SupportedMinVersion, Is.EqualTo((ushort)31));
+        Assert.That(rejected.SupportedMaxVersion, Is.EqualTo((ushort)32));
+        Assert.That(replayed.Welcome, Is.Null);
+        Assert.That(fleet.Worker.Claims, Is.Empty, "a refused client never reaches a worker");
+    }
+
+    /// <summary>
+    /// Protocol 32 (far classes, <c>docs/interest-management.md</c> D110 to D112) is additive: a far entry gains a class, a
+    /// slot, an age and a hand-over flag behind new flag bits, and compact far poses travel in a message of their own
+    /// (<see cref="MsgId.FarPoses"/>), which the gateway writes only to a client that negotiated 32. A client of 31 (N-1) is
+    /// sent every far update as the full protocol-26 entry it always read, its far marker after the despawn as before, and
+    /// NEB-484's dropped-tick range, which is its own protocol's. Every frame it was sent goes through the frozen protocol-31
+    /// reader, which throws on anything of 32 in a far entry or after an owner state.
+    /// </summary>
+    [Test]
+    public void AProtocol31ClientIsSentBytesItCanRead()
     {
         using var world = new ScaleWorld(1);
         using var fleet = new Fleet(gateways: 1, configure: c =>
@@ -279,18 +308,20 @@ public class ConformanceProtocolCompatibilityTests
             c.InterestFarClasses = new[] { new FarClass { Id = 3, Name = "crowd", MaxEntities = 8, UpdateRate = 4f, Radius = 2000f, Upright = true } };
         });
         fleet.Worker.SpawnIntoRequestedContainer = true;
-        var old = fleet.Connect(0, "protocol-30");
-        old.AnnounceVersion = 30;
-        var current = fleet.Connect(0, "protocol-31");
+        var old = fleet.Connect(0, "protocol-31");
+        old.AnnounceVersion = 31;
+        old.Record = new List<(bool, byte[])>();
+        var current = fleet.Connect(0, "protocol-32");
         current.AnnounceVersion = HelloMsg.FarClassesVersion;
         Assert.That(fleet.Run(() => old.Join == JoinState.Joined && current.Join == JoinState.Joined
             && fleet.Worker.Pawns.ContainsKey(old.Welcome!.Value.ClientId) && fleet.Worker.Pawns.ContainsKey(current.Welcome!.Value.ClientId), seconds: 20), Is.True);
-        Assert.That(old.Welcome!.Value.NegotiatedVersion, Is.EqualTo((ushort)30));
+        Assert.That(old.Welcome!.Value.NegotiatedVersion, Is.EqualTo((ushort)31));
         Assert.That(current.Welcome!.Value.NegotiatedVersion, Is.EqualTo(HelloMsg.FarClassesVersion));
 
-        const ulong Walker = 0x7_0000_0001;
+        const ulong Walker = 0x7_0000_0001, Leaver = 0x7_0000_0002;
         var walker = fleet.Worker.Spawn(Walker, new Vector3(300, 0, 0));
         walker.FarClass = 3;
+        fleet.Worker.Spawn(Leaver, new Vector3(100, 0, 0)).FarClass = 3;
         double start = -1;
         var clock = System.Diagnostics.Stopwatch.StartNew();
         fleet.OnPump = () =>
@@ -301,16 +332,39 @@ public class ConformanceProtocolCompatibilityTests
             fleet.Worker.PublishStates();
             fleet.Worker.PublishFar(t);
         };
-        Assert.That(fleet.Run(() => old.Far.ContainsKey(Walker) && current.Far.ContainsKey(Walker) && current.FarPosesReceived >= 3 && old.FarStatesOf.GetValueOrDefault(Walker) >= 4, seconds: 15), Is.True,
+        Assert.That(fleet.Run(() => old.Far.ContainsKey(Walker) && current.Far.ContainsKey(Walker) && current.FarPosesReceived >= 3 && old.FarStatesOf.GetValueOrDefault(Walker) >= 4
+            && old.Replicas.Contains(Leaver) && current.Replicas.Contains(Leaver), seconds: 15), Is.True,
             $"both hear the walker: old {old.FarStatesOf.GetValueOrDefault(Walker)} entries, current {current.FarPosesReceived} compact poses");
-        Assert.That(old.LastError, Is.Empty, "a client of 30 was sent something it could not parse: " + old.LastError);
+
+        // A hand-over: the replica leaves both sets, and only a client of 32 hears of its marker first.
+        fleet.Worker.Move(Leaver, new Vector3(300, 0, 0));
+        Assert.That(fleet.Run(() => !old.Replicas.Contains(Leaver) && old.Far.ContainsKey(Leaver) && !current.Replicas.Contains(Leaver) && current.Far.ContainsKey(Leaver), seconds: 10), Is.True);
+        Assert.That(old.Wire.IndexOf("despawn " + Leaver), Is.LessThan(old.Wire.IndexOf("far " + Leaver)), "a client of 31 gets the marker after the despawn, as it always did");
+        Assert.That(old.Wire, Has.None.StartsWith("far-handover"));
+        Assert.That(current.Wire.IndexOf("far-handover " + Leaver), Is.GreaterThanOrEqualTo(0).And.LessThan(current.Wire.IndexOf("despawn " + Leaver)));
+
+        // NEB-484 is the older client's own: it is sent the range, and it reads to the end of the message.
+        ulong pawn = fleet.Worker.Pawns[old.Welcome.Value.ClientId];
+        fleet.Worker.SendOwnerState(pawn, old.Welcome.Value.ClientId, 50, droppedFrom: 40, droppedTo: 44);
+        Assert.That(fleet.Run(() => old.OwnerStates.Count > 0, seconds: 10), Is.True);
+        Assert.That(old.OwnerStates[0].DroppedTo, Is.EqualTo(44u));
+
+        Assert.That(old.LastError, Is.Empty, "a client of 31 was sent something it could not parse: " + old.LastError);
         Assert.That(current.LastError, Is.Empty, current.LastError);
-        Assert.That(old.FarPosesReceived, Is.Zero, "a client of 30 is never sent compact poses");
+        Assert.That(old.FarPosesReceived, Is.Zero, "a client of 31 is never sent compact poses");
         Assert.That(old.Far[Walker].FarClass, Is.Zero, "nor the class, slot or age fields");
         Assert.That(old.Far[Walker].Slot, Is.Zero);
         Assert.That(current.Far[Walker].FarClass, Is.EqualTo((byte)3));
         Assert.That(current.Far[Walker].X, Is.EqualTo(old.Far[Walker].X).Within(1.6), "both see it in the same place (the compact pose is 1 cm steps)");
-        TestContext.WriteLine($"far bytes: protocol 30 {old.FarBytes} B, protocol 31 {current.FarBytes} B");
+
+        var frozen = new Protocol31GatewayDecoder();
+        foreach (var (outbound, bytes) in old.Record!)
+            if (!outbound) frozen.Read(bytes);
+        Assert.That(frozen.NegotiatedVersion, Is.EqualTo(31));
+        Assert.That(frozen.FarEntries.Keys, Does.Contain(Walker).And.Contain(Leaver), "its far entries read as protocol-26 entries");
+        Assert.That(frozen.DroppedRanges[pawn], Is.EqualTo((40u, 44u)), "main's trailing range reads as main wrote it");
+        Assert.That(frozen.UninspectedMessageIds, Does.Not.Contain((byte)53), "no FarPoses");
+        TestContext.WriteLine($"far bytes: protocol 31 {old.FarBytes} B, protocol 32 {current.FarBytes} B");
     }
 
     /// <summary>
@@ -332,7 +386,7 @@ public class ConformanceProtocolCompatibilityTests
             var current = fleet.Connect(0, "current-at-30hz");
             Assert.That(fleet.Run(() => old.Rejected != null && current.Welcome != null, seconds: 20), Is.True);
             Assert.That(old.Rejected!.Value.Code, Is.EqualTo(JoinRejectReason.ProtocolUnsupported));
-            Assert.That(old.Rejected!.Value.SupportedMinVersion, Is.EqualTo(HelloMsg.TickRateVersion));
+            Assert.That(old.Rejected!.Value.SupportedMinVersion, Is.EqualTo(ProtocolCompatibility.MinClientProtocol(30)));
             Assert.That(old.Welcome, Is.Null);
             Assert.That(current.Welcome!.Value.TickRate, Is.EqualTo((byte)30));
         }
@@ -363,6 +417,31 @@ public class ConformanceProtocolCompatibilityTests
         Assert.That(rejected.SupportedMaxVersion, Is.EqualTo(HelloMsg.ProtocolVersion));
         Assert.That(replayed.Welcome, Is.Null);
         Assert.That(fleet.Worker.Claims, Is.Empty, "a refused client never reaches a worker");
+    }
+
+    /// <summary>The oracle itself: a far entry of protocol 32 does not pass as one of 31, and trailing bytes after a far entry or an owner state are not skipped.</summary>
+    [Test]
+    public void FrozenProtocol31DecoderRejectsWhatAClientOf31CannotRead()
+    {
+        var entry = new FarEntityEntry { NetId = 7, Epoch = 1, Kind = FarEntryKind.State, PrefabId = 3, Radius = 500f, UpdateRate = 2f, X = 1.5, Rotation = Quaternion.identity, FarClass = 3, Slot = 9 };
+        byte[] Far(ushort version)
+        {
+            var w = new NetworkWriter();
+            FarEntitiesMsg.Write(w, new[] { entry }, 0, 1, version);
+            return w.ToSegment().ToArray();
+        }
+        var decoded = new Protocol31GatewayDecoder();
+        decoded.Read(Far(31));
+        Assert.That(decoded.FarEntries[7], Is.EqualTo(((byte)0, 1.5, 0.0, 0.0)), "the entry a gateway writes for a client of 31");
+        Assert.Throws<InvalidDataException>(() => new Protocol31GatewayDecoder().Read(Far(HelloMsg.FarClassesVersion)));
+        Assert.Throws<InvalidDataException>(() => new Protocol31GatewayDecoder().Read(Far(31).Concat(new byte[] { 0 }).ToArray()));
+
+        var owner = new NetworkWriter();
+        new OwnerStateMsg { NetId = 7, Epoch = 1, Tick = 9, LastInputTick = 9, OwnerClientId = 2, State = new byte[] { 1 }, DroppedFrom = 3, DroppedTo = 5 }.Write(owner, true, true);
+        var bytes = owner.ToSegment().ToArray();
+        decoded.Read(bytes);
+        Assert.That(decoded.DroppedRanges[7], Is.EqualTo((3u, 5u)));
+        Assert.Throws<InvalidDataException>(() => new Protocol31GatewayDecoder().Read(bytes.Concat(new byte[] { 0 }).ToArray()));
     }
 
     [Test]

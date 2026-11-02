@@ -79,7 +79,7 @@ namespace Nebula
             public readonly HashSet<ulong> ApproachFrames = new HashSet<ulong>();
             /// <summary>The far tier (NEB-388): entities this client sees as markers beyond the normal radius, never also in <see cref="Visible"/>.</summary>
             public readonly Dictionary<ulong, FarHoldState> FarHeld = new Dictionary<ulong, FarHoldState>();
-            /// <summary>The slots this client's compact far poses name entities by (protocol 31, D111).</summary>
+            /// <summary>The slots this client's compact far poses name entities by (protocol 32, D111).</summary>
             public readonly FarSlots FarSlots = new FarSlots();
             /// <summary>Far entries waiting to be sent to this client (see <c>FlushFar</c>).</summary>
             public readonly List<FarEntityEntry> FarOut = new List<FarEntityEntry>();

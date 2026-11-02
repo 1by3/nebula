@@ -17,7 +17,7 @@ namespace Nebula
         Gone = 1,
         /// <summary>
         /// Gateway only, never in a <see cref="FarEntitiesMsg"/>: a new pose for an entity the client already holds, queued
-        /// to go as a compact <see cref="FarPosesMsg"/> entry (protocol 31, D111). <see cref="FarEntityEntry.X"/>..Z hold
+        /// to go as a compact <see cref="FarPosesMsg"/> entry (protocol 32, D111). <see cref="FarEntityEntry.X"/>..Z hold
         /// the offset from the anchor the client was last sent, and <see cref="FarEntityEntry.Slot"/> names the entity.
         /// </summary>
         Pose = 2,
@@ -31,14 +31,14 @@ namespace Nebula
         HasOwner = 1,
         /// <summary>An <see cref="FarEntityEntry.InstanceId"/> follows (the entity is in a scope, not the public world).</summary>
         HasInstance = 2,
-        /// <summary>Protocol 31: a <see cref="FarEntityEntry.FarClass"/> byte follows (not 0).</summary>
+        /// <summary>Protocol 32: a <see cref="FarEntityEntry.FarClass"/> byte follows (not 0).</summary>
         HasClass = 4,
-        /// <summary>Protocol 31: a <see cref="FarEntityEntry.Slot"/> follows: the short name the client's compact poses use (gateway to client).</summary>
+        /// <summary>Protocol 32: a <see cref="FarEntityEntry.Slot"/> follows: the short name the client's compact poses use (gateway to client).</summary>
         HasSlot = 8,
-        /// <summary>Protocol 31: the pose is <see cref="FarEntityEntry.Age"/> old, in milliseconds (u16): a gateway sending a stored pose says how stale it is.</summary>
+        /// <summary>Protocol 32: the pose is <see cref="FarEntityEntry.Age"/> old, in milliseconds (u16): a gateway sending a stored pose says how stale it is.</summary>
         HasAge = 16,
         /// <summary>
-        /// Protocol 31: the entity is leaving this client's replica set this instant, and this entry is its far marker
+        /// Protocol 32: the entity is leaving this client's replica set this instant, and this entry is its far marker
         /// (<see cref="FarEntityEntry.FromReplica"/>, D112). Sent just before the replica's despawn.
         /// </summary>
         FromReplica = 32,
@@ -70,19 +70,19 @@ namespace Nebula
         public double X, Y, Z;
         public Quaternion Rotation;
         public Vector3 Velocity;
-        /// <summary>The entity's far class (<see cref="NetworkIdentity.FarClass"/>; 0 the default). Protocol 31.</summary>
+        /// <summary>The entity's far class (<see cref="NetworkIdentity.FarClass"/>; 0 the default). Protocol 32.</summary>
         public byte FarClass;
-        /// <summary>Gateway to client, protocol 31: the client's short name for the entity, which <see cref="FarPosesMsg"/> entries use.</summary>
+        /// <summary>Gateway to client, protocol 32: the client's short name for the entity, which <see cref="FarPosesMsg"/> entries use.</summary>
         public ushort Slot;
-        /// <summary>Seconds since the pose was taken, when a gateway sends one it stored (0: fresh). Protocol 31, millisecond resolution.</summary>
+        /// <summary>Seconds since the pose was taken, when a gateway sends one it stored (0: fresh). Protocol 32, millisecond resolution.</summary>
         public float Age;
-        /// <summary>The replica the client holds is leaving its set, and this is its far marker (protocol 31, D112).</summary>
+        /// <summary>The replica the client holds is leaving its set, and this is its far marker (protocol 32, D112).</summary>
         public bool FromReplica;
         /// <summary><see cref="FarEntryKind.Pose"/> only: write the facing alone (an upright class, <see cref="Nebula.FarClass.Upright"/>).</summary>
         public bool Upright;
 
         /// <summary>The first protocol whose far entries carry a class, a slot, an age and the replica hand-over flag.</summary>
-        public const ushort ClassesVersion = 31;
+        public const ushort ClassesVersion = HelloMsg.FarClassesVersion;
 
         /// <summary>Bytes a <see cref="FarEntryKind.State"/> entry with neither owner nor scope costs on the wire.</summary>
         public const int StateWireSize = 8 + 4 + 1 + 1 + 2 + 1 + 4 + 4 + 24 + 4 + 6;
@@ -215,7 +215,7 @@ namespace Nebula
     }
 
     /// <summary>
-    /// Gateway -> client, protocol 31 (<c>docs/interest-management.md</c> D111): compact far updates for entities the
+    /// Gateway -> client, protocol 32 (<c>docs/interest-management.md</c> D111): compact far updates for entities the
     /// client already holds in its far tier.
     /// <c>[id][count:u16]{u16 slot (bit 15: upright), 3 x s24 offset (1 cm, from the last full entry's position),
     /// rotation (u16 octahedral facing when upright, else u32 smallest-three), 3 x f16 velocity}</c>: 19 bytes for an

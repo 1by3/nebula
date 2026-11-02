@@ -11,7 +11,7 @@ namespace Nebula
     /// <summary>What a gateway remembers about one entity in one client's far tier (D111).</summary>
     internal struct FarHoldState
     {
-        /// <summary>The client's short name for it in compact poses; 0 for a client older than protocol 31.</summary>
+        /// <summary>The client's short name for it in compact poses; 0 for a client older than protocol 32.</summary>
         public ushort Slot;
         /// <summary>The record's <c>Facts</c> when the client was last sent a full entry: a compact pose may follow only while they match.</summary>
         public int Facts;
@@ -54,7 +54,7 @@ namespace Nebula
     /// interest set through this path. The normal tier wins: an entity a client holds as a replica is never in its far
     /// tier, and entering the replica set takes it out silently (the client turns the marker into the replica).
     /// <para>
-    /// Protocol 31: each class (<see cref="FarClass"/>, D110) has its own budget per client; a client of 31 is sent a
+    /// Protocol 32: each class (<see cref="FarClass"/>, D110) has its own budget per client; a client of 32 is sent a
     /// full entry when an entity enters its far tier or its facts change, and compact poses (<see cref="FarPosesMsg"/>,
     /// D111) in between; and an entity leaving its replica set is sent as a far marker just before its despawn (D112).
     /// </para>
@@ -89,7 +89,7 @@ namespace Nebula
         public int FarEntityCount => _farRecords.Count;
         /// <summary>Far-tier entries sent to clients since start (enters, updates and leaves, full and compact).</summary>
         public long FarEntriesRelayed => _farEntriesRelayed;
-        /// <summary>Of <see cref="FarEntriesRelayed"/>, the compact poses (<see cref="FarPosesMsg"/>, protocol 31).</summary>
+        /// <summary>Of <see cref="FarEntriesRelayed"/>, the compact poses (<see cref="FarPosesMsg"/>, protocol 32).</summary>
         public long FarPosesRelayed => _farPosesRelayed;
         /// <summary>Bytes of far-tier messages sent to clients since start.</summary>
         public long FarBytesRelayed => _farBytesRelayed;
@@ -302,7 +302,7 @@ namespace Nebula
 
         /// <summary>
         /// D112: an entity is leaving a client's replica set. When the far tier will have it (its record is here, the client
-        /// negotiated protocol 31, it is within its far radius and the policy allows it), the client is sent its far entry
+        /// negotiated protocol 32, it is within its far radius and the policy allows it), the client is sent its far entry
         /// now, flagged <see cref="FarEntityEntry.FromReplica"/>, ahead of the despawn, so a client never holds neither. The
         /// budget is settled by the <see cref="EvaluateFar"/> right after; a hand-over is the nearest of its class, so it is
         /// kept unless the class is already full of nearer ones.
@@ -361,7 +361,7 @@ namespace Nebula
 
         // ------------------------------------------------------------------------------------------- sending
 
-        /// <summary>An entity enters a client's far tier: its full entry, with a slot, the age of the stored pose and the hand-over flag (31).</summary>
+        /// <summary>An entity enters a client's far tier: its full entry, with a slot, the age of the stored pose and the hand-over flag (32).</summary>
         private void QueueFarEnter(ClientConn client, FarRecord rec, bool fromReplica)
         {
             var held = new FarHoldState();

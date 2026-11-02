@@ -9,16 +9,17 @@ namespace Nebula.Tests
 {
     /// <summary>
     /// A micro-benchmark of the far tier with crowds (D110, D111): 100 clients in a 4 km square, 500 far bodies among them
-    /// in three classes (players, NPCs, creatures) and 128 hulls in the default class, for 10 simulated seconds at 60 Hz.
+    /// in three classes (players, NPCs, creatures) and 128 hulls in the default class, for 10 simulated seconds, at 60 Hz and at 30 Hz.
     /// The worker half is the real <see cref="FarPublisher"/> over a real <see cref="RegionPublisher"/> (two gateways, 50
     /// clients each); the gateway half is each client's evaluation at 4 Hz with the real <see cref="FarSelection"/> and
-    /// every relay encoded with the real writers, at protocol 31 (compact poses) and at protocol 30 (full entries). It
+    /// every relay encoded with the real writers, at protocol 32 (compact poses) and at protocol 31 (full entries). It
     /// reports the worker's cost per tick, the gateway's per-client evaluation cost and the far bytes per client, and checks
     /// the budgets: no class over its own, and no hull ever evicted by a crowd.
     /// </summary>
     public sealed class FarTierBenchmarkTests
     {
-        private const int Clients = 100, Hulls = 128, TickRate = 60, Seconds = 10;
+        private const int Clients = 100, Hulls = 128, Seconds = 10;
+        private const ushort OldClient = HelloMsg.FarClassesVersion - 1;
         private const byte Pawn = 1, Npc = 2, Fauna = 3;
 
         private static readonly FarClass[] Classes =
@@ -41,11 +42,12 @@ namespace Nebula.Tests
         {
             public double X, Z;
             public readonly Dictionary<ulong, (double X, double Y, double Z)> Held = new Dictionary<ulong, (double, double, double)>();
-            public long Bytes31, Bytes30, Crowd31, Crowd30;
+            public long BytesCompact, BytesFull, CrowdCompact, CrowdFull;
         }
 
-        [Test]
-        public void HundredClientsFiveHundredCrowdAndHundredTwentyEightHulls()
+        [TestCase(60)]
+        [TestCase(30)]
+        public void HundredClientsFiveHundredCrowdAndHundredTwentyEightHulls(int tickRate)
         {
             var settings = InterestSettings.Default;
             settings.FarMaxEntities = 128;
@@ -121,21 +123,21 @@ namespace Nebula.Tests
             var chosen = new HashSet<ulong>();
             var scratch = new List<ulong>();
             var w = new NetworkWriter(256);
-            int evalEvery = Mathf.RoundToInt(TickRate / settings.EvalHz);
+            int evalEvery = Mathf.RoundToInt(tickRate / settings.EvalHz);
             var workerTimer = new Stopwatch();
             var gatewayTimer = new Stopwatch();
             double workerWorst = 0;
             var classCounts = new int[256];
             int worstCrowdHeld = 0, hullsMissing = 0, overBudget = 0;
 
-            int ticks = Seconds * TickRate;
+            int ticks = Seconds * tickRate;
             for (int tick = 1; tick <= ticks; tick++)
             {
-                double now = tick / (double)TickRate;
+                double now = tick / (double)tickRate;
                 foreach (var b in bodies)
                 {
-                    b.X += b.Velocity.x / TickRate;
-                    b.Z += b.Velocity.z / TickRate;
+                    b.X += b.Velocity.x / tickRate;
+                    b.Z += b.Velocity.z / tickRate;
                 }
 
                 // ---- worker
@@ -174,12 +176,12 @@ namespace Nebula.Tests
                         var anchor = client.Held[e.NetId];
                         w.Reset();
                         FarPosesMsg.WriteEntry(w, 1, upright, e.X - anchor.X, e.Y - anchor.Y, e.Z - anchor.Z, e.Rotation, e.Velocity);
-                        client.Bytes31 += w.Length;
-                        if (e.FarClass != 0) client.Crowd31 += w.Length;
+                        client.BytesCompact += w.Length;
+                        if (e.FarClass != 0) client.CrowdCompact += w.Length;
                         w.Reset();
-                        e.Write(w, 30);
-                        client.Bytes30 += w.Length;
-                        if (e.FarClass != 0) client.Crowd30 += w.Length;
+                        e.Write(w, OldClient);
+                        client.BytesFull += w.Length;
+                        if (e.FarClass != 0) client.CrowdFull += w.Length;
                     }
                 }
 
@@ -203,8 +205,8 @@ namespace Nebula.Tests
                     {
                         client.Held.Remove(id);
                         holders[id].Remove(c);
-                        client.Bytes31 += 13;
-                        client.Bytes30 += 13;
+                        client.BytesCompact += 13;
+                        client.BytesFull += 13;
                     }
                     foreach (ulong id in chosen)
                     {
@@ -217,12 +219,12 @@ namespace Nebula.Tests
                         e.Age = 0.2f;
                         w.Reset();
                         e.Write(w, HelloMsg.FarClassesVersion);
-                        client.Bytes31 += w.Length;
+                        client.BytesCompact += w.Length;
                         w.Reset();
-                        e.Write(w, 30);
-                        client.Bytes30 += w.Length;
+                        e.Write(w, OldClient);
+                        client.BytesFull += w.Length;
                     }
-                    if (tick > TickRate * 2)
+                    if (tick > tickRate * 2)
                     {
                         Array.Clear(classCounts, 0, classCounts.Length);
                         foreach (ulong id in client.Held.Keys) classCounts[records[id].FarClass]++;
@@ -236,15 +238,15 @@ namespace Nebula.Tests
 
             double workerMs = workerTimer.Elapsed.TotalMilliseconds / ticks;
             double gatewayMs = gatewayTimer.Elapsed.TotalMilliseconds / ticks;
-            long b31 = 0, b30 = 0, c31 = 0, c30 = 0;
-            foreach (var c in clients) { b31 += c.Bytes31; b30 += c.Bytes30; c31 += c.Crowd31; c30 += c.Crowd30; }
-            double perClient31 = b31 / (double)Clients / Seconds, perClient30 = b30 / (double)Clients / Seconds;
+            long compact = 0, full = 0, crowdCompact = 0, crowdFull = 0;
+            foreach (var c in clients) { compact += c.BytesCompact; full += c.BytesFull; crowdCompact += c.CrowdCompact; crowdFull += c.CrowdFull; }
+            double perClientCompact = compact / (double)Clients / Seconds, perClientFull = full / (double)Clients / Seconds;
             string report =
-                $"[far bench] {Clients} clients, {crowd} crowd + {Hulls} hulls, {Seconds} s at {TickRate} Hz\n" +
+                $"[far bench] {Clients} clients, {crowd} crowd + {Hulls} hulls, {Seconds} s at {tickRate} Hz\n" +
                 $"  worker FarPublisher: {workerMs:0.000} ms/tick average, {workerWorst:0.000} ms worst, {workerBytes / (double)Seconds / 1024.0:0.0} KB/s to 2 gateways\n" +
-                $"  gateway relay + evaluation (100 clients, 4 Hz): {gatewayMs:0.000} ms/tick average ({gatewayMs * TickRate / Clients:0.000} ms per client-second)\n" +
-                $"  far bytes per client: {perClient31 / 1024.0:0.00} KB/s at protocol 31, {perClient30 / 1024.0:0.00} KB/s at protocol 30 ({perClient30 / Math.Max(1, perClient31):0.0}x)\n" +
-                $"    of which crowd pose updates: {c31 / (double)Clients / Seconds / 1024.0:0.00} KB/s at 31, {c30 / (double)Clients / Seconds / 1024.0:0.00} KB/s at 30 (the rest: 128 hulls at 5 Hz, enters and leaves)\n" +
+                $"  gateway relay + evaluation (100 clients, 4 Hz): {gatewayMs:0.000} ms/tick average ({gatewayMs * tickRate / Clients:0.000} ms per client-second)\n" +
+                $"  far bytes per client: {perClientCompact / 1024.0:0.00} KB/s at protocol {HelloMsg.FarClassesVersion}, {perClientFull / 1024.0:0.00} KB/s at protocol {OldClient} ({perClientFull / Math.Max(1, perClientCompact):0.0}x)\n" +
+                $"    of which crowd pose updates: {crowdCompact / (double)Clients / Seconds / 1024.0:0.00} KB/s compact, {crowdFull / (double)Clients / Seconds / 1024.0:0.00} KB/s full (the rest: 128 hulls at 5 Hz, enters and leaves)\n" +
                 $"  most crowd bodies one client held: {worstCrowdHeld} (budget {Classes[0].MaxEntities + Classes[1].MaxEntities + Classes[2].MaxEntities})";
             Debug.Log(report);
             TestContext.WriteLine(report);
@@ -252,7 +254,7 @@ namespace Nebula.Tests
             Assert.That(overBudget, Is.Zero, "no class over its own budget");
             Assert.That(hullsMissing, Is.Zero, "no hull evicted by the crowd");
             Assert.That(worstCrowdHeld, Is.GreaterThan(32), "the crowd classes are in use");
-            Assert.That(perClient31, Is.LessThan(perClient30 * 0.6), "compact poses cut the far bytes");
+            Assert.That(perClientCompact, Is.LessThan(perClientFull * 0.6), "compact poses cut the far bytes");
             // Loose regression guards (a loaded CI machine is slow): the real numbers are in the log.
             Assert.That(workerMs, Is.LessThan(5.0), "the worker's far tier stays cheap");
             Assert.That(gatewayMs, Is.LessThan(20.0), "the gateway's far evaluation stays cheap");

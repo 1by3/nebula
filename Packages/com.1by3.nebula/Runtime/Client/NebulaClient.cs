@@ -404,9 +404,9 @@ namespace Nebula
         private readonly Dictionary<ulong, FarEntity> _far = new Dictionary<ulong, FarEntity>();
         private readonly List<FarEntityEntry> _farIn = new List<FarEntityEntry>();
         private readonly List<FarPose> _farPosesIn = new List<FarPose>();
-        /// <summary>Protocol 31: slot to net id, for compact far poses (D111).</summary>
+        /// <summary>Protocol 32: slot to net id, for compact far poses (D111).</summary>
         private readonly Dictionary<ushort, ulong> _farSlots = new Dictionary<ushort, ulong>();
-        /// <summary>Protocol 31: far markers for replicas that are leaving the set; they take over at the despawn (D112).</summary>
+        /// <summary>Protocol 32: far markers for replicas that are leaving the set; they take over at the despawn (D112).</summary>
         private readonly Dictionary<ulong, FarEntityEntry> _farHandovers = new Dictionary<ulong, FarEntityEntry>();
         private readonly List<FarEntity> _farGone = new List<FarEntity>();
         /// <summary>Each driven entity's recent inputs, sent three at a time like the pawn's.</summary>
@@ -2449,7 +2449,7 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Compact far poses (<see cref="MsgId.FarPoses"/>, protocol 31, D111): a new pose for a marker this client holds,
+        /// Compact far poses (<see cref="MsgId.FarPoses"/>, protocol 32, D111): a new pose for a marker this client holds,
         /// named by the slot its last full entry gave it. A slot that names nothing (the marker just became a replica) is ignored.
         /// </summary>
         private void OnFarPoses(NetworkReader r)

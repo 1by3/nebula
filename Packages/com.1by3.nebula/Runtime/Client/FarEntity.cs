@@ -48,10 +48,10 @@ namespace Nebula
         public Vector3 Velocity { get; internal set; }
         /// <summary>
         /// <see cref="Time.unscaledTimeAsDouble"/> when the newest pose was taken, as near as this client can tell: when it
-        /// arrived, less the age the gateway reported for a pose it had stored (protocol 31).
+        /// arrived, less the age the gateway reported for a pose it had stored (protocol 32).
         /// </summary>
         public double ReceivedAt { get; internal set; }
-        /// <summary>Its far class (<see cref="NetworkIdentity.FarClass"/>, D110): pick what to draw by it. 0 from a gateway older than protocol 31.</summary>
+        /// <summary>Its far class (<see cref="NetworkIdentity.FarClass"/>, D110): pick what to draw by it. 0 from a gateway older than protocol 32.</summary>
         public byte FarClass { get; internal set; }
         /// <summary>The way it faces, a unit vector in its scope's own space (<see cref="Rotation"/> times forward).</summary>
         public Vector3 Forward { get; internal set; }
@@ -69,7 +69,7 @@ namespace Nebula
         /// <summary>Seconds over which a marker that took over from a replica eases from the replica's last drawn spot onto its far pose.</summary>
         public const float HandoverBlendSeconds = 0.3f;
 
-        /// <summary>The slot compact poses name it by (protocol 31), and the position they are offsets from.</summary>
+        /// <summary>The slot compact poses name it by (protocol 32), and the position they are offsets from.</summary>
         internal ushort Slot;
         internal Double3 Anchor;
 
@@ -121,7 +121,7 @@ namespace Nebula
             Anchor = Position;
         }
 
-        /// <summary>A compact pose (protocol 31, D111): an offset from the anchor; an upright body keeps its up axis.</summary>
+        /// <summary>A compact pose (protocol 32, D111): an offset from the anchor; an upright body keeps its up axis.</summary>
         internal void Apply(in FarPose p, double now)
         {
             Position = new Double3(Anchor.X + p.DX, Anchor.Y + p.DY, Anchor.Z + p.DZ);

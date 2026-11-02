@@ -935,14 +935,14 @@ public sealed class FakeWorker : IDisposable
     /// Report an entity's state to the client in control of it, as a worker does every tick for a pawn's owner or a
     /// vehicle's driver: sent to every linked gateway, as a worker that does not know the client's session does.
     /// </summary>
-    public void SendOwnerState(ulong netId, ulong clientId, uint tick, byte[]? events = null)
+    public void SendOwnerState(ulong netId, ulong clientId, uint tick, byte[]? events = null, uint droppedFrom = 0, uint droppedTo = 0)
     {
         if (!_entities.TryGetValue(netId, out var e)) return;
         _w.Reset();
         new OwnerStateMsg
         {
             NetId = netId, Epoch = e.Epoch, Tick = tick, LastInputTick = tick, InputLead = 2, OwnerClientId = clientId,
-            Container = e.Container, State = new byte[] { 1, 2, 3 }, Events = events,
+            Container = e.Container, State = new byte[] { 1, 2, 3 }, Events = events, DroppedFrom = droppedFrom, DroppedTo = droppedTo,
         }.Write(_w);
         foreach (var link in _links.Values) Transport.Send(link.PeerId, Delivery.Sequenced, _w.ToSegment());
     }
@@ -1198,11 +1198,11 @@ public sealed class FakeClient : IDisposable
     public readonly List<ulong> FarGone = new(), FarPromoted = new();
     /// <summary>Far entries for an entity this client held as a replica at the time: the tier leaking into the normal one.</summary>
     public int FarWhileReplicated;
-    /// <summary>Protocol 31: compact far poses received (D111), the slots they name by, and the anchor each is an offset from.</summary>
+    /// <summary>Protocol 32: compact far poses received (D111), the slots they name by, and the anchor each is an offset from.</summary>
     public int FarPosesReceived, FarPosesUnresolved;
     public readonly Dictionary<ushort, ulong> FarSlots = new();
     private readonly Dictionary<ulong, (double X, double Y, double Z)> _farAnchors = new();
-    /// <summary>Protocol 31: far markers sent ahead of a replica's despawn (D112), and the ones that took over when it landed.</summary>
+    /// <summary>Protocol 32: far markers sent ahead of a replica's despawn (D112), and the ones that took over when it landed.</summary>
     public readonly Dictionary<ulong, FarEntityEntry> FarHandoversPending = new();
     public readonly List<ulong> FarHandedOver = new();
     /// <summary>Despawns of a far-relevant replica that left this client with neither a replica nor a marker, while the gateway held it far.</summary>

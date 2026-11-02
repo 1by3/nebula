@@ -2,7 +2,11 @@ using System.Text;
 
 namespace Nebula.ServiceTests;
 
-// Frozen protocol-30 oracle: do not replace literals or readers with production protocol types.
+// Frozen protocol-31 oracle: do not replace literals or readers with production protocol types.
+// Protocol 31 (NEB-484) added a trailing dropped-tick range to OwnerState, after its events section. This reader reads
+// OwnerState in full, and FarEntities too, so it can say what a client of 31 is sent: a far entry here is the protocol-26
+// entry, with only the owner and scope flag bits, and FarPoses (53) is not a message this client knows. Anything from
+// protocol 32 in those frames fails here instead of being skipped. Otherwise it is the protocol-30 oracle, literals raised.
 // Protocol 30 added a byte of transform extensions after each state entry's field mask: angular velocity (3 halves after
 // the velocity) and 15-bit smallest-three rotations (6 bytes instead of 4); this reader reads both. Otherwise it is the
 // protocol-29 oracle, below, with its version literals raised.
@@ -21,7 +25,7 @@ namespace Nebula.ServiceTests;
 // are not compatibility claims made by this fixture. Like the protocol-28 client, unknown
 // message IDs and optional trailing bytes are ignored inside their bounded frame. Known but
 // uncovered instance-container payloads fail explicitly instead of guessing their framing.
-internal sealed class Protocol30GatewayDecoder
+internal sealed class Protocol31GatewayDecoder
 {
     internal ulong ClientId;
     internal string Identity = "";
@@ -33,12 +37,16 @@ internal sealed class Protocol30GatewayDecoder
     internal readonly Dictionary<ulong, (float X, float Y, float Z)> Positions = new();
     internal readonly HashSet<string> Containers = new();
     internal readonly HashSet<byte> UninspectedMessageIds = new();
+    /// <summary>Far entries as a client of 31 reads them, by entity: the newest of each.</summary>
+    internal readonly Dictionary<ulong, (byte Flags, double X, double Y, double Z)> FarEntries = new();
+    /// <summary>The dropped-tick range each owner state carried, when it carried one (NEB-484).</summary>
+    internal readonly Dictionary<ulong, (uint From, uint To)> DroppedRanges = new();
 
     internal void Read(byte[] frame) => Read(frame, 0);
 
     private void Read(byte[] frame, int depth)
     {
-        if (depth > 8) throw new InvalidDataException("protocol-30 batch nesting limit");
+        if (depth > 8) throw new InvalidDataException("protocol-31 batch nesting limit");
         using var r = new Cursor(frame);
         byte id = r.Byte();
         switch (id)
@@ -51,8 +59,8 @@ internal sealed class Protocol30GatewayDecoder
                 if (Identity.Length == 0 || r.Text().Length == 0 || r.Text().Length == 0)
                     throw new InvalidDataException("missing handshake identity or tokens");
                 r.Bool();
-                NegotiatedVersion = r.Remaining == 0 ? (ushort)30 : r.U16();
-                if (NegotiatedVersion != 30) throw new InvalidDataException("gateway did not negotiate protocol 30");
+                NegotiatedVersion = r.Remaining == 0 ? (ushort)31 : r.U16();
+                if (NegotiatedVersion != 31) throw new InvalidDataException("gateway did not negotiate protocol 31");
                 Welcomes++;
                 break;
             case 5: // JoinStatus
@@ -86,7 +94,7 @@ internal sealed class Protocol30GatewayDecoder
                     r.U32(); r.Container();
                     ushort fields = r.U16();
                     byte ext = r.Byte();
-                    if (ext > 3) throw new InvalidDataException("unknown protocol-30 transform extension");
+                    if (ext > 3) throw new InvalidDataException("unknown protocol-31 transform extension");
                     var position = r.Axes(fields, 0);
                     if ((fields & 7) == 7) Positions[entity] = (position[0], position[1], position[2]);
                     if ((fields & 56) != 0)
@@ -117,6 +125,34 @@ internal sealed class Protocol30GatewayDecoder
                 int removes = r.U16();
                 for (int i = 0; i < removes; i++) Containers.Remove(r.Text());
                 break;
+            case 15: // OwnerState: NEB-484's range follows the events section, which it forces to be written
+                ulong ownerState = r.U64();
+                r.U32(); r.U32(); r.U32(); r.Byte(); r.U64();
+                r.Container();
+                r.Blob();
+                if (r.Remaining > 0) r.Blob();
+                if (r.Remaining >= 8) DroppedRanges[ownerState] = (r.U32(), r.U32());
+                if (r.Remaining != 0) throw new InvalidDataException("bytes a protocol-31 client cannot read after an owner state");
+                break;
+            case 26: // FarEntities: a count and tightly packed protocol-26 entries
+                int farEntries = r.U16();
+                for (int i = 0; i < farEntries; i++)
+                {
+                    ulong far = r.U64();
+                    r.U32();
+                    byte kind = r.Byte();
+                    if (kind == 1) { FarEntries.Remove(far); continue; }
+                    if (kind != 0) throw new InvalidDataException("unknown protocol-31 far entry kind");
+                    byte flags = r.Byte();
+                    if ((flags & ~3) != 0) throw new InvalidDataException("far entry flag bits a protocol-31 client does not read: " + flags);
+                    r.U16(); r.Byte(); r.U32(); r.U32();
+                    if ((flags & 1) != 0) r.U64();
+                    if ((flags & 2) != 0) r.U64();
+                    FarEntries[far] = (flags, r.F64(), r.F64(), r.F64());
+                    r.Bytes(4 + 6); // the rotation, smallest-three, and three half-float velocities
+                }
+                if (r.Remaining != 0) throw new InvalidDataException("bytes a protocol-31 client cannot read after its far entries");
+                break;
             case 18: // Batch: count and individually bounded messages
                 int count = r.U16();
                 for (int i = 0; i < count; i++) Read(r.Bytes(r.U16()), depth + 1);
@@ -140,6 +176,7 @@ internal sealed class Protocol30GatewayDecoder
         internal ushort U16() => reader.ReadUInt16();
         internal uint U32() => reader.ReadUInt32();
         internal ulong U64() => reader.ReadUInt64();
+        internal double F64() => reader.ReadDouble();
         internal bool Bool()
         {
             byte value = Byte();

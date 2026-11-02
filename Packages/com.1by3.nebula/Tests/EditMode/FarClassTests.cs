@@ -7,7 +7,7 @@ namespace Nebula.Tests
     /// <summary>
     /// Far classes (<c>docs/interest-management.md</c> D110): a class table resolves budgets, rates and radii, a crowd class
     /// fills its own budget and never evicts the default class's hulls, a total cap serves classes by priority, and the
-    /// config repairs nonsense. Plus the protocol-31 far entry fields and the compact pose message (D111) on the wire.
+    /// config repairs nonsense. Plus the protocol-32 far entry fields and the compact pose message (D111) on the wire.
     /// </summary>
     [Category("Conformance")]
     public sealed class FarClassTests
@@ -147,8 +147,51 @@ namespace Nebula.Tests
             return FarEntityEntry.Read(new NetworkReader(w.ToSegment()));
         }
 
+        /// <summary>
+        /// A class's rate is in hertz, not in ticks (<c>docs/tick-rate.md</c>): the worker feeds <see cref="FarPublisher"/> seconds,
+        /// so a body keeps its updates a second on a mesh at 30 Hz, including rates that fall between two ticks.
+        /// </summary>
+        [TestCase(60)]
+        [TestCase(30)]
+        public void AFarRateIsInHertzAtAnyTickRate(int tickRate)
+        {
+            var settings = InterestSettings.Default;
+            var grid = InterestGrid.Resolve(settings);
+            ulong salt = RegionKeys.SaltOf(0UL);
+            var receiver = new RegionSubscriptionReceiver();
+            var msg = new InterestSubscribeMsg
+            {
+                Seq = 1, Grid = grid, Flags = InterestSubscribeFlags.Full | InterestSubscribeFlags.Commit,
+                Add = new List<ulong>(), Remove = new List<ulong>(), FociRegions = new List<ulong> { grid.RegionOf(0, 0, 0) ^ salt }, Entities = new List<ulong>(),
+                SetCount = 0, SetHash = RegionSubscription.Hash(new ulong[0]),
+            };
+            Assert.That(receiver.Apply(msg, out string rejection), Is.True, rejection);
+            var publisher = new RegionPublisher();
+            publisher.AddGateway(0, receiver);
+            var far = new FarPublisher { EvalInterval = 0.25, ExitMargin = settings.ExitMargin };
+
+            float[] rates = { 0.5f, 1f, 2f, 5f, 7f };
+            var sent = new int[rates.Length];
+            const int Seconds = 40;
+            for (int tick = 1; tick <= Seconds * tickRate; tick++)
+            {
+                far.Begin(tick / (double)tickRate);
+                for (int i = 0; i < rates.Length; i++)
+                {
+                    ulong id = (ulong)i + 1;
+                    if (!far.IsDue(id)) { far.Keep(id); continue; }
+                    far.Offer(new FarEntityEntry { NetId = id, Epoch = 1, Kind = FarEntryKind.State, Radius = 1000f, UpdateRate = rates[i], Rotation = Quaternion.identity }, salt, publisher, grid);
+                }
+                far.End();
+                foreach (var o in far.Out) if (o.Entry.Kind == FarEntryKind.State) sent[(int)o.Entry.NetId - 1]++;
+                far.Out.Clear();
+            }
+            for (int i = 0; i < rates.Length; i++)
+                Assert.That(sent[i] / (double)Seconds, Is.EqualTo(rates[i]).Within(0.06), $"{rates[i]} Hz at a {tickRate} Hz tick");
+        }
+
         [Test]
-        public void AProtocol31EntryCarriesClassSlotAgeAndHandOver()
+        public void AProtocol32EntryCarriesClassSlotAgeAndHandOver()
         {
             var read = RoundTrip(Walker(), HelloMsg.FarClassesVersion, out int bytes);
             Assert.That(read.FarClass, Is.EqualTo(Crowd));
@@ -158,8 +201,10 @@ namespace Nebula.Tests
             Assert.That(read.X, Is.EqualTo(204_800.25));
             Assert.That(bytes, Is.EqualTo(FarEntityEntry.StateWireSize + 1 + 2 + 2), "class 1, slot 2, age 2 bytes");
 
-            var old = RoundTrip(Walker(), 30, out int oldBytes);
-            Assert.That(oldBytes, Is.EqualTo(FarEntityEntry.StateWireSize), "a client of 30 gets the protocol-26 entry, byte for byte");
+            Assert.That(HelloMsg.FarClassesVersion, Is.EqualTo(HelloMsg.DroppedTicksVersion + 1), "far classes came after NEB-484's 31");
+            Assert.That(FarEntityEntry.ClassesVersion, Is.EqualTo(HelloMsg.FarClassesVersion), "one number for one gate");
+            var old = RoundTrip(Walker(), HelloMsg.DroppedTicksVersion, out int oldBytes);
+            Assert.That(oldBytes, Is.EqualTo(FarEntityEntry.StateWireSize), "a client of 31 gets the protocol-26 entry, byte for byte");
             Assert.That((old.FarClass, old.Slot, old.Age, old.FromReplica), Is.EqualTo(((byte)0, (ushort)0, 0f, false)));
             Assert.That(old.Z, Is.EqualTo(1_000_000.125));
         }
