@@ -1229,6 +1229,8 @@ namespace Nebula
 
         private readonly FarPublisher _far = new FarPublisher();
         private Action<ulong> _sendFar;
+        private FarClassTable _farClasses;
+        private FarClass[] _farClassesFrom;
 
         /// <summary>The gateways that hold an entity in their far tier (also told when it despawns).</summary>
         private ulong FarMaskOf(ulong netId) => _far.MaskOf(netId);
@@ -1245,16 +1247,21 @@ namespace Nebula
             _sendFar ??= mask => SendToMask(mask, Delivery.ReliableOrdered);
             _far.EvalInterval = _interest.EvalInterval;
             _far.ExitMargin = _interest.ExitMargin;
+            if (_farClasses == null || !ReferenceEquals(_farClassesFrom, _interest.FarClasses))
+            {
+                _farClasses = FarClassTable.From(_interest);
+                _farClassesFrom = _interest.FarClasses;
+            }
             _far.Begin(now);
             bool any = false;
             for (int i = 0; i < _authoritative.Count; i++)
             {
                 var e = _authoritative[i];
-                if (e == null || !(e.FarRelevanceRadius > 0f) || e.NetId == 0) continue;
+                if (e == null || e.NetId == 0 || !e.IsFarRelevant(_farClasses)) continue;
                 if (_index.CarrierOf(e.NetId) != 0) continue;
                 any = true;
                 if (!_far.IsDue(e.NetId)) { _far.Keep(e.NetId); continue; }
-                var entry = FarEntryOf(e);
+                var entry = FarEntryOf(e, _farClasses);
                 _far.Offer(entry, RegionKeys.SaltOf(e.InstanceId), _publisher, _interestGrid);
             }
             _far.End();
@@ -1271,8 +1278,10 @@ namespace Nebula
         /// is good to that float's step there (a centimetre or two a few hundred kilometres from this worker's origin); the
         /// wire adds nothing to that.
         /// </summary>
-        internal static FarEntityEntry FarEntryOf(NetworkIdentity e)
+        internal static FarEntityEntry FarEntryOf(NetworkIdentity e, FarClassTable classes = null)
         {
+            float radius = e.FarRelevanceRadius, rate = e.EffectiveFarUpdateRate;
+            classes?.Resolve(e.FarClass, e.FarRelevanceRadius, e.FarUpdateRate, out radius, out rate);
             var t = e.transform;
             Vector3 position = t.position;
             Quaternion rotation = t.rotation;
@@ -1292,8 +1301,9 @@ namespace Nebula
                 Kind = FarEntryKind.State,
                 PrefabId = e.PrefabId,
                 InterestGroup = e.InterestGroup,
-                Radius = e.FarRelevanceRadius,
-                UpdateRate = e.EffectiveFarUpdateRate,
+                Radius = radius,
+                UpdateRate = rate,
+                FarClass = e.FarClass,
                 OwnerClientId = e.OwnerClientId,
                 InstanceId = e.InstanceId,
                 X = absolute.X, Y = absolute.Y, Z = absolute.Z,

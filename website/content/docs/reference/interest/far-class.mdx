@@ -1,0 +1,79 @@
+---
+title: "FarClass"
+description: "One class of the far relevance tier (docs/interest-management.md §16, D110): a budget, a rate, a reach and a priority shared by the far entities that name it (NetworkIdentity.FarClass)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/FarClasses.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/FarClasses.cs)</div>
+
+```csharp
+[Serializable]
+public struct FarClass
+```
+
+One class of the far relevance tier (`docs/interest-management.md` §16, D110): a budget, a rate, a reach and a priority shared by the far entities that name it ([`NetworkIdentity.FarClass`](/docs/reference/core/network-identity#farclass)). Classes keep a busy kind of far entity from crowding out another: a crowd of distant people fills its own budget and never pushes ships or buildings out of a client's far tier. Configured in [`NebulaConfig.InterestFarClasses`](/docs/reference/core/nebula-config#interestfarclasses).
+
+## Fields
+
+### Id [#id]
+
+```csharp
+public byte Id;
+```
+
+The class id an entity names (1 to 255). Id 0 is the default class every entity is in unless it names another; an entry with id 0 replaces the default class's settings.
+
+### Name [#name]
+
+```csharp
+public string Name;
+```
+
+A name for logs, diagnostics and the inspector. Not sent anywhere.
+
+### MaxEntities [#maxentities]
+
+```csharp
+public int MaxEntities;
+```
+
+Most entities of this class one client holds at once, nearest first. 0: none of this class are sent.
+
+### UpdateRate [#updaterate]
+
+```csharp
+public float UpdateRate;
+```
+
+Far updates a second for every entity of the class (0: each entity's own [`NetworkIdentity.FarUpdateRate`](/docs/reference/core/network-identity#farupdaterate)).
+
+### Radius [#radius]
+
+```csharp
+public float Radius;
+```
+
+Far radius in metres for every entity of the class (0: each entity's own [`NetworkIdentity.FarRelevanceRadius`](/docs/reference/core/network-identity#farrelevanceradius)). An entity that names a class with a radius is far relevant even when its own radius is 0.
+
+### Priority [#priority]
+
+```csharp
+public int Priority;
+```
+
+Which classes are served first when [`NebulaConfig.InterestFarMaxTotal`](/docs/reference/core/nebula-config#interestfarmaxtotal) caps a client's whole far tier: higher first, then lower ids. Without a total cap every class gets its own budget and the priority does not matter.
+
+### Upright [#upright]
+
+```csharp
+public bool Upright;
+```
+
+The entities stand upright (people, creatures): a compact update ([`FarPosesMsg`](/docs/reference/protocol/far-poses-msg)) carries only the way they face, in 2 bytes, and the client keeps their up axis from the last full entry.
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

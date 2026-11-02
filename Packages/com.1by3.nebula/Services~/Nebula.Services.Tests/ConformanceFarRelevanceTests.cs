@@ -158,6 +158,73 @@ public class ConformanceFarRelevanceTests
         Assert.That(fleet.Run(() => !a.Far.ContainsKey(ShipE), seconds: 5), Is.True, "a despawned far entity is gone");
     }
 
+    private const byte Crowd = 3;
+    private static void CrowdClass(NebulaConfig c, int shipBudget, int crowdBudget)
+    {
+        c.InterestFarMaxEntities = shipBudget;
+        c.InterestFarClasses = new[] { new FarClass { Id = Crowd, Name = "crowd", MaxEntities = crowdBudget, Radius = 2000f, UpdateRate = 2f, Upright = true } };
+    }
+
+    /// <summary>D110: a crowd class fills its own budget per client, nearest first, and never pushes ships out of theirs.</summary>
+    [Test]
+    public void ACrowdClassFillsItsOwnBudgetAndNeverEvictsShips()
+    {
+        using var fleet = new Fleet(gateways: 1, configure: c => CrowdClass(c, shipBudget: 3, crowdBudget: 4));
+        var a = Pilot(fleet, "a", new Vector3(0, 0, 0));
+        fleet.Worker.Spawn(ShipC, new Vector3(30_000, 0, 0)).FarRadius = FarRadius;
+        fleet.Worker.Spawn(ShipD, new Vector3(10_000, 0, 0)).FarRadius = FarRadius;
+        fleet.Worker.Spawn(ShipE, new Vector3(20_000, 0, 0)).FarRadius = FarRadius;
+        // 30 people from 200 to 780 m: every one of them nearer than every ship.
+        for (int i = 0; i < 30; i++) fleet.Worker.Spawn(9000UL + (ulong)i, new Vector3(200 + i * 20, 0, 0)).FarClass = Crowd;
+        Drive(fleet);
+        var gateway = fleet.Gateways[0];
+        Assert.That(fleet.Run(() => gateway.FarTierSize(Id(a), Crowd) == 4 && a.Far.ContainsKey(ShipC) && a.Far.ContainsKey(ShipD) && a.Far.ContainsKey(ShipE), seconds: 10), Is.True,
+            $"three ships and four people (held: {gateway.FarTierSize(Id(a))})");
+        fleet.RunFor(1.5);
+        Assert.That(gateway.FarTierSize(Id(a), 0), Is.EqualTo(3), "the ships keep their own budget");
+        Assert.That(gateway.FarTierSize(Id(a), Crowd), Is.EqualTo(4), "the crowd keeps to its own");
+        for (ulong i = 0; i < 4; i++) Assert.That(a.Far.ContainsKey(9000 + i), Is.True, "the nearest four people");
+        Assert.That(a.Far[9000].FarClass, Is.EqualTo(Crowd), "with their class");
+        Assert.That(a.FarPosesReceived, Is.GreaterThan(0), "updated with compact poses");
+        Assert.That(a.FarPosesUnresolved, Is.Zero, "every one of which names a held marker");
+        Assert.That(a.LastError, Is.Empty);
+        TestContext.WriteLine($"far bytes {a.FarBytes}, compact poses {a.FarPosesReceived} ({gateway.FarPosesRelayed} of {gateway.FarEntriesRelayed} relayed)");
+    }
+
+    /// <summary>
+    /// D112: a body walking out of the normal radius is sent as a far marker just ahead of its replica's despawn, so a client
+    /// never holds neither; walking back in turns the marker into the replica again.
+    /// </summary>
+    [Test]
+    public void ABodyLeavingTheNormalRadiusIsHandedToTheFarTierAheadOfItsDespawn()
+    {
+        using var fleet = new Fleet(gateways: 1, configure: c => CrowdClass(c, shipBudget: 8, crowdBudget: 8));
+        var a = Pilot(fleet, "a", new Vector3(0, 0, 0));
+        const ulong Walker = 9100;
+        fleet.Worker.Spawn(Walker, new Vector3(100, 0, 0)).FarClass = Crowd;
+        Drive(fleet);
+        Assert.That(fleet.Run(() => a.Replicas.Contains(Walker), seconds: 10), Is.True, "a replica within the normal radius");
+
+        fleet.Worker.Move(Walker, new Vector3(300, 0, 0));
+        Assert.That(fleet.Run(() => !a.Replicas.Contains(Walker) && a.Far.ContainsKey(Walker), seconds: 10), Is.True, "a marker beyond it");
+        int handover = a.Wire.IndexOf("far-handover " + Walker), despawn = a.Wire.IndexOf("despawn " + Walker);
+        Assert.That(handover, Is.GreaterThanOrEqualTo(0), "the marker came as a hand-over: " + string.Join(", ", a.Wire.FindAll(w => w.EndsWith(" " + Walker))));
+        Assert.That(handover, Is.LessThan(despawn), "ahead of the despawn");
+        Assert.That(a.FarHandedOver, Does.Contain(Walker));
+        Assert.That(a.FarGone, Does.Not.Contain(Walker));
+        Assert.That(a.Far[Walker].FromReplica, Is.True);
+        Assert.That(a.Far[Walker].Slot, Is.Not.Zero, "with a slot for its compact poses");
+        // The hand-over carries the gateway's stored pose and its age (here a teleport, so up to one far interval behind).
+        Assert.That(fleet.Run(() => Math.Abs(a.Far[Walker].X - 300.0) < 0.01, seconds: 3), Is.True, "the next far update puts it where it is");
+        Assert.That(fleet.Gateways[0].ClientHoldsFar(Id(a), Walker), Is.True);
+
+        fleet.Worker.Move(Walker, new Vector3(40, 0, 0));
+        Assert.That(fleet.Run(() => a.Replicas.Contains(Walker) && !a.Far.ContainsKey(Walker), seconds: 10), Is.True, "and back to a replica");
+        Assert.That(a.FarPromoted, Does.Contain(Walker));
+        Assert.That(a.FarWhileReplicated, Is.Zero);
+        Assert.That(a.LastError, Is.Empty);
+    }
+
     [Test]
     public void AProtocol25ClientIsNeverSentTheFarTier()
     {

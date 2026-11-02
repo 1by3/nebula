@@ -71,6 +71,13 @@ namespace Nebula
         /// the tier off on the gateway.
         /// </summary>
         public int FarMaxEntities;
+        /// <summary>
+        /// The far tier's classes (<see cref="FarClass"/>, D110): each with its own budget per client, rate, radius and
+        /// priority. Null or empty: one class, the default, with <see cref="FarMaxEntities"/>.
+        /// </summary>
+        public FarClass[] FarClasses;
+        /// <summary>Most far entities one client holds over every class together; 0 (the default) caps only each class.</summary>
+        public int FarMaxTotal;
         /// <summary>The fastest a focus is expected to move, in meters per second. Only used to validate <see cref="SubscribeMargin"/>.</summary>
         public float MaxFocusSpeed;
         /// <summary>
@@ -350,6 +357,8 @@ namespace Nebula
             if (e.MaxFoci < 1) { Warn(InterestMaxFociField, "InterestMaxFoci must be at least 1; using 1."); e.MaxFoci = 1; }
             if (e.MaxExplicitPerClient < 0) { Warn(InterestMaxExplicitPerClientField, "InterestMaxExplicitPerClient cannot be negative; using 0."); e.MaxExplicitPerClient = 0; }
             if (e.FarMaxEntities < 0) { Warn(InterestFarMaxEntitiesField, "InterestFarMaxEntities cannot be negative; using 0 (no far tier)."); e.FarMaxEntities = 0; }
+            if (e.FarMaxTotal < 0) { Warn(InterestFarMaxTotalField, "InterestFarMaxTotal cannot be negative; using 0 (each class capped by its own budget only)."); e.FarMaxTotal = 0; }
+            e.FarClasses = ValidateFarClasses(e.FarClasses, issues);
             if (e.MaxTravelPerUpdate < 0) { Warn(InterestMaxTravelPerUpdateField, "InterestMaxTravelPerUpdate cannot be negative; using 0 (fast movers keep their distance tiers)."); e.MaxTravelPerUpdate = 0; }
             if (e.FocusLeadSeconds < 0) { Warn(InterestFocusLeadSecondsField, "InterestFocusLeadSeconds cannot be negative; using 0 (no lead focus)."); e.FocusLeadSeconds = 0; }
             if (e.HintMaxDistance < 0) { Warn(InterestHintMaxDistanceField, "InterestHintMaxDistance cannot be negative; using 0 (hints snap to the pawn)."); e.HintMaxDistance = 0; }
@@ -397,6 +406,34 @@ namespace Nebula
             return t;
         }
 
+        /// <summary>
+        /// The far classes repaired: budgets, rates and radii not negative, rates inside <see cref="FarRelevance.MinRate"/>..
+        /// <see cref="FarRelevance.MaxRate"/>, one entry per id (the first wins). Returns a copy; null stays null.
+        /// </summary>
+        private static FarClass[] ValidateFarClasses(FarClass[] classes, List<ConfigIssue> issues)
+        {
+            if (classes == null || classes.Length == 0) return classes;
+            void Warn(string message) => issues?.Add(new ConfigIssue(ConfigSeverity.Warning, InterestFarClassesField, message));
+            var seen = new bool[256];
+            var result = new List<FarClass>(classes.Length);
+            foreach (var original in classes)
+            {
+                var c = original;
+                if (seen[c.Id]) { Warn($"far class {c.Id} is listed more than once; the first entry is used."); continue; }
+                seen[c.Id] = true;
+                if (c.MaxEntities < 0) { Warn($"far class {c.Id}: MaxEntities cannot be negative; using 0 (none of the class are sent)."); c.MaxEntities = 0; }
+                if (c.Radius < 0 || float.IsNaN(c.Radius)) { Warn($"far class {c.Id}: Radius cannot be negative; using 0 (each entity's own)."); c.Radius = 0; }
+                if (c.UpdateRate < 0 || float.IsNaN(c.UpdateRate)) { Warn($"far class {c.Id}: UpdateRate cannot be negative; using 0 (each entity's own)."); c.UpdateRate = 0; }
+                else if (c.UpdateRate > 0 && FarRelevance.ClampRate(c.UpdateRate) != c.UpdateRate)
+                {
+                    Warn($"far class {c.Id}: UpdateRate {c.UpdateRate} is outside {FarRelevance.MinRate}..{FarRelevance.MaxRate}; clamped.");
+                    c.UpdateRate = FarRelevance.ClampRate(c.UpdateRate);
+                }
+                result.Add(c);
+            }
+            return result.ToArray();
+        }
+
         // Field names as the config spells them, so an issue points at the inspector row and not at this struct.
         private const string InterestHighTiersField = "InterestHighTiers";
         private const string InterestLowTiersField = "InterestLowTiers";
@@ -416,6 +453,8 @@ namespace Nebula
         private const string InterestHintMaxDistanceField = "InterestHintMaxDistance";
         private const string InterestHintMaxHzField = "InterestHintMaxHz";
         private const string InterestFarMaxEntitiesField = "InterestFarMaxEntities";
+        private const string InterestFarMaxTotalField = "InterestFarMaxTotal";
+        private const string InterestFarClassesField = "InterestFarClasses";
         private const string InterestMaxTravelPerUpdateField = "InterestMaxTravelPerUpdate";
         private const string InterestFocusLeadSecondsField = "InterestFocusLeadSeconds";
     }

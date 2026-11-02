@@ -1242,6 +1242,8 @@ namespace Nebula
                 client.Visible.Remove(netId);
                 uint epoch = 0;
                 if (_entities.TryGetValue(netId, out var rec)) { RemoveObserver(rec, client); epoch = rec.Epoch; }
+                // Its far marker first, so the client never holds neither (D112).
+                DemoteToFar(client, netId);
                 SendDespawn(client, netId, epoch);
             }
             if (left.Count > 0) SendOwnershipRemoves(client);
@@ -1278,13 +1280,15 @@ namespace Nebula
         }
 
         /// <summary>Every client that had this entity is told it is gone; the record's observer list is the exact audience.</summary>
-        private void DespawnFromObservers(EntityRecord rec)
+        /// <param name="toFar">The entity is alive and only out of this gateway's reach on its worker: hand it to each client's far tier first (D112).</param>
+        private void DespawnFromObservers(EntityRecord rec, bool toFar = false)
         {
             for (int i = rec.Observers.Count - 1; i >= 0; i--)
             {
                 var client = rec.Observers[i];
                 client.Visible.Remove(rec.NetId);
                 client.Interest?.Remove(rec.NetId, null);
+                if (toFar) DemoteToFar(client, rec.NetId);
                 SendDespawn(client, rec.NetId, rec.Epoch);
             }
             rec.Observers.Clear();
@@ -1446,7 +1450,7 @@ namespace Nebula
             {
                 if (w.Status == WorkerStatus.Dead || !ControlPlane.IsWorkerAlive(w, Config.WorkerTimeoutSeconds)) continue;
                 if (w.HasGlobalEntities) Reason(w.WorkerId, InterestLinkReason.Global);
-                if (w.HasFarEntities && _interest.FarMaxEntities > 0) Reason(w.WorkerId, InterestLinkReason.Far);
+                if (w.HasFarEntities && FarClasses.AnyBudget) Reason(w.WorkerId, InterestLinkReason.Far);
                 if (unresolved) Reason(w.WorkerId, InterestLinkReason.Explicit);
             }
 
@@ -1749,13 +1753,13 @@ namespace Nebula
         }
 
         /// <summary>Forget one record entirely: out of the index, out of every set, despawned from every observer.</summary>
-        private void ForgetEntity(ulong netId)
+        private void ForgetEntity(ulong netId, bool toFar = false)
         {
             _held.Remove(netId);
             if (!_entities.TryGetValue(netId, out var rec)) return;
             _entities.Remove(netId);
             UnindexEntity(rec);
-            DespawnFromObservers(rec);
+            DespawnFromObservers(rec, toFar);
         }
 
         /// <summary>
@@ -1795,7 +1799,8 @@ namespace Nebula
             // body out of its own set. Anything else it owns is forgotten as usual - keeping a record nobody
             // publishes any more would freeze it, and a frozen record is its own kind of wrong answer.
             if (IsLiveClientsPawn(rec)) return;
-            ForgetEntity(msg.NetId);
+            // Alive, only out of our reach on its worker: its far marker, if it has one, takes over (D112).
+            ForgetEntity(msg.NetId, toFar: true);
         }
 
         /// <summary>

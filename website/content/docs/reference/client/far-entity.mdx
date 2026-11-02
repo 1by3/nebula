@@ -13,6 +13,16 @@ An entity of the far relevance tier as a client sees it (NEB-388, `docs/interest
 
 [`Position`](#position) is absolute in the entity's scope and in double: the gateway sends it that way, so it is good to well under a millimetre at any distance a scope spans. [`WorldPosition`](#worldposition) is the same point in this client's Unity space (its floating origin taken off), which is what a marker is drawn at; it is in the scope's own space, outside every physics frame, so a ship standing on a turning planet is where the planet carries it.
 
+## Fields
+
+### HandoverBlendSeconds [#handoverblendseconds]
+
+```csharp
+public const float HandoverBlendSeconds = 0.3f;
+```
+
+Seconds over which a marker that took over from a replica eases from the replica's last drawn spot onto its far pose.
+
 ## Properties
 
 ### NetId [#netid]
@@ -101,7 +111,47 @@ Velocity in its scope's own space, m/s (half precision).
 public double ReceivedAt { get; }
 ```
 
-`Time.unscaledTimeAsDouble` when the newest update arrived.
+`Time.unscaledTimeAsDouble` when the newest pose was taken, as near as this client can tell: when it arrived, less the age the gateway reported for a pose it had stored (protocol 32).
+
+### FarClass [#farclass]
+
+```csharp
+public byte FarClass { get; }
+```
+
+Its far class ([`NetworkIdentity.FarClass`](/docs/reference/core/network-identity#farclass), D110): pick what to draw by it. 0 from a gateway older than protocol 32.
+
+### Forward [#forward]
+
+```csharp
+public Vector3 Forward { get; }
+```
+
+The way it faces, a unit vector in its scope's own space ([`Rotation`](#rotation) times forward).
+
+### FromReplica [#fromreplica]
+
+```csharp
+public bool FromReplica { get; }
+```
+
+It came from a replica this client held (D112): the replica left the set and this marker took over in the same message, so a game that draws both never shows neither. [`PredictedWorldPosition`](#predictedworldposition) eases from where the replica was drawn to the far pose over [`HandoverBlendSeconds`](#handoverblendseconds).
+
+### HandoverFrom [#handoverfrom]
+
+```csharp
+public Vector3 HandoverFrom { get; }
+```
+
+Where the replica was drawn (this client's Unity space) when this marker took over from it.
+
+### HandoverAt [#handoverat]
+
+```csharp
+public double HandoverAt { get; } = double.NegativeInfinity;
+```
+
+`Time.unscaledTimeAsDouble` when this marker took over from a replica (negative infinity when it did not).
 
 ### WorldPosition [#worldposition]
 

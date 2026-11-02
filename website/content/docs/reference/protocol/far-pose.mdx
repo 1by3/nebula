@@ -1,0 +1,60 @@
+---
+title: "FarPose"
+description: "One compact far update as read from a FarPosesMsg: a held entity's new pose, by slot."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/FarEntities.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/FarEntities.cs)</div>
+
+```csharp
+public struct FarPose
+```
+
+One compact far update as read from a [`FarPosesMsg`](/docs/reference/protocol/far-poses-msg): a held entity's new pose, by slot.
+
+## Fields
+
+### Slot [#slot]
+
+```csharp
+public ushort Slot;
+```
+
+The slot the entity's last full entry named ([`FarEntityEntry.Slot`](/docs/reference/protocol/far-entity-entry#slot)).
+
+### Upright [#upright]
+
+```csharp
+public bool Upright;
+```
+
+The pose carries only the way the entity faces ([`Forward`](#forward)); keep its up axis.
+
+### DX, DY, DZ [#dx-dy-dz]
+
+```csharp
+public double DX, DY, DZ;
+```
+
+Offset from the position of the entity's last full entry, metres (1 cm steps).
+
+### Rotation [#rotation]
+
+```csharp
+public Quaternion Rotation;
+```
+
+The full rotation (not [`Upright`](#upright)).
+
+### Forward [#forward]
+
+```csharp
+public Vector3 Forward;
+```
+
+The way it faces, a unit vector in its scope's space (about a degree when [`Upright`](#upright)).
+
+### Velocity [#velocity]
+
+```csharp
+public Vector3 Velocity;
+```

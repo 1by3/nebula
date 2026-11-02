@@ -118,6 +118,8 @@ namespace Nebula
         public float InterestHintMaxHz = 5f;
         public int InterestMaxExplicitPerClient = 16;
         public int InterestFarMaxEntities = 64;
+        public FarClass[] InterestFarClasses = new FarClass[0];
+        public int InterestFarMaxTotal;
         public float InterestMaxFocusSpeed = 12f;
         public float InterestMaxTravelPerUpdate = 4f;
         public float InterestFocusLeadSeconds = 0.5f;

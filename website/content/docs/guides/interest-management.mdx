@@ -51,7 +51,9 @@ Every field lives on `NebulaConfig` (`Resources/NebulaConfig.asset`), with a mat
 | `InterestHintMaxDistance` | 60 m | How far a client's focus hint may sit from its pawn before it is clamped. |
 | `InterestHintMaxHz` | 5 | Most focus hints accepted from one client per second. |
 | `InterestMaxExplicitPerClient` | 16 | Most entities one client's policy may subscribe to by ID (party members, quest targets). |
-| `InterestFarMaxEntities` | 64 | Most entities one client holds in the [far tier](#see-ships-and-outposts-from-far-away) at once, nearest first. `0` turns the far tier off. |
+| `InterestFarMaxEntities` | 64 | Most entities of the default far class one client holds in the [far tier](#see-ships-and-outposts-from-far-away) at once, nearest first. `0` turns the default class off. |
+| `InterestFarClasses` | none | [Far classes](#keep-crowds-from-crowding-out-ships), each with its own budget per client, update rate, radius and priority. |
+| `InterestFarMaxTotal` | 0 | Most far entities one client holds over every class together, served by class priority. `0` caps each class by its own budget only. |
 | `InterestMaxFocusSpeed` | 12 m/s | The fastest a player is expected to travel. Used only to check that `InterestSubscribeMargin` covers the distance a focus can move between two evaluations. |
 | `InterestMaxTravelPerUpdate` | 4 m | The most an entity may travel between two updates a client receives. A fast entity is sent more often than its distance tier says. See [Fast movers](#fast-movers). `0` turns it off. |
 | `InterestFocusLeadSeconds` | 0.5 s | Seconds of travel ahead of a moving pawn at which the gateway adds a second focus. See [Fast movers](#fast-movers). `0` turns it off. |
@@ -123,6 +125,7 @@ Five fields on `NetworkIdentity` adjust how a prefab participates in interest, i
 | `InterestGroup` | `byte` | `0` | A number your own `IInterestPolicy.Authorize` can filter on, such as a team marker. Nebula only carries the value; it assigns no meaning to it. |
 | `FarRelevanceRadius` | `float` | `0` (off) | How far the entity is seen as a marker, beyond its normal radius: a ship in orbit, an outpost. Not clamped by `InterestMaxRadius`. See [See ships and outposts from far away](#see-ships-and-outposts-from-far-away). |
 | `FarUpdateRate` | `float` | `1` | Far-tier pose updates per second, clamped to 0.1 to 30. |
+| `FarClass` | `byte` | `0` (default class) | The [far class](#keep-crowds-from-crowding-out-ships) the entity is counted in. A class's rate and radius, when set, replace the entity's own. |
 
 A coin set to `20` and a lighthouse set to `2000` (with `InterestMaxRadius` raised to cover it) behave correctly at the same time: the coin only enters a client's set within 20 m, while the lighthouse is found through a separate wide-entity list checked directly against each client's foci, so its long radius does not cost every other client a wider region scan.
 
@@ -401,7 +404,57 @@ void LateUpdate()
 
 Far entities are measured in the scope's own space, outside every [physics frame](/docs/guides/physics-frames). A pilot in orbit sees a ship parked on a planet, and a player on the planet sees ships in orbit. Each client holds at most `InterestFarMaxEntities` far entities, the nearest ones. Your policy's `Authorize` decides about far entities exactly as it does about replicas.
 
-The far tier needs a gateway and clients of protocol 28 or newer, the versions a gateway admits; a client built against an older release is refused. Each far entity costs every gateway it reaches about 60 bytes per update, so use it for the entities players must see across the map, not for everything.
+The far tier needs a gateway and clients of protocol 28 or newer, the versions a gateway admits; a client built against an older release is refused. Each far entity costs every gateway it reaches about 60 bytes per update. A client of protocol 32 is sent about 20 bytes per update after the first, as described below.
+
+### Keep crowds from crowding out ships
+
+A far budget shared by everything fills with whatever is nearest. If you show distant people as well as ships, a busy town fills a client's budget with people and pushes the ships out. Far classes give each kind of far entity a budget of its own.
+
+1. Add a class to `NebulaConfig.InterestFarClasses` for each kind, with an `Id` from 1 to 255:
+
+   | Field | Meaning |
+   |---|---|
+   | `MaxEntities` | Most entities of this class one client holds, nearest first. |
+   | `UpdateRate` | Far updates per second for every entity of the class. `0` keeps each entity's own `FarUpdateRate`. |
+   | `Radius` | Far radius in meters for every entity of the class. `0` keeps each entity's own `FarRelevanceRadius`. An entity of a class with a radius is in the far tier even when its own radius is `0`. |
+   | `Priority` | Which classes are served first when `InterestFarMaxTotal` caps the whole tier. Higher goes first. |
+   | `Upright` | The entities stand upright, such as people and animals. Their compact updates carry only the way they face. |
+
+2. Set `FarClass` on each prefab's `NetworkIdentity` to its class's `Id`. Entities with `FarClass` `0`, or with a class you did not list, share the default class, whose budget is `InterestFarMaxEntities`.
+
+For example, ships in the default class with `InterestFarMaxEntities` `128`, plus these classes:
+
+| `Id` | Kind | `MaxEntities` | `UpdateRate` | `Radius` |
+|---|---|---|---|---|
+| 1 | players | 32 | 2 | 1,500 m |
+| 2 | non-player characters | 64 | 1 | 1,000 m |
+| 3 | animals | 48 | 0.5 | 800 m |
+
+With these settings, a client in a town of 300 people still holds every ship within reach. It holds at most 32 other players, 64 non-player characters and 48 animals, the nearest of each. `FarEntity.FarClass` tells the client which class an entity is in, so you can choose what to draw without looking up its prefab.
+
+### Draw distant people
+
+Beyond a few hundred meters, a person is only a few pixels tall. Draw far entities of a crowd class with one simple body mesh per class, using `Graphics.RenderMeshInstanced`, at `PredictedWorldPosition()` and `Rotation`. You don't need animation at that distance.
+
+From protocol 32, a gateway sends a client a full entry once and then compact updates of about 20 bytes: the position as a centimeter offset from the last full entry, the velocity, and the rotation. For an `Upright` class, the update carries only the direction the entity faces, and `Rotation` keeps the up axis of the last full entry. That keeps a body upright on a curved surface such as a planet. `FarEntity.Forward` is the facing direction.
+
+### Hand over between the replica and the far entity
+
+When an entity walks out of its normal radius, the gateway sends its far entity just before the replica's despawn. The client adds it to `FarEntities` and raises `FarEntityAdded` before it raises `EntityDespawned`. In an `EntityDespawned` handler, `client.FarEntities` already holds the entity, so you can keep drawing it without a gap:
+
+```csharp
+client.EntityDespawned += replica =>
+{
+    if (client.FarEntities.TryGetValue(replica.NetId, out var far))
+        crowd.Show(far); // far.FromReplica is true
+};
+```
+
+Such a far entity has `FromReplica` set. For `FarEntity.HandoverBlendSeconds` (0.3 s), `PredictedWorldPosition` moves from where the replica was drawn to the far pose, so the body doesn't jump.
+
+In the other direction, `FarEntityRemoved` with `FarEntityRemoval.Replicated` is raised once the replica is in `client.Entities`. If the replica's spawn waits for its container, the far entity stays until the replica is created. Keep drawing the far body for a moment after the replica appears, until the replica's model is on screen, and then hide it.
+
+The hand-over needs a client and a gateway of protocol 32. A client of 31 gets the far entity just after the despawn instead, in the same batch.
 
 ## Scoped container ownership
 

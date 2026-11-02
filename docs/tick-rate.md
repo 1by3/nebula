@@ -92,8 +92,8 @@ says otherwise.
 (`HelloMsg.TickRateVersion`), which has not shipped, so no bump: a gateway at the default rate admits 29 and 30 as
 before; a gateway at any other rate admits 30 only (`ProtocolCompatibility.MinClientProtocol(rate)`) and refuses 29
 with `ProtocolUnsupported` and the narrowed window in `SupportedMinVersion`. Since protocol 31 (NEB-484) the window is
-30..31, so every client a gateway admits honours the rate; the narrowing matters again only if a window ever reaches
-back past 30. Gateways and workers of a mesh must run the same build, as before.
+30..31, and since protocol 32 (far classes) 31..32, so every client a gateway admits honours the rate; the narrowing
+matters again only if a window ever reaches back past 30. Gateways and workers of a mesh must run the same build, as before.
 
 ## 4. Physics (D4)
 

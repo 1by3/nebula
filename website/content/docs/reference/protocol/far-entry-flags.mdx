@@ -19,3 +19,7 @@ Lists the supported far entry flags values.
 | <span id="none"></span>`None` | `0` |  |
 | <span id="hasowner"></span>`HasOwner` | `1` | An [`FarEntityEntry.OwnerClientId`](/docs/reference/protocol/far-entity-entry#ownerclientid) follows. |
 | <span id="hasinstance"></span>`HasInstance` | `2` | An [`FarEntityEntry.InstanceId`](/docs/reference/protocol/far-entity-entry#instanceid) follows (the entity is in a scope, not the public world). |
+| <span id="hasclass"></span>`HasClass` | `4` | Protocol 32: a [`FarEntityEntry.FarClass`](/docs/reference/protocol/far-entity-entry#farclass) byte follows (not 0). |
+| <span id="hasslot"></span>`HasSlot` | `8` | Protocol 32: a [`FarEntityEntry.Slot`](/docs/reference/protocol/far-entity-entry#slot) follows: the short name the client's compact poses use (gateway to client). |
+| <span id="hasage"></span>`HasAge` | `16` | Protocol 32: the pose is [`FarEntityEntry.Age`](/docs/reference/protocol/far-entity-entry#age) old, in milliseconds (u16): a gateway sending a stored pose says how stale it is. |
+| <span id="fromreplica"></span>`FromReplica` | `32` | Protocol 32: the entity is leaving this client's replica set this instant, and this entry is its far marker ([`FarEntityEntry.FromReplica`](/docs/reference/protocol/far-entity-entry#fromreplica), D112). Sent just before the replica's despawn. |

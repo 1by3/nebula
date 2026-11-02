@@ -141,6 +141,22 @@ public int FarMaxEntities;
 
 Most entities one client holds in the far relevance tier ([`FarRelevance`](/docs/reference/interest/far-relevance)), nearest first. 0 turns the tier off on the gateway.
 
+### FarClasses [#farclasses]
+
+```csharp
+public FarClass[] FarClasses;
+```
+
+The far tier's classes ([`FarClass`](/docs/reference/interest/far-class), D110): each with its own budget per client, rate, radius and priority. Null or empty: one class, the default, with [`FarMaxEntities`](#farmaxentities).
+
+### FarMaxTotal [#farmaxtotal]
+
+```csharp
+public int FarMaxTotal;
+```
+
+Most far entities one client holds over every class together; 0 (the default) caps only each class.
+
 ### MaxFocusSpeed [#maxfocusspeed]
 
 ```csharp
@@ -292,6 +308,8 @@ public RelevanceTierBands TiersFor(RelevancePriority priority);
 ```
 
 The distance tiers an entity of `priority` is sent by: its own when the config overrides them ([`HighTiers`](#hightiers), [`LowTiers`](#lowtiers), [`BackgroundTiers`](#backgroundtiers)), otherwise the global ones ([`NearRadius`](#nearradius), [`FarRadius`](#farradius), [`MidDivisor`](#middivisor), [`FarDivisor`](#fardivisor)) shifted as [`RelevancePriority`](/docs/reference/interest/relevance-priority) describes. [`RelevancePriority.Normal`](/docs/reference/interest/relevance-priority#normal) is always the global tiers.
+
+Divisors are configured in ticks at 60 Hz ([`NetworkTime.DefaultTickRate`](/docs/reference/core/network-time#defaulttickrate)). At another tick rate the bands returned here are rescaled ([`RelevanceTiers.AtTickRate`](/docs/reference/interest/relevance-tiers#attickrate)) so each keeps its rate in updates per second: a middle band of 4 (15 Hz) is every 2nd tick at 30 Hz, a far band of 12 (5 Hz) every 6th.
 
 ### LeadOffset [#leadoffset]
 

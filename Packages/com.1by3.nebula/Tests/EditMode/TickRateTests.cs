@@ -168,8 +168,10 @@ namespace Nebula.Tests
         {
             Assert.IsTrue(ProtocolCompatibility.ClientProtocolAccepted(HelloMsg.MinProtocolVersion, 60), "N-1 joins a 60 Hz mesh");
             Assert.IsFalse(ProtocolCompatibility.ClientProtocolAccepted((ushort)(HelloMsg.TickRateVersion - 1), 30), "a client that counts at 60 Hz is refused at 30");
-            Assert.IsTrue(ProtocolCompatibility.ClientProtocolAccepted(HelloMsg.TickRateVersion, 30));
-            Assert.AreEqual(HelloMsg.TickRateVersion, ProtocolCompatibility.MinClientProtocol(30));
+            // The window has moved past the version that brought this, so the rate narrows nothing today; it must never widen it.
+            ushort oldest = System.Math.Max(HelloMsg.MinProtocolVersion, HelloMsg.TickRateVersion);
+            Assert.IsTrue(ProtocolCompatibility.ClientProtocolAccepted(oldest, 30));
+            Assert.AreEqual(oldest, ProtocolCompatibility.MinClientProtocol(30));
             Assert.AreEqual(HelloMsg.MinProtocolVersion, ProtocolCompatibility.MinClientProtocol(60));
         }
 

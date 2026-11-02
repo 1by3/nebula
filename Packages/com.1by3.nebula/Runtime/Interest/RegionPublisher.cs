@@ -155,6 +155,31 @@ namespace Nebula
             return mask;
         }
 
+        /// <summary>
+        /// <see cref="WideMaskSalted"/> at two radii in one pass over the foci (the far tier's enter and stay reach, D104):
+        /// <paramref name="inner"/> gets the gateways with a focus region within <paramref name="innerRadius"/>,
+        /// <paramref name="outer"/> those within <paramref name="outerRadius"/> (not less than the inner one).
+        /// </summary>
+        public void WideMasksSalted(in InterestGrid grid, ulong salt, double x, double y, double z, double innerRadius, double outerRadius, out ulong inner, out ulong outer)
+        {
+            inner = 0;
+            outer = 0;
+            double i2 = innerRadius * innerRadius, o2 = outerRadius * outerRadius;
+            for (int bit = 0; bit < MaxGateways; bit++)
+            {
+                var receiver = _receivers[bit];
+                if (receiver == null) continue;
+                var foci = receiver.FociRegions;
+                for (int i = 0; i < foci.Count; i++)
+                {
+                    double d2 = grid.SqrDistanceToRegion(foci[i] ^ salt, x, y, z);
+                    if (d2 > o2) continue;
+                    outer |= 1UL << bit;
+                    if (d2 <= i2) { inner |= 1UL << bit; break; }
+                }
+            }
+        }
+
         /// <summary>Which gateways explicitly subscribed an entity by id (a policy extra, or one they own).</summary>
         public ulong ExplicitMask(ulong netId)
         {
