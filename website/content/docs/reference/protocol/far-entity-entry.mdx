@@ -99,7 +99,7 @@ public Vector3 Velocity;
 public byte FarClass;
 ```
 
-The entity's far class ([`NetworkIdentity.FarClass`](/docs/reference/core/network-identity#farclass); 0 the default). Protocol 31.
+The entity's far class ([`NetworkIdentity.FarClass`](/docs/reference/core/network-identity#farclass); 0 the default). Protocol 32.
 
 ### Slot [#slot]
 
@@ -107,7 +107,7 @@ The entity's far class ([`NetworkIdentity.FarClass`](/docs/reference/core/networ
 public ushort Slot;
 ```
 
-Gateway to client, protocol 31: the client's short name for the entity, which [`FarPosesMsg`](/docs/reference/protocol/far-poses-msg) entries use.
+Gateway to client, protocol 32: the client's short name for the entity, which [`FarPosesMsg`](/docs/reference/protocol/far-poses-msg) entries use.
 
 ### Age [#age]
 
@@ -115,7 +115,7 @@ Gateway to client, protocol 31: the client's short name for the entity, which [`
 public float Age;
 ```
 
-Seconds since the pose was taken, when a gateway sends one it stored (0: fresh). Protocol 31, millisecond resolution.
+Seconds since the pose was taken, when a gateway sends one it stored (0: fresh). Protocol 32, millisecond resolution.
 
 ### FromReplica [#fromreplica]
 
@@ -123,7 +123,7 @@ Seconds since the pose was taken, when a gateway sends one it stored (0: fresh).
 public bool FromReplica;
 ```
 
-The replica the client holds is leaving its set, and this is its far marker (protocol 31, D112).
+The replica the client holds is leaving its set, and this is its far marker (protocol 32, D112).
 
 ### Upright [#upright]
 
@@ -136,7 +136,7 @@ public bool Upright;
 ### ClassesVersion [#classesversion]
 
 ```csharp
-public const ushort ClassesVersion = 31;
+public const ushort ClassesVersion = HelloMsg.FarClassesVersion;
 ```
 
 The first protocol whose far entries carry a class, a slot, an age and the replica hand-over flag.

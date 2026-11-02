@@ -1,6 +1,6 @@
 ---
 title: "FarPosesMsg"
-description: "Gateway -> client, protocol 31 (docs/interest-management.md D111): compact far updates for entities the client already holds in its far tier."
+description: "Gateway -> client, protocol 32 (docs/interest-management.md D111): compact far updates for entities the client already holds in its far tier."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/FarEntities.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/FarEntities.cs)</div>
@@ -9,7 +9,7 @@ description: "Gateway -> client, protocol 31 (docs/interest-management.md D111):
 public static class FarPosesMsg
 ```
 
-Gateway -\> client, protocol 31 (`docs/interest-management.md` D111): compact far updates for entities the client already holds in its far tier. `[id][count:u16]{u16 slot (bit 15: upright), 3 x s24 offset (1 cm, from the last full entry's position), rotation (u16 octahedral facing when upright, else u32 smallest-three), 3 x f16 velocity}`: 19 bytes for an upright body, 21 for anything else, against 59 to 78 for a full [`FarEntityEntry`](/docs/reference/protocol/far-entity-entry). Everything else about the entity (prefab, owner, class, radius, rate, scope, epoch) is what its last full entry said; the gateway sends a full entry again whenever any of that changes or the offset no longer fits (about 84 km on an axis).
+Gateway -\> client, protocol 32 (`docs/interest-management.md` D111): compact far updates for entities the client already holds in its far tier. `[id][count:u16]{u16 slot (bit 15: upright), 3 x s24 offset (1 cm, from the last full entry's position), rotation (u16 octahedral facing when upright, else u32 smallest-three), 3 x f16 velocity}`: 19 bytes for an upright body, 21 for anything else, against 59 to 78 for a full [`FarEntityEntry`](/docs/reference/protocol/far-entity-entry). Everything else about the entity (prefab, owner, class, radius, rate, scope, epoch) is what its last full entry said; the gateway sends a full entry again whenever any of that changes or the offset no longer fits (about 84 km on an axis).
 
 ## Fields
 

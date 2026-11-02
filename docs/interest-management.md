@@ -1120,7 +1120,7 @@ the message (`HelloMsg.FarEntitiesVersion`).
 `ReceivedAt`, `PredictedWorldPosition`), and the events `FarEntityAdded`, `FarEntityUpdated` and
 `FarEntityRemoved(far, why)`. An entry for a net id the client holds as a replica is ignored.
 
-**D110 Far classes (protocol 31).** One budget shared by everything fills with whatever is nearest, so a game that shows
+**D110 Far classes (protocol 32).** One budget shared by everything fills with whatever is nearest, so a game that shows
 distant people as well as ships loses its ships to the first busy town. `NetworkIdentity.FarClass` (a byte, 0 the
 default class) names a class; `NebulaConfig.InterestFarClasses` (`FarClass`: id, name, `MaxEntities`, `UpdateRate`,
 `Radius`, `Priority`, `Upright`, mirrored in the services config) defines them, and `InterestFarMaxTotal` (0: none) caps
@@ -1134,7 +1134,7 @@ exceeded, and allocates nothing after warm-up. Rejected: a per-class share of on
 when no ships are near, and the game cannot say "all ships, always"); a game-side classifier hook on the gateway (the
 standalone gateway has no prefabs, so the class must travel with the entry anyway).
 
-**D111 Compact far updates (protocol 31).** A full entry repeats the radius, rate, prefab, group, owner and scope on
+**D111 Compact far updates (protocol 32).** A full entry repeats the radius, rate, prefab, group, owner and scope on
 every update: 59 bytes, 67 in a scope, for a pose. A gateway now gives each entity a client holds a `slot` (u16, unique
 per client, freed when the entity leaves the far tier or becomes a replica) and sends a full entry with it when the
 entity enters; after that, while none of those facts change (`FarRecord.Facts`), each new pose goes as a `FarPoses`
@@ -1146,13 +1146,13 @@ else. The offset is from a per-entity anchor rather than from the client's focus
 but the anchor its own full entry gave it, and the gateway stores 32 bytes per held entity. Rejected: a varint net id
 (net ids carry the worker index in their top 16 bits, so they are 8 bytes anyway); unreliable delivery for the poses (a
 pose that overtakes the full entry that re-anchors it would land in the wrong place; possible later with an anchor
-sequence). A client of 30 is never sent either; it gets every update as the full entry it always read.
+sequence). A client of 31 is never sent either; it gets every update as the full entry it always read.
 
-**D112 Hand-over between the replica and the far entity (protocol 31).** Before, a replica leaving the set was despawned
+**D112 Hand-over between the replica and the far entity (protocol 32).** Before, a replica leaving the set was despawned
 and the far entity was sent after it in the same batch; a game that reacts to the despawn sees neither for that moment,
 and the far pose was the gateway's stored one, up to a far interval old, so the body jumped back. Now when an entity
 leaves a client's replica set (`ApplyInterestChanges`), or leaves the gateway's subscription on its worker while alive
-(`OnEntityForget`; not on a despawn), and the far tier will have it (record here, client of 31, in its scope, within
+(`OnEntityForget`; not on a despawn), and the far tier will have it (record here, client of 32, in its scope, within
 its radius, authorized, its class has a budget), the gateway sends its full entry flagged `FromReplica` (flag bit 5)
 just ahead of the despawn, with the stored pose's `age_ms` (bit 4; also on every enter). The client holds that entry
 until the despawn lands, then adds the far entity and raises `FarEntityAdded` before `EntityDespawned`, so a handler of
@@ -1170,9 +1170,9 @@ of them.
 track each tick, and matches the enter and stay radii in one pass over the foci (`RegionPublisher.WideMasksSalted`).
 The gateway: one `FarSelection` reused for every client. `FarTierBenchmarkTests` measures 100 clients in a 4 km square
 on two gateways, 500 bodies in three classes (players 2 Hz to 1.5 km, NPCs 1 Hz to 1 km, animals 0.5 Hz to 800 m) and
-128 hulls at 5 Hz, for 10 simulated seconds at 60 Hz. On the machine it was written on (2026-10-28, other Editors
+128 hulls at 5 Hz, for 10 simulated seconds, at 60 Hz and at 30 Hz. At 60 Hz on the machine it was written on (2026-10-28, other Editors
 running): worker 0.05 ms per tick on average, 0.8 ms worst; gateway relays and evaluations for all 100 clients 0.86 ms
-per tick; far traffic per client 16 KB/s at protocol 31 against 43 KB/s at protocol 30, of which the crowd's pose
+per tick; far traffic per client 16 KB/s with compact updates against 43 KB/s with full entries, of which the crowd's pose
 updates are 1.8 against 5.6 KB/s (the rest is the 128 hulls at 5 Hz, and enters and leaves). At most 105 bodies held by
 one client, budget 144; no class over budget, no hull evicted.
 
@@ -1185,8 +1185,8 @@ each other at 1 Hz and nothing else, a third beyond its far radius is never sent
 upgrades with no respawn and opening out drops back, the budget keeps the nearest, a despawn removes it, a protocol-25
 client is sent nothing), `Tests/EditMode/ConformanceFarRelevanceWorkerTests.cs` (the real worker: rate, absolute
 double pose, the despawn, a ship on a still and a turned planet within a centimetre) and
-`Tests/EditMode/FarEntityClientTests.cs` (the client's dictionary, events and promotion; protocol 31's compact poses
-by slot, the hand-over ahead of the despawn and the age). Protocol 31: `ConformanceFarRelevanceTests` also has a crowd
+`Tests/EditMode/FarEntityClientTests.cs` (the client's dictionary, events and promotion; protocol 32's compact poses
+by slot, the hand-over ahead of the despawn and the age). Protocol 32: `ConformanceFarRelevanceTests` also has a crowd
 class that keeps to its own budget and never evicts ships, and a body handed to the far tier ahead of its despawn;
 `ConformanceProtocolCompatibilityTests.AProtocol30ClientIsSentFarEntriesItCanRead`; `Tests/EditMode/FarClassTests.cs`
 (the table, the selection, validation and the wire) and `Tests/EditMode/FarTierBenchmarkTests.cs` (D113).

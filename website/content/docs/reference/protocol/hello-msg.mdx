@@ -16,7 +16,7 @@ Carries the hello protocol message.
 ### ProtocolVersion [#protocolversion]
 
 ```csharp
-public const ushort ProtocolVersion = 31;
+public const ushort ProtocolVersion = 32;
 ```
 
 The wire protocol version used by this build.
@@ -24,18 +24,26 @@ The wire protocol version used by this build.
 ### MinProtocolVersion [#minprotocolversion]
 
 ```csharp
-public const ushort MinProtocolVersion = 30;
+public const ushort MinProtocolVersion = 31;
 ```
 
-The oldest client protocol the gateway accepts: 30, one behind (the window is N and N-1, docs/compatibility-policy.md D1). Protocol 31 (far classes, `docs/interest-management.md` D110 to D112) is additive: a far entry gains optional class, slot, age and hand-over fields behind new flag bits, and a new message ([`MsgId.FarPoses`](/docs/reference/protocol/msg-id#farposes)) carries compact far updates; a gateway writes neither to a client of 30 ([`FarClassesVersion`](#farclassesversion)), which is sent the far entries it always was. Clients of 29 and older are refused. Protocol 30 (motion fidelity on the identity stream) is additive: an [`EntityStateEntry`](/docs/reference/protocol/entity-state-entry) gains a byte of [`TransformFieldsExt`](/docs/reference/protocol/transform-fields-ext) after its field mask, an angular velocity, and 15-bit smallest-three rotations, which a gateway writes only to clients that negotiated 30 ([`MotionFidelityVersion`](#motionfidelityversion)); a client of 29 is sent the entries it always was. Clients of 28 and older are refused. Protocol 29 (tick-stamped server events on predicted entities, the Prediction guide) is additive: [`OwnerStateMsg`](/docs/reference/protocol/owner-state-msg) gains a trailing events section that a gateway writes only to clients that negotiated 29 ([`ServerEventsVersion`](#servereventsversion)), so a client of 28 is sent exactly the bytes it was and predicts without the events. Protocol 28 (portals, `docs/portals.md` D45, D46) closes the window: its new messages ([`MsgId.Portals`](/docs/reference/protocol/msg-id#portals), [`MsgId.PortalLinks`](/docs/reference/protocol/msg-id#portallinks), [`MsgId.PortalWarm`](/docs/reference/protocol/msg-id#portalwarm)) are additive bytes, but their meaning is not. A client of 27 would be sent replicas of scopes it believes hidden, would never draw them posed, and would predict its pawn into an aperture it does not know is solid. Clients of 27 and older are refused with [`JoinRejectReason.ProtocolUnsupported`](/docs/reference/protocol/join-reject-reason#protocolunsupported) and must be rebuilt. Protocol 27 (an instance's pose against its host, `docs/scope-frames.md` D12) and 26 (the far relevance tier, `docs/interest-management.md` §16) were additive; 25 (driven vehicles, `docs/driven-vehicles.md`) added a message a client sends only while it drives something ([`MsgId.DriveInput`](/docs/reference/protocol/msg-id#driveinput)). Gateway-to-worker and worker-to-worker connections require [`ProtocolVersion`](#protocolversion) exactly.
+The oldest client protocol the gateway accepts: 31, one behind (the window is N and N-1, docs/compatibility-policy.md D1). Protocol 32 (far classes, `docs/interest-management.md` D110 to D112) is additive: a far entry gains optional class, slot, age and hand-over fields behind new flag bits, and a new message ([`MsgId.FarPoses`](/docs/reference/protocol/msg-id#farposes)) carries compact far updates; a gateway writes neither to a client of 31 ([`FarClassesVersion`](#farclassesversion)), which is sent the far entries it always was. Clients of 30 and older are refused. Protocol 31 (NEB-484, the ticks a worker dropped) is additive: [`OwnerStateMsg`](/docs/reference/protocol/owner-state-msg) gains a trailing dropped-tick range, which a gateway writes only to clients that negotiated 31 ([`DroppedTicksVersion`](#droppedticksversion)); a client of 30 is sent the bytes it was and counts a correction where a client of 31 re-bases. Clients of 29 and older are refused. Protocol 30 (motion fidelity on the identity stream) is additive: an [`EntityStateEntry`](/docs/reference/protocol/entity-state-entry) gains a byte of [`TransformFieldsExt`](/docs/reference/protocol/transform-fields-ext) after its field mask, an angular velocity, and 15-bit smallest-three rotations, which a gateway writes only to clients that negotiated 30 ([`MotionFidelityVersion`](#motionfidelityversion)); a client of 29 is sent the entries it always was. Clients of 28 and older are refused. Protocol 29 (tick-stamped server events on predicted entities, the Prediction guide) is additive: [`OwnerStateMsg`](/docs/reference/protocol/owner-state-msg) gains a trailing events section that a gateway writes only to clients that negotiated 29 ([`ServerEventsVersion`](#servereventsversion)), so a client of 28 is sent exactly the bytes it was and predicts without the events. Protocol 28 (portals, `docs/portals.md` D45, D46) closes the window: its new messages ([`MsgId.Portals`](/docs/reference/protocol/msg-id#portals), [`MsgId.PortalLinks`](/docs/reference/protocol/msg-id#portallinks), [`MsgId.PortalWarm`](/docs/reference/protocol/msg-id#portalwarm)) are additive bytes, but their meaning is not. A client of 27 would be sent replicas of scopes it believes hidden, would never draw them posed, and would predict its pawn into an aperture it does not know is solid. Clients of 27 and older are refused with [`JoinRejectReason.ProtocolUnsupported`](/docs/reference/protocol/join-reject-reason#protocolunsupported) and must be rebuilt. Protocol 27 (an instance's pose against its host, `docs/scope-frames.md` D12) and 26 (the far relevance tier, `docs/interest-management.md` §16) were additive; 25 (driven vehicles, `docs/driven-vehicles.md`) added a message a client sends only while it drives something ([`MsgId.DriveInput`](/docs/reference/protocol/msg-id#driveinput)). Gateway-to-worker and worker-to-worker connections require [`ProtocolVersion`](#protocolversion) exactly.
 
 ### FarClassesVersion [#farclassesversion]
 
 ```csharp
-public const ushort FarClassesVersion = 31;
+public const ushort FarClassesVersion = 32;
 ```
 
 The first protocol whose clients are sent far classes, slots, ages, hand-overs and [`MsgId.FarPoses`](/docs/reference/protocol/msg-id#farposes).
+
+### DroppedTicksVersion [#droppedticksversion]
+
+```csharp
+public const ushort DroppedTicksVersion = 31;
+```
+
+The first protocol whose clients are sent [`OwnerStateMsg.DroppedFrom`](/docs/reference/protocol/owner-state-msg#droppedfrom) and [`OwnerStateMsg.DroppedTo`](/docs/reference/protocol/owner-state-msg#droppedto) (NEB-484).
 
 ### MotionFidelityVersion [#motionfidelityversion]
 
@@ -44,6 +52,14 @@ public const ushort MotionFidelityVersion = 30;
 ```
 
 The first protocol whose clients are sent [`EntityStateEntry`](/docs/reference/protocol/entity-state-entry) extensions ([`TransformFieldsExt`](/docs/reference/protocol/transform-fields-ext)).
+
+### TickRateVersion [#tickrateversion]
+
+```csharp
+public const ushort TickRateVersion = 30;
+```
+
+The first protocol whose clients run at the rate in [`WelcomeMsg.TickRate`](/docs/reference/protocol/welcome-msg#tickrate) (docs/tick-rate.md). Older clients ignore the byte and count ticks at 60 Hz, so a gateway whose mesh runs at another rate refuses them ([`ProtocolCompatibility.MinClientProtocol`](/docs/reference/protocol/protocol-compatibility#minclientprotocol)); at the default rate they are admitted as before.
 
 ### ServerEventsVersion [#servereventsversion]
 

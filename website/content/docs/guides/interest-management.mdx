@@ -404,7 +404,7 @@ void LateUpdate()
 
 Far entities are measured in the scope's own space, outside every [physics frame](/docs/guides/physics-frames). A pilot in orbit sees a ship parked on a planet, and a player on the planet sees ships in orbit. Each client holds at most `InterestFarMaxEntities` far entities, the nearest ones. Your policy's `Authorize` decides about far entities exactly as it does about replicas.
 
-The far tier needs a gateway and clients of protocol 28 or newer, the versions a gateway admits; a client built against an older release is refused. Each far entity costs every gateway it reaches about 60 bytes per update. A client of protocol 31 is sent about 20 bytes per update after the first, as described below.
+The far tier needs a gateway and clients of protocol 28 or newer, the versions a gateway admits; a client built against an older release is refused. Each far entity costs every gateway it reaches about 60 bytes per update. A client of protocol 32 is sent about 20 bytes per update after the first, as described below.
 
 ### Keep crowds from crowding out ships
 
@@ -436,7 +436,7 @@ With these settings, a client in a town of 300 people still holds every ship wit
 
 Beyond a few hundred meters, a person is only a few pixels tall. Draw far entities of a crowd class with one simple body mesh per class, using `Graphics.RenderMeshInstanced`, at `PredictedWorldPosition()` and `Rotation`. You don't need animation at that distance.
 
-From protocol 31, a gateway sends a client a full entry once and then compact updates of about 20 bytes: the position as a centimeter offset from the last full entry, the velocity, and the rotation. For an `Upright` class, the update carries only the direction the entity faces, and `Rotation` keeps the up axis of the last full entry. That keeps a body upright on a curved surface such as a planet. `FarEntity.Forward` is the facing direction.
+From protocol 32, a gateway sends a client a full entry once and then compact updates of about 20 bytes: the position as a centimeter offset from the last full entry, the velocity, and the rotation. For an `Upright` class, the update carries only the direction the entity faces, and `Rotation` keeps the up axis of the last full entry. That keeps a body upright on a curved surface such as a planet. `FarEntity.Forward` is the facing direction.
 
 ### Hand over between the replica and the far entity
 
@@ -454,7 +454,7 @@ Such a far entity has `FromReplica` set. For `FarEntity.HandoverBlendSeconds` (0
 
 In the other direction, `FarEntityRemoved` with `FarEntityRemoval.Replicated` is raised once the replica is in `client.Entities`. If the replica's spawn waits for its container, the far entity stays until the replica is created. Keep drawing the far body for a moment after the replica appears, until the replica's model is on screen, and then hide it.
 
-The hand-over needs a client and a gateway of protocol 31. A client of 30 gets the far entity just after the despawn instead, in the same batch.
+The hand-over needs a client and a gateway of protocol 32. A client of 31 gets the far entity just after the despawn instead, in the same batch.
 
 ## Scoped container ownership
 

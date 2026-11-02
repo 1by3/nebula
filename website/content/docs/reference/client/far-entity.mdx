@@ -111,7 +111,7 @@ Velocity in its scope's own space, m/s (half precision).
 public double ReceivedAt { get; }
 ```
 
-`Time.unscaledTimeAsDouble` when the newest pose was taken, as near as this client can tell: when it arrived, less the age the gateway reported for a pose it had stored (protocol 31).
+`Time.unscaledTimeAsDouble` when the newest pose was taken, as near as this client can tell: when it arrived, less the age the gateway reported for a pose it had stored (protocol 32).
 
 ### FarClass [#farclass]
 
@@ -119,7 +119,7 @@ public double ReceivedAt { get; }
 public byte FarClass { get; }
 ```
 
-Its far class ([`NetworkIdentity.FarClass`](/docs/reference/core/network-identity#farclass), D110): pick what to draw by it. 0 from a gateway older than protocol 31.
+Its far class ([`NetworkIdentity.FarClass`](/docs/reference/core/network-identity#farclass), D110): pick what to draw by it. 0 from a gateway older than protocol 32.
 
 ### Forward [#forward]
 
