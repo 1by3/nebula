@@ -47,6 +47,7 @@ namespace Nebula
             LocalWorkerIndex = 0;
             RpcSink = null;
             StateHistory.ResetWindow();
+            SimulationBatches.Reset();
         }
     }
 }

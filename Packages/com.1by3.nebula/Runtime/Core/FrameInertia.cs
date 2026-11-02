@@ -31,7 +31,7 @@ namespace Nebula
         public float Scale = 0f;
         [Tooltip("The largest fictitious acceleration applied in one tick, in m/s² after Scale. Keeps a snap of the carrier (a teleport, a landing) from launching the cargo.")]
         public float MaxAcceleration = 20f;
-        [Tooltip("Ticks the acceleration is smoothed over (an exponential moving average). 1 applies each tick's value as it is.")]
+        [Tooltip("Ticks the acceleration is smoothed over (an exponential moving average), counted at 60 Hz and rescaled at other tick rates. 1 applies each tick's value as it is.")]
         public int SmoothingTicks = 6;
         [Tooltip("Below this acceleration, in m/s², nothing is applied, so a body at rest in a cruising ship can sleep.")]
         public float MinAcceleration = 0.05f;
@@ -75,7 +75,8 @@ namespace Nebula
             var v = body.linearVelocity;
             var sample = -(state.LocalAcceleration + Vector3.Cross(alpha, r) + Vector3.Cross(omega, Vector3.Cross(omega, r)) + 2f * Vector3.Cross(omega, v));
             sample = Vector3.ClampMagnitude(sample * Scale, Mathf.Max(0f, MaxAcceleration));
-            float k = SmoothingTicks > 1 ? 2f / (SmoothingTicks + 1) : 1f;
+            int smoothing = NetworkTime.FromDefaultRateTicks(SmoothingTicks);
+            float k = smoothing > 1 ? 2f / (smoothing + 1) : 1f;
             _smoothed += (sample - _smoothed) * k;
             if (_smoothed.magnitude < MinAcceleration)
             {

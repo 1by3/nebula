@@ -54,6 +54,51 @@ namespace Nebula.Tests
             Assert.That(ChunkKeys.TryParseHostedPartId(part, out _, out _), Is.False);
         }
 
+        [TestCase("c/0/0/0", 0, 0, 0)]
+        [TestCase("c/-1048576/+5/1048575", -1048576, 5, 1048575)]
+        [TestCase("c/2147483647/-2147483648/7", int.MaxValue, int.MinValue, 7)]
+        public void APartIdIsReadInPlace(string part, int x, int y, int z)
+        {
+            Assert.That(ChunkKeys.TryParsePartId(part, out var coord), Is.True);
+            Assert.AreEqual(new Vector3Int(x, y, z), coord);
+            Assert.That(ChunkKeys.TryParseHostedPartIdOf(GridKey + "/" + part, GridKey, out var hosted), Is.True);
+            Assert.AreEqual(coord, hosted);
+        }
+
+        [TestCase("c/1/2")]
+        [TestCase("c/1/2/3/4")]
+        [TestCase("c//2/3")]
+        [TestCase("c/1/2/3 ")]
+        [TestCase("c/1/-/3")]
+        [TestCase("c/2147483648/0/0")]
+        [TestCase("d/1/2/3")]
+        public void AnythingElseIsNotAPartId(string part)
+        {
+            Assert.That(ChunkKeys.TryParsePartId(part, out _), Is.False);
+            Assert.That(ChunkKeys.TryParseHostedPartIdOf(GridKey + "/" + part, GridKey, out _), Is.False);
+        }
+
+        [Test]
+        public void AHostedPartIdOfAnotherGridIsNotThisGrids()
+        {
+            Assert.That(ChunkKeys.TryParseHostedPartIdOf(ChunkKeys.HostedPartId("planet/7/3", Vector3Int.one), GridKey, out _), Is.False);
+            Assert.That(ChunkKeys.TryParseHostedPartIdOf(ChunkKeys.HostedPartId("planet/7/2x", Vector3Int.one), GridKey, out _), Is.False);
+            Assert.That(ChunkKeys.TryParseHostedPartIdOf(ChunkKeys.PartId(Vector3Int.one), GridKey, out _), Is.False);
+        }
+
+        [TestCase("rt_0", true, 0UL)]
+        [TestCase("rt_18446744073709551615", true, ulong.MaxValue)]
+        [TestCase("rt_18446744073709551616", false, 0UL)]
+        [TestCase("rt_", false, 0UL)]
+        [TestCase("rt_12a", false, 0UL)]
+        [TestCase("rt_-1", false, 0UL)]
+        [TestCase("xx_12", false, 0UL)]
+        public void ARuntimeContainerIdIsReadInPlace(string id, bool ok, ulong expected)
+        {
+            Assert.AreEqual(ok, ContainerRegistry.TryParseRuntimeId(id, out ulong parsed));
+            if (ok) Assert.AreEqual(expected, parsed);
+        }
+
         [Test]
         public void ARootChunksPartIdIsNotReadAsHostedAndAHostedOneIsNotReadAsRoot()
         {

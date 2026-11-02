@@ -47,6 +47,9 @@ namespace Nebula
     {
         /// <summary>Most saves issued in one frame, so a container full of dirty entities cannot spike the frame.</summary>
         public const int MaxSavesPerFrame = 64;
+
+        /// <summary>Tracked entities a frame's checkpoint pass looks at, at most (it carries on from there the next frame).</summary>
+        internal const int MaxExaminedPerFrame = 256;
         /// <summary>An entity saves at most this often, however often it changes.</summary>
         public const float MinSaveIntervalSeconds = 0.5f;
         /// <summary>Metres an entity must move since its last save before the move alone is worth a checkpoint.</summary>
@@ -755,7 +758,11 @@ namespace Nebula
             if (_tracked.Count == 0) return;
             int budget = MaxSavesPerFrame;
             int examined = 0;
-            while (examined < _tracked.Count && budget > 0)
+            // At most MaxExaminedPerFrame looked at a frame, from where the last frame stopped: with nothing due, every tracked entity was
+            // looked at every frame (its dirty variables, its pose against the last save), 1.3 ms a frame at 1,600 entities. A full sweep
+            // now takes a few frames, a fraction of a second against checkpoints seconds apart.
+            int limit = Math.Min(_tracked.Count, MaxExaminedPerFrame);
+            while (examined < limit && budget > 0)
             {
                 if (_cursor >= _tracked.Count) _cursor = 0;
                 var pe = _tracked[_cursor];

@@ -377,12 +377,12 @@ namespace Nebula
         public void BeginArray() { Sep(); _sb.Append('['); _needComma = false; }
         public void EndArray() { _sb.Append(']'); _needComma = true; }
 
-        public void Key(string name) { Sep(); _sb.Append(Quote(name)).Append(':'); _needComma = false; }
+        public void Key(string name) { Sep(); AppendQuoted(_sb, name); _sb.Append(':'); _needComma = false; }
 
         /// <summary>Append an already serialised JSON value (object, array, number...) as is. The caller vouches that it is valid JSON.</summary>
         public void Raw(string json) { Sep(); _sb.Append(json); }
 
-        public void Value(string s) { Sep(); _sb.Append(Quote(s)); }
+        public void Value(string s) { Sep(); AppendQuoted(_sb, s); }
         public void Value(bool b) { Sep(); _sb.Append(b ? "true" : "false"); }
         public void Value(long n) { Sep(); _sb.Append(n.ToString(CultureInfo.InvariantCulture)); }
         public void Value(ulong n) { Sep(); _sb.Append(n.ToString(CultureInfo.InvariantCulture)); }
@@ -406,6 +406,14 @@ namespace Nebula
         {
             if (s == null) return "null";
             var sb = new StringBuilder(s.Length + 2);
+            AppendQuoted(sb, s);
+            return sb.ToString();
+        }
+
+        /// <summary><see cref="Quote"/> written straight into <paramref name="sb"/>: the worker's telemetry writes every entity's keys and values twice a second.</summary>
+        public static void AppendQuoted(StringBuilder sb, string s)
+        {
+            if (s == null) { sb.Append("null"); return; }
             sb.Append('"');
             foreach (char c in s)
             {
@@ -423,7 +431,6 @@ namespace Nebula
                 }
             }
             sb.Append('"');
-            return sb.ToString();
         }
     }
 }

@@ -35,7 +35,52 @@ namespace Nebula
         /// <summary>The largest correction since <see cref="ResetCorrectionStats"/> (or spawn): one big snap hides among many small ones otherwise.</summary>
         public float MaxCorrectionMagnitude { get; protected set; }
 
-        public void ResetCorrectionStats() { Corrections = 0; LastCorrectionMagnitude = 0f; MaxCorrectionMagnitude = 0f; }
+        public void ResetCorrectionStats() { Corrections = 0; LastCorrectionMagnitude = 0f; MaxCorrectionMagnitude = 0f; Rebases = 0; LastRebaseMagnitude = 0f; MaxRebaseMagnitude = 0f; }
+
+        /// <summary>
+        /// Owning client (NEB-484): reports that came after ticks the worker did not simulate this entity through, which the client took as its new
+        /// base instead of counting a correction. The magnitude is how far the prediction of that tick was from the worker's: the motion of the
+        /// inputs the worker dropped, the real divergence, applied at once (it is not eased like a misprediction).
+        /// </summary>
+        public int Rebases { get; protected set; }
+        public float LastRebaseMagnitude { get; protected set; }
+        public float MaxRebaseMagnitude { get; protected set; }
+
+        /// <summary>Authority (NEB-484): the latest range of ticks this entity was not stepped through, inclusive (0 and 0: none).</summary>
+        internal uint DroppedFrom, DroppedTo;
+        /// <summary>Authority (NEB-484): ticks the dropped range is repeated in the owner's reports after it, so a lost report does not lose it: half a second (NEB-381).</summary>
+        internal static uint DroppedReportTicks => (uint)NetworkTime.SecondsToTicks(0.5);
+        /// <summary>Authority (NEB-484): ticks this entity was not stepped through since spawn.</summary>
+        public int TicksDropped { get; protected set; }
+
+        /// <summary>Authority (NEB-484): the dropped range to send with the report of <paramref name="tick"/>, while it is recent.</summary>
+        internal bool TryGetDroppedTicks(uint tick, out uint from, out uint to)
+        {
+            from = DroppedFrom;
+            to = DroppedTo;
+            return to != 0 && tick > to && tick - to <= DroppedReportTicks;
+        }
+
+        /// <summary>Owning client (NEB-484): the newest dropped range a report named, and the end of the last one re-based on.</summary>
+        private protected uint _droppedFrom, _droppedTo, _rebasedTo;
+
+        /// <summary>Owning client (NEB-484): a report named ticks the worker dropped; the first reconcile after them re-bases.</summary>
+        internal void NoteDroppedTicks(uint from, uint to)
+        {
+            if (to == 0 || to < from || to <= _droppedTo) return;
+            _droppedFrom = from;
+            _droppedTo = to;
+        }
+
+        /// <summary>Owning client (NEB-484): a dropped range not re-based on yet lies before <paramref name="serverTick"/>; it is taken as re-based.</summary>
+        private protected bool TakeRebase(uint serverTick)
+        {
+            if (_droppedTo <= _rebasedTo || serverTick <= _droppedTo) return false;
+            _rebasedTo = _droppedTo;
+            return true;
+        }
+
+        private protected void ResetDroppedTicks() { _droppedFrom = _droppedTo = _rebasedTo = 0; }
 
         // ---- correction smoothing -----------------------------------------------------------------------------
 
@@ -456,16 +501,27 @@ namespace Nebula
         /// <summary>Authority: ticks run as part of a catch-up after the worker skipped their numbers (NEB-412).</summary>
         public int SkippedTicksStepped { get; protected set; }
 
+        /// <summary>
+        /// Whether the authority steps skipped ticks at all (<see cref="StepSkippedServerTicks"/>), set by the worker before each tick:
+        /// true after an occasional hitch, false while the worker skips ticks again and again (overloaded). Stepping each pawn through
+        /// the ticks the worker could not afford doubled what the pawns cost it once it fell behind, which kept it behind: at 75
+        /// players a worker skipping 1.4 ticks per tick spent 2.4 pawn steps per pawn per tick.
+        /// </summary>
+        internal static bool ReplaySkippedTicks = true;
+
         // ---- server events ---------------------------------------------------------------------------------------
 
         /// <summary>The most server events that can apply on one tick of one entity. More are refused and counted in <see cref="ServerEventsDropped"/>.</summary>
         public const int MaxServerEventsPerTick = 4;
 
         /// <summary>
-        /// For how many ticks after the tick it applies on a server event keeps being sent in the owner's reports, so a lost packet does
-        /// not lose it. The owner ignores the repeats.
+        /// For how long after the tick it applies on a server event keeps being sent in the owner's reports, so a lost packet does
+        /// not lose it: half a second. The owner ignores the repeats.
         /// </summary>
-        public const int ServerEventRepeatTicks = 30;
+        public const float ServerEventRepeatSeconds = 0.5f;
+
+        /// <summary><see cref="ServerEventRepeatSeconds"/> in ticks at the running rate (30 at 60 Hz).</summary>
+        public static int ServerEventRepeatTicks => NetworkTime.SecondsToTicks(ServerEventRepeatSeconds);
 
         /// <summary>Authority: server events accepted by <see cref="PostServerEvent{TEvent}"/> since spawn.</summary>
         public int ServerEventsPosted { get; private set; }
@@ -808,8 +864,17 @@ namespace Nebula
             // NEB-412: the worker skipped tick numbers (it fell more than MaxLagTicks behind the wall clock). The owner
             // predicted those ticks with the inputs it sent for them; step through each one whose input is waiting,
             // oldest first, so this tick starts from where the owner has the entity instead of a correction.
-            if (_lastTickedServerTick != 0 && tick > _lastTickedServerTick + 1 && StepSkippedServerTicks
-                && (Identity.OwnerClientId != 0 || Identity.DriverClientId != 0))
+            // Not while the worker keeps skipping (ReplaySkippedTicks): then every replay adds a tick's work to a worker that could not
+            // afford the ticks it skipped. NEB-484: an entity not stepped through them tells its owner which ticks were dropped instead,
+            // and the owner re-bases on the next report rather than counting a misprediction.
+            bool controlled = Identity.OwnerClientId != 0 || Identity.DriverClientId != 0;
+            if (_lastTickedServerTick != 0 && tick > _lastTickedServerTick + 1 && controlled && !(StepSkippedServerTicks && ReplaySkippedTicks))
+            {
+                DroppedFrom = _lastTickedServerTick + 1;
+                DroppedTo = tick - 1;
+                TicksDropped += (int)(DroppedTo - DroppedFrom + 1);
+            }
+            if (_lastTickedServerTick != 0 && tick > _lastTickedServerTick + 1 && StepSkippedServerTicks && ReplaySkippedTicks && controlled)
             {
                 uint from = _lastTickedServerTick + 1;
                 if (tick - from >= BufferSize) from = tick - (BufferSize - 1);
@@ -1069,6 +1134,7 @@ namespace Nebula
                 // on every report for a round trip, until the reports reached the ticks it had predicted.
                 ReadState(state);
                 Replay(serverTick);
+                TakeRebase(serverTick); // NEB-484: adopted already
                 return;
             }
             var previousContainer = Identity.Container;
@@ -1091,6 +1157,20 @@ namespace Nebula
             var predicted = h.Position;
             if (h.Container != Identity.Container) predicted = Rehome(h.Container, Identity.Container, predicted, serverTick);
             float error = (serverPos - predicted).magnitude;
+            // NEB-484: the worker did not simulate this entity through ticks before this one (it skipped their numbers), so its state here
+            // is not what the client's inputs for them make: take it as the new base and predict again from it with the inputs after it,
+            // counting no misprediction. The pose moves by the dropped inputs' own motion, the real divergence, at once: not eased.
+            if (TakeRebase(serverTick))
+            {
+                Rebases++;
+                LastRebaseMagnitude = error;
+                if (error > MaxRebaseMagnitude) MaxRebaseMagnitude = error;
+                if (LogCorrections) NebulaLog.Info($"re-base on {Identity} tick {serverTick} after dropped ticks {_droppedFrom}-{_droppedTo}: {error:0.000} m");
+                h.Position = serverPos;
+                h.Container = Identity.Container;
+                Replay(serverTick);
+                return;
+            }
             // The prediction agrees with the worker, but the report brought an event for a tick already simulated without it: the
             // worker's state is right, so replay from it, now with the event on its tick, instead of waiting for the error to show.
             bool eventReplay = error <= threshold && HasUnappliedServerEvents(serverTick, _clientTick);
@@ -1232,6 +1312,7 @@ namespace Nebula
         {
             for (int i = 0; i < BufferSize; i++) { _history[i].Valid = false; _serverInputs[i].Valid = false; }
             _lastReconciledTick = 0;
+            ResetDroppedTicks();
             _hasLastServerInput = false;
             _newestServerInputTick = 0;
             ClearCorrectionOffset();

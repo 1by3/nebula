@@ -41,7 +41,7 @@ namespace Nebula
         private readonly HashSet<string> _adjacencyRecipients = new HashSet<string>();
         private readonly List<ulong> _adjacencyGone = new List<ulong>();
         private readonly NetworkWriter _adjacencyWriter = new NetworkWriter();
-        private const uint AdjacencyRefreshTicks = 30;
+        private static uint AdjacencyRefreshTicks => (uint)NetworkTime.SecondsToTicks(0.5);
 
         /// <summary>Links other workers drive whose far side this worker holds.</summary>
         internal IEnumerable<IncomingAdjacency> AdjacencyIn => _adjacencyIn.Values;

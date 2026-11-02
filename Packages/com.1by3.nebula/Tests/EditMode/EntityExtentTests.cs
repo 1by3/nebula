@@ -269,7 +269,7 @@ namespace Nebula.Tests
             collider.size = new Vector3(30f, 10f, 10f);
             Assert.IsTrue(e.TryGetExtentForBand(101, out box));
             Assert.AreEqual(10f, box.size.x, 1e-3f, "not computed every tick");
-            Assert.IsTrue(e.TryGetExtentForBand(100 + NetworkIdentity.ColliderExtentRefreshTicks, out box));
+            Assert.IsTrue(e.TryGetExtentForBand(100u + (uint)NetworkIdentity.ColliderExtentRefreshTicks, out box));
             Assert.AreEqual(30f, box.size.x, 1e-3f, "computed again on the refresh interval");
 
             collider.size = new Vector3(50f, 10f, 10f);

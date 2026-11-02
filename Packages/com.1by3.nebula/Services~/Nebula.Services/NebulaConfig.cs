@@ -85,7 +85,9 @@ namespace Nebula
         public float GhostBandMargin = 4f;
         public float HandoverHysteresis = 0.35f;
         public float GhostLingerSeconds = 2f;
-        public int StateHistoryTicks = 32;
+        public float StateHistorySeconds = 32f / NetworkTime.DefaultTickRate;
+        /// <summary>The mesh's simulation rate (docs/tick-rate.md). Mirrors the Unity-side field; -nebula-tick-rate or NEBULA_TICK_RATE overrides.</summary>
+        public int TickRate = NetworkTime.DefaultTickRate;
         public int AuthorityCallMaxHops = 3;
         public string PersistenceMode = "auto";
         public string PersistenceLocalFile = "";

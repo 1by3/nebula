@@ -336,6 +336,10 @@ public static class Program
                 if (reconnect && w.ClientId != c.SessionId) c.SessionChanges++;
                 if (reconnect && !w.Reclaimed && c.Pawn != 0) c.PawnLosses++;
                 c.Welcome = w;
+                // The mesh's tick rate (docs/tick-rate.md): ticks count at it, and a client sends one input a tick
+                // unless --input-hz says otherwise. Every client of a run joins the same mesh.
+                int rate = NetworkTime.Configure(w.TickRate);
+                if (!o.InputHzSet && o.InputHz != rate) { o.InputHz = rate; Console.WriteLine($"nebula-loadgen: the mesh runs at {rate} Hz; inputs {rate} Hz"); }
                 c.TickSkew = w.ServerTick - NetworkTime.DerivedTickExact;
                 c.SessionId = w.ClientId;
                 if (!string.IsNullOrEmpty(w.SessionToken)) c.SessionToken = w.SessionToken;

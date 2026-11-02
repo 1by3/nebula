@@ -37,7 +37,7 @@ namespace Nebula.Tests
     [Category("Scale")]
     public sealed class LargeCarrierSeamMeasurementTests
     {
-        private const float Dt = NetworkTime.TickInterval;
+        private static float Dt => NetworkTime.TickInterval;
         private const int Crossings = 5; // crossings per configuration, each by a freshly built carrier; the first is a warm-up
         private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
         private static readonly Vector3 CarrierSize = new Vector3(40f, 16f, 100f);

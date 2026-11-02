@@ -13,7 +13,7 @@ namespace Nebula.Tests
     {
         private const int RenderDelay = 3;
         private const int MaxDelay = 30;
-        private const double Frame = 1.0 / NetworkTime.TickRate;
+        private static double Frame => 1.0 / NetworkTime.TickRate;
 
         private static UpdateGapDelay Fed(uint first, params uint[] gaps)
         {

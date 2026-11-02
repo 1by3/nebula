@@ -145,6 +145,51 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void AFlyingCarrierReposesOnlyTheCopiesWhosePartsMovedOnIt()
+        {
+            // The carrier's own motion sets Transform.hasChanged on every part under it, so the sync compares each part's pose
+            // relative to the carrier instead: a ship in flight re-poses no copy until a part moves on the hull, and then only its own.
+            MeshWith(1);
+            var ship = W1.SpawnServerDriven(_shipPrefab, _yard, new Vector3(20f, 1f, 0f), Quaternion.identity);
+            var frame = ship.Carried.Frame;
+            var wall = System.Array.Find(ship.GetComponentsInChildren<BoxCollider>(true), c => c.name == "wall");
+            var copy = frame.Clones.Find(p => p.Key == wall).Value;
+            PhysicsFrames.SyncAllContent();
+            PhysicsFrames.ClonesReposed = 0;
+            for (int i = 1; i <= 5; i++)
+            {
+                ship.transform.SetPositionAndRotation(new Vector3(20f + i * 3f, 1f, 0f), Quaternion.Euler(0f, i * 10f, 0f));
+                PhysicsFrames.SyncAllContent();
+            }
+            Assert.AreEqual(0, PhysicsFrames.ClonesReposed, "the ship flew and turned; nothing moved on it");
+
+            wall.transform.localPosition = new Vector3(4f, 3f, 0f);
+            PhysicsFrames.SyncAllContent();
+            PhysicsFrames.Simulate(NetworkTime.TickInterval);
+            Assert.AreEqual(1, PhysicsFrames.ClonesReposed, "only the wall's copy");
+            Assert.That(Vector3.Distance(new Vector3(4f, 3f, 0f), copy.transform.localPosition), Is.LessThan(1e-4f));
+
+            // The wall is hung on a hinge that then moves: the copy follows through the new parent.
+            var hinge = new GameObject("hinge");
+            hinge.transform.SetParent(ship.transform, false);
+            hinge.transform.localPosition = new Vector3(0f, 1f, 0f);
+            wall.transform.SetParent(hinge.transform, true);
+            PhysicsFrames.SyncAllContent();
+            hinge.transform.localPosition = new Vector3(0f, 2f, 0f);
+            PhysicsFrames.SyncAllContent();
+            PhysicsFrames.Simulate(NetworkTime.TickInterval);
+            Assert.That(Vector3.Distance(new Vector3(4f, 4f, 0f), copy.transform.localPosition), Is.LessThan(1e-4f));
+
+            // Switched off on the hull, it is switched off in the frame.
+            wall.gameObject.SetActive(false);
+            PhysicsFrames.SyncAllContent();
+            Assert.IsFalse(copy.enabled);
+            wall.gameObject.SetActive(true);
+            PhysicsFrames.SyncAllContent();
+            Assert.IsTrue(copy.enabled);
+        }
+
+        [Test]
         public void ARigidbodyInsideFallsTowardsTheContainersOwnFloor()
         {
             MeshWith(1);

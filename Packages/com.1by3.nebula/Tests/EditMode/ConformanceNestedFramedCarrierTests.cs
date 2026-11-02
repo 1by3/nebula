@@ -40,7 +40,7 @@ namespace Nebula.Tests
     [Category("Conformance")]
     public sealed class ConformanceNestedFramedCarrierTests
     {
-        private const float Dt = NetworkTime.TickInterval;
+        private static float Dt => NetworkTime.TickInterval;
         private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
 
         /// <summary>A's box: 40 m wide, 100 m long, from 2 m under its deck (y = 0) to 14 m over it.</summary>

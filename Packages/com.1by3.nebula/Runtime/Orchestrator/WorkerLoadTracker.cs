@@ -16,7 +16,7 @@ namespace Nebula
     public sealed class WorkerLoadTracker
     {
         /// <summary>One simulated tick's wall-clock budget, in milliseconds (<see cref="NetworkTime.TickRate"/>).</summary>
-        public const float TickPeriodMs = 1000f / NetworkTime.TickRate;
+        public static float TickPeriodMs => 1000f / NetworkTime.TickRate;
 
         /// <summary>Fraction of the window used as "the" utilization of a worker.</summary>
         public const float Percentile = 0.9f;

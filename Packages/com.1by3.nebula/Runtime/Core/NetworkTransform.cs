@@ -207,7 +207,7 @@ namespace Nebula
         /// none: its unreliable entries follow one another, and it is only the last one, which nothing would resend,
         /// that has to arrive.
         /// </summary>
-        public const uint SettleTicks = NetworkIdentity.SyncKeyframeInterval;
+        public static uint SettleTicks => NetworkIdentity.SyncKeyframeInterval;
 
         /// <param name="settle">
         /// The entity has just fallen asleep: send its pose now, reliably, whether it changed or not, as the entry it

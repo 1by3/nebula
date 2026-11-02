@@ -35,7 +35,11 @@ namespace Nebula
     [DisallowMultipleComponent]
     public sealed class FrameAttachment : NetworkBehaviour
     {
-        [Tooltip("For this many ticks after a detach the body's depenetration speed is capped at DetachDepenetrationVelocity, so an overlap is eased apart instead of launching the body.")]
+        /// <summary>
+        /// For this many ticks after a detach the body's depenetration speed is capped at <see cref="DetachDepenetrationVelocity"/>.
+        /// Counted at 60 Hz (<see cref="NetworkTime.DefaultTickRate"/>) and rescaled at another tick rate, so it lasts as long.
+        /// </summary>
+        [Tooltip("For this many ticks (counted at 60 Hz, rescaled at other tick rates) after a detach the body's depenetration speed is capped at DetachDepenetrationVelocity, so an overlap is eased apart instead of launching the body.")]
         public int DetachSettleTicks = 10;
         [Tooltip("The body's depenetration speed, in m/s, for DetachSettleTicks ticks after a detach.")]
         public float DetachDepenetrationVelocity = 1f;
@@ -272,7 +276,7 @@ namespace Nebula
                 {
                     if (_settleTicks == 0) _savedDepenetration = body.maxDepenetrationVelocity;
                     body.maxDepenetrationVelocity = Mathf.Min(_savedDepenetration, Mathf.Max(0f, DetachDepenetrationVelocity));
-                    _settleTicks = DetachSettleTicks;
+                    _settleTicks = NetworkTime.FromDefaultRateTicks(DetachSettleTicks);
                 }
             }
             MarkPersistDirty();

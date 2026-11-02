@@ -36,7 +36,7 @@ Nebula supplies the history. Rewinding colliders, performing the hit test and de
 
 ## The window
 
-`NebulaConfig.StateHistoryTicks` sets how many ticks each entity keeps. The default is 32, about half a second at 60 Hz, which covers a player's interpolation delay plus half a round trip plus input lead at a few hundred milliseconds of latency. `-nebula-state-history <ticks>` overrides it per process, and `0` turns recording off entirely.
+`NebulaConfig.StateHistorySeconds` sets how long each entity's history is. The default is about half a second (32 ticks at 60 Hz, 16 at 30), which covers a player's interpolation delay plus half a round trip plus input lead at a few hundred milliseconds of latency. `-nebula-state-history <ticks>` overrides it per process, and `0` turns recording off entirely.
 
 An entry costs about 80 bytes plus whatever your `[SyncHistory]` variables serialize to (at least 32 bytes per entry once anything is marked). With the default window and no marked variables that is roughly 2.5 KB per entity **per worker that holds a copy** — an entity ghosted on three neighbours pays it four times, so 2 000 copies on a worker cost about 5 MB. Recording is allocation-free once an entity's ring is warm.
 

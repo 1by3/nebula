@@ -30,8 +30,8 @@ namespace Nebula.Tests
             Assert.AreEqual(28, (int)MsgId.PortalLinks);
             Assert.AreEqual(29, (int)MsgId.PortalWarm);
             Assert.AreEqual(53, (int)MsgId.FarPoses, "protocol 31's compact far poses take the next free id");
-            Assert.AreEqual(31, HelloMsg.ProtocolVersion, "29 (server events, NEB-474), 30 (motion fidelity) and 31 (far classes) are additive, so the window is N-1..N, 30..31");
-            Assert.AreEqual(30, HelloMsg.MinProtocolVersion, "a client of 27 is refused: portals are not additive in meaning (D46); 28 fell out of the N-1 window at 30, 29 at 31");
+            Assert.AreEqual(31, HelloMsg.ProtocolVersion, "30 (motion fidelity) and 31 (NEB-484, the dropped ticks) are additive, so the window is N-1..N, 30..31");
+            Assert.AreEqual(30, HelloMsg.MinProtocolVersion, "a client of 27 is refused: portals are not additive in meaning (D46); 29 fell out of the N-1 window at 31");
         }
 
         [Test]

@@ -49,7 +49,8 @@ namespace Nebula
     /// <para>
     /// A divisor is ticks per update window, as everywhere in the tiers: 1 is every update the worker sends, 4 one
     /// update in each window of 4 ticks, and 0 none at all (the client keeps the entity where it was last told, and
-    /// is still sent its reliable entries).
+    /// is still sent its reliable entries). Divisors are counted at 60 Hz; on a mesh at another tick rate each is
+    /// rescaled so the band keeps its updates per second (<see cref="RelevanceTiers.AtTickRate"/>).
     /// </para>
     /// </summary>
     [System.Serializable]
@@ -171,6 +172,24 @@ namespace Nebula
         /// Never below 1, never above <paramref name="divisor"/>; <see cref="Quiet"/> stays quiet (a priority that chose no updates
         /// in a band keeps that choice), and a <paramref name="maxTravelPerUpdate"/> of 0 changes nothing.
         /// </summary>
+        /// <summary>
+        /// <paramref name="bands"/>, whose divisors count ticks at 60 Hz (<see cref="NetworkTime.DefaultTickRate"/>), with
+        /// each divisor rescaled to <paramref name="tickRate"/> so the band keeps its updates per second: rounded, never
+        /// below 1 (every update). A divisor of 0 (none) stays 0. At 60 Hz the bands are returned unchanged.
+        /// </summary>
+        public static RelevanceTierBands AtTickRate(RelevanceTierBands bands, int tickRate)
+        {
+            if (tickRate == NetworkTime.DefaultTickRate || tickRate <= 0) return bands;
+            bands.NearDivisor = ScaleDivisor(bands.NearDivisor, tickRate);
+            bands.MidDivisor = ScaleDivisor(bands.MidDivisor, tickRate);
+            bands.FarDivisor = ScaleDivisor(bands.FarDivisor, tickRate);
+            return bands;
+        }
+
+        /// <summary>A divisor counted at 60 Hz, at <paramref name="tickRate"/>: 0 stays 0 (none), anything else at least 1.</summary>
+        public static int ScaleDivisor(int divisorAt60, int tickRate) =>
+            divisorAt60 <= 0 ? divisorAt60 : Math.Max(1, (int)Math.Round(divisorAt60 * (double)tickRate / NetworkTime.DefaultTickRate));
+
         public static int CapForSpeed(int divisor, float speed, float maxTravelPerUpdate, float tickInterval)
         {
             if (divisor <= 1 || maxTravelPerUpdate <= 0f || speed <= 0f || tickInterval <= 0f || float.IsNaN(speed)) return divisor;

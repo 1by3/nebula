@@ -190,17 +190,45 @@ namespace Nebula
             + "/" + coord.z.ToString(CultureInfo.InvariantCulture);
 
         /// <summary>Inverse of <see cref="PartId"/>. False for any other part id (an instance's "interior").</summary>
-        public static bool TryParsePartId(string partId, out Vector3Int coord)
+        public static bool TryParsePartId(string partId, out Vector3Int coord) => TryParsePartIdAt(partId, 0, out coord);
+
+        /// <summary>
+        /// <see cref="TryParsePartId"/> of the part id that starts at <paramref name="start"/> and runs to the end of <paramref name="s"/>, read in
+        /// place: a worker asks for every chunk container it meets, and splitting the string cost a few allocations each time.
+        /// </summary>
+        internal static bool TryParsePartIdAt(string s, int start, out Vector3Int coord)
         {
             coord = default;
             // "c/0/0/0" is the shortest chunk part id there is.
-            if (string.IsNullOrEmpty(partId) || partId.Length < 7 || partId[0] != 'c' || partId[1] != '/') return false;
-            var parts = partId.Split('/');
-            if (parts.Length != 4) return false;
-            if (!int.TryParse(parts[1], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int x) ||
-                !int.TryParse(parts[2], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int y) ||
-                !int.TryParse(parts[3], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int z)) return false;
+            if (s == null || start < 0 || s.Length - start < 7 || s[start] != 'c' || s[start + 1] != '/') return false;
+            int i = start + 2;
+            if (!TryReadInt(s, ref i, true, out int x) || !TryReadInt(s, ref i, true, out int y) || !TryReadInt(s, ref i, false, out int z)) return false;
             coord = new Vector3Int(x, y, z);
+            return true;
+        }
+
+        /// <summary>An int at <paramref name="i"/> (an optional sign, then digits, as <c>int.TryParse</c> with a leading sign reads it) that ends at a slash (consumed) or, for the last, at the end.</summary>
+        private static bool TryReadInt(string s, ref int i, bool slash, out int value)
+        {
+            value = 0;
+            int n = s.Length;
+            bool negative = false;
+            if (i < n && (s[i] == '-' || s[i] == '+')) { negative = s[i] == '-'; i++; }
+            long v = 0;
+            int digits = 0;
+            while (i < n && s[i] >= '0' && s[i] <= '9')
+            {
+                v = v * 10 + (s[i] - '0');
+                if (v > 2147483648L) return false;
+                i++;
+                digits++;
+            }
+            if (digits == 0) return false;
+            if (negative) v = -v;
+            if (v > int.MaxValue || v < int.MinValue) return false;
+            if (slash) { if (i >= n || s[i] != '/') return false; i++; }
+            else if (i != n) return false;
+            value = (int)v;
             return true;
         }
 
@@ -230,9 +258,21 @@ namespace Nebula
                 at = at > 0 ? partId.LastIndexOf('/', at - 1) : -1;
                 if (at <= 0) return false;
             }
-            if (!TryParsePartId(partId.Substring(at + 1), out coord)) return false;
+            if (!TryParsePartIdAt(partId, at + 1, out coord)) return false;
             gridKey = partId.Substring(0, at);
             return true;
+        }
+
+        /// <summary>
+        /// <see cref="TryParseHostedPartId"/> for a part id expected to be of grid <paramref name="gridKey"/>: false for any other grid's, with
+        /// nothing allocated either way (a grid asks this of every chunk container it is offered).
+        /// </summary>
+        internal static bool TryParseHostedPartIdOf(string partId, string gridKey, out Vector3Int coord)
+        {
+            coord = default;
+            if (string.IsNullOrEmpty(partId) || string.IsNullOrEmpty(gridKey) || partId.Length <= gridKey.Length + 1) return false;
+            if (partId[gridKey.Length] != '/' || string.CompareOrdinal(partId, 0, gridKey, 0, gridKey.Length) != 0) return false;
+            return TryParsePartIdAt(partId, gridKey.Length + 1, out coord);
         }
 
         /// <summary>

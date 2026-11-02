@@ -36,7 +36,7 @@ namespace Nebula.Tests
     {
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
         private static readonly Type GatewayType = typeof(NebulaGateway);
-        private const float Dt = NetworkTime.TickInterval;
+        private static float Dt => NetworkTime.TickInterval;
 
         /// <summary>The planet's box: 8 km square, from 400 m below the ground to 600 m above it.</summary>
         private static readonly Vector3 PlanetBox = new Vector3(8000f, 1000f, 8000f);

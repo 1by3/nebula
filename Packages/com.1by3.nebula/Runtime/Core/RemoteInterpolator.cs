@@ -377,8 +377,8 @@ namespace Nebula
 
         // ---- a container's pose at a past tick (NEB-392)
 
-        /// <summary>How far past a carrier's newest sample a prediction's comparison extrapolates its pose (<see cref="CarryBack"/>).</summary>
-        internal const uint PredictionAheadTicks = 6;
+        /// <summary>How far past a carrier's newest sample a prediction's comparison extrapolates its pose (<see cref="CarryBack"/>): a tenth of a second.</summary>
+        internal static uint PredictionAheadTicks => (uint)NetworkTime.SecondsToTicks(0.1);
 
         /// <summary>How many carriers deep a pose at a past tick is looked up (a crate in a ship in a turning planet is two).</summary>
         private const int CarryDepth = 4;

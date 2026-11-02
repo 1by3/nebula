@@ -51,7 +51,7 @@ Every worker writes a profile line every five seconds:
 
 Use these fields to find a performance problem:
 
-- `ticks` should average 60 per second. `frames` is the number of Unity frames in the window. With the default `ServerFrameRate` of 0 it stays close to `ticks`. A higher `ServerFrameRate` makes it a multiple of `ticks`, and a lower one makes it a fraction.
+- `ticks` should average the tick rate (`TickRate`, 60 by default) per second. `frames` is the number of Unity frames in the window. With the default `ServerFrameRate` of 0 it stays close to `ticks`. A higher `ServerFrameRate` makes it a multiple of `ticks`, and a lower one makes it a fraction.
 - `dup` counts fixed updates that did not advance to a new network tick. An occasional duplicate is expected.
 - `skip` counts ticks discarded after the worker fell more than `NebulaWorker.MaxLagTicks` behind. Each one is a tick a predicting client ran and the worker did not. The worker steps a predicted entity through the inputs of skipped ticks when it next ticks, so the entity is normally not corrected, but a value that keeps increasing means the worker cannot maintain the tick rate.
 - `budget` counts the times a frame stopped catching up early because it had spent `NebulaConfig.WorkerCatchUpBudgetMs` simulating ticks. The ticks left over run in the next frames, or are counted in `skip` once the worker is more than `MaxLagTicks` behind. A value that keeps increasing means ticks cost more than the time between them.

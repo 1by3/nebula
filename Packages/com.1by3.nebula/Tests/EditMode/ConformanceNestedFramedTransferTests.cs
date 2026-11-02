@@ -28,7 +28,7 @@ namespace Nebula.Tests
     {
         private const string Alpha = "system/alpha";
         private const string Beta = "system/beta";
-        private const float Dt = NetworkTime.TickInterval;
+        private static float Dt => NetworkTime.TickInterval;
         private const float Cruise = 200f;
         private const float TurnDegreesPerSecond = 6f;
         private static readonly Vector3 CellSize = new Vector3(8192f, 8192f, 8192f);

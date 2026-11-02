@@ -480,7 +480,34 @@ namespace Nebula
             {
                 int hops = 0;
                 for (var c = this; c != null && hops <= ContainerRegistry.ChainBound; c = c.Parent, hops++)
+                {
+                    // A box fixed inside a physics frame lives under the frame's root, in the frame's own
+                    // coordinates: the carrier moving in the space around the frame does not move it. On a worker
+                    // the root only moves on an origin shift, which refreshes every cache itself; a client poses the
+                    // root for rendering as the carrier moves, so there the carrier's flag still stands for the root's.
+                    if (c != this && c.OwnPhysicsFrame && !PhysicsFrames.RendersFrames) return false;
                     if (c.IsDynamic && c.transform.hasChanged) return true;
+                }
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// The box is fixed inside a physics frame (a chunk of a planet's ground, a room fixed in a framed ship): it
+        /// lives in the frame's coordinates and moves only when the frame's root does, never on its own, so the
+        /// registry hashes it in those coordinates and resolves against it like against a static box.
+        /// </summary>
+        internal bool FixedInFrame
+        {
+            get
+            {
+                if (IsDynamic) return false;
+                int hops = 0;
+                for (var p = FixedParent; p != null && hops <= ContainerRegistry.ChainBound; p = p.Parent, hops++)
+                {
+                    if (p.OwnPhysicsFrame) return true;
+                    if (p.IsDynamic) return false;
+                }
                 return false;
             }
         }
@@ -502,6 +529,17 @@ namespace Nebula
         }
 
         public Bounds WorldBounds { get { EnsureCached(); return _worldBounds; } }
+
+        /// <summary>
+        /// Whether the point could be in the box (the registry's broad test): its <see cref="WorldBounds"/> when it is not turned, else the sphere
+        /// that encloses it however it is turned. One cache check for both reads: the resolve shortcut asks it of every moving box, every resolve.
+        /// </summary>
+        internal bool MightHold(Vector3 p)
+        {
+            EnsureCached();
+            if (_axisAligned) return _worldBounds.Contains(p);
+            return (p - _worldBounds.center).sqrMagnitude <= _worldBounds.extents.sqrMagnitude;
+        }
 
         /// <summary>The box is not turned in world space (cached with <see cref="WorldBounds"/>), so <see cref="WorldBounds"/> is the box itself and not only a size about its centre.</summary>
         internal bool IsAxisAligned { get { EnsureCached(); return _axisAligned; } }

@@ -25,8 +25,8 @@ namespace Nebula
             public readonly List<NetworkIdentity> Companions = new List<NetworkIdentity>();
         }
 
-        /// <summary>A crossing nobody has asked about for this many ticks is dropped: the entity moved away from the face.</summary>
-        private const uint StaleCrossingTicks = 120;
+        /// <summary>A crossing nobody has asked about for this many ticks (two seconds) is dropped: the entity moved away from the face.</summary>
+        private static uint StaleCrossingTicks => (uint)NetworkTime.SecondsToTicks(2.0);
 
         private readonly Dictionary<ulong, Crossing> _crossings = new Dictionary<ulong, Crossing>();
         /// <summary>Each companion's leader, by net id.</summary>
