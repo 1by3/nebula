@@ -13,6 +13,8 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | --- | --- |
 | [AuthorityMode](/docs/reference/core/authority-mode) | Enum. Lists which process produces state for a synchronized component. |
 | [AuthorityRpcAttribute](/docs/reference/core/authority-rpc-attribute) | Class. Runs on the worker that has authority over the entity. |
+| [ClientRequestContext](/docs/reference/core/client-request-context) | Class. Who sent a client request, handed to the handler as its first parameter. |
+| [ClientRequestRpcAttribute](/docs/reference/core/client-request-rpc-attribute) | Class. Sent by any client to any entity in its interest set, owned or not, and run on the worker with authority over the entity: the way a player touches, sits on, takes or edits an object that is not theirs. |
 | [ClientRpcAttribute](/docs/reference/core/client-rpc-attribute) | Class. Runs on every client that knows the entity (or only its owner when sent with OwnerRpc). |
 | [CohesionGroups](/docs/reference/core/cohesion-groups) | Static class. Which entities belong to which NetworkIdentity.CohesionGroup, in this process. |
 | [CommandLine](/docs/reference/core/command-line) | Static class. Tiny "-key value" / "-key=value" / "-flag" parser over Environment.GetCommandLineArgs. |
@@ -24,6 +26,7 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [HistoricalState](/docs/reference/core/historical-state) | Struct. What an entity looked like at one recorded server tick: the answer of NetworkIdentity.StateAt. |
 | [INetworkInput](/docs/reference/core/i-network-input) | Interface. Marker for the per-tick input struct a predicted entity consumes. |
 | [IRpcSink](/docs/reference/core/i-rpc-sink) | Interface. Where RPCs and state changes go once a behaviour has produced them. |
+| [ISimulationBatch](/docs/reference/core/i-simulation-batch) | Interface. Work a game collects from many entities during the worker's simulate pass and runs together, so it can be spread over the worker's cores (NEB-501): physics queries batched with RaycastCommand, SpherecastCommand and their kin, or pure mat... |
 | [NebulaConfig](/docs/reference/core/nebula-config) | Class. Project-wide Nebula settings. |
 | [NebulaCost](/docs/reference/core/nebula-cost) | Static class. Where a game says what one entity costs to simulate, beyond the category it falls into. |
 | [NebulaDiagnostics](/docs/reference/core/nebula-diagnostics) | Static class. Process-wide counters for rule violations Nebula rejects at the call site, so tests and the worker's profile log line can see how often game code hits them. |
@@ -43,7 +46,7 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [NetworkPrefabs](/docs/reference/core/network-prefabs) | Static class. Prefab id table shared by every process. |
 | [NetworkRigidbody](/docs/reference/core/network-rigidbody) | Class. Puts a Unity Rigidbody under the mesh's authority model. |
 | [NetworkSyncBehaviour](/docs/reference/core/network-sync-behaviour) | Abstract class. Base for components that replicate through the per-tick sync channel and support server or owner authority. |
-| [NetworkTime](/docs/reference/core/network-time) | Static class. Provides the shared 60 Hz simulation tick. |
+| [NetworkTime](/docs/reference/core/network-time) | Static class. Provides the shared simulation tick. |
 | [NetworkTransform](/docs/reference/core/network-transform) | Class. Replicates selected position, rotation, and scale axes from the authoritative worker to clients and ghost workers. |
 | [NetworkVariable\<T\>](/docs/reference/core/network-variable) | Class. A field replicated from the authoritative worker to clients and ghost workers. |
 | [NetworkVariableBase](/docs/reference/core/network-variable-base) | Abstract class. Defines the serialization and change tracking used by every NetworkVariable\<T\>. |
@@ -54,6 +57,7 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [RemoteInterpolator](/docs/reference/core/remote-interpolator) | Class. Tick-indexed pose buffer for copies of an entity this process does not simulate: ghosts on a worker and remote entities on a client. |
 | [SceneEntities](/docs/reference/core/scene-entities) | Static class. The scene-placed entities resident in this process, by NetworkIdentity.SceneId. |
 | [ServerRpcAttribute](/docs/reference/core/server-rpc-attribute) | Class. Sent by the owning client, runs on whichever worker currently has authority over the entity. |
+| [SimulationBatches](/docs/reference/core/simulation-batches) | Static class.  |
 | [StateHistory](/docs/reference/core/state-history) | Class. The bounded per-entity ring of recorded ticks behind NetworkIdentity.StateAt: pose, velocity, container, epoch and the SyncHistoryAttribute variables, one entry per server tick, indexed by tick % capacity. |
 | [SyncAudience](/docs/reference/core/sync-audience) | Enum. Who receives a behavior's sync state (NetworkBehaviour.SyncAudience). |
 | [SyncAudienceCodec](/docs/reference/core/sync-audience-codec) | Static class. The client member sets of an entity's SyncAudience.Custom behaviors, as the authority last evaluated them: \[count:byte\]\{\[behaviourIndex:byte\]\[n:ushort\]\{\[clientId:ulong\]\}\}, each set sorted ascending. |
@@ -107,6 +111,7 @@ Define container volumes and look up their current worker assignments.
 | [PortalQueryOptions](/docs/reference/containers/portal-query-options) | Class. Settings of a portal query (docs/portals.md D32, D33). |
 | [PortalRefusal](/docs/reference/containers/portal-refusal) | Enum. Why a portal did not let an entity through, or leave a companion behind (docs/portals.md D17). |
 | [Portals](/docs/reference/containers/portals) | Static class. Lookup for portals (docs/portals.md D1): the Portal components on this process, on a client what the network gateway has told it about the portals near it, and the link poses between scopes (Map, Turn). |
+| [ReadinessHolds](/docs/reference/containers/readiness-holds) | Static class. The application's say in a portal link's readiness (docs/portals.md D10, condition 6): the worker that owns a container can hold it "not ready yet" while it does something the game needs done before anyone comes through, such as spawning... |
 | [ScopePose](/docs/reference/containers/scope-pose) | Struct. Where a drawn scope stands against the anchor, the scope whose frame the local view's frame resolves to (docs/portals.md D40, Portals.Anchor): the composition, in double and about the faces, of the link poses along the portals from the a... |
 
 ## World partition
@@ -370,6 +375,15 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [ByteArrayComparer](/docs/reference/protocol/byte-array-comparer) | Class. Compares byte arrays by content: how a party without game types keys a map (the gateway's cache). |
 | [ClientFocusHintMsg](/docs/reference/protocol/client-focus-hint-msg) | Struct. Client -\> gateway: where the player is looking, as a hint for interest (a sniper scope, an RTS camera). |
 | [ClientInputMsg](/docs/reference/protocol/client-input-msg) | Struct. A short run of recent inputs (redundant against loss). |
+| [ClientRequestFlags](/docs/reference/protocol/client-request-flags) | Enum. Flags on a ClientRequestMsg and a ClientRequestRoutedMsg. |
+| [ClientRequestGate](/docs/reference/protocol/client-request-gate) | Class. The gateway's admission rules for a client request, in one place and with no engine types, so the gateway, the standalone services and the tests run the same code. |
+| [ClientRequestMsg](/docs/reference/protocol/client-request-msg) | Struct. A \[ClientRequestRpc\] as the client sends it to its gateway (MsgId.ClientRequest, protocol 32). |
+| [ClientRequestOutcome](/docs/reference/protocol/client-request-outcome) | Enum. Where a \[ClientRequestRpc\] call ended up. |
+| [ClientRequestReplyMsg](/docs/reference/protocol/client-request-reply-msg) | Struct. What became of a client request that asked for a reply (MsgId.ClientRequestReply, protocol 32). |
+| [ClientRequestResult](/docs/reference/protocol/client-request-result) | Struct. The outcome of one ClientRequestWithReply call, handed to its callback exactly once. |
+| [ClientRequestRoutedMsg](/docs/reference/protocol/client-request-routed-msg) | Struct. A client request stamped by the gateway (MsgId.ClientRequestRouted, protocol 32): the request as the client sent it, beside who the gateway knows the sender to be. |
+| [ClientRequestRouting](/docs/reference/protocol/client-request-routing) | Static class. The rule a worker applies to a routed client request, with no engine types. |
+| [ClientRequestTracker](/docs/reference/protocol/client-request-tracker) | Class. The sender's side of the reply channel: the requests a client made with a reply wanted and has not heard back about. |
 | [ContainerOwnershipEntry](/docs/reference/protocol/container-ownership-entry) | Struct. Stores the values used by container ownership entry. |
 | [ContainerOwnershipMsg](/docs/reference/protocol/container-ownership-msg) | Static class. Carries the container ownership protocol message. |
 | [ContainerOwnershipUpdate](/docs/reference/protocol/container-ownership-update) | Struct. What one MsgId.ContainerOwnership message says: either the complete set of containers a client should know about (Full) or a change to it. |
@@ -435,6 +449,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [PortalsMsg](/docs/reference/protocol/portals-msg) | Static class. MsgId.Portals: \[upserts:ushort\]\{record\}\[removes:ushort\]\{portalId\}, worker → network gateway → client. |
 | [PortalsUpdate](/docs/reference/protocol/portals-update) | Class. A change to the portals a receiver knows (MsgId.Portals): records to add or replace, and ids to forget. |
 | [ProtocolCompatibility](/docs/reference/protocol/protocol-compatibility) | Static class. Checks client protocol and game content versions against the gateway's supported range. |
+| [RequestBucket](/docs/reference/protocol/request-bucket) | Struct. A client's token bucket: burst requests at once, refilled at rate per second. |
 | [SessionReplacedMsg](/docs/reference/protocol/session-replaced-msg) | Struct. Gateway -\> client: the player this client signed in as connected again elsewhere, and that newer connection now holds the session and the pawn (NebulaConfig.SingleSessionPerPlayer). |
 | [SpawnPlayerMsg](/docs/reference/protocol/spawn-player-msg) | Struct. Gateway -\> worker: a client wants a pawn. |
 | [SyncAudienceMsg](/docs/reference/protocol/sync-audience-msg) | Struct. Worker to gateway (MsgId.SyncAudience, protocol 20): the member sets of an entity's SyncAudience.Custom behaviors changed. |

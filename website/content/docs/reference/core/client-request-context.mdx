@@ -1,0 +1,112 @@
+---
+title: "ClientRequestContext"
+description: "Who sent a client request, handed to the handler as its first parameter."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/ClientRequestContext.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/ClientRequestContext.cs)</div>
+
+```csharp
+public sealed class ClientRequestContext
+```
+
+Who sent a [`client request`](/docs/reference/core/client-request-rpc-attribute), handed to the handler as its first parameter. The sender fields are stamped by the gateway from the connection and the session: a client cannot choose or change them. The arguments that follow the context are the client's, and are not to be trusted.
+
+## Properties
+
+### ClientId [#clientid]
+
+```csharp
+public ulong ClientId { get; }
+```
+
+The sender's session id (the id a pawn's [`NetworkIdentity.OwnerClientId`](/docs/reference/core/network-identity#ownerclientid) carries).
+
+### Identity [#identity]
+
+```csharp
+public string Identity { get; }
+```
+
+The sender's verified identity across sessions ([`PlayerIdentity`](/docs/reference/gateway/player-identity)): the account or provider subject of a verified sign-in token, or an anonymous identity the mesh issued. Key anything that must outlive a session on this, not on [`ClientId`](#clientid).
+
+### Claims [#claims]
+
+```csharp
+public IReadOnlyDictionary<string, string> Claims { get; }
+```
+
+The claims of the sender's verified token that the mesh forwards ([`NebulaConfig.ForwardedClaims`](/docs/reference/core/nebula-config#forwardedclaims)); empty for an anonymous player. As of the sign-in: a role granted since is not here until the player signs in again.
+
+### Entity [#entity]
+
+```csharp
+public NetworkIdentity Entity { get; }
+```
+
+The entity the request is for. On the worker with authority.
+
+### SenderPawnNetId [#senderpawnnetid]
+
+```csharp
+public ulong SenderPawnNetId { get; }
+```
+
+The net id of the sender's pawn, or 0 if it has none. The pawn may live on another worker: see [`TryGetSenderPawn`](#trygetsenderpawn).
+
+### HasSenderPosition [#hassenderposition]
+
+```csharp
+public bool HasSenderPosition { get; }
+```
+
+True when [`SenderPosition`](#senderposition) is known.
+
+### SenderPosition [#senderposition]
+
+```csharp
+public Vector3 SenderPosition { get; }
+```
+
+Where the gateway last saw the sender's pawn, in the scope's own absolute space: the space of [`NetworkIdentity.ScopePositionPrecise`](/docs/reference/core/network-identity#scopepositionprecise), so a distance check against [`Entity`](#entity) needs no pawn on this worker. One interest update old at worst, and the sender can move meanwhile: allow for that in a range check.
+
+### CallId [#callid]
+
+```csharp
+public uint CallId { get; }
+```
+
+The client's id for this request; the same number comes back in its reply.
+
+### WantsReply [#wantsreply]
+
+```csharp
+public bool WantsReply { get; }
+```
+
+True when the client asked for a reply and will hear [`ReplyCode`](#replycode) and the outcome.
+
+### Hops [#hops]
+
+```csharp
+public int Hops { get; }
+```
+
+How many workers forwarded the request to reach this one (the entity changed worker in flight).
+
+### ReplyCode [#replycode]
+
+```csharp
+public ushort ReplyCode { get; set; }
+```
+
+Your own verdict for the client, if it asked for a reply: set it in the handler ("done", "too far", "not yours"). Sent with [`ClientRequestOutcome.Accepted`](/docs/reference/protocol/client-request-outcome#accepted) in [`ClientRequestResult.Code`](/docs/reference/protocol/client-request-result#code). 0 by default. Ignored when no reply was asked for.
+
+## Methods
+
+### TryGetSenderPawn [#trygetsenderpawn]
+
+```csharp
+public bool TryGetSenderPawn(out NetworkIdentity pawn);
+```
+
+The sender's pawn, when this worker holds a copy of it (authoritative or ghost). Often it does not: the pawn is wherever its player is, which may be another worker than the entity's. Use [`SenderPosition`](#senderposition) for a range check.

@@ -423,6 +423,22 @@ public PortalQueries PortalQueries { get; }
 
 Raycasts, sweeps and overlaps that continue through an open portal, for prediction and aim (`docs/portals.md` D32). A client queries the scenes it holds, in the frame each scope shares ([`ScopeFrames.Resolve`](/docs/reference/world/scope-frames#resolve)), against the replicas as they stand; it keeps no state history, so a tick in the options has no effect here.
 
+### PendingClientRequests [#pendingclientrequests]
+
+```csharp
+public int PendingClientRequests { get; }
+```
+
+Requests sent with a reply wanted that have not been answered yet.
+
+### ClientRequestsSent [#clientrequestssent]
+
+```csharp
+public long ClientRequestsSent { get; }
+```
+
+Client requests sent since this client started.
+
 ### LinksWarming [#linkswarming]
 
 ```csharp

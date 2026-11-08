@@ -1,0 +1,62 @@
+---
+title: "ClientRequestResult"
+description: "The outcome of one ClientRequestWithReply call, handed to its callback exactly once."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/ClientRequestContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/ClientRequestContract.cs)</div>
+
+```csharp
+public readonly struct ClientRequestResult
+```
+
+The outcome of one `ClientRequestWithReply` call, handed to its callback exactly once.
+
+## Constructors
+
+### ClientRequestResult [#clientrequestresult]
+
+```csharp
+public ClientRequestResult(uint callId, ClientRequestOutcome outcome, ushort code = 0);
+```
+
+## Properties
+
+### CallId [#callid]
+
+```csharp
+public uint CallId { get; }
+```
+
+The call id the client minted; 0 for a call that never left the client.
+
+### Outcome [#outcome]
+
+```csharp
+public ClientRequestOutcome Outcome { get; }
+```
+
+What happened to the request.
+
+### Code [#code]
+
+```csharp
+public ushort Code { get; }
+```
+
+A number the handler chose, through [`ClientRequestContext.ReplyCode`](/docs/reference/core/client-request-context#replycode): its own verdict ("allowed", "too far", "not yours"). 0 unless the handler set one and [`Outcome`](#outcome) is [`ClientRequestOutcome.Accepted`](/docs/reference/protocol/client-request-outcome#accepted). Not a place for data: the reply is two bytes of verdict, and a handler that needs to answer with more sends a `ClientRpc` or an owner call.
+
+### Succeeded [#succeeded]
+
+```csharp
+public bool Succeeded { get; }
+```
+
+True when [`Outcome`](#outcome) is [`ClientRequestOutcome.Accepted`](/docs/reference/protocol/client-request-outcome#accepted).
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

@@ -168,8 +168,10 @@ namespace Nebula.Tests
         {
             Assert.IsTrue(ProtocolCompatibility.ClientProtocolAccepted(HelloMsg.MinProtocolVersion, 60), "N-1 joins a 60 Hz mesh");
             Assert.IsFalse(ProtocolCompatibility.ClientProtocolAccepted((ushort)(HelloMsg.TickRateVersion - 1), 30), "a client that counts at 60 Hz is refused at 30");
-            Assert.IsTrue(ProtocolCompatibility.ClientProtocolAccepted(HelloMsg.TickRateVersion, 30));
-            Assert.AreEqual(HelloMsg.TickRateVersion, ProtocolCompatibility.MinClientProtocol(30));
+            // The window's own minimum has passed TickRateVersion (31 > 30), so a 30 Hz mesh narrows nothing today; it would again if the window ever sat below it.
+            ushort floor = System.Math.Max(HelloMsg.MinProtocolVersion, HelloMsg.TickRateVersion);
+            Assert.IsTrue(ProtocolCompatibility.ClientProtocolAccepted(floor, 30));
+            Assert.AreEqual(floor, ProtocolCompatibility.MinClientProtocol(30));
             Assert.AreEqual(HelloMsg.MinProtocolVersion, ProtocolCompatibility.MinClientProtocol(60));
         }
 

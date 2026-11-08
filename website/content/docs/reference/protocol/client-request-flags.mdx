@@ -1,0 +1,20 @@
+---
+title: "ClientRequestFlags"
+description: "Flags on a ClientRequestMsg and a ClientRequestRoutedMsg."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+[Flags]
+public enum ClientRequestFlags : byte
+```
+
+Flags on a [`ClientRequestMsg`](/docs/reference/protocol/client-request-msg) and a [`ClientRequestRoutedMsg`](/docs/reference/protocol/client-request-routed-msg).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` | `0` |  |
+| <span id="wantsreply"></span>`WantsReply` | `1` | The client wants a [`ClientRequestReplyMsg`](/docs/reference/protocol/client-request-reply-msg) with the outcome. |

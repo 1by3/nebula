@@ -97,8 +97,8 @@ namespace Nebula.Tests
             Assert.AreEqual(Vector3.zero, legacy.AngularVelocity);
             Assert.That(Quaternion.Angle(legacy.LocalRotation, entry.LocalRotation), Is.LessThan(0.2f));
             Assert.That((legacy.Velocity - entry.Velocity).magnitude, Is.LessThan(0.1f));
-            Assert.AreEqual(31, HelloMsg.ProtocolVersion, "30 (motion fidelity), then 31 (NEB-484, the dropped ticks)");
-            Assert.AreEqual(30, HelloMsg.MinProtocolVersion, "both additive: a client of 30 still joins (the window is N and N-1)");
+            Assert.AreEqual(32, HelloMsg.ProtocolVersion, "30 (motion fidelity), 31 (NEB-484, the dropped ticks), then 32 (client requests)");
+            Assert.AreEqual(31, HelloMsg.MinProtocolVersion, "all additive: a client of 31 still joins (the window is N and N-1), a client of 30 does not");
             Assert.AreEqual(30, HelloMsg.MotionFidelityVersion, "and a client of 30 is sent the extensions");
         }
 

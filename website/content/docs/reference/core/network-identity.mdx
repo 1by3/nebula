@@ -88,30 +88,6 @@ public float CostWeight = 1f;
 
 What this entity costs to simulate, as a multiplier on its category weight in NebulaConfig.CostWeights. 1 (the default) leaves balancing exactly as it was; 8 on a raid boss and 0.25 on an ambient critter tell the planner and the scaler that they are not the same machine. NebulaCost.EntityWeight can override it at spawn; NetworkIdentity.SetCostWeight overrides both.
 
-### ColliderExtentRefreshTicks [#colliderextentrefreshticks]
-
-```csharp
-public const int ColliderExtentRefreshTicks = 60;
-```
-
-With [`EntityExtentSource.Colliders`](/docs/reference/protocol/entity-extent-source#colliders), the box is computed again at least this often, in ticks of the worker that holds authority. Nothing tells Nebula that a collider deeper than a direct child changed; call [`RefreshExtent`](#refreshextent) when a change must count sooner.
-
-### SyncKeyframeInterval [#synckeyframeinterval]
-
-```csharp
-public const uint SyncKeyframeInterval = 30;
-```
-
-Every this many ticks a dirty sync behavior writes a keyframe instead of a delta, and an unreliable one writes a keyframe whether it is dirty or not. Keyframes heal lost packets and are what the gateway hands to late joiners.
-
-### SyncSettleTicks [#syncsettleticks]
-
-```csharp
-public const uint SyncSettleTicks = SyncKeyframeInterval;
-```
-
-Ticks a distance-rated sync behavior ([`NetworkBehaviour.SyncDistanceRating`](/docs/reference/core/network-behaviour#syncdistancerating)) must go without a change before it sends the reliable keyframe every client that holds the entity is given, near or far.
-
 ## Properties
 
 ### EffectiveFarUpdateRate [#effectivefarupdaterate]
@@ -171,6 +147,14 @@ public float EffectiveCostWeight { get; } = 1f;
 ```
 
 The multiplier this entity actually carries right now (see [`NebulaCost`](/docs/reference/core/nebula-cost) for how it is chosen). It is computed at spawn, travels with the entity through ghosting and handover, and only changes when the game calls [`SetCostWeight`](#setcostweight): never per tick. Multiply it by the entity's category weight in [`CostWeights`](/docs/reference/orchestrator/cost-weights) to get what the mesh thinks it costs.
+
+### ColliderExtentRefreshTicks [#colliderextentrefreshticks]
+
+```csharp
+public static int ColliderExtentRefreshTicks { get; }
+```
+
+With [`EntityExtentSource.Colliders`](/docs/reference/protocol/entity-extent-source#colliders), the box is computed again at least this often, in ticks of the worker that holds authority: once a second. Nothing tells Nebula that a collider deeper than a direct child changed; call [`RefreshExtent`](#refreshextent) when a change must count sooner.
 
 ### ExtentSource [#extentsource]
 
@@ -440,6 +424,22 @@ On a client, how far apart this entity's state arrives and the extra render dela
 ```csharp
 public NetworkBehaviour[] Behaviours { get; } = Array.Empty<NetworkBehaviour>();
 ```
+
+### SyncKeyframeInterval [#synckeyframeinterval]
+
+```csharp
+public static uint SyncKeyframeInterval { get; }
+```
+
+Every this many ticks a dirty sync behavior writes a keyframe instead of a delta, and an unreliable one writes a keyframe whether it is dirty or not. Keyframes heal lost packets and are what the gateway hands to late joiners. Half a second: 30 ticks at 60 Hz, 15 at 30.
+
+### SyncSettleTicks [#syncsettleticks]
+
+```csharp
+public static uint SyncSettleTicks { get; }
+```
+
+Ticks a distance-rated sync behavior ([`NetworkBehaviour.SyncDistanceRating`](/docs/reference/core/network-behaviour#syncdistancerating)) must go without a change before it sends the reliable keyframe every client that holds the entity is given, near or far.
 
 ### Predicted [#predicted]
 

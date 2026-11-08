@@ -36,3 +36,11 @@ ulong SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint metho
 ```
 
 As [`SendAuthorityRpc`](#sendauthorityrpc), with the outcome reported to `onDone` exactly once: the reply from the worker that decided the call, or [`AuthorityCallOutcome.TimedOut`](/docs/reference/worker/authority-call-outcome#timedout) after `timeoutSeconds`. Returns the call id, or 0 when nothing was sent (the callback still runs, with the reason).
+
+### SendClientRequest [#sendclientrequest]
+
+```csharp
+uint SendClientRequest(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, Action<ClientRequestResult> onDone, float timeoutSeconds);
+```
+
+Send a `[ClientRequestRpc]` from a client to the worker with authority over `identity`, through its gateway. With `onDone` the request asks for a reply and the outcome is reported exactly once: the reply, or [`ClientRequestOutcome.TimedOut`](/docs/reference/protocol/client-request-outcome#timedout) after `timeoutSeconds`, or [`ClientRequestOutcome.Disconnected`](/docs/reference/protocol/client-request-outcome#disconnected). Returns the request id, or 0 when nothing was sent (the callback still runs, with the reason). The default is for a sink that is not a client: it refuses.

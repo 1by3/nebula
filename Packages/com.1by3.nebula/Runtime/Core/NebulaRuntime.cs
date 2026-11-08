@@ -22,6 +22,19 @@ namespace Nebula
         /// or 0 when nothing was sent (the callback still runs, with the reason).
         /// </summary>
         ulong SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, Action<AuthorityCallResult> onDone, float timeoutSeconds);
+        /// <summary>
+        /// Send a <c>[ClientRequestRpc]</c> from a client to the worker with authority over <paramref name="identity"/>, through
+        /// its gateway. With <paramref name="onDone"/> the request asks for a reply and the outcome is reported exactly once: the
+        /// reply, or <see cref="ClientRequestOutcome.TimedOut"/> after <paramref name="timeoutSeconds"/>, or
+        /// <see cref="ClientRequestOutcome.Disconnected"/>. Returns the request id, or 0 when nothing was sent (the callback still runs,
+        /// with the reason). The default is for a sink that is not a client: it refuses.
+        /// </summary>
+        uint SendClientRequest(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, Action<ClientRequestResult> onDone, float timeoutSeconds)
+        {
+            NebulaLog.Warn("ClientRequest can only be sent from a client; ignored");
+            onDone?.Invoke(new ClientRequestResult(0, ClientRequestOutcome.Disconnected));
+            return 0;
+        }
     }
 
     /// <summary>Process-wide role context. A process is either a worker (server) or a client, never both.</summary>

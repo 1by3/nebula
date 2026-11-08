@@ -57,6 +57,14 @@ public ulong LinkId;
 
 The portal link this preparation readies (`docs/portals.md` D35, D45), or 0 for a preparation of one entity's crossing ([`NebulaWorker.PrepareTransfer`](/docs/reference/worker/nebula-worker#preparetransfer)). A trailing field: an older body ends before it.
 
+### Held [#held]
+
+```csharp
+public bool Held;
+```
+
+A link's preparation only (`docs/portals.md` D10 condition 6): the far worker's interim answer that its container is ready but the application holds it (`ReadinessHolds`); the final answer follows once it is released or the hold runs out. A trailing field after [`LinkId`](#linkid): an older body ends before it.
+
 ## Methods
 
 ### Write [#write]

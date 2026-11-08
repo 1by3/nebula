@@ -23,7 +23,15 @@ Design record: `docs/state-history.md`.
 public const int DefaultWindowTicks = 32;
 ```
 
-Ticks kept per entity when the game does not say otherwise ([`NebulaConfig.StateHistoryTicks`](/docs/reference/core/nebula-config#statehistoryticks)).
+Ticks kept per entity at 60 Hz when the game does not say otherwise ([`NebulaConfig.StateHistorySeconds`](/docs/reference/core/nebula-config#statehistoryseconds)).
+
+### DefaultWindowSeconds [#defaultwindowseconds]
+
+```csharp
+public const float DefaultWindowSeconds = DefaultWindowTicks / (float)NetworkTime.DefaultTickRate;
+```
+
+Seconds kept per entity when the game does not say otherwise: [`DefaultWindowTicks`](#defaultwindowticks) at 60 Hz, about half a second.
 
 ### MaxWindowTicks [#maxwindowticks]
 
@@ -39,7 +47,7 @@ The most ticks a window may be asked for. A larger value is clamped to this.
 public const int GapToleranceTicks = 4;
 ```
 
-How far [`TryGetStateAt`](#trygetstateat) looks either side of the asked-for tick when that tick itself was not recorded (a ghost whose owner sent nothing that tick because nothing moved). The entry returned says which tick it is; nothing is interpolated or extrapolated.
+How far [`TryGetStateAt`](#trygetstateat) looks either side of the asked-for tick when that tick itself was not recorded (a ghost whose owner sent nothing that tick because nothing moved). The entry returned says which tick it is; nothing is interpolated or extrapolated. A count of missing records, not a duration, so it is the same at every tick rate.
 
 ## Properties
 
@@ -49,7 +57,7 @@ How far [`TryGetStateAt`](#trygetstateat) looks either side of the asked-for tic
 public static int WindowTicks { get; }
 ```
 
-Ticks of history every entity in this process keeps, from [`NebulaConfig.StateHistoryTicks`](/docs/reference/core/nebula-config#statehistoryticks). Zero turns recording off entirely. Set by [`NebulaWorker`](/docs/reference/worker/nebula-worker) at start-up; a client leaves it at zero, because history is a worker-side facility (the client has [`RemoteInterpolator`](/docs/reference/core/remote-interpolator)).
+Ticks of history every entity in this process keeps, from [`NebulaConfig.StateHistorySeconds`](/docs/reference/core/nebula-config#statehistoryseconds) at the running tick rate. Zero turns recording off entirely. Set by [`NebulaWorker`](/docs/reference/worker/nebula-worker) at start-up; a client leaves it at zero, because history is a worker-side facility (the client has [`RemoteInterpolator`](/docs/reference/core/remote-interpolator)).
 
 ### Capacity [#capacity]
 

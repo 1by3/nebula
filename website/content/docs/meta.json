@@ -20,6 +20,7 @@
     "guides/server-owned-entities",
     "guides/scene-entities",
     "guides/rpcs",
+    "guides/client-requests",
     "guides/serialization",
     "---Movement and state---",
     "guides/network-transform",

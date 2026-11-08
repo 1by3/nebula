@@ -21,14 +21,6 @@ public const int StateBatchBytes = WorldStateMsg.BatchBytes;
 
 Byte budget for one Sequenced world/ghost-state packet. Sequenced delivery cannot fragment, and a peer's MTU starts at LiteNetLib's floor (508 bytes) until discovery finishes, so batches are cut by size rather than by entry count. Entry size depends on the transform's selected axes and precision.
 
-### CrossingHoldTicks [#crossingholdticks]
-
-```csharp
-public const int CrossingHoldTicks = 30;
-```
-
-How long an entity handed over for a crossing stays with the pose owner before it may be handed back (ticks).
-
 ### RuntimeTouchSeconds [#runtimetouchseconds]
 
 ```csharp
@@ -45,13 +37,13 @@ public const int MaxCatchUpTicks = 2;
 
 Most ticks the loop simulates in one FixedUpdate to catch up with the wall clock. What is left over is simulated by the next FixedUpdates (Unity runs several after a long frame), so a slow frame costs no tick; only a worker more than [`MaxLagTicks`](#maxlagticks) behind skips tick numbers.
 
-### MaxLagTicks [#maxlagticks]
+### MaxLagSeconds [#maxlagseconds]
 
 ```csharp
-public const int MaxLagTicks = 15;
+public const float MaxLagSeconds = 0.25f;
 ```
 
-Most ticks the worker may run behind the wall clock before it skips the missing tick numbers (everything runs a little slow for a moment) rather than simulate them back-to-back, which would only push the next frame further behind. A skipped tick is one an owner's client predicted and the worker never ran, so its entity ends that tick's step short of where its owner has it and is corrected (NEB-479). A quarter of a second at 60 Hz.
+How far behind the wall clock, in seconds, a worker may run before it skips tick numbers ([`MaxLagTicks`](#maxlagticks)).
 
 ### DefaultCatchUpBudgetMs [#defaultcatchupbudgetms]
 
@@ -59,7 +51,7 @@ Most ticks the worker may run behind the wall clock before it skips the missing 
 public const float DefaultCatchUpBudgetMs = 40f;
 ```
 
-Default for [`NebulaConfig.WorkerCatchUpBudgetMs`](/docs/reference/core/nebula-config#workercatchupbudgetms): about two and a half tick periods at 60 Hz.
+Default for [`NebulaConfig.WorkerCatchUpBudgetMs`](/docs/reference/core/nebula-config#workercatchupbudgetms): about two and a half tick periods at 60 Hz. It is wall time a frame may spend, so it stays 40 ms at any tick rate (at 30 Hz about one and a quarter periods, with [`MaxCatchUpTicks`](#maxcatchupticks) still two ticks per FixedUpdate).
 
 ### MaxSequencedRpcBytes [#maxsequencedrpcbytes]
 
@@ -222,6 +214,14 @@ public int CrossingHandoffs { get; }
 ```
 
 Entities this worker handed to a frame's pose owner so it could cross them (D15).
+
+### CrossingHoldTicks [#crossingholdticks]
+
+```csharp
+public static int CrossingHoldTicks { get; }
+```
+
+How long an entity handed over for a crossing stays with the pose owner before it may be handed back, in ticks: half a second.
 
 ### RejectedAuthorityRpcSends [#rejectedauthorityrpcsends]
 
@@ -391,6 +391,22 @@ public bool IsFenced { get; }
 
 This worker cannot currently prove it is alive to the control plane: its own row, as its mirror shows it, has had no heartbeat for more than [`NebulaConfig.WorkerTimeoutSeconds`](/docs/reference/core/nebula-config#workertimeoutseconds), or the row is gone because the orchestrator declared it dead. The orchestrator applies the same test before it deals a worker's containers to someone else, so while this is true those containers may already be restored on another worker. A fenced worker keeps simulating, but it saves nothing, restores nothing and hands no entity over, so it cannot overwrite or duplicate the new owner's copy; it is unfenced when its next heartbeat lands. See `docs/persistence-durability.md` D8.
 
+### MaxLagTicks [#maxlagticks]
+
+```csharp
+public static int MaxLagTicks { get; }
+```
+
+Most ticks the worker may run behind the wall clock before it skips the missing tick numbers (everything runs a little slow for a moment) rather than simulate them back-to-back, which would only push the next frame further behind. A skipped tick is one an owner's client predicted and the worker never ran, so its entity ends that tick's step short of where its owner has it and is corrected (NEB-479). A quarter of a second ([`MaxLagSeconds`](#maxlagseconds)): 15 ticks at 60 Hz, 8 at 30.
+
+### SustainedSkipTicks [#sustainedskipticks]
+
+```csharp
+public static uint SustainedSkipTicks { get; }
+```
+
+Skips closer together than this (a second) mean the worker is overloaded rather than past a hitch: predicted entities then are not stepped through the ticks it skipped ([`PredictedBehaviourBase.ReplaySkippedTicks`](/docs/reference/core/predicted-behaviour-base#replayskippedticks)), and their owners are corrected instead, so the work the worker could not afford is not added back on top of the next tick.
+
 ### SequencedRpcsSentReliable [#sequencedrpcssentreliable]
 
 ```csharp
@@ -406,6 +422,30 @@ public PortalQueries PortalQueries { get; }
 ```
 
 Raycasts, sweeps and overlaps that continue through an open portal, on this worker, with an optional rewind of the history it keeps (`docs/portals.md` D32, D33).
+
+### ClientRequestsApplied [#clientrequestsapplied]
+
+```csharp
+public long ClientRequestsApplied { get; }
+```
+
+Client requests this worker applied (ran a handler for) since it started.
+
+### ClientRequestsForwarded [#clientrequestsforwarded]
+
+```csharp
+public long ClientRequestsForwarded { get; }
+```
+
+Client requests this worker passed on to the entity's new owner since it started.
+
+### ClientRequestsRejected [#clientrequestsrejected]
+
+```csharp
+public long[] ClientRequestsRejected { get; } = new long[16];
+```
+
+Client requests this worker rejected since it started, by outcome (index = [`ClientRequestOutcome`](/docs/reference/protocol/client-request-outcome)).
 
 ### HeldContainers [#heldcontainers]
 
@@ -744,7 +784,9 @@ public bool TryCommitTransfers(IReadOnlyList<InstanceTransfer> transfers, Double
 
 Commit a group only when every member is ready. Each member must have its own preparation and admission check.
 
-A member riding in another member's carried container ([`NetworkIdentity.Carried`](/docs/reference/core/network-identity#carried)), at any depth (the crew of a ship that is itself in the group), keeps its seat: it moves with its carrier and stays inside it, so it arrives in the destination scope through the carrier instead of being put down in the destination container. Its preparation is still what readies its owner's client for the destination.
+A member riding in another member's carried container ([`NetworkIdentity.Carried`](/docs/reference/core/network-identity#carried)), at any depth (the crew of a ship that is itself in the group, a ship landed in a carrier and its crew), keeps its seat: it moves with its carrier and stays inside it, so it arrives in the destination scope through the carrier instead of being put down in the destination container. Its preparation is still what readies its owner's client for the destination. What every member recorded in the old scope ([`NetworkIdentity.StateAt`](/docs/reference/core/network-identity#stateat)) and a carrier's frame motion follow it (NEB-497).
+
+A group is never split across workers: when anything in a carrier's box, at any depth, is simulated by another worker (a rider handed to it, an interior or a room leased to it), nothing is committed, false is returned, and the carrier's preparation says why in [`InstanceTransfer.Error`](/docs/reference/worker/instance-transfer#error). Bring it to this worker (or out of the carrier) and prepare the group again.
 
 | Parameter | Description |
 | --- | --- |

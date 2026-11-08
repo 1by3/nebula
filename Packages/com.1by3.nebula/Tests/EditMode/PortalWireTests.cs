@@ -29,8 +29,8 @@ namespace Nebula.Tests
             Assert.AreEqual(27, (int)MsgId.Portals);
             Assert.AreEqual(28, (int)MsgId.PortalLinks);
             Assert.AreEqual(29, (int)MsgId.PortalWarm);
-            Assert.AreEqual(31, HelloMsg.ProtocolVersion, "30 (motion fidelity) and 31 (NEB-484, the dropped ticks) are additive, so the window is N-1..N, 30..31");
-            Assert.AreEqual(30, HelloMsg.MinProtocolVersion, "a client of 27 is refused: portals are not additive in meaning (D46); 29 fell out of the N-1 window at 31");
+            Assert.AreEqual(32, HelloMsg.ProtocolVersion, "30 (motion fidelity), 31 (NEB-484, the dropped ticks) and 32 (client requests) are additive, so the window is N-1..N, 31..32");
+            Assert.AreEqual(31, HelloMsg.MinProtocolVersion, "a client of 27 is refused: portals are not additive in meaning (D46); 30 fell out of the N-1 window at 32");
         }
 
         [Test]

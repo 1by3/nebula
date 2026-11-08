@@ -27,14 +27,6 @@ public WorkerLoadTracker(Func<double> now);
 
 ## Fields
 
-### TickPeriodMs [#tickperiodms]
-
-```csharp
-public const float TickPeriodMs = 1000f / NetworkTime.TickRate;
-```
-
-One simulated tick's wall-clock budget, in milliseconds ([`NetworkTime.TickRate`](/docs/reference/core/network-time#tickrate)).
-
 ### Percentile [#percentile]
 
 ```csharp
@@ -60,6 +52,14 @@ public int MinSamples = 3;
 How many heartbeats a worker must have inside the window before its utilization means anything. Below this it reads as 0 % busy simply because nothing has been reported yet, and the worker is not considered for retirement ([`WorkerScaler.IsWarm`](/docs/reference/orchestrator/worker-scaler#iswarm)).
 
 ## Properties
+
+### TickPeriodMs [#tickperiodms]
+
+```csharp
+public static float TickPeriodMs { get; }
+```
+
+One simulated tick's wall-clock budget, in milliseconds ([`NetworkTime.TickRate`](/docs/reference/core/network-time#tickrate)).
 
 ### Count [#count]
 

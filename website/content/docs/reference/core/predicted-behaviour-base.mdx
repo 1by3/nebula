@@ -22,13 +22,13 @@ public const int MaxServerEventsPerTick = 4;
 
 The most server events that can apply on one tick of one entity. More are refused and counted in [`ServerEventsDropped`](#servereventsdropped).
 
-### ServerEventRepeatTicks [#servereventrepeatticks]
+### ServerEventRepeatSeconds [#servereventrepeatseconds]
 
 ```csharp
-public const int ServerEventRepeatTicks = 30;
+public const float ServerEventRepeatSeconds = 0.5f;
 ```
 
-For how many ticks after the tick it applies on a server event keeps being sent in the owner's reports, so a lost packet does not lose it. The owner ignores the repeats.
+For how long after the tick it applies on a server event keeps being sent in the owner's reports, so a lost packet does not lose it: half a second. The owner ignores the repeats.
 
 ## Properties
 
@@ -79,6 +79,34 @@ public float MaxCorrectionMagnitude { get; protected set; }
 ```
 
 The largest correction since [`ResetCorrectionStats`](#resetcorrectionstats) (or spawn): one big snap hides among many small ones otherwise.
+
+### Rebases [#rebases]
+
+```csharp
+public int Rebases { get; protected set; }
+```
+
+Owning client (NEB-484): reports that came after ticks the worker did not simulate this entity through, which the client took as its new base instead of counting a correction. The magnitude is how far the prediction of that tick was from the worker's: the motion of the inputs the worker dropped, the real divergence, applied at once (it is not eased like a misprediction).
+
+### LastRebaseMagnitude [#lastrebasemagnitude]
+
+```csharp
+public float LastRebaseMagnitude { get; protected set; }
+```
+
+### MaxRebaseMagnitude [#maxrebasemagnitude]
+
+```csharp
+public float MaxRebaseMagnitude { get; protected set; }
+```
+
+### TicksDropped [#ticksdropped]
+
+```csharp
+public int TicksDropped { get; protected set; }
+```
+
+Authority (NEB-484): ticks this entity was not stepped through since spawn.
 
 ### CorrectionSmoothingSeconds [#correctionsmoothingseconds]
 
@@ -233,6 +261,14 @@ public int SkippedTicksStepped { get; protected set; }
 ```
 
 Authority: ticks run as part of a catch-up after the worker skipped their numbers (NEB-412).
+
+### ServerEventRepeatTicks [#servereventrepeatticks]
+
+```csharp
+public static int ServerEventRepeatTicks { get; }
+```
+
+[`ServerEventRepeatSeconds`](#servereventrepeatseconds) in ticks at the running rate (30 at 60 Hz).
 
 ### ServerEventsPosted [#servereventsposted]
 

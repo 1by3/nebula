@@ -1,0 +1,62 @@
+---
+title: "ReadinessHolds"
+description: "The application's say in a portal link's readiness (docs/portals.md D10, condition 6): the worker that owns a container can hold it \"not ready yet\" while it does something the game needs done before anyone comes through, such as spawning..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/ReadinessHolds.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/ReadinessHolds.cs)</div>
+
+```csharp
+public static class ReadinessHolds
+```
+
+The application's say in a portal link's readiness (`docs/portals.md` D10, condition 6): the worker that owns a container can hold it "not ready yet" while it does something the game needs done before anyone comes through, such as spawning the population of a level the link leads into. A link whose far window touches a held container stays [`PortalState.Preparing`](/docs/reference/protocol/portal-state#preparing) with [`PortalWait.FarContentHeld`](/docs/reference/protocol/portal-wait#farcontentheld), whichever worker owns the portal: a far worker answers the link's preparation (D35) only once its container is released.
+
+A hold is named by a reason, so independent systems can hold one container and each releases only its own. It holds a link that is preparing; a link that is already open stays open. It is local to the process that placed it: it lives on the worker that owns the container, and a container that moves to another worker is not held there (that worker's application holds it again if it should).
+
+**It never wedges a link.** Every hold expires `timeoutSeconds` after it was placed (by default [`DefaultTimeoutSeconds`](#defaulttimeoutseconds)) even if nobody releases it, with a warning: the application should release sooner, and a hold placed again restarts its clock.
+
+## Fields
+
+### DefaultTimeoutSeconds [#defaulttimeoutseconds]
+
+```csharp
+public const float DefaultTimeoutSeconds = 30f;
+```
+
+How long a hold lasts when nobody releases it, seconds, unless [`Hold`](#hold) is given another time.
+
+## Methods
+
+### Hold [#hold]
+
+```csharp
+public static void Hold(Container container, string reason, float timeoutSeconds = DefaultTimeoutSeconds);
+```
+
+Hold `container` not ready for `reason` until [`Release`](#release) or `timeoutSeconds` from now, whichever comes first. Holding it again for the same reason restarts the clock.
+
+### Release [#release]
+
+```csharp
+public static bool Release(Container container, string reason);
+public static bool Release(string containerId, string reason);
+```
+
+Release `container`'s hold for `reason`. True when there was one.
+
+### IsHeld [#isheld]
+
+```csharp
+public static bool IsHeld(Container container);
+public static bool IsHeld(string containerId);
+```
+
+Whether `container` is held now. A hold whose time ran out is dropped here, with a warning.
+
+### IsHeldFor [#isheldfor]
+
+```csharp
+public static bool IsHeldFor(string containerId, string reason);
+```
+
+Whether the container with id `containerId` has a hold for `reason` that has not run out.

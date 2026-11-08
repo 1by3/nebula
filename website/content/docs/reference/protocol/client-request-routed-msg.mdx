@@ -1,0 +1,128 @@
+---
+title: "ClientRequestRoutedMsg"
+description: "A client request stamped by the gateway (MsgId.ClientRequestRouted, protocol 32): the request as the client sent it, beside who the gateway knows the sender to be."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct ClientRequestRoutedMsg
+```
+
+A client request stamped by the gateway ([`MsgId.ClientRequestRouted`](/docs/reference/protocol/msg-id#clientrequestrouted), protocol 32): the request as the client sent it, beside who the gateway knows the sender to be. The stamp is the gateway's, never the client's: it is built from the connection, and a worker accepts it only from a gateway or a worker of the mesh. The worker with authority over the entity decodes it and hands the handler a [`ClientRequestContext`](/docs/reference/core/client-request-context).
+
+## Fields
+
+### ClientId [#clientid]
+
+```csharp
+public ulong ClientId;
+```
+
+### Identity [#identity]
+
+```csharp
+public string Identity;
+```
+
+The sender's verified identity across sessions ([`PlayerIdentity`](/docs/reference/gateway/player-identity)); empty only for a client the gateway did not identify.
+
+### Claims [#claims]
+
+```csharp
+public IReadOnlyDictionary<string, string> Claims;
+```
+
+The claims of the sender's verified token that the mesh forwards ([`NebulaConfig.ForwardedClaims`](/docs/reference/core/nebula-config#forwardedclaims)); empty, never null, for an anonymous player.
+
+### PawnNetId [#pawnnetid]
+
+```csharp
+public ulong PawnNetId;
+```
+
+The net id of the sender's pawn, or 0 when it has none yet.
+
+### HasPawnPosition [#haspawnposition]
+
+```csharp
+public bool HasPawnPosition;
+```
+
+True when [`PawnPosition`](#pawnposition) is meaningful.
+
+### PawnPosition [#pawnposition]
+
+```csharp
+public Vector3 PawnPosition;
+```
+
+Where the gateway last saw the sender's pawn, in the scope's own absolute space: the gateway's copy, one interest update old at worst.
+
+### CallId [#callid]
+
+```csharp
+public uint CallId;
+```
+
+The client's id for this request, echoed in the reply.
+
+### Flags [#flags]
+
+```csharp
+public ClientRequestFlags Flags;
+```
+
+### Hops [#hops]
+
+```csharp
+public byte Hops;
+```
+
+How many workers have forwarded this request so far. 0 as the gateway sends it.
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId;
+```
+
+### BehaviourIndex [#behaviourindex]
+
+```csharp
+public byte BehaviourIndex;
+```
+
+### MethodHash [#methodhash]
+
+```csharp
+public uint MethodHash;
+```
+
+### Args [#args]
+
+```csharp
+public byte[] Args;
+```
+
+## Properties
+
+### WantsReply [#wantsreply]
+
+```csharp
+public bool WantsReply { get; }
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static ClientRequestRoutedMsg Read(NetworkReader r);
+```

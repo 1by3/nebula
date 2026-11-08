@@ -1,0 +1,74 @@
+---
+title: "ClientRequestMsg"
+description: "A [ClientRequestRpc] as the client sends it to its gateway (MsgId.ClientRequest, protocol 32)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct ClientRequestMsg
+```
+
+A `[ClientRequestRpc]` as the client sends it to its gateway ([`MsgId.ClientRequest`](/docs/reference/protocol/msg-id#clientrequest), protocol 32). It says nothing about who sent it: the gateway knows that from the connection, and what it forwards is a [`ClientRequestRoutedMsg`](/docs/reference/protocol/client-request-routed-msg) it built itself. Everything in it is untrusted.
+
+## Fields
+
+### CallId [#callid]
+
+```csharp
+public uint CallId;
+```
+
+The client's id for this request, echoed in the reply; 0 when no reply is wanted.
+
+### Flags [#flags]
+
+```csharp
+public ClientRequestFlags Flags;
+```
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId;
+```
+
+### BehaviourIndex [#behaviourindex]
+
+```csharp
+public byte BehaviourIndex;
+```
+
+### MethodHash [#methodhash]
+
+```csharp
+public uint MethodHash;
+```
+
+### Args [#args]
+
+```csharp
+public byte[] Args;
+```
+
+## Properties
+
+### WantsReply [#wantsreply]
+
+```csharp
+public bool WantsReply { get; }
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static ClientRequestMsg Read(NetworkReader r);
+```

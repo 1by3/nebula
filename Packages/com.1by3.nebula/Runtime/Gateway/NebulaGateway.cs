@@ -56,6 +56,10 @@ namespace Nebula
             /// <summary>Non-zero: the join was refused and the link is dropped at this time (after the rejection has been delivered).</summary>
             public float DisconnectAt;
             public ulong PawnNetId;
+            /// <summary>This client's token bucket for <c>[ClientRequestRpc]</c> calls (<see cref="ClientRequestGate"/>).</summary>
+            public RequestBucket RequestBucket;
+            /// <summary>The earliest time another dropped-request line may be logged for this client.</summary>
+            public double NextRequestLog;
             /// <summary>The interest set: exactly the entities this client has replicas of.</summary>
             public readonly HashSet<ulong> Visible = new HashSet<ulong>();
             /// <summary>The set's state machine (hysteresis, linger, authorization). Created on the first evaluation.</summary>
@@ -1305,6 +1309,7 @@ namespace Nebula
                 case MsgId.SyncAudience: OnSyncAudience(w, SyncAudienceMsg.Read(r)); break;
                 case MsgId.Portals: OnPortals(w, PortalsMsg.Read(r)); break;
                 case MsgId.PortalLinks: OnPortalLinks(w, PortalLinksMsg.Read(r)); break;
+                case MsgId.ClientRequestReply: OnClientRequestReply(w, ClientRequestReplyMsg.Read(r)); break;
                 default: NebulaLog.Warn($"gateway got unexpected {id} from worker {w.WorkerId}"); break;
             }
         }
@@ -2093,6 +2098,7 @@ namespace Nebula
                     break;
                 }
                 case MsgId.PortalWarm: OnPortalWarm(c, PortalWarmMsg.Read(r)); break;
+                case MsgId.ClientRequest: OnClientRequest(c, ClientRequestMsg.Read(r)); break;
                 case MsgId.ClientFocusHint: OnClientFocusHint(c, ClientFocusHintMsg.Read(r)); break;
                 case MsgId.Goodbye: OnGoodbye(c); break;
                 case MsgId.Ping:

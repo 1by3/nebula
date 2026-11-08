@@ -28,7 +28,7 @@ A detach keeps the entity in its container, where it is. Its body turns dynamic 
 public int DetachSettleTicks = 10;
 ```
 
-For this many ticks after a detach the body's depenetration speed is capped at DetachDepenetrationVelocity, so an overlap is eased apart instead of launching the body.
+For this many ticks after a detach the body's depenetration speed is capped at [`DetachDepenetrationVelocity`](#detachdepenetrationvelocity). Counted at 60 Hz ([`NetworkTime.DefaultTickRate`](/docs/reference/core/network-time#defaulttickrate)) and rescaled at another tick rate, so it lasts as long.
 
 ### DetachDepenetrationVelocity [#detachdepenetrationvelocity]
 

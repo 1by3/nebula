@@ -569,6 +569,10 @@ namespace Nebula
             if (!string.IsNullOrWhiteSpace(Config.NameClaim)) args += $" -nebula-auth-name-claim {Config.NameClaim.Trim()}";
             if (!string.IsNullOrEmpty(Config.AuthSigningKey)) args += $" -nebula-auth-key {Config.AuthSigningKey}";
             if (!Config.SingleSessionPerPlayer) args += " -nebula-single-session false";
+            // The gateway admits client requests (docs/client-requests.md): it gets the limits the orchestrator was configured with.
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            args += string.Format(inv, " -nebula-client-request-bytes {0} -nebula-client-request-rate {1} -nebula-client-request-burst {2} -nebula-entity-request-rate {3} -nebula-entity-request-burst {4}",
+                Config.ClientRequestMaxBytes, Config.ClientRequestsPerSecond, Config.ClientRequestBurst, Config.EntityRequestsPerSecond, Config.EntityRequestBurst);
             // Client link encryption is the gateway's business, but its configuration arrives here (docs/transport-encryption.md).
             if (!Config.EncryptClients) args += " -nebula-encrypt-clients false";
             if (Config.RequireEncryption) args += " -nebula-require-encryption true";

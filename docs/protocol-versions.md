@@ -6,7 +6,7 @@ The policy itself, and why it is shaped this way, is `docs/compatibility-policy.
 ## The rule, in one paragraph
 
 A **client** may talk to a **gateway** that accepts its protocol: the accepted range is
-`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 29..30; protocols 28 and older are not supported. Anything outside that is refused
+`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 31..32; protocols 30 and older are not supported. Anything outside that is refused
 with `JoinRejectReason.ProtocolUnsupported` and the gateway's range, so the client can tell "update the game"
 from "this server has not been upgraded yet". A **gateway, worker and orchestrator of one mesh** must speak the
 **same** protocol, exactly; a mismatch is refused with a logged reason. The game's own content version is a
@@ -42,6 +42,8 @@ Protocol numbers are read from `HelloMsg.ProtocolVersion` at each release tag (`
 | v0.1.0-beta.2 | 28 | portals (NEB-428, `docs/portals.md` D45, D46): messages `Portals` (27), `PortalLinks` (28) and `PortalWarm` (29) and a trailing link id on `InstancePrepare` and `InstanceReady`; additive bytes but not meaning, so **closes the window to 28..28**, pre-1.0 |
 | unreleased | 29 | tick-stamped server events on predicted entities (NEB-474): a trailing events section of `OwnerState` and of the handover's pending inputs; **additive**, so the window is 28..29 |
 | unreleased | 30 | motion fidelity on the identity stream (NEB-406): an extension byte, angular velocity and precise rotation in `EntityStateEntry`; **additive**, so the window is 29..30. Also: a client of 30 runs at `WelcomeMsg.TickRate` (NEB-381, `docs/tick-rate.md`); a gateway whose mesh is not at 60 Hz narrows the window to 30..30 |
+| unreleased | 31 | the ticks a worker dropped, reported to the owner (NEB-484): a trailing range on `OwnerState`; **additive**, so the window is 30..31 |
+| unreleased | 32 | client requests (FND-50, `docs/client-requests.md`): messages `ClientRequest` (53), `ClientRequestRouted` (54), `ClientRequestReply` (55); **additive**, so the window is 31..32 |
 
 Every step in that table was breaking, because until now there was no window to be additive inside: a gateway
 required an exact match, and `HelloMsg.Write` could not even announce a version other than the one it was built
@@ -159,6 +161,10 @@ Protocol 30 also means the client runs at the rate the gateway's `Welcome` carri
 was always written, as 60, and a client of 29 ignores it. A gateway at the default 60 Hz keeps the window 29..30; a gateway at any
 other rate admits 30 only and refuses 29 with `ProtocolUnsupported` (`ProtocolCompatibility.MinClientProtocol`,
 `ConformanceProtocolCompatibilityTests.AMeshAt30HzRefusesAProtocol29ClientAndWelcomesACurrentOneWithItsRate`).
+
+31 is additive: the ticks a worker dropped for a predicted entity (NEB-484). `OwnerState` gains a trailing dropped-tick range, which a gateway writes only to clients that negotiated 31 (`HelloMsg.DroppedTicksVersion`). The window is 30..31.
+
+32 is additive: client requests (`[ClientRequestRpc]`, FND-50, `docs/client-requests.md`). Three new message ids and no change to any existing message: `ClientRequest` (53, client to gateway), `ClientRequestRouted` (54, gateway to worker, or worker to worker when the entity has moved) and `ClientRequestReply` (55, worker or gateway to client). A client of 31 never sends 53 and is never sent 55, so it is sent exactly the bytes it was and nothing is gated on the negotiated version (`HelloMsg.ClientRequestVersion` names the first protocol that has them). Workers and gateways match exactly. The window is 31..32: `MinProtocolVersion` moves to 31 (N-1, D1), so clients of 30 are refused. `protocol-32-handshake.json` was recorded for the next bump, and the protocol-30 recording remains for the refusal test.
 
 ## Bumping the protocol
 

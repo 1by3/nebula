@@ -127,6 +127,7 @@ These scenarios check the [portals](/docs/guides/instancing) that join two scope
 | 74 | A client draws several scopes at once, each at its pose against the anchor scope. | Available |
 | 75 | Each drawn scope holds a rendering-layer slot, and Nebula stamps only the reserved bits. | Available |
 | 76 | A client that rejoins in the same process gets a physics scene for each scope again, and holds a scope's empty root container in that scope's scene as soon as it exists. | Available |
+| 79 | A client sends a request to an entity it does not own on another worker than its pawn's: the gateway routes it to the worker with authority, stamped with the sender, and the reply reaches the client. Oversize, unknown-entity, out-of-interest and rate-limited requests are dropped with a reason. | Available |
 
 ## Read a failure
 

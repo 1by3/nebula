@@ -1,0 +1,124 @@
+---
+title: "ClientRequestGate"
+description: "The gateway's admission rules for a client request, in one place and with no engine types, so the gateway, the standalone services and the tests run the same code."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/ClientRequestContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/ClientRequestContract.cs)</div>
+
+```csharp
+public sealed class ClientRequestGate
+```
+
+The gateway's admission rules for a client request, in one place and with no engine types, so the gateway, the standalone services and the tests run the same code. The rules, in the order they are checked; the first that fails decides:
+
+1. The arguments are larger than [`MaxBytes`](#maxbytes): [`ClientRequestOutcome.RejectedTooLarge`](/docs/reference/protocol/client-request-outcome#rejectedtoolarge).
+2. The gateway has no such entity: [`ClientRequestOutcome.RejectedUnknownEntity`](/docs/reference/protocol/client-request-outcome#rejectedunknownentity).
+3. The entity is not in the sender's interest set: [`ClientRequestOutcome.RejectedNotInInterest`](/docs/reference/protocol/client-request-outcome#rejectednotininterest).
+4. The sender is over its rate: [`ClientRequestOutcome.RejectedClientRateLimit`](/docs/reference/protocol/client-request-outcome#rejectedclientratelimit). A request that gets this far spends one of the sender's tokens, whatever happens next, so a client cannot flood a busy entity for free.
+5. The entity is over its rate, across every sender: [`ClientRequestOutcome.RejectedEntityRateLimit`](/docs/reference/protocol/client-request-outcome#rejectedentityratelimit).
+
+Size, existence and interest are checked before either rate so a request that was never going to be delivered does not spend a token or create a bucket for an entity the sender cannot see.
+
+## Constructors
+
+### ClientRequestGate [#clientrequestgate]
+
+```csharp
+public ClientRequestGate(int maxBytes, float clientRate, int clientBurst, float entityRate, int entityBurst);
+```
+
+## Properties
+
+### MaxBytes [#maxbytes]
+
+```csharp
+public int MaxBytes { get; }
+```
+
+Largest argument payload accepted, in bytes.
+
+### ClientRate [#clientrate]
+
+```csharp
+public float ClientRate { get; }
+```
+
+Per client: requests per second (0 or less: unlimited).
+
+### ClientBurst [#clientburst]
+
+```csharp
+public int ClientBurst { get; }
+```
+
+### EntityRate [#entityrate]
+
+```csharp
+public float EntityRate { get; }
+```
+
+Per entity, across every sender: requests per second (0 or less: unlimited).
+
+### EntityBurst [#entityburst]
+
+```csharp
+public int EntityBurst { get; }
+```
+
+### Admitted [#admitted]
+
+```csharp
+public long Admitted { get; }
+```
+
+Requests admitted since the gate was created.
+
+### Refused [#refused]
+
+```csharp
+public long[] Refused { get; } = new long[16];
+```
+
+Requests refused since the gate was created, by outcome (index = [`ClientRequestOutcome`](/docs/reference/protocol/client-request-outcome)).
+
+### TrackedEntities [#trackedentities]
+
+```csharp
+public int TrackedEntities { get; }
+```
+
+Entities with a bucket right now.
+
+## Methods
+
+### From [#from]
+
+```csharp
+public static ClientRequestGate From(NebulaConfig config);
+```
+
+Build a gate from the mesh configuration.
+
+### Admit [#admit]
+
+```csharp
+public ClientRequestOutcome Admit(int argBytes, bool entityKnown, bool inInterest, ref RequestBucket sender, ulong netId, double now);
+```
+
+Decide one request. Returns [`ClientRequestOutcome.Accepted`](/docs/reference/protocol/client-request-outcome#accepted) when it may be routed, otherwise the reason to drop it. `sender` is the sending client's bucket, kept in its record.
+
+### Sweep [#sweep]
+
+```csharp
+public void Sweep(double now, double idleSeconds = 30);
+```
+
+Forget the buckets of entities nobody has called for `idleSeconds`. Call every few seconds.
+
+### Forget [#forget]
+
+```csharp
+public void Forget(ulong netId);
+```
+
+Forget one entity's bucket (it despawned).

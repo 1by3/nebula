@@ -41,12 +41,33 @@ namespace Nebula
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class AuthorityRpcAttribute : Attribute { }
 
-    internal enum RpcKind : byte { Client, Server, Authority }
+    /// <summary>
+    /// Sent by any client to any entity in its interest set, owned or not, and run on the worker with authority over the
+    /// entity: the way a player touches, sits on, takes or edits an object that is not theirs. The first parameter of the
+    /// method must be a <see cref="ClientRequestContext"/>, which Nebula fills in with who sent the call; the rest are the
+    /// arguments the client sent.
+    /// <para>
+    /// <b>Everything the client sent is untrusted.</b> Nebula only guarantees who the sender is (the gateway stamped it
+    /// from the connection), that the entity was in the sender's interest set when the gateway admitted it, and that the
+    /// call was within the size and rate limits. Whether the sender may do this, is near enough, owns what they say they own,
+    /// and sent sane numbers is the handler's to check, every time. A handler that trusts an argument is an exploit.
+    /// </para>
+    /// <para>
+    /// Send it with <c>ClientRequest</c> or <c>ClientRequestWithReply</c> from a <see cref="NetworkBehaviour"/> on the client. See
+    /// the Client requests guide.
+    /// </para>
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Method)]
+    public sealed class ClientRequestRpcAttribute : Attribute { }
+
+    internal enum RpcKind : byte { Client, Server, Authority, ClientRequest }
 
     internal sealed class RpcMethod
     {
         public MethodInfo Method;
         public Type[] ParameterTypes;
+        /// <summary>ClientRequest only: the method's first parameter is a <see cref="ClientRequestContext"/>, which is not on the wire and is not in <see cref="ParameterTypes"/>.</summary>
+        public bool TakesContext;
         public RpcKind Kind;
         public uint Hash;
         public string Name;
@@ -90,20 +111,26 @@ namespace Nebula
                     if (clientAttr != null) { kind = RpcKind.Client; radius = clientAttr.Radius; delivery = clientAttr.Delivery == Delivery.Sequenced ? Delivery.Sequenced : Delivery.ReliableOrdered; }
                     else if (m.GetCustomAttribute<ServerRpcAttribute>() != null) kind = RpcKind.Server;
                     else if (m.GetCustomAttribute<AuthorityRpcAttribute>() != null) kind = RpcKind.Authority;
+                    else if (m.GetCustomAttribute<ClientRequestRpcAttribute>() != null) kind = RpcKind.ClientRequest;
                     else continue;
 
                     var ps = m.GetParameters();
-                    var types = new Type[ps.Length];
-                    for (int i = 0; i < ps.Length; i++)
+                    // A client request's first parameter is the sender, filled in by Nebula and never read from the wire.
+                    bool takesContext = kind == RpcKind.ClientRequest;
+                    if (takesContext && (ps.Length == 0 || ps[0].ParameterType != typeof(ClientRequestContext)))
+                        throw new InvalidOperationException($"[ClientRequestRpc] {t.Name}.{m.Name}: the first parameter must be a ClientRequestContext, which carries who sent the call");
+                    int skip = takesContext ? 1 : 0;
+                    var types = new Type[ps.Length - skip];
+                    for (int i = skip; i < ps.Length; i++)
                     {
-                        types[i] = ps[i].ParameterType;
-                        if (!NetworkSerialization.CanSerialize(types[i]))
-                            throw new InvalidOperationException($"RPC {t.Name}.{m.Name}: parameter '{ps[i].Name}' of type {types[i].Name} is not network-serialisable");
+                        types[i - skip] = ps[i].ParameterType;
+                        if (!NetworkSerialization.CanSerialize(ps[i].ParameterType))
+                            throw new InvalidOperationException($"RPC {t.Name}.{m.Name}: parameter '{ps[i].Name}' of type {ps[i].ParameterType.Name} is not network-serialisable");
                     }
                     uint hash = Hash(m.Name);
                     if (table.ContainsKey(hash))
                         throw new InvalidOperationException($"RPC name collision on {t.Name}: {m.Name} (overloads are not supported)");
-                    table[hash] = new RpcMethod { Method = m, ParameterTypes = types, Kind = kind, Hash = hash, Name = m.Name, Radius = radius, Delivery = delivery };
+                    table[hash] = new RpcMethod { Method = m, ParameterTypes = types, Kind = kind, TakesContext = takesContext, Hash = hash, Name = m.Name, Radius = radius, Delivery = delivery };
                 }
             }
             Tables[type] = table;
@@ -118,7 +145,7 @@ namespace Nebula
         public static RpcMethod Require(Type type, string name)
         {
             var m = Lookup(type, Hash(name));
-            if (m == null) throw new InvalidOperationException($"{type.Name}.{name} is not marked [ClientRpc]/[ServerRpc]/[AuthorityRpc]");
+            if (m == null) throw new InvalidOperationException($"{type.Name}.{name} is not marked [ClientRpc]/[ServerRpc]/[AuthorityRpc]/[ClientRequestRpc]");
             return m;
         }
 
@@ -130,12 +157,54 @@ namespace Nebula
             }
         }
 
+        /// <summary>
+        /// Run a client request's handler. Only a <c>[ClientRequestRpc]</c> method can be reached this way: the hash comes
+        /// from a client, and a client must not be able to name a <c>[ClientRpc]</c>, <c>[ServerRpc]</c> or <c>[AuthorityRpc]</c>
+        /// by guessing its hash. Never throws for what a client sent; the outcome says what went wrong.
+        /// </summary>
+        public static ClientRequestOutcome InvokeClientRequest(NetworkBehaviour target, uint hash, NetworkReader args, ClientRequestContext context)
+        {
+            var m = Lookup(target.GetType(), hash);
+            if (m == null || m.Kind != RpcKind.ClientRequest)
+            {
+                NebulaLog.Warn($"client request for {target.GetType().Name}: method {hash:x} is not a [ClientRequestRpc]; dropped");
+                return ClientRequestOutcome.RejectedNoHandler;
+            }
+            var values = new object[m.ParameterTypes.Length + 1];
+            values[0] = context;
+            try
+            {
+                for (int i = 0; i < m.ParameterTypes.Length; i++) values[i + 1] = NetworkSerialization.ReadObject(args, m.ParameterTypes[i]);
+            }
+            catch (Exception e)
+            {
+                NebulaLog.Warn($"client request {target.GetType().Name}.{m.Name} from client {context.ClientId}: the arguments did not decode ({e.GetType().Name}: {e.Message}); dropped");
+                return ClientRequestOutcome.RejectedBadArguments;
+            }
+            try
+            {
+                m.Method.Invoke(target, values);
+                return ClientRequestOutcome.Accepted;
+            }
+            catch (TargetInvocationException e)
+            {
+                NebulaLog.Error($"client request {target.GetType().Name}.{m.Name} from client {context.ClientId} threw: {e.InnerException}");
+                return ClientRequestOutcome.HandlerThrew;
+            }
+        }
+
         public static void Invoke(NetworkBehaviour target, uint hash, NetworkReader args)
         {
             var m = Lookup(target.GetType(), hash);
             if (m == null)
             {
                 NebulaLog.Warn($"Unknown RPC hash {hash} on {target.GetType().Name}");
+                return;
+            }
+            if (m.Kind == RpcKind.ClientRequest)
+            {
+                // Its first parameter is the sender, which only InvokeClientRequest supplies. Reaching it through ServerRpc or AuthorityRpc would skip that.
+                NebulaLog.Warn($"RPC {target.GetType().Name}.{m.Name} is a [ClientRequestRpc] and cannot be called as another kind; dropped");
                 return;
             }
             var values = new object[m.ParameterTypes.Length];

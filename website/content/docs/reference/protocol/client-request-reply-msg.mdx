@@ -1,0 +1,58 @@
+---
+title: "ClientRequestReplyMsg"
+description: "What became of a client request that asked for a reply (MsgId.ClientRequestReply, protocol 32)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct ClientRequestReplyMsg
+```
+
+What became of a client request that asked for a reply ([`MsgId.ClientRequestReply`](/docs/reference/protocol/msg-id#clientrequestreply), protocol 32). A worker sends it to the gateway that sent the request, which finds the client by [`ClientId`](#clientid) and passes it on; a gateway that drops a request sends it to the client directly. Two bytes of verdict at most: [`Code`](#code) is the handler's own.
+
+## Fields
+
+### ClientId [#clientid]
+
+```csharp
+public ulong ClientId;
+```
+
+### CallId [#callid]
+
+```csharp
+public uint CallId;
+```
+
+### Outcome [#outcome]
+
+```csharp
+public ClientRequestOutcome Outcome;
+```
+
+### Code [#code]
+
+```csharp
+public ushort Code;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static ClientRequestReplyMsg Read(NetworkReader r);
+```
+
+### ToResult [#toresult]
+
+```csharp
+public ClientRequestResult ToResult();
+```

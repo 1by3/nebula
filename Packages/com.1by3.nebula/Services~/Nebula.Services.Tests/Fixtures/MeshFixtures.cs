@@ -72,6 +72,8 @@ public sealed class FakeWorker : IDisposable
     public readonly List<ClientInputMsg> Inputs = new();
     /// <summary>Every <see cref="MsgId.DriveInput"/> a gateway forwarded here, as it arrived (client id stamped by the gateway).</summary>
     public readonly List<DriveInputMsg> DriveInputs = new();
+    /// <summary>Client requests the gateway routed here, as stamped, and the gateway link each came through (<see cref="ReplyToClientRequest"/> answers on it).</summary>
+    public readonly List<(int Peer, ClientRequestRoutedMsg Request)> ClientRequests = new();
     /// <summary>Every <see cref="MsgId.InstanceReady"/> a gateway relayed back from a client, in order.</summary>
     public readonly List<InstancePreparationMsg> ReadyAnswers = new();
     /// <summary>Every <see cref="MsgId.PortalWarm"/> a gateway forwarded from a member client, in order (client id stamped by the gateway).</summary>
@@ -922,7 +924,17 @@ public sealed class FakeWorker : IDisposable
             case MsgId.PortalWarm: PortalWarms.Add(PortalWarmMsg.Read(r)); break;
             case MsgId.ClientInput: Inputs.Add(ClientInputMsg.Read(r)); break;
             case MsgId.DriveInput: DriveInputs.Add(DriveInputMsg.Read(r)); break;
+            case MsgId.ClientRequestRouted: ClientRequests.Add((peerId, ClientRequestRoutedMsg.Read(r))); break;
         }
+    }
+
+    /// <summary>Answer a routed client request the way a worker does: on the gateway link it came through.</summary>
+    public void ReplyToClientRequest((int Peer, ClientRequestRoutedMsg Request) routed, ClientRequestOutcome outcome, ushort code = 0)
+    {
+        _w.Reset();
+        new ClientRequestReplyMsg { ClientId = routed.Request.ClientId, CallId = routed.Request.CallId, Outcome = outcome, Code = code }.Write(_w);
+        Transport.Send(routed.Peer, Delivery.ReliableOrdered, _w.ToSegment());
+        Transport.Flush();
     }
 
     /// <summary>
@@ -1225,6 +1237,8 @@ public sealed class FakeClient : IDisposable
     public readonly Dictionary<ulong, ulong> DriverOf = new();
     /// <summary>Every owner state the gateway passed on to this client.</summary>
     public readonly List<OwnerStateMsg> OwnerStates = new();
+    /// <summary>The replies to client requests this client asked for, in arrival order.</summary>
+    public readonly List<ClientRequestReplyMsg> RequestReplies = new();
     /// <summary>
     /// Each entity's variables as a real client would hold them: the block of the last spawn that carried one, or of
     /// the last <see cref="MsgId.EntityVars"/>, whichever came later. A spawn relayed after a newer block regresses it.
@@ -1530,7 +1544,23 @@ public sealed class FakeClient : IDisposable
             }
             case MsgId.EntityRpc: { ulong netId = EntityRpcMsg.Read(r).NetId; Note(netId); RpcsReceived++; Wire.Add("rpc " + netId); break; }
             case MsgId.OwnerState: OwnerStates.Add(OwnerStateMsg.Read(r)); break;
+            case MsgId.ClientRequestReply: RequestReplies.Add(ClientRequestReplyMsg.Read(r)); break;
         }
+    }
+
+    /// <summary>
+    /// Send a client request for <paramref name="netId"/>, as a client's <c>ClientRequest</c> does. Everything in it is whatever the
+    /// caller says, including a pawn-like stamp it could not have: the gateway must ignore it (it never reads one).
+    /// </summary>
+    public void SendClientRequest(ulong netId, uint callId = 0, byte[]? args = null, uint methodHash = 1, byte behaviour = 0)
+    {
+        var w = new NetworkWriter();
+        new ClientRequestMsg
+        {
+            CallId = callId, Flags = callId != 0 ? ClientRequestFlags.WantsReply : ClientRequestFlags.None,
+            NetId = netId, BehaviourIndex = behaviour, MethodHash = methodHash, Args = args ?? Array.Empty<byte>(),
+        }.Write(w);
+        Transport.Send(_peer, Delivery.ReliableOrdered, w.ToSegment());
     }
 
     /// <summary>The row id a container reference needs, for the kinds a client registers from rows (runtime containers).</summary>

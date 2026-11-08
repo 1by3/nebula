@@ -184,6 +184,23 @@ namespace Nebula
         /// (<see cref="PortalHandoffMsg"/>, <c>docs/portals.md</c> D44, D45). On a crash nothing is sent and the links read closed.
         /// </summary>
         PortalHandoff = 52,
+        /// <summary>
+        /// Client -> gateway: a <c>[ClientRequestRpc]</c> for any entity in the client's interest set (<see cref="ClientRequestMsg"/>, protocol 32).
+        /// The gateway checks size, existence, interest and the rate limits, then sends the worker that owns the entity a
+        /// <see cref="ClientRequestRouted"/> carrying who sent it; it never forwards this message as it came.
+        /// </summary>
+        ClientRequest = 53,
+        /// <summary>
+        /// Gateway -> worker, and worker -> worker when the entity has changed worker (<see cref="ClientRequestRoutedMsg"/>, protocol 32):
+        /// a client request stamped by the gateway with the sender's client id, verified identity, forwarded claims and
+        /// pawn. Only a gateway or a worker of the mesh can send it; a client's <see cref="ClientRequest"/> is never relayed as this.
+        /// </summary>
+        ClientRequestRouted = 54,
+        /// <summary>
+        /// Worker -> gateway -> client (<see cref="ClientRequestReplyMsg"/>, protocol 32): what became of a request that asked
+        /// for a reply. The gateway sends the same message itself when it drops the request.
+        /// </summary>
+        ClientRequestReply = 55,
     }
 
     public enum PeerRole : byte
@@ -238,12 +255,15 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 31;
+        public const ushort ProtocolVersion = 32;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 30, one behind (the window is N and N-1, docs/compatibility-policy.md D1).
+        /// The oldest client protocol the gateway accepts: 31, one behind (the window is N and N-1, docs/compatibility-policy.md D1).
+        /// Protocol 32 (client requests, <c>[ClientRequestRpc]</c>) is additive: three new messages (<see cref="MsgId.ClientRequest"/>,
+        /// <see cref="MsgId.ClientRequestRouted"/>, <see cref="MsgId.ClientRequestReply"/>) and nothing that exists changes. A client of 31 never
+        /// sends a request and is never sent a reply, so it is sent exactly the bytes it was. Clients of 30 and older are refused.
         /// Protocol 31 (NEB-484, the ticks a worker dropped) is additive: <see cref="OwnerStateMsg"/> gains a trailing dropped-tick range, which
         /// a gateway writes only to clients that negotiated 31 (<see cref="DroppedTicksVersion"/>); a client of 30 is sent the bytes it was and
-        /// counts a correction where a client of 31 re-bases. Clients of 29 and older are refused.
+        /// counts a correction where a client of 31 re-bases. Clients of 29 and older were refused.
         /// Protocol 30 (motion fidelity on the identity stream) is additive: an <see cref="EntityStateEntry"/> gains a byte of
         /// <see cref="TransformFieldsExt"/> after its field mask, an angular velocity, and 15-bit smallest-three rotations,
         /// which a gateway writes only to clients that negotiated 30 (<see cref="MotionFidelityVersion"/>); a client of 29 is
@@ -261,7 +281,9 @@ namespace Nebula
         /// drives something (<see cref="MsgId.DriveInput"/>). Gateway-to-worker and worker-to-worker connections require
         /// <see cref="ProtocolVersion"/> exactly.
         /// </summary>
-        public const ushort MinProtocolVersion = 30;
+        public const ushort MinProtocolVersion = 31;
+        /// <summary>The first protocol with client requests (<see cref="MsgId.ClientRequest"/>, <c>[ClientRequestRpc]</c>). Nothing is gated on it: a client of 31 never sends one, and is sent no reply.</summary>
+        public const ushort ClientRequestVersion = 32;
         /// <summary>The first protocol whose clients are sent <see cref="OwnerStateMsg.DroppedFrom"/> and <see cref="OwnerStateMsg.DroppedTo"/> (NEB-484).</summary>
         public const ushort DroppedTicksVersion = 31;
         /// <summary>The first protocol whose clients are sent <see cref="EntityStateEntry"/> extensions (<see cref="TransformFieldsExt"/>).</summary>
@@ -1138,6 +1160,157 @@ namespace Nebula
             Radius = r.ReadFloat(),
             Args = r.ReadBytes(),
         };
+    }
+
+    /// <summary>Flags on a <see cref="ClientRequestMsg"/> and a <see cref="ClientRequestRoutedMsg"/>.</summary>
+    [Flags]
+    public enum ClientRequestFlags : byte
+    {
+        None = 0,
+        /// <summary>The client wants a <see cref="ClientRequestReplyMsg"/> with the outcome.</summary>
+        WantsReply = 1,
+    }
+
+    /// <summary>
+    /// A <c>[ClientRequestRpc]</c> as the client sends it to its gateway (<see cref="MsgId.ClientRequest"/>, protocol 32). It says
+    /// nothing about who sent it: the gateway knows that from the connection, and what it forwards is a
+    /// <see cref="ClientRequestRoutedMsg"/> it built itself. Everything in it is untrusted.
+    /// </summary>
+    public struct ClientRequestMsg
+    {
+        /// <summary>The client's id for this request, echoed in the reply; 0 when no reply is wanted.</summary>
+        public uint CallId;
+        public ClientRequestFlags Flags;
+        public ulong NetId;
+        public byte BehaviourIndex;
+        public uint MethodHash;
+        public byte[] Args;
+
+        public bool WantsReply => (Flags & ClientRequestFlags.WantsReply) != 0;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.ClientRequest);
+            w.WriteUInt(CallId);
+            w.WriteByte((byte)Flags);
+            w.WriteULong(NetId);
+            w.WriteByte(BehaviourIndex);
+            w.WriteUInt(MethodHash);
+            w.WriteBytes(Args);
+        }
+
+        public static ClientRequestMsg Read(NetworkReader r) => new ClientRequestMsg
+        {
+            CallId = r.ReadUInt(),
+            Flags = (ClientRequestFlags)r.ReadByte(),
+            NetId = r.ReadULong(),
+            BehaviourIndex = r.ReadByte(),
+            MethodHash = r.ReadUInt(),
+            Args = r.ReadBytes(),
+        };
+    }
+
+    /// <summary>
+    /// A client request stamped by the gateway (<see cref="MsgId.ClientRequestRouted"/>, protocol 32): the request as the client sent it,
+    /// beside who the gateway knows the sender to be. The stamp is the gateway's, never the client's: it is built from the connection,
+    /// and a worker accepts it only from a gateway or a worker of the mesh. The worker with authority over the entity decodes it and
+    /// hands the handler a <see cref="ClientRequestContext"/>.
+    /// </summary>
+    public struct ClientRequestRoutedMsg
+    {
+        public ulong ClientId;
+        /// <summary>The sender's verified identity across sessions (<see cref="PlayerIdentity"/>); empty only for a client the gateway did not identify.</summary>
+        public string Identity;
+        /// <summary>The claims of the sender's verified token that the mesh forwards (<see cref="NebulaConfig.ForwardedClaims"/>); empty, never null, for an anonymous player.</summary>
+        public IReadOnlyDictionary<string, string> Claims;
+        /// <summary>The net id of the sender's pawn, or 0 when it has none yet.</summary>
+        public ulong PawnNetId;
+        /// <summary>True when <see cref="PawnPosition"/> is meaningful.</summary>
+        public bool HasPawnPosition;
+        /// <summary>Where the gateway last saw the sender's pawn, in the scope's own absolute space: the gateway's copy, one interest update old at worst.</summary>
+        public Vector3 PawnPosition;
+        /// <summary>The client's id for this request, echoed in the reply.</summary>
+        public uint CallId;
+        public ClientRequestFlags Flags;
+        /// <summary>How many workers have forwarded this request so far. 0 as the gateway sends it.</summary>
+        public byte Hops;
+        public ulong NetId;
+        public byte BehaviourIndex;
+        public uint MethodHash;
+        public byte[] Args;
+
+        public bool WantsReply => (Flags & ClientRequestFlags.WantsReply) != 0;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.ClientRequestRouted);
+            w.WriteULong(ClientId);
+            w.WriteString(Identity ?? "");
+            PlayerClaims.Write(w, Claims);
+            w.WriteULong(PawnNetId);
+            w.WriteBool(HasPawnPosition);
+            if (HasPawnPosition) w.WriteVector3(PawnPosition);
+            w.WriteUInt(CallId);
+            w.WriteByte((byte)Flags);
+            w.WriteByte(Hops);
+            w.WriteULong(NetId);
+            w.WriteByte(BehaviourIndex);
+            w.WriteUInt(MethodHash);
+            w.WriteBytes(Args);
+        }
+
+        public static ClientRequestRoutedMsg Read(NetworkReader r)
+        {
+            var m = new ClientRequestRoutedMsg
+            {
+                ClientId = r.ReadULong(),
+                Identity = r.ReadString(),
+                Claims = PlayerClaims.Read(r),
+                PawnNetId = r.ReadULong(),
+                HasPawnPosition = r.ReadBool(),
+            };
+            if (m.HasPawnPosition) m.PawnPosition = r.ReadVector3();
+            m.CallId = r.ReadUInt();
+            m.Flags = (ClientRequestFlags)r.ReadByte();
+            m.Hops = r.ReadByte();
+            m.NetId = r.ReadULong();
+            m.BehaviourIndex = r.ReadByte();
+            m.MethodHash = r.ReadUInt();
+            m.Args = r.ReadBytes();
+            return m;
+        }
+    }
+
+    /// <summary>
+    /// What became of a client request that asked for a reply (<see cref="MsgId.ClientRequestReply"/>, protocol 32). A worker sends it to
+    /// the gateway that sent the request, which finds the client by <see cref="ClientId"/> and passes it on; a gateway that drops a
+    /// request sends it to the client directly. Two bytes of verdict at most: <see cref="Code"/> is the handler's own.
+    /// </summary>
+    public struct ClientRequestReplyMsg
+    {
+        public ulong ClientId;
+        public uint CallId;
+        public ClientRequestOutcome Outcome;
+        public ushort Code;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.ClientRequestReply);
+            w.WriteULong(ClientId);
+            w.WriteUInt(CallId);
+            w.WriteByte((byte)Outcome);
+            w.WriteUShort(Code);
+        }
+
+        public static ClientRequestReplyMsg Read(NetworkReader r) => new ClientRequestReplyMsg
+        {
+            ClientId = r.ReadULong(),
+            CallId = r.ReadUInt(),
+            Outcome = (ClientRequestOutcome)r.ReadByte(),
+            Code = r.ReadUShort(),
+        };
+
+        public ClientRequestResult ToResult() => new ClientRequestResult(CallId, Outcome, Code);
     }
 
     /// <summary>Flags on an <see cref="AuthorityCallMsg"/>.</summary>

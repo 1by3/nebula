@@ -1,0 +1,31 @@
+---
+title: "ClientRequestOutcome"
+description: "Where a [ClientRequestRpc] call ended up."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/ClientRequestContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/ClientRequestContract.cs)</div>
+
+```csharp
+public enum ClientRequestOutcome : byte
+```
+
+Where a `[ClientRequestRpc]` call ended up. A caller that asked for a reply (`NetworkBehaviour.ClientRequestWithReply`) receives exactly one of these; a fire-and-forget request is decided by the same rules and only logs a rejection where it is decided. The rejections up to `HopLimit` travel on the wire; `TimedOut` and `Disconnected` are decided on the client and never sent.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="pending"></span>`Pending` | `0` | Not decided yet. Never sent on the wire. |
+| <span id="accepted"></span>`Accepted` | `1` | The worker with authority ran the handler once. The handler may still have refused the request on its own terms: see [`ClientRequestResult.Code`](/docs/reference/protocol/client-request-result#code). |
+| <span id="rejectedtoolarge"></span>`RejectedTooLarge` | `2` | The arguments were larger than [`NebulaConfig.ClientRequestMaxBytes`](/docs/reference/core/nebula-config#clientrequestmaxbytes). Dropped at the gateway. |
+| <span id="rejectedunknownentity"></span>`RejectedUnknownEntity` | `3` | The gateway holds no entity with that id, or no worker holds it any more (it despawned). |
+| <span id="rejectednotininterest"></span>`RejectedNotInInterest` | `4` | The entity exists, but not in the sender's interest set: the client does not hold a replica of it. Dropped at the gateway. |
+| <span id="rejectedclientratelimit"></span>`RejectedClientRateLimit` | `5` | The sender is over [`NebulaConfig.ClientRequestsPerSecond`](/docs/reference/core/nebula-config#clientrequestspersecond) (with [`NebulaConfig.ClientRequestBurst`](/docs/reference/core/nebula-config#clientrequestburst)). Dropped at the gateway. |
+| <span id="rejectedentityratelimit"></span>`RejectedEntityRateLimit` | `6` | The entity is over [`NebulaConfig.EntityRequestsPerSecond`](/docs/reference/core/nebula-config#entityrequestspersecond) (with [`NebulaConfig.EntityRequestBurst`](/docs/reference/core/nebula-config#entityrequestburst)), counted across every sender. Dropped at the gateway. |
+| <span id="rejectedunreachable"></span>`RejectedUnreachable` | `7` | No connected worker could take the request: the owner of the entity is not connected to the gateway, or a worker that should forward it has no link to the new owner. |
+| <span id="rejectednohandler"></span>`RejectedNoHandler` | `8` | The behaviour index or method does not exist on the entity, or the method is not a `[ClientRequestRpc]`. Only that attribute can be reached by a client request. |
+| <span id="rejectedbadarguments"></span>`RejectedBadArguments` | `9` | The arguments did not decode as the method's parameters. |
+| <span id="handlerthrew"></span>`HandlerThrew` | `10` | The handler threw. The exception is logged on the worker; the client is told only that. |
+| <span id="rejectedhoplimit"></span>`RejectedHopLimit` | `11` | The request was forwarded [`NebulaConfig.AuthorityCallMaxHops`](/docs/reference/core/nebula-config#authoritycallmaxhops) times, after the entity changed worker, without reaching its authority. |
+| <span id="timedout"></span>`TimedOut` | `12` | Decided on the client: no reply arrived before the deadline. The request may or may not have been applied. |
+| <span id="disconnected"></span>`Disconnected` | `13` | Decided on the client: the connection was not up when the request was made, or went down while it waited. |

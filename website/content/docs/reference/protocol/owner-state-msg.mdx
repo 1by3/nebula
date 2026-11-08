@@ -77,6 +77,14 @@ public byte[] Events;
 
 Server events ([`PredictedBehaviourBase.PostServerEvent<TEvent>`](/docs/reference/core/predicted-behaviour-base#postserverevent)) that apply on ticks this report knows of, in [`PredictedBehaviourBase`](/docs/reference/core/predicted-behaviour-base)'s own encoding; null or empty when there are none. Written after [`State`](#state), only when there are some, and only to a client of protocol [`HelloMsg.ServerEventsVersion`](/docs/reference/protocol/hello-msg#servereventsversion) or newer.
 
+### DroppedFrom, DroppedTo [#droppedfrom-droppedto]
+
+```csharp
+public uint DroppedFrom, DroppedTo;
+```
+
+NEB-484: the latest range of ticks the worker did not simulate this entity through (it skipped their numbers and the entity does not step skipped ticks, [`PredictedBehaviourBase.StepsSkippedServerTicks`](/docs/reference/core/predicted-behaviour-base#stepsskippedserverticks), or the worker withheld the replay while overloaded), inclusive; 0 and 0 for none. The owner re-bases on the first report after it instead of counting a misprediction. Repeated for a few reports, so one lost report does not lose it. Written after [`Events`](#events) (an empty section when there are none), only to a client of protocol [`HelloMsg.DroppedTicksVersion`](/docs/reference/protocol/hello-msg#droppedticksversion) or newer.
+
 ### NoInputLead [#noinputlead]
 
 ```csharp
@@ -90,6 +98,7 @@ public const sbyte NoInputLead = sbyte.MinValue;
 ```csharp
 public void Write(NetworkWriter w);
 public void Write(NetworkWriter w, bool includeEvents);
+public void Write(NetworkWriter w, bool includeEvents, bool includeDropped);
 ```
 
 Write the message; `includeEvents` false leaves out the trailing [`Events`](#events) section (a client that does not read it).

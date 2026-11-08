@@ -11,7 +11,7 @@ public static class ProtocolCompatibility
 
 Checks client protocol and game content versions against the gateway's supported range.
 
-The window is [`HelloMsg.MinProtocolVersion`](/docs/reference/protocol/hello-msg#minprotocolversion) to [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion), which is 19 to 20 today. Gateway-to-worker and worker-to-worker connections require [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion) exactly.
+The window is [`HelloMsg.MinProtocolVersion`](/docs/reference/protocol/hello-msg#minprotocolversion) to [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion), narrowed to [`HelloMsg.TickRateVersion`](/docs/reference/protocol/hello-msg#tickrateversion) and up on a mesh that does not run at the default tick rate ([`MinClientProtocol`](#minclientprotocol)). Gateway-to-worker and worker-to-worker connections require [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion) exactly.
 
 ## Methods
 
@@ -19,14 +19,24 @@ The window is [`HelloMsg.MinProtocolVersion`](/docs/reference/protocol/hello-msg
 
 ```csharp
 public static bool ClientProtocolAccepted(ushort version);
+public static bool ClientProtocolAccepted(ushort version, int tickRate);
 ```
 
 Returns whether the client's protocol is within the gateway's inclusive supported range.
+
+### MinClientProtocol [#minclientprotocol]
+
+```csharp
+public static ushort MinClientProtocol(int tickRate);
+```
+
+The oldest client protocol a gateway whose mesh runs at `tickRate` admits: the window's minimum at the default rate, and [`HelloMsg.TickRateVersion`](/docs/reference/protocol/hello-msg#tickrateversion) at any other, because an older client would count every tick at 60 Hz.
 
 ### WindowText [#windowtext]
 
 ```csharp
 public static string WindowText();
+public static string WindowText(int tickRate);
 ```
 
 Formats the supported protocol range for logs and refusal messages.
