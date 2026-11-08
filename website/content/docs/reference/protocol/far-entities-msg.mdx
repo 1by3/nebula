@@ -27,7 +27,10 @@ Most entries in one message; a longer list is split.
 
 ```csharp
 public static void Write(NetworkWriter w, IReadOnlyList<FarEntityEntry> entries, int from, int count);
+public static void Write(NetworkWriter w, IReadOnlyList<FarEntityEntry> entries, int from, int count, ushort version);
 ```
+
+Write for a receiver of `version` (see [`FarEntityEntry.Write`](/docs/reference/protocol/far-entity-entry#write)).
 
 ### Read [#read]
 

@@ -39,6 +39,8 @@ namespace Nebula
             HintMaxHz = InterestHintMaxHz,
             MaxExplicitPerClient = InterestMaxExplicitPerClient,
             FarMaxEntities = InterestFarMaxEntities,
+            FarClasses = InterestFarClasses,
+            FarMaxTotal = InterestFarMaxTotal,
             MaxFocusSpeed = InterestMaxFocusSpeed,
             MaxTravelPerUpdate = InterestMaxTravelPerUpdate,
             FocusLeadSeconds = InterestFocusLeadSeconds,

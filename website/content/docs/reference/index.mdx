@@ -406,6 +406,8 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [FarEntityEntry](/docs/reference/protocol/far-entity-entry) | Struct. One entity of the far relevance tier (docs/interest-management.md §16, NEB-388): a large or important entity seen beyond the normal interest radius as a pose and nothing else. |
 | [FarEntryFlags](/docs/reference/protocol/far-entry-flags) | Enum. Lists the supported far entry flags values. |
 | [FarEntryKind](/docs/reference/protocol/far-entry-kind) | Enum. What one FarEntityEntry says about its entity. |
+| [FarPose](/docs/reference/protocol/far-pose) | Struct. One compact far update as read from a FarPosesMsg: a held entity's new pose, by slot. |
+| [FarPosesMsg](/docs/reference/protocol/far-poses-msg) | Static class. Gateway -\> client, protocol 32 (docs/interest-management.md D111): compact far updates for entities the client already holds in its far tier. |
 | [GatewayDrainingMsg](/docs/reference/protocol/gateway-draining-msg) | Struct. Gateway -\> client: the gateway is draining and will close this link. |
 | [GoodbyeMsg](/docs/reference/protocol/goodbye-msg) | Struct. Client -\> gateway: the player is leaving for good (MsgId.Goodbye, protocol 23). |
 | [HelloFlags](/docs/reference/protocol/hello-flags) | Enum. Lists the supported hello flags values. |
@@ -511,6 +513,8 @@ Keep the control plane and saved entities in SQLite or PostgreSQL from the stand
 | [ConfigIssue](/docs/reference/interest/config-issue) | Struct. One problem found in a configuration, named by field so an inspector or nebula doctor can point at it. |
 | [ConfigSeverity](/docs/reference/interest/config-severity) | Enum. How much a ConfigIssue matters. |
 | [DefaultInterestPolicy](/docs/reference/interest/default-interest-policy) | Class. What a mesh does without a game policy: one focus at the pawn, plus the client's validated hint as a second focus when it has sent one. |
+| [FarClass](/docs/reference/interest/far-class) | Struct. One class of the far relevance tier (docs/interest-management.md §16, D110): a budget, a rate, a reach and a priority shared by the far entities that name it (NetworkIdentity.FarClass). |
+| [FarClassTable](/docs/reference/interest/far-class-table) | Class. The far classes resolved from InterestSettings: a lookup by id, the default class (id 0, budget InterestSettings.FarMaxEntities unless the list replaces it) and the order classes are served in. |
 | [FarPublisher](/docs/reference/interest/far-publisher) | Class. The worker's half of the far tier: which gateways hear about each far entity, and when. |
 | [FarRelevance](/docs/reference/interest/far-relevance) | Static class. The far relevance tier's arithmetic (docs/interest-management.md §16, NEB-388), shared by the worker, the gateway and the tests. |
 | [FocusHintDecision](/docs/reference/interest/focus-hint-decision) | Struct. What the server decided about one incoming focus hint: which mode to treat it in, and the point itself (a policy may move it — snap an RTS camera to the territory it is allowed to watch, say). |

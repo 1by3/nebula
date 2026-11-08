@@ -88,6 +88,10 @@ public static class Program
         public readonly Dictionary<ulong, ushort> ViewSeq = new();
         public long BytesIn;
         public long LastBytesIn;
+        /// <summary>The far tier as this client would hold it: entity to far class (<c>docs/interest-management.md</c> D110). Measured, not used.</summary>
+        public readonly Dictionary<ulong, byte> Far = new();
+        public readonly List<FarEntityEntry> FarIn = new();
+        public long FarBytes, LastFarBytes, FarPoses, LastFarPoses;
         /// <summary>This client stands still and sends no focus hint (<c>--idle</c>).</summary>
         public bool Idle;
         // Behaviour (NEB-365).
@@ -156,7 +160,7 @@ public static class Program
         if (o.Clients > 1 && o.Token.Length > 0)
             Console.WriteLine("nebula-loadgen: warning: --token makes every client the same player. Give the mesh -nebula-single-session false, or a token per client, or the gateway will keep only the newest connection.");
         StreamWriter? csv = o.Csv != null ? new StreamWriter(o.Csv) : null;
-        csv?.WriteLine("t,connected,joined,reconnects,sessionChanges,pawnLosses,rejections,packetsIn,packetsOut,bytesIn,bytesOut,rttP50,rttP95,replicasAvg,replicasMax,bytesPerClientAvg,bytesPerClientMax,gateways");
+        csv?.WriteLine("t,connected,joined,reconnects,sessionChanges,pawnLosses,rejections,packetsIn,packetsOut,bytesIn,bytesOut,rttP50,rttP95,replicasAvg,replicasMax,bytesPerClientAvg,bytesPerClientMax,gateways,farHeldAvg,farHeldMax,farBytesPerClient,farPosesPerClient,farHeldByClass");
 
         if (o.StatsFile != null)
         {
@@ -285,6 +289,7 @@ public static class Program
         c.Connected = false;
         c.Join = JoinState.None;
         c.Replicas.Clear();
+        c.Far.Clear();
         c.ViewSeq.Clear();
         c.ReconnectAt = Now + retryIn;
         c.LastError = why;
@@ -373,6 +378,7 @@ public static class Program
                 var spawn = EntitySpawnMsg.Read(r);
                 if (spawn.OwnerClientId == c.SessionId && c.SessionId != 0) c.Pawn = spawn.NetId;
                 c.Replicas.Add(spawn.NetId);
+                c.Far.Remove(spawn.NetId); // the replica replaces the marker, with no "gone" (D112)
                 c.Epochs[spawn.NetId] = spawn.Epoch;
                 {
                     if (!c.Info.TryGetValue(spawn.NetId, out var info)) c.Info[spawn.NetId] = info = new ReplicaInfo { NetId = spawn.NetId };
@@ -395,6 +401,21 @@ public static class Program
                 if (despawn.NetId == c.Pawn) c.Pawn = 0;
                 break;
             }
+            case MsgId.FarEntities:
+            {
+                c.FarBytes += r.Remaining + 1;
+                FarEntitiesMsg.Read(r, c.FarIn);
+                foreach (var entry in c.FarIn)
+                {
+                    if (entry.Kind == FarEntryKind.Gone) c.Far.Remove(entry.NetId);
+                    else if (entry.FromReplica || !c.Replicas.Contains(entry.NetId)) c.Far[entry.NetId] = entry.FarClass;
+                }
+                break;
+            }
+            case MsgId.FarPoses:
+                c.FarBytes += r.Remaining + 1;
+                c.FarPoses += r.ReadUShort();
+                break;
             case MsgId.EntityVars:
             {
                 var vars = EntityVarsMsg.Read(r);
@@ -636,11 +657,28 @@ public static class Program
             if (delta > bytesMax) bytesMax = delta;
         }
         if (joinedClients.Count > 0) bytesAvg /= joinedClients.Count;
+        // The far tier a client would draw, and what it costs: held entities on average and at most, by far class, and bytes and compact poses a second.
+        double farAvg = joinedClients.Count > 0 ? joinedClients.Average(c => c.Far.Count) : 0;
+        int farMax = joinedClients.Count > 0 ? joinedClients.Max(c => c.Far.Count) : 0;
+        double farBytes = 0, farPoses = 0;
+        var farByClass = new SortedDictionary<byte, int>();
+        foreach (var c in joinedClients)
+        {
+            farBytes += c.FarBytes - c.LastFarBytes;
+            farPoses += c.FarPoses - c.LastFarPoses;
+            c.LastFarBytes = c.FarBytes;
+            c.LastFarPoses = c.FarPoses;
+            foreach (byte cls in c.Far.Values) { farByClass.TryGetValue(cls, out int n); farByClass[cls] = n + 1; }
+        }
+        if (joinedClients.Count > 0) { farBytes /= joinedClients.Count; farPoses /= joinedClients.Count; }
+        int perClient = Math.Max(1, joinedClients.Count);
+        string farClasses = string.Join(";", farByClass.Select(kv => kv.Key + ":" + (kv.Value / (double)perClient).ToString("0.0", CultureInfo.InvariantCulture)));
         string line = $"t={t,5:0}s connected={connected}/{clients.Count} joined={joined} reconnects={reconnects} sessionChanges={changes} pawnLosses={losses} rejected={rejections} " +
                       $"in={dpin} pkt/s {dbin * 8 / 1e6:0.00} Mb/s out={dpout} pkt/s {dbout * 8 / 1e6:0.00} Mb/s rtt p50={p50:0.0} p95={p95:0.0} ms " +
-                      $"replicas avg={replicasAvg:0.0} max={replicasMax} bytes/client avg={bytesAvg / 1024:0.0} max={bytesMax / 1024:0.0} KB/s gateways[{string.Join(" ", gateways)}]";
+                      $"replicas avg={replicasAvg:0.0} max={replicasMax} bytes/client avg={bytesAvg / 1024:0.0} max={bytesMax / 1024:0.0} KB/s far avg={farAvg:0.0} max={farMax} [{farClasses}] {farBytes / 1024:0.00} KB/s gateways[{string.Join(" ", gateways)}]";
         Console.WriteLine(line);
-        csv?.WriteLine(string.Join(",", t.ToString("0", CultureInfo.InvariantCulture), connected, joined, reconnects, changes, losses, rejections, dpin, dpout, dbin, dbout, p50.ToString("0.0", CultureInfo.InvariantCulture), p95.ToString("0.0", CultureInfo.InvariantCulture), replicasAvg.ToString("0.0", CultureInfo.InvariantCulture), replicasMax, bytesAvg.ToString("0", CultureInfo.InvariantCulture), bytesMax.ToString("0", CultureInfo.InvariantCulture), string.Join(" ", gateways)));
+        csv?.WriteLine(string.Join(",", t.ToString("0", CultureInfo.InvariantCulture), connected, joined, reconnects, changes, losses, rejections, dpin, dpout, dbin, dbout, p50.ToString("0.0", CultureInfo.InvariantCulture), p95.ToString("0.0", CultureInfo.InvariantCulture), replicasAvg.ToString("0.0", CultureInfo.InvariantCulture), replicasMax, bytesAvg.ToString("0", CultureInfo.InvariantCulture), bytesMax.ToString("0", CultureInfo.InvariantCulture), string.Join(" ", gateways),
+            farAvg.ToString("0.0", CultureInfo.InvariantCulture), farMax, farBytes.ToString("0", CultureInfo.InvariantCulture), farPoses.ToString("0.0", CultureInfo.InvariantCulture), farClasses));
         ReportBehaviours(clients, t, o);
         if (o.Verbose)
         {

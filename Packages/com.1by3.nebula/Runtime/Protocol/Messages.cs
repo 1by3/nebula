@@ -185,22 +185,28 @@ namespace Nebula
         /// </summary>
         PortalHandoff = 52,
         /// <summary>
-        /// Client -> gateway: a <c>[ClientRequestRpc]</c> for any entity in the client's interest set (<see cref="ClientRequestMsg"/>, protocol 32).
+        /// Gateway -> client: compact far updates for entities the client already holds in its far tier
+        /// (<see cref="FarPosesMsg"/>, protocol 32, <c>docs/interest-management.md</c> D111). Sent only to clients that
+        /// negotiated 31 or later; older ones get every update as a full <see cref="MsgId.FarEntities"/> entry.
+        /// </summary>
+        FarPoses = 53,
+        /// <summary>
+        /// Client -> gateway: a <c>[ClientRequestRpc]</c> for any entity in the client's interest set (<see cref="ClientRequestMsg"/>, protocol 33).
         /// The gateway checks size, existence, interest and the rate limits, then sends the worker that owns the entity a
         /// <see cref="ClientRequestRouted"/> carrying who sent it; it never forwards this message as it came.
         /// </summary>
-        ClientRequest = 53,
+        ClientRequest = 54,
         /// <summary>
-        /// Gateway -> worker, and worker -> worker when the entity has changed worker (<see cref="ClientRequestRoutedMsg"/>, protocol 32):
+        /// Gateway -> worker, and worker -> worker when the entity has changed worker (<see cref="ClientRequestRoutedMsg"/>, protocol 33):
         /// a client request stamped by the gateway with the sender's client id, verified identity, forwarded claims and
         /// pawn. Only a gateway or a worker of the mesh can send it; a client's <see cref="ClientRequest"/> is never relayed as this.
         /// </summary>
-        ClientRequestRouted = 54,
+        ClientRequestRouted = 55,
         /// <summary>
-        /// Worker -> gateway -> client (<see cref="ClientRequestReplyMsg"/>, protocol 32): what became of a request that asked
+        /// Worker -> gateway -> client (<see cref="ClientRequestReplyMsg"/>, protocol 33): what became of a request that asked
         /// for a reply. The gateway sends the same message itself when it drops the request.
         /// </summary>
-        ClientRequestReply = 55,
+        ClientRequestReply = 56,
     }
 
     public enum PeerRole : byte
@@ -255,12 +261,16 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 32;
+        public const ushort ProtocolVersion = 33;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 31, one behind (the window is N and N-1, docs/compatibility-policy.md D1).
-        /// Protocol 32 (client requests, <c>[ClientRequestRpc]</c>) is additive: three new messages (<see cref="MsgId.ClientRequest"/>,
-        /// <see cref="MsgId.ClientRequestRouted"/>, <see cref="MsgId.ClientRequestReply"/>) and nothing that exists changes. A client of 31 never
-        /// sends a request and is never sent a reply, so it is sent exactly the bytes it was. Clients of 30 and older are refused.
+        /// The oldest client protocol the gateway accepts: 32, one behind (the window is N and N-1, docs/compatibility-policy.md D1).
+        /// Protocol 33 (client requests, <c>[ClientRequestRpc]</c>) is additive: three new messages (<see cref="MsgId.ClientRequest"/>,
+        /// <see cref="MsgId.ClientRequestRouted"/>, <see cref="MsgId.ClientRequestReply"/>) and nothing that exists changes. A client of 32 never
+        /// sends a request and is never sent a reply, so it is sent exactly the bytes it was. Clients of 31 and older are refused.
+        /// Protocol 32 (far classes, <c>docs/interest-management.md</c> D110 to D112) is additive: a far entry gains optional
+        /// class, slot, age and hand-over fields behind new flag bits, and a new message (<see cref="MsgId.FarPoses"/>) carries
+        /// compact far updates; a gateway writes neither to a client of 31 (<see cref="FarClassesVersion"/>), which is sent the
+        /// far entries it always was. Clients of 30 and older are refused.
         /// Protocol 31 (NEB-484, the ticks a worker dropped) is additive: <see cref="OwnerStateMsg"/> gains a trailing dropped-tick range, which
         /// a gateway writes only to clients that negotiated 31 (<see cref="DroppedTicksVersion"/>); a client of 30 is sent the bytes it was and
         /// counts a correction where a client of 31 re-bases. Clients of 29 and older were refused.
@@ -281,9 +291,11 @@ namespace Nebula
         /// drives something (<see cref="MsgId.DriveInput"/>). Gateway-to-worker and worker-to-worker connections require
         /// <see cref="ProtocolVersion"/> exactly.
         /// </summary>
-        public const ushort MinProtocolVersion = 31;
-        /// <summary>The first protocol with client requests (<see cref="MsgId.ClientRequest"/>, <c>[ClientRequestRpc]</c>). Nothing is gated on it: a client of 31 never sends one, and is sent no reply.</summary>
-        public const ushort ClientRequestVersion = 32;
+        public const ushort MinProtocolVersion = 32;
+        /// <summary>The first protocol whose clients are sent far classes, slots, ages, hand-overs and <see cref="MsgId.FarPoses"/>.</summary>
+        public const ushort FarClassesVersion = 32;
+        /// <summary>The first protocol with client requests (<see cref="MsgId.ClientRequest"/>, <c>[ClientRequestRpc]</c>). Nothing is gated on it: a client of 32 never sends one, and is sent no reply.</summary>
+        public const ushort ClientRequestVersion = 33;
         /// <summary>The first protocol whose clients are sent <see cref="OwnerStateMsg.DroppedFrom"/> and <see cref="OwnerStateMsg.DroppedTo"/> (NEB-484).</summary>
         public const ushort DroppedTicksVersion = 31;
         /// <summary>The first protocol whose clients are sent <see cref="EntityStateEntry"/> extensions (<see cref="TransformFieldsExt"/>).</summary>
@@ -1172,7 +1184,7 @@ namespace Nebula
     }
 
     /// <summary>
-    /// A <c>[ClientRequestRpc]</c> as the client sends it to its gateway (<see cref="MsgId.ClientRequest"/>, protocol 32). It says
+    /// A <c>[ClientRequestRpc]</c> as the client sends it to its gateway (<see cref="MsgId.ClientRequest"/>, protocol 33). It says
     /// nothing about who sent it: the gateway knows that from the connection, and what it forwards is a
     /// <see cref="ClientRequestRoutedMsg"/> it built itself. Everything in it is untrusted.
     /// </summary>
@@ -1211,7 +1223,7 @@ namespace Nebula
     }
 
     /// <summary>
-    /// A client request stamped by the gateway (<see cref="MsgId.ClientRequestRouted"/>, protocol 32): the request as the client sent it,
+    /// A client request stamped by the gateway (<see cref="MsgId.ClientRequestRouted"/>, protocol 33): the request as the client sent it,
     /// beside who the gateway knows the sender to be. The stamp is the gateway's, never the client's: it is built from the connection,
     /// and a worker accepts it only from a gateway or a worker of the mesh. The worker with authority over the entity decodes it and
     /// hands the handler a <see cref="ClientRequestContext"/>.
@@ -1282,7 +1294,7 @@ namespace Nebula
     }
 
     /// <summary>
-    /// What became of a client request that asked for a reply (<see cref="MsgId.ClientRequestReply"/>, protocol 32). A worker sends it to
+    /// What became of a client request that asked for a reply (<see cref="MsgId.ClientRequestReply"/>, protocol 33). A worker sends it to
     /// the gateway that sent the request, which finds the client by <see cref="ClientId"/> and passes it on; a gateway that drops a
     /// request sends it to the client directly. Two bytes of verdict at most: <see cref="Code"/> is the handler's own.
     /// </summary>

@@ -150,6 +150,14 @@ public ulong WideMaskSalted(in InterestGrid grid, ulong salt, double x, double y
 
 [`WideMask`](#widemask) for an entity whose region space is given by its salt ([`RegionKeys.SaltOf`](/docs/reference/interest/region-keys#saltof)): a scope, or a physics frame with regions of its own inside one. Only foci of the same space come out near it.
 
+### WideMasksSalted [#widemaskssalted]
+
+```csharp
+public void WideMasksSalted(in InterestGrid grid, ulong salt, double x, double y, double z, double innerRadius, double outerRadius, out ulong inner, out ulong outer);
+```
+
+[`WideMaskSalted`](#widemasksalted) at two radii in one pass over the foci (the far tier's enter and stay reach, D104): `inner` gets the gateways with a focus region within `innerRadius`, `outer` those within `outerRadius` (not less than the inner one).
+
 ### ExplicitMask [#explicitmask]
 
 ```csharp

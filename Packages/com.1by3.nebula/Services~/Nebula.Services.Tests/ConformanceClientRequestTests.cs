@@ -5,7 +5,7 @@ using NUnit.Framework;
 namespace Nebula.ServiceTests;
 
 /// <summary>
-/// Client requests (<c>docs/client-requests.md</c>, protocol 32), the pure rules: the token bucket, the gateway's admission order,
+/// Client requests (<c>docs/client-requests.md</c>, protocol 33), the pure rules: the token bucket, the gateway's admission order,
 /// a worker's routing decision, the client's reply tracker, and the wire forms. Tier A: no sockets, no engine.
 /// </summary>
 [TestFixture]
@@ -186,13 +186,13 @@ public class ClientRequestRuleTests
     }
 
     [Test]
-    public void TheWindowIs31To32AndTheMessageIdsFollowPortalHandoff()
+    public void TheWindowIs32To33AndTheMessageIdsFollowFarPoses()
     {
-        Assert.That(HelloMsg.ProtocolVersion, Is.EqualTo((ushort)32));
-        Assert.That(HelloMsg.MinProtocolVersion, Is.EqualTo((ushort)31), "additive: a client of 31 still joins");
-        Assert.That(HelloMsg.ClientRequestVersion, Is.EqualTo((ushort)32));
-        Assert.That(((int)MsgId.PortalHandoff, (int)MsgId.ClientRequest, (int)MsgId.ClientRequestRouted, (int)MsgId.ClientRequestReply), Is.EqualTo((52, 53, 54, 55)));
-        Assert.That(ProtocolCompatibility.ClientProtocolAccepted(30), Is.False);
+        Assert.That(HelloMsg.ProtocolVersion, Is.EqualTo((ushort)33));
+        Assert.That(HelloMsg.MinProtocolVersion, Is.EqualTo((ushort)32), "additive: a client of 32 still joins");
+        Assert.That(HelloMsg.ClientRequestVersion, Is.EqualTo((ushort)33));
+        Assert.That(((int)MsgId.FarPoses, (int)MsgId.ClientRequest, (int)MsgId.ClientRequestRouted, (int)MsgId.ClientRequestReply), Is.EqualTo((53, 54, 55, 56)));
+        Assert.That(ProtocolCompatibility.ClientProtocolAccepted(31), Is.False);
     }
 }
 

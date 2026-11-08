@@ -966,6 +966,22 @@ public int InterestFarMaxEntities = 64;
 
 Most entities one client holds in the far relevance tier at once (entities with a FarRelevanceRadius, seen as markers beyond the normal radius). The nearest are kept. 0 turns the far tier off for every client.
 
+### InterestFarClasses [#interestfarclasses]
+
+```csharp
+public FarClass[] InterestFarClasses = new FarClass[0];
+```
+
+Far tier classes: each has its own budget per client, update rate, radius and priority, so a busy class (a crowd of distant people) never pushes another (ships, buildings) out of a client's far tier. An entity names its class with NetworkIdentity.FarClass; class 0 is the default, budgeted by InterestFarMaxEntities. A class's rate and radius, when set, replace its entities' own. See docs/interest-management.md section 16 (D110).
+
+### InterestFarMaxTotal [#interestfarmaxtotal]
+
+```csharp
+public int InterestFarMaxTotal = 0;
+```
+
+Most far entities one client holds over every class together, served by class priority. 0 (the default) caps each class by its own budget only.
+
 ### InterestMaxFocusSpeed [#interestmaxfocusspeed]
 
 ```csharp

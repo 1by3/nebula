@@ -1,6 +1,6 @@
 # Client requests — design
 
-Status: implemented (protocol 32). User-facing page: `website/content/docs/guides/client-requests.mdx`. Tests:
+Status: implemented (protocol 33). User-facing page: `website/content/docs/guides/client-requests.mdx`. Tests:
 `ClientRequestRuleTests` and `ConformanceClientRequestGatewayTests` (`Services~/Nebula.Services.Tests/ConformanceClientRequestTests.cs`),
 `ConformanceClientRequestWorkerTests` (`Tests/EditMode`). Sibling of `docs/cross-worker-calls.md`, whose reply machinery this reuses in shape.
 
@@ -72,7 +72,7 @@ The gateway sends a `ClientRequestRouted` to the worker its entity record names 
 - `claims` — the claims `ForwardedClaims` selects from the verified token, as in `SpawnPlayer`. They are stamped on **every** request rather than looked up at the worker, because the worker handling a request often is not the one the player's pawn is on and so does not have them.
 - `pawn_net_id`, `pawn_position` — the sender's pawn and where the gateway last saw it, in scope-absolute space. The handler can range-check against the entity's `ScopePositionPrecise` without holding the pawn. The position is the gateway's copy: at most one interest update old.
 
-The client's own message (`ClientRequest`, 53) has no sender field at all, so there is nothing a client could forge and no field the gateway must remember to overwrite. The routed message (54) is accepted by a worker only from a
+The client's own message (`ClientRequest`, 54) has no sender field at all, so there is nothing a client could forge and no field the gateway must remember to overwrite. The routed message (55) is accepted by a worker only from a
 gateway or worker peer, which authenticate with the mesh token.
 
 A worker that receives a request for an entity it has only a ghost of passes it to the worker it believes has authority (the same `ForwardPeerFor` an `AuthorityRpc` uses: where it handed the entity, else the owner its ghost names),
@@ -102,19 +102,19 @@ client cannot call it by guessing its hash through `ServerRpc` either.
 A request sent with `ClientRequestWithReply` carries a client-minted id (`uint`, never 0) and `WantsReply`. The client's `ClientRequestTracker` (the same shape as `AuthorityCallTracker`: mint, track, complete once, expire) settles it exactly once: with the
 reply, with `TimedOut` (default 5 s), or with `Disconnected` if the link went down.
 
-The reply (`ClientRequestReply`, 55) is `client_id, call_id, outcome, code`. `Accepted` means the handler ran and returned. It does not say the handler agreed: the handler may set `ClientRequestContext.ReplyCode` (a `ushort` of its own: allowed, too far,
+The reply (`ClientRequestReply`, 56) is `client_id, call_id, outcome, code`. `Accepted` means the handler ran and returned. It does not say the handler agreed: the handler may set `ClientRequestContext.ReplyCode` (a `ushort` of its own: allowed, too far,
 not yours) and that rides back as `ClientRequestResult.Code`. A reply carries no data beyond that on purpose: a game that has something to show sends a `ClientRpc`/`OwnerRpc`, which already handles who sees it.
 
 A worker answers on the gateway link the request came through. A request passed on by another worker arrives from a worker, so the owner answers through the gateway it knows holds the session if it knows one, else through every gateway it is linked to; a gateway that does not hold the client drops it.
 The gateway answers a request it dropped itself, directly. A request without `WantsReply` is never answered, whatever happens.
 
-## D6. Protocol 32 and the compatibility policy
+## D6. Protocol 33 and the compatibility policy
 
-`docs/compatibility-policy.md` D1: the window is N and N-1, and every change inside it must be additive (D3). This change adds three message ids (`ClientRequest` 53, `ClientRequestRouted` 54,
-`ClientRequestReply` 55) and changes no existing message. A client of 31 never sends 53 and is never sent 55, so it is sent exactly the bytes it was; nothing needs a negotiated-version gate. `ProtocolVersion` is 32 and
-`MinProtocolVersion` is 31, so clients of 30 and older are refused with `ProtocolUnsupported`. Gateway-to-worker and worker-to-worker links need protocol 32 exactly, as always.
+`docs/compatibility-policy.md` D1: the window is N and N-1, and every change inside it must be additive (D3). This change adds three message ids (`ClientRequest` 54, `ClientRequestRouted` 55,
+`ClientRequestReply` 56) and changes no existing message. A client of 32 never sends 54 and is never sent 56, so it is sent exactly the bytes it was; nothing needs a negotiated-version gate. `ProtocolVersion` is 33 and
+`MinProtocolVersion` is 32, so clients of 31 and older are refused with `ProtocolUnsupported`. Gateway-to-worker and worker-to-worker links need protocol 33 exactly, as always.
 
-Per `docs/protocol-versions.md` step 3 a fresh handshake fixture is recorded for the bump: `protocol-32-handshake.json`.
+Per `docs/protocol-versions.md` step 3 a fresh handshake fixture is recorded for the bump: `protocol-33-handshake.json`.
 
 ## D7. Configuration
 
@@ -133,7 +133,7 @@ Per `docs/protocol-versions.md` step 3 a fresh handshake fixture is recorded for
 
 | Test | Tier | Proves |
 |---|---|---|
-| `ClientRequestRuleTests` | A, pure | bucket; admission order and the cost of a refused request; per-client vs shared per-entity limits; sweep; routing decision; tracker settles once; wire forms; window 31..32 |
+| `ClientRequestRuleTests` | A, pure | bucket; admission order and the cost of a refused request; per-client vs shared per-entity limits; sweep; routing decision; tracker settles once; wire forms; window 32..33 |
 | `ConformanceClientRequestGatewayTests` | A, real gateway, two fake workers, real clients over UDP | a request for an entity on the *other* worker than the sender's pawn reaches it alone, stamped (client, identity, pawn, position), and the reply reaches the client; unknown, oversize, out-of-interest and rate-limited requests are dropped with their reasons and the client is told; a request follows an entity across a handover; protocol 31 joins, 30 is refused |
 | `ConformanceClientRequestWorkerTests` | B, two real `NebulaWorker`s on `ConformanceMesh` | the handler gets the stamp; a request at a ghost is forwarded and applied once at the owner with the reply returning through the gateway; a ServerRpc hash, a bad argument list, oversize, a throwing handler, an unknown entity and the hop limit are each rejected without running a method; the client send path and a legacy sink |
 

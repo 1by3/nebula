@@ -293,7 +293,7 @@ public class ConformancePortalGatewayTests
         Assert.That(fleet.Run(() => old.Rejected != null, seconds: 15), Is.True, "a client of 27 is refused: it would predict into an aperture it does not know is solid");
         var rejected = old.Rejected!.Value;
         Assert.That(rejected.Code, Is.EqualTo(JoinRejectReason.ProtocolUnsupported));
-        Assert.That(rejected.SupportedMinVersion, Is.EqualTo(HelloMsg.MinProtocolVersion));
+        Assert.That(rejected.SupportedMinVersion, Is.EqualTo(HelloMsg.MinProtocolVersion), "28 closed the window; additive bumps since moved it to N-1");
         Assert.That(rejected.SupportedMaxVersion, Is.EqualTo(HelloMsg.ProtocolVersion));
         Assert.That(old.Welcome, Is.Null);
         Assert.That(fleet.Worker.Claims, Is.Empty);

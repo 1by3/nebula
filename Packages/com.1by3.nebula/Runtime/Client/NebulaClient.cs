@@ -403,6 +403,11 @@ namespace Nebula
         private readonly List<NetworkIdentity> _driven = new List<NetworkIdentity>();
         private readonly Dictionary<ulong, FarEntity> _far = new Dictionary<ulong, FarEntity>();
         private readonly List<FarEntityEntry> _farIn = new List<FarEntityEntry>();
+        private readonly List<FarPose> _farPosesIn = new List<FarPose>();
+        /// <summary>Protocol 32: slot to net id, for compact far poses (D111).</summary>
+        private readonly Dictionary<ushort, ulong> _farSlots = new Dictionary<ushort, ulong>();
+        /// <summary>Protocol 32: far markers for replicas that are leaving the set; they take over at the despawn (D112).</summary>
+        private readonly Dictionary<ulong, FarEntityEntry> _farHandovers = new Dictionary<ulong, FarEntityEntry>();
         private readonly List<FarEntity> _farGone = new List<FarEntity>();
         /// <summary>Each driven entity's recent inputs, sent three at a time like the pawn's.</summary>
         private readonly Dictionary<ulong, List<ClientInputMsg.Frame>> _drivenInputs = new Dictionary<ulong, List<ClientInputMsg.Frame>>();
@@ -986,6 +991,7 @@ namespace Nebula
                 case MsgId.EntityState:
                 case MsgId.OwnerState:
                 case MsgId.FarEntities:
+                case MsgId.FarPoses:
                     return true;
                 default:
                     return false;
@@ -1772,6 +1778,7 @@ namespace Nebula
                 case MsgId.EntityState: OnEntityState(EntitySyncMsg.Read(r)); break;
                 case MsgId.OwnerState: OnOwnerState(OwnerStateMsg.Read(r)); break;
                 case MsgId.FarEntities: OnFarEntities(r); break;
+                case MsgId.FarPoses: OnFarPoses(r); break;
                 case MsgId.ClientRequestReply: OnClientRequestReply(ClientRequestReplyMsg.Read(r)); break;
                 case MsgId.Portals: Portals.ApplyRecords(PortalsMsg.Read(r)); break;
                 case MsgId.PortalLinks: OnPortalLinks(PortalLinksMsg.Read(r)); break;
@@ -1859,12 +1866,7 @@ namespace Nebula
 
         private void OnEntitySpawn(EntitySpawnMsg msg)
         {
-            // Within its normal radius now: the replica replaces the far-tier marker (NEB-388), with no "gone" in between.
-            if (_far.Count > 0 && _far.TryGetValue(msg.NetId, out var marker))
-            {
-                _far.Remove(msg.NetId);
-                RaiseFarRemoved(marker, FarEntityRemoval.Replicated);
-            }
+            _farHandovers.Remove(msg.NetId);
             if (msg.ViewSeq != 0)
             {
                 // Re-entering the set is a new view of the same net id, so the despawn of the old one must not
@@ -1887,6 +1889,7 @@ namespace Nebula
             }
             if (_entities.TryGetValue(msg.NetId, out var e))
             {
+                TakeOverFarMarker(msg.NetId);
                 if (msg.Epoch < e.Epoch) return;
                 ushort oldWorker = e.OwnerWorkerIndex;
                 if (msg.Epoch > e.Epoch) e.HasStateTick = false;
@@ -1936,7 +1939,12 @@ namespace Nebula
                 }
             }
             else e = NetworkPrefabs.Instantiate(msg.PrefabId, Vector3.zero, Quaternion.identity, container != null ? container.transform : null);
-            if (e == null) return;
+            if (e == null)
+            {
+                // No replica will come of it, so the marker cannot stay either (the gateway holds the entity in the replica tier now).
+                if (_far.TryGetValue(msg.NetId, out var orphan)) { ForgetFar(orphan); RaiseFarRemoved(orphan, FarEntityRemoval.Left); }
+                return;
+            }
             e.NetId = msg.NetId;
             e.Epoch = msg.Epoch;
             e.OwnerClientId = msg.OwnerClientId;
@@ -1972,6 +1980,9 @@ namespace Nebula
                 if (rb != null) rb.isKinematic = true;
             }
             _entities[e.NetId] = e;
+            // Within its normal radius now: the replica replaces the far-tier marker (NEB-388), with no "gone" in between.
+            // Only now, with the replica in Entities: a spawn held for its container keeps the marker until it is applied.
+            TakeOverFarMarker(e.NetId);
             e.gameObject.SetActive(true);
             e.InvokeSpawn();
             EntitySpawned?.Invoke(e);
@@ -2009,6 +2020,12 @@ namespace Nebula
             }
             if (msg.Epoch < e.Epoch) return;
             _entities.Remove(msg.NetId);
+            // D112: the far tier takes over from the replica, in this same message, before anyone hears of the despawn.
+            if (_farHandovers.TryGetValue(msg.NetId, out var handover))
+            {
+                _farHandovers.Remove(msg.NetId);
+                AddFarFromReplica(handover, e.transform.position); // scene-space: the replica's drawn spot, for the client-side blend only
+            }
             bool wasLocal = LocalPlayer == e;
             if (wasLocal) LocalPlayer = null;
             ForgetDriven(e);
@@ -2411,20 +2428,82 @@ namespace Nebula
                 _far.TryGetValue(entry.NetId, out var far);
                 if (entry.Kind == FarEntryKind.Gone)
                 {
+                    _farHandovers.Remove(entry.NetId);
                     if (far == null) continue;
-                    _far.Remove(entry.NetId);
+                    ForgetFar(far);
                     RaiseFarRemoved(far, FarEntityRemoval.Left);
                     continue;
                 }
-                if (_entities.ContainsKey(entry.NetId)) continue;
+                if (_entities.ContainsKey(entry.NetId))
+                {
+                    // A replica's far marker, sent just ahead of its despawn (D112): it takes over when the despawn lands.
+                    if (entry.FromReplica) _farHandovers[entry.NetId] = entry;
+                    continue;
+                }
                 if (far != null && entry.Epoch < far.Epoch) continue;
                 bool added = far == null;
                 if (added) _far[entry.NetId] = far = new FarEntity();
+                if (far.Slot != 0 && far.Slot != entry.Slot) ForgetSlot(far);
                 far.Apply(entry, now);
+                if (far.Slot != 0) _farSlots[far.Slot] = far.NetId;
                 try { (added ? FarEntityAdded : FarEntityUpdated)?.Invoke(far); }
                 catch (Exception e) { NebulaLog.Error($"{(added ? nameof(FarEntityAdded) : nameof(FarEntityUpdated))} handler threw: {e}"); }
             }
             _farIn.Clear();
+        }
+
+        /// <summary>
+        /// Compact far poses (<see cref="MsgId.FarPoses"/>, protocol 32, D111): a new pose for a marker this client holds,
+        /// named by the slot its last full entry gave it. A slot that names nothing (the marker just became a replica) is ignored.
+        /// </summary>
+        private void OnFarPoses(NetworkReader r)
+        {
+            FarPosesMsg.Read(r, _farPosesIn);
+            double now = Time.unscaledTimeAsDouble;
+            for (int i = 0; i < _farPosesIn.Count; i++)
+            {
+                var pose = _farPosesIn[i];
+                if (!_farSlots.TryGetValue(pose.Slot, out ulong netId) || !_far.TryGetValue(netId, out var far)) continue;
+                far.Apply(pose, now);
+                try { FarEntityUpdated?.Invoke(far); }
+                catch (Exception e) { NebulaLog.Error($"{nameof(FarEntityUpdated)} handler threw: {e}"); }
+            }
+            _farPosesIn.Clear();
+        }
+
+        /// <summary>A replica left the set and its far marker takes over, easing from where the replica was drawn (D112).</summary>
+        private void AddFarFromReplica(in FarEntityEntry entry, Vector3 drawnAt)
+        {
+            double now = Time.unscaledTimeAsDouble;
+            if (_far.TryGetValue(entry.NetId, out var stale)) ForgetFar(stale);
+            var far = new FarEntity();
+            far.Apply(entry, now);
+            far.FromReplica = true;
+            far.HandoverFrom = drawnAt;
+            far.HandoverAt = now;
+            _far[far.NetId] = far;
+            if (far.Slot != 0) _farSlots[far.Slot] = far.NetId;
+            try { FarEntityAdded?.Invoke(far); }
+            catch (Exception e) { NebulaLog.Error($"{nameof(FarEntityAdded)} handler threw: {e}"); }
+        }
+
+        /// <summary>The replica of <paramref name="netId"/> is in the entity table now: its far marker, if any, gives way to it.</summary>
+        private void TakeOverFarMarker(ulong netId)
+        {
+            if (_far.Count == 0 || !_far.TryGetValue(netId, out var marker)) return;
+            ForgetFar(marker);
+            RaiseFarRemoved(marker, FarEntityRemoval.Replicated);
+        }
+
+        private void ForgetFar(FarEntity far)
+        {
+            _far.Remove(far.NetId);
+            ForgetSlot(far);
+        }
+
+        private void ForgetSlot(FarEntity far)
+        {
+            if (far.Slot != 0 && _farSlots.TryGetValue(far.Slot, out ulong holder) && holder == far.NetId) _farSlots.Remove(far.Slot);
         }
 
         private void RaiseFarRemoved(FarEntity far, FarEntityRemoval why)
@@ -2435,6 +2514,8 @@ namespace Nebula
 
         private void ClearFar()
         {
+            _farSlots.Clear();
+            _farHandovers.Clear();
             if (_far.Count == 0) return;
             _farGone.Clear();
             _farGone.AddRange(_far.Values);

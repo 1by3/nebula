@@ -1,0 +1,96 @@
+---
+title: "FarClassTable"
+description: "The far classes resolved from InterestSettings: a lookup by id, the default class (id 0, budget InterestSettings.FarMaxEntities unless the list replaces it) and the order classes are served in."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/FarClasses.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/FarClasses.cs)</div>
+
+```csharp
+public sealed class FarClassTable
+```
+
+The far classes resolved from [`InterestSettings`](/docs/reference/interest/interest-settings): a lookup by id, the default class (id 0, budget [`InterestSettings.FarMaxEntities`](/docs/reference/interest/interest-settings#farmaxentities) unless the list replaces it) and the order classes are served in. Built once per settings and shared by the worker (rates and radii) and the gateway (budgets). An entity that names a class the table does not define is in the default class.
+
+## Constructors
+
+### FarClassTable [#farclasstable]
+
+```csharp
+public FarClassTable(int defaultMaxEntities, IReadOnlyList<FarClass> classes = null, int maxTotal = 0);
+```
+
+## Properties
+
+### MaxTotal [#maxtotal]
+
+```csharp
+public int MaxTotal { get; }
+```
+
+Most far entities one client holds over every class (0: no cap beyond each class's own).
+
+### AnyBudget [#anybudget]
+
+```csharp
+public bool AnyBudget { get; }
+```
+
+Whether any class may send a client anything: the tier is on.
+
+### Ids [#ids]
+
+```csharp
+public IReadOnlyList<byte> Ids { get; }
+```
+
+The defined classes' ids, in the order they are served (priority, then id).
+
+## Methods
+
+### From [#from]
+
+```csharp
+public static FarClassTable From(in InterestSettings settings);
+```
+
+The table for `settings` (already validated).
+
+### Defines [#defines]
+
+```csharp
+public bool Defines(byte id);
+```
+
+Whether `id` is a class of its own (otherwise it is in the default class).
+
+### BudgetOf [#budgetof]
+
+```csharp
+public byte BudgetOf(byte id);
+```
+
+The class an entity naming `id` is counted in: itself when defined, else the default class 0.
+
+### Of [#of]
+
+```csharp
+public FarClass Of(byte id);
+```
+
+The settings of the class an entity naming `id` is in.
+
+### RankOf [#rankof]
+
+```csharp
+public int RankOf(byte id);
+```
+
+Where `id`'s class is served: 0 first.
+
+### Resolve [#resolve]
+
+```csharp
+public void Resolve(byte farClass, float ownRadius, float ownRate, out float radius, out float rate);
+```
+
+An entity's far radius and rate once its class has had its say: the class's own when it sets them, the entity's otherwise. A radius of 0 means the entity is not far relevant.
