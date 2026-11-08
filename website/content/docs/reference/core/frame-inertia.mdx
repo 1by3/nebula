@@ -41,7 +41,7 @@ The largest fictitious acceleration applied in one tick, in m/s² after Scale. K
 public int SmoothingTicks = 6;
 ```
 
-Ticks the acceleration is smoothed over (an exponential moving average). 1 applies each tick's value as it is.
+Ticks the acceleration is smoothed over (an exponential moving average), counted at 60 Hz and rescaled at other tick rates. 1 applies each tick's value as it is.
 
 ### MinAcceleration [#minacceleration]
 

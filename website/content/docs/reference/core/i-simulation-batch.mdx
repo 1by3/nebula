@@ -1,0 +1,24 @@
+---
+title: "ISimulationBatch"
+description: "Work a game collects from many entities during the worker's simulate pass and runs together, so it can be spread over the worker's cores (NEB-501): physics queries batched with RaycastCommand, SpherecastCommand and their kin, or pure mat..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/SimulationBatches.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/SimulationBatches.cs)</div>
+
+```csharp
+public interface ISimulationBatch
+```
+
+Work a game collects from many entities during the worker's simulate pass and runs together, so it can be spread over the worker's cores (NEB-501): physics queries batched with `RaycastCommand`, `SpherecastCommand` and their kin, or pure maths in a job, with the results applied on the main thread afterwards.
+
+While `Deferring` is true (only inside the worker's simulate pass), an entity's `NetworkTick` may enqueue part of its step in an [`ISimulationBatch`](/docs/reference/core/i-simulation-batch) instead of running it. The worker flushes every registered batch at the end of each nesting depth of that pass, before the physics scene is brought up to date for the depth below (so a pawn's deferred move still happens before what rides on it, and after its carrier), and in registration order. A batch's [`ISimulationBatch.Flush`](/docs/reference/core/i-simulation-batch#flush) finishes every step it holds, in the order they were enqueued, so an entity's step ends where it would have serially as long as nothing it reads was changed by another entity of the same depth in between (Nebula does not sync transforms between entities of one depth, so queries never saw those changes anyway). A client, and every caller outside the pass, sees `Deferring` false and runs its step at once: prediction and replays are unchanged. An entity stepped twice in one `NetworkTick` (a skipped tick replayed, [`PredictedBehaviourBase.ReplaySkippedTicks`](/docs/reference/core/predicted-behaviour-base#replayskippedticks)) must finish its pending step before it starts the next.
+
+## Methods
+
+### Flush [#flush]
+
+```csharp
+void Flush(uint tick);
+```
+
+Finish every step enqueued since the last flush, at simulation tick `tick`.

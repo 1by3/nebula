@@ -1,19 +1,23 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 30, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 32, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 30. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 32. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `31`. Every `Hello` carries the version its sender speaks.
+The current protocol version is `33`. Every `Hello` carries the version its sender speaks.
 
-A gateway accepts clients of protocol 31 and 32: `HelloMsg.MinProtocolVersion` is `31` and `HelloMsg.ProtocolVersion` is `32`, and a client of 30 or older is refused with `ProtocolUnsupported` and the gateway's range. Gateway-to-worker and worker-to-worker connections MUST match protocol `32` exactly. Before 1.0 a protocol change may close the client window to the new version; protocols 23 and 28 did, and protocols 24 to 27 and 29 to 31 did not.
+A gateway accepts clients of protocol 32 and 33: `HelloMsg.MinProtocolVersion` is `32` and `HelloMsg.ProtocolVersion` is `33`, and a client of 31 or older is refused with `ProtocolUnsupported` and the gateway's range. Gateway-to-worker and worker-to-worker connections MUST match protocol `33` exactly. Before 1.0 a protocol change may close the client window to the new version; protocols 23 and 28 did, and protocols 24 to 27 and 29 to 33 did not.
 
-Protocol 32 added far classes, compact far updates and the replica hand-over to the [far tier](#interest-management): a `FarEntry` gains optional `far_class`, `slot` and `age_ms` fields and a `from_replica` flag behind new `flags` bits, and a new gateway-to-client message, `FarPoses` (53), carries compact updates. A gateway writes neither to a client of 31, which is sent every far update as the full entry it always read. Because the client window is N and N-1, clients of 29 are refused from protocol 31 on.
+Protocol 33 added [client requests](/docs/guides/client-requests): three messages, `ClientRequest` (54), `ClientRequestRouted` (55) and `ClientRequestReply` (56). No existing message changed. A client of 32 never sends `ClientRequest` and is never sent `ClientRequestReply`, so a gateway sends it the same bytes as before. Because the client window is N and N-1, clients of 31 are refused from protocol 33 on.
+
+Protocol 32 added far classes, compact far updates and the replica hand-over to the [far tier](#interest-management): a `FarEntry` gains optional `far_class`, `slot` and `age_ms` fields and a `from_replica` flag behind new `flags` bits, and a new gateway-to-client message, `FarPoses` (53), carries compact updates. A gateway writes neither to a client of 31, which is sent every far update as the full entry it always read.
+
+Protocol 31 added the ticks a worker dropped for a predicted entity. `OwnerState` gains a trailing `dropped_from` and `dropped_to`, which a gateway writes only to clients that negotiated 31.
 
 Protocol 30 added motion fidelity to the [batched transform state](#batched-transform-state): an `ext` byte after each entry's `fields`, an optional angular velocity, and a 6-byte precise compressed quaternion. A gateway writes entries for a client of 29 without them, in the protocol-29 layout. Because the client window is N and N-1, clients of 28 are refused from protocol 30 on.
 
@@ -150,7 +154,7 @@ Positions and rotations are relative to this container unless a behavior's docum
 | `EntityFlags.OwnerDisconnected` | 4 | The owning client is disconnected and the worker is keeping the entity for the reclaim grace. The worker announces the entity again, in place, when the bit changes. |
 | `EntityFlags.PortalGhost` | 8 | A ghost spawn only: the sender ghosts the entity because it is in the band of a portal face whose other side the receiver holds. The receiver keeps it as a proxy only, posed through the link in its own scene. |
 
-Unknown flag bits are reserved. A version 30 sender MUST write them as zero.
+Unknown flag bits are reserved. A version 32 sender MUST write them as zero.
 
 ## Message registry
 
@@ -211,8 +215,11 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 50 | `GhostMaps` | `W-W` | Reliable ordered | [`EntityMapsBody`](#replicated-maps) |
 | 51 | `PortalAdjacency` | `W-W` | Reliable ordered | [`PortalAdjacency`](#portal-adjacency-and-handoff) |
 | 52 | `PortalHandoff` | `W-W` | Reliable ordered | [`PortalHandoff`](#portal-adjacency-and-handoff) |
+| 54 | `ClientRequest` | `C-G` | Reliable ordered | [`ClientRequest`](#client-requests) |
+| 55 | `ClientRequestRouted` | `G-W`, `W-W` | Reliable ordered | [`ClientRequestRouted`](#client-requests) |
+| 56 | `ClientRequestReply` | `W-G-C`, `G-C` | Reliable ordered | [`ClientRequestReply`](#client-requests) |
 
-IDs not listed in this table are reserved. A version 30 sender MUST NOT use them.
+IDs not listed in this table are reserved. A version 32 sender MUST NOT use them.
 
 ## Message layouts
 
@@ -432,6 +439,36 @@ A worker remembers applied call IDs for at most 4096 calls and 600 ticks. Beyond
 
 `AuthorityRpcReply` is sent only when `WantsReply` was set, to the worker whose index the `call_id` carries, with the deciding worker's `entity_epoch` for the entity (`0` when it held none) and the `hops` the call had when decided. `outcome` `7` (`TimedOut`) is a sender-side value and MUST NOT appear on the wire.
 
+### Client requests
+
+```text
+ClientRequest := u32 call_id, u8 flags, u64 net_id, u8 behavior_index, u32 method_hash, bytes args
+
+ClientRequestRouted :=
+  u64 client_id,
+  string identity,
+  Claims claims,
+  u64 pawn_net_id,
+  u8 has_pawn_position, [f32 x, f32 y, f32 z],
+  u32 call_id,
+  u8 flags,
+  u8 hops,
+  u64 net_id,
+  u8 behavior_index,
+  u32 method_hash,
+  bytes args
+
+ClientRequestReply := u64 client_id, u32 call_id, u8 outcome, u16 code
+```
+
+A client sends `ClientRequest` to its gateway for an entity it holds a replica of; the entity need not be owned by it. `method_hash` and `args` are encoded as in `EntityRpcBody`. `call_id` is minted by the client and is `0` unless `flags` bit 0 (`WantsReply`) is set; bits 1–7 are reserved and MUST be written as zero. A client message has no sender field.
+
+The gateway decides the request in this order and drops it at the first check that fails: `args` longer than `ClientRequestMaxBytes` (1024) is `RejectedTooLarge` (2); no entity record with `net_id` is `RejectedUnknownEntity` (3); an entity the client does not hold a replica of is `RejectedNotInInterest` (4); a client over its token bucket is `RejectedClientRateLimit` (5); an entity over its token bucket, counted across all clients, is `RejectedEntityRateLimit` (6); no connected owner worker is `RejectedUnreachable` (7). A dropped request is answered with a `ClientRequestReply` carrying that outcome when `WantsReply` is set, and is otherwise not answered. A request that passes every check is sent to the owner worker as a `ClientRequestRouted`, with `client_id`, `identity`, `claims` (encoded as in `SpawnPlayer`), `pawn_net_id` and the pawn's position taken from its own connection and state, `hops` set to `0`, and the rest copied from the request. A gateway MUST NOT copy any sender field from a client's message.
+
+A worker accepts `ClientRequestRouted` only from a gateway or worker peer. It applies the request when it has authority over `net_id`. When it holds only a ghost, it forwards the message to the worker it believes has authority with `hops` increased by one, and rejects it with `RejectedHopLimit` (11) when `hops` has reached `AuthorityCallMaxHops`, or `RejectedUnreachable` (7) when it has no link to forward on. It rejects with `RejectedUnknownEntity` (3) when it holds no copy. It also rejects with `RejectedTooLarge` (2), `RejectedNoHandler` (8) when `behavior_index` or `method_hash` does not name a `[ClientRequestRpc]` method, `RejectedBadArguments` (9) when `args` do not decode, and `HandlerThrew` (10). An applied request reports `Accepted` (1) with the handler's `code`.
+
+A worker sends `ClientRequestReply` only when `WantsReply` was set. It sends it to the gateway the request arrived from, or to every gateway it is linked to when the request arrived from a worker. A gateway passes it to the client named by `client_id` and ignores it when it holds no such client. Outcomes `TimedOut` (12) and `Disconnected` (13) are client-side values and MUST NOT appear on the wire. The worker does not retry a request and does not remember one, so a request is applied at most once.
+
 ### Batched transform state
 
 ```text
@@ -496,7 +533,8 @@ OwnerState :=
   u64 owner_client_id,
   ContainerRef container,
   bytes state,
-  [bytes events]
+  [bytes events],
+  [u32 dropped_from, u32 dropped_to]
 
 ServerEvents := u8 event_count, ServerEvent[event_count]
 ServerEvent  := u32 tick, u8 index, u32 type_id, bytes payload

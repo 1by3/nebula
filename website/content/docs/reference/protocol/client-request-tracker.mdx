@@ -1,0 +1,78 @@
+---
+title: "ClientRequestTracker"
+description: "The sender's side of the reply channel: the requests a client made with a reply wanted and has not heard back about."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/ClientRequestContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/ClientRequestContract.cs)</div>
+
+```csharp
+public sealed class ClientRequestTracker
+```
+
+The sender's side of the reply channel: the requests a client made with a reply wanted and has not heard back about. Each settles exactly once, with the reply that arrives, with [`ClientRequestOutcome.TimedOut`](/docs/reference/protocol/client-request-outcome#timedout) when [`Expire`](#expire) passes its deadline, or with [`ClientRequestOutcome.Disconnected`](/docs/reference/protocol/client-request-outcome#disconnected) from [`FailAll`](#failall).
+
+## Properties
+
+### PendingCount [#pendingcount]
+
+```csharp
+public int PendingCount { get; }
+```
+
+Requests awaiting a reply.
+
+### LateReplies [#latereplies]
+
+```csharp
+public long LateReplies { get; }
+```
+
+Replies that arrived for a request no longer pending (settled, timed out, or never tracked).
+
+## Methods
+
+### Mint [#mint]
+
+```csharp
+public uint Mint();
+```
+
+A fresh call id: never 0, and never one still pending.
+
+### Track [#track]
+
+```csharp
+public void Track(uint callId, double deadline, Action<ClientRequestResult> onDone);
+```
+
+Wait for the reply to `callId`; `onDone` runs once, at the reply or at `deadline`.
+
+### Complete [#complete]
+
+```csharp
+public bool Complete(uint callId, in ClientRequestResult result);
+```
+
+Settle `callId`. False when it was not pending (counted in [`LateReplies`](#latereplies)).
+
+### IsPending [#ispending]
+
+```csharp
+public bool IsPending(uint callId);
+```
+
+### Expire [#expire]
+
+```csharp
+public void Expire(double now);
+```
+
+Settle every request whose deadline is at or before `now` as [`ClientRequestOutcome.TimedOut`](/docs/reference/protocol/client-request-outcome#timedout). Call once a frame.
+
+### FailAll [#failall]
+
+```csharp
+public void FailAll(ClientRequestOutcome outcome);
+```
+
+Settle every pending request as `outcome` (the connection went away).

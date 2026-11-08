@@ -268,6 +268,18 @@ namespace Nebula
         [Tooltip("How many times an AuthorityRpc may be forwarded after the target entity changes worker before it is rejected with RejectedHopLimit. Also the number of authority changes a call's epoch may lag behind the entity before it is rejected as stale. -nebula-authority-call-hops overrides.")]
         public int AuthorityCallMaxHops = 3;
 
+        [Header("Client requests")]
+        [Tooltip("The most argument bytes one [ClientRequestRpc] call may carry. A larger one is dropped at the gateway with RejectedTooLarge. -nebula-client-request-bytes overrides.")]
+        public int ClientRequestMaxBytes = 1024;
+        [Tooltip("Client requests one client may send per second, across every entity (RejectedClientRateLimit beyond it). 0 turns the limit off. -nebula-client-request-rate overrides.")]
+        public float ClientRequestsPerSecond = 10f;
+        [Tooltip("How many client requests one client may send at once before the per-second rate applies. -nebula-client-request-burst overrides.")]
+        public int ClientRequestBurst = 20;
+        [Tooltip("Client requests one entity may be sent per second, counted across every sender (RejectedEntityRateLimit beyond it). 0 turns the limit off. -nebula-entity-request-rate overrides.")]
+        public float EntityRequestsPerSecond = 40f;
+        [Tooltip("How many client requests one entity may take at once before the per-second rate applies. -nebula-entity-request-burst overrides.")]
+        public int EntityRequestBurst = 80;
+
         [Header("Portals")]
         [Tooltip("The physics layer Nebula puts a portal's proxies and aperture colliders on (docs/portals.md D26 to D28). Keep it free of your own objects and out of the layer masks of your own raycasts, and let it collide with whatever bodies collide with in the layer collision matrix. 31 by default.")]
         [Range(0, 31)] public int PortalProxyLayer = 31;

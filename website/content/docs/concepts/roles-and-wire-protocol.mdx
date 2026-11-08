@@ -122,6 +122,8 @@ See [Interest management](/docs/guides/interest-management) for how these messag
 | --- | --- | --- |
 | `ClientInput` | Sequenced | One serialized input struct per tick, stamped with its tick |
 | `ServerRpc` | Reliable | A `ServerRpc` from the owning client |
+| `ClientRequest` | Reliable | A [client request](/docs/guides/client-requests) for any entity in the client's interest set. The gateway checks it and sends the worker a copy stamped with the sender (`ClientRequestRouted`). |
+| `ClientRequestReply` | Reliable | The outcome of a client request that asked for one, from the gateway or the worker back to the client. |
 
 **Worker to worker**
 

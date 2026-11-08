@@ -21,6 +21,19 @@ public static int PoolSize = 8;
 
 How many emptied frame scenes are kept for reuse, so a carrier spawning and despawning does not create and unload a scene each time (D13).
 
+### ClonesVisited, ClonesReposed [#clonesvisited-clonesreposed]
+
+```csharp
+public static long ClonesVisited, ClonesReposed;
+```
+
+Copies visited and copies re-posed by [`SyncAllContent`](#syncallcontent) since the counters were last read (the worker's profile line).
+
+| Parameter | Description |
+| --- | --- |
+| `frame` | The frame whose copies follow their sources. |
+| `placing` | The frame is being built: every copy is put in place, and none counts as moving. |
+
 ### OriginShiftThreshold [#originshiftthreshold]
 
 ```csharp

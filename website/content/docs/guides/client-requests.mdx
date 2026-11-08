@@ -1,0 +1,165 @@
+---
+title: Client requests
+description: Let any client ask the worker that controls an entity to do something, even when the client does not own the entity and the entity is on another worker.
+---
+
+Use a client request when a player needs to act on an entity they can see but do not own: press a button, sit in a chair, pick up an item, edit a prop. The client sends the request to its gateway. The gateway checks it, adds who sent it, and routes it to the worker that has authority over the entity, wherever that worker is. The method on the entity runs there and learns who asked.
+
+Nebula's other client-to-worker call, `ServerRpc`, works only for the client that owns the entity. `AuthorityRpc` works only between workers, from a worker that holds a copy of the entity. A client request has neither limit. See [RPCs and worker messages](/docs/guides/rpcs) to compare the calls.
+
+<Callout type="warn">
+Everything a client puts in a request is untrusted input. Nebula tells the handler who sent the request, but it does not decide whether that player may do what the request asks. Check permission, distance, cooldowns, and every value in the arguments inside the handler, on every call.
+</Callout>
+
+## Declare and send a request
+
+Mark the receiving method with `[ClientRequestRpc]`. Its first parameter must be a `ClientRequestContext`. Nebula fills it in with the sender and does not send it over the network. The remaining parameters are the arguments the client chooses.
+
+Send the request from a `NetworkBehaviour` on the client by passing the method, then its arguments after the context, to `ClientRequest`:
+
+```csharp title="Door.cs"
+using Nebula;
+using UnityEngine;
+
+public class Door : NetworkBehaviour
+{
+    public NetworkVariable<bool> IsOpen = new NetworkVariable<bool>();
+
+    // Runs on the client, for example when the player presses a key near the door.
+    public void RequestToggle()
+    {
+        ClientRequest(RpcToggle, true);
+    }
+
+    // Runs on the worker that has authority over this door.
+    [ClientRequestRpc]
+    private void RpcToggle(ClientRequestContext sender, bool wantOpen)
+    {
+        // Nebula says who asked. The handler decides whether they may.
+        if (!CanUseDoor(sender.Identity)) return;
+        if (sender.HasSenderPosition &&
+            Vector3.Distance(sender.SenderPosition, sender.Entity.ScopePositionPrecise.ToVector3()) > 4f) return;
+
+        IsOpen.Value = wantOpen;
+    }
+}
+```
+
+A client may send a request to any entity in its interest set, owned or not. The interest set is the entities the client holds a replica of. See [Interest management](/docs/guides/interest-management).
+
+Pass the method group, not a call. `ClientRequest` and `ClientRequestWithReply` throw `InvalidOperationException` when the method is not a `[ClientRequestRpc]`.
+
+| Sender | Arguments after the context |
+| --- | --- |
+| `ClientRequest` | 0 to 4 |
+| `ClientRequestWithReply` | 0 to 4, then a callback and an optional timeout |
+
+If you need more values, put them in one struct that implements `INetworkSerializable`. See [Serialization](/docs/guides/serialization).
+
+## Read who sent the request
+
+The `ClientRequestContext` the handler receives holds these values. The gateway sets them from the connection, so a client cannot choose them.
+
+| Member | Meaning |
+| --- | --- |
+| `ClientId` | The sender's session ID. |
+| `Identity` | The sender's verified identity across sessions: the subject of a verified sign-in token, or an anonymous identity Nebula issued. Key anything that must outlast a session on this value. |
+| `Claims` | The token claims you listed in `ForwardedClaims`. See [Authentication](/docs/guides/authentication#forward-token-claims-to-workers). A claim is the value at sign-in. |
+| `Entity` | The entity the request is for, on this worker. |
+| `SenderPawnNetId` | The network ID of the sender's pawn, or 0. The pawn is often on a different worker from the entity. |
+| `HasSenderPosition`, `SenderPosition` | Where the gateway last saw the sender's pawn, in the same absolute space as `NetworkIdentity.ScopePositionPrecise`. It can be one interest update old, and the player can move after it. Allow a margin in a distance check. |
+| `TryGetSenderPawn` | The sender's pawn, if this worker holds a copy. Do not rely on it. Use `SenderPosition`. |
+| `CallId`, `WantsReply`, `Hops` | The client's request ID, whether it asked for a reply, and how many workers passed the request on because the entity moved. |
+| `ReplyCode` | A number you set to answer a reply request. See below. |
+
+## Learn what happened to a request
+
+Use `ClientRequestWithReply` when the client must know whether its request ran. It takes a callback and an optional timeout in seconds (default 5). The callback runs exactly once, on the client's main thread.
+
+```csharp title="Door.cs"
+public void RequestToggleWithFeedback()
+{
+    ClientRequestWithReply(RpcToggle, true, result =>
+    {
+        if (result.Succeeded && result.Code == 0) return;
+        ShowMessage(result.Succeeded ? "You can't use that." : $"Request failed: {result.Outcome}");
+    });
+}
+```
+
+`ClientRequestResult.Outcome` is one of these values:
+
+| Outcome | Meaning |
+| --- | --- |
+| `Accepted` | The worker ran the handler once. This says the handler ran, not that it agreed. |
+| `RejectedTooLarge` | The arguments were larger than `ClientRequestMaxBytes`. |
+| `RejectedUnknownEntity` | No gateway or worker knows an entity with that ID. It may have despawned. |
+| `RejectedNotInInterest` | The entity exists, but the sender does not hold a replica of it. |
+| `RejectedClientRateLimit` | The sender sent more than `ClientRequestsPerSecond` allows. |
+| `RejectedEntityRateLimit` | The entity received more than `EntityRequestsPerSecond` allows, counting every sender. |
+| `RejectedUnreachable` | No connected worker could take the request. |
+| `RejectedNoHandler` | The entity has no behavior or `[ClientRequestRpc]` method with that identity. |
+| `RejectedBadArguments` | The arguments did not decode as the method's parameters. |
+| `HandlerThrew` | The handler threw. The exception is logged on the worker. |
+| `RejectedHopLimit` | The entity changed worker more than `AuthorityCallMaxHops` times while the request chased it. |
+| `TimedOut` | No reply arrived before the timeout. The request may or may not have run. |
+| `Disconnected` | The client was not connected, or lost its connection while it waited. |
+
+To send your own verdict, set `ReplyCode` on the context in the handler. It arrives as `ClientRequestResult.Code` when the outcome is `Accepted`. A reply carries only the outcome and this number. To show the player more, send a `ClientRpc` or `OwnerRpc` from the handler.
+
+```csharp
+[ClientRequestRpc]
+private void RpcToggle(ClientRequestContext sender, bool wantOpen)
+{
+    if (!CanUseDoor(sender.Identity)) { sender.ReplyCode = 1; return; } // 1 = not allowed
+    IsOpen.Value = wantOpen;
+}
+```
+
+A request sent with `ClientRequest` gets no reply, whatever happens to it. The gateway or worker that drops it logs the reason.
+
+## Limits and what is dropped
+
+The gateway checks each request before any worker sees it. It drops a request with a logged reason, and tells the client when the client asked for a reply. The checks run in this order:
+
+1. The arguments are no larger than `ClientRequestMaxBytes`.
+2. The gateway knows the entity.
+3. The entity is in the sender's interest set.
+4. The sender is within its rate.
+5. The entity is within its rate.
+
+A request that fails one of the first three checks does not use any of the sender's allowance. A request that passes them uses one of the sender's tokens even when the entity then refuses it, so a client cannot hammer one busy entity for free.
+
+Set these fields on `NebulaConfig`:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `ClientRequestMaxBytes` | 1024 | The largest argument payload, in bytes. |
+| `ClientRequestsPerSecond` | 10 | Requests per second one client may send, across all entities. 0 turns the limit off. |
+| `ClientRequestBurst` | 20 | How many a client may send at once before the rate applies. |
+| `EntityRequestsPerSecond` | 40 | Requests per second one entity may receive, from all clients together. 0 turns the limit off. |
+| `EntityRequestBurst` | 80 | How many one entity may take at once before the rate applies. |
+
+Each field has a command-line override: `-nebula-client-request-bytes`, `-nebula-client-request-rate`, `-nebula-client-request-burst`, `-nebula-entity-request-rate`, and `-nebula-entity-request-burst`. A gateway that the orchestrator starts uses the orchestrator's values.
+
+The entity limit is shared. One client can use up an entity's allowance for a moment and delay another client's requests to that entity. If your game needs a fair share for each player, enforce it in the handler, where you know the sender's identity.
+
+The gateway logs at most one dropped-request line per second for each client, so a client that floods requests cannot flood your log. Counters are on `NebulaGateway.RequestGate` (`Admitted` and `Refused`, by outcome).
+
+## What Nebula promises
+
+- **Who sent it.** The sender fields come from the gateway's connection and session. The client's message has no field for them.
+- **Where it runs.** The request goes to the worker that has authority over the entity. If the entity moved to another worker while the request was in flight, the worker that receives it passes it on, up to `AuthorityCallMaxHops` times (default 3).
+- **Only your handlers.** A client request can reach only `[ClientRequestRpc]` methods. It cannot call a `[ServerRpc]`, `[ClientRpc]`, or `[AuthorityRpc]` method by guessing its name.
+- **At most once.** A request runs once or not at all. Nebula does not retry it, and a request lost with a failing worker or link is lost.
+- **Order.** Requests from one client to entities on one worker arrive in order. Nebula does not order requests that arrive over different links, such as two requests whose entity moved between them, or requests from different clients.
+
+## Run this version only with matching processes
+
+Client requests are part of wire protocol 33. A gateway of this build still accepts clients of protocol 32, which never send requests. Gateways, workers, and the orchestrator of a mesh must all run protocol 33. See [Replace gateways and workers](/docs/deploy/upgrades).
+
+<Cards>
+  <Card title="RPCs and worker messages" href="/docs/guides/rpcs" description="Compare client requests with the other RPC kinds." />
+  <Card title="Interest management" href="/docs/guides/interest-management" description="Learn which entities a client holds a replica of." />
+  <Card title="Authentication" href="/docs/guides/authentication" description="Forward token claims to workers." />
+</Cards>

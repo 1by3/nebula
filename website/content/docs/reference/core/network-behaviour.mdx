@@ -14,6 +14,14 @@ Base class for replicated gameplay components. Use [`IsServer`](#isserver), [`Is
 
 ## Fields
 
+### DefaultClientRequestTimeoutSeconds [#defaultclientrequesttimeoutseconds]
+
+```csharp
+public const float DefaultClientRequestTimeoutSeconds = 5f;
+```
+
+The default wait for a `ClientRequestWithReply` outcome before it settles as [`ClientRequestOutcome.TimedOut`](/docs/reference/protocol/client-request-outcome#timedout).
+
 ### DefaultAuthorityCallTimeoutSeconds [#defaultauthoritycalltimeoutseconds]
 
 ```csharp
@@ -146,7 +154,7 @@ Which clients receive this behavior's sync state ([`WriteSyncState`](#writesyncs
 public virtual uint SyncAudienceRefreshTicks { get; }
 ```
 
-For the `Custom` audience only: how often, in ticks, the authority evaluates the audience again without being asked. The default is 30, half a second at the 60 Hz tick rate. Return 0 to evaluate only when the entity gains authority and after [`MarkSyncAudienceDirty`](#marksyncaudiencedirty). That suits a rule that changes only on events, such as a player opening or closing a container.
+For the `Custom` audience only: how often, in ticks, the authority evaluates the audience again without being asked. The default is half a second (30 ticks at 60 Hz, 15 at 30). Return 0 to evaluate only when the entity gains authority and after [`MarkSyncAudienceDirty`](#marksyncaudiencedirty). That suits a rule that changes only on events, such as a player opening or closing a container.
 
 ## Methods
 
@@ -326,6 +334,30 @@ public virtual void RemoteTick(double renderTick);
 ```
 
 Called on every copy this process does not simulate (ghosts on a worker: once per tick before physics syncs; entities on a client: once per frame) with the tick to present. Interpolating behaviours sample their buffers here. See [`NetworkTime.RenderTick`](/docs/reference/core/network-time#rendertick).
+
+### ClientRequest [#clientrequest]
+
+```csharp
+protected void ClientRequest(Action<ClientRequestContext> method);
+protected void ClientRequest<T1>(Action<ClientRequestContext, T1> method, T1 a1);
+protected void ClientRequest<T1, T2>(Action<ClientRequestContext, T1, T2> method, T1 a1, T2 a2);
+protected void ClientRequest<T1, T2, T3>(Action<ClientRequestContext, T1, T2, T3> method, T1 a1, T2 a2, T3 a3);
+protected void ClientRequest<T1, T2, T3, T4>(Action<ClientRequestContext, T1, T2, T3, T4> method, T1 a1, T2 a2, T3 a3, T4 a4);
+```
+
+Send a client request: run `method` (a [`ClientRequestRpcAttribute`](/docs/reference/core/client-request-rpc-attribute) method) on the worker with authority over this entity, wherever that is. Any client may send it to any entity it holds a replica of, owned or not. The method's first parameter, a [`ClientRequestContext`](/docs/reference/core/client-request-context), is filled in by Nebula with who sent it; pass only the arguments after it. Fire and forget: no reply, and a refusal (too large, over the rate limit, not in your interest) is logged by the gateway. See [`ClientRequestWithReply`](#clientrequestwithreply) to hear what became of it.
+
+### ClientRequestWithReply [#clientrequestwithreply]
+
+```csharp
+protected uint ClientRequestWithReply(Action<ClientRequestContext> method, Action<ClientRequestResult> onDone, float timeoutSeconds = DefaultClientRequestTimeoutSeconds);
+protected uint ClientRequestWithReply<T1>(Action<ClientRequestContext, T1> method, T1 a1, Action<ClientRequestResult> onDone, float timeoutSeconds = DefaultClientRequestTimeoutSeconds);
+protected uint ClientRequestWithReply<T1, T2>(Action<ClientRequestContext, T1, T2> method, T1 a1, T2 a2, Action<ClientRequestResult> onDone, float timeoutSeconds = DefaultClientRequestTimeoutSeconds);
+protected uint ClientRequestWithReply<T1, T2, T3>(Action<ClientRequestContext, T1, T2, T3> method, T1 a1, T2 a2, T3 a3, Action<ClientRequestResult> onDone, float timeoutSeconds = DefaultClientRequestTimeoutSeconds);
+protected uint ClientRequestWithReply<T1, T2, T3, T4>(Action<ClientRequestContext, T1, T2, T3, T4> method, T1 a1, T2 a2, T3 a3, T4 a4, Action<ClientRequestResult> onDone, float timeoutSeconds = DefaultClientRequestTimeoutSeconds);
+```
+
+As [`ClientRequest`](#clientrequest), and also tells you what became of the request. `onDone` runs exactly once: with [`ClientRequestOutcome.Accepted`](/docs/reference/protocol/client-request-outcome#accepted) after the handler ran (and [`ClientRequestResult.Code`](/docs/reference/protocol/client-request-result#code) if it set one), with the reason it was dropped, or with [`ClientRequestOutcome.TimedOut`](/docs/reference/protocol/client-request-outcome#timedout) after `timeoutSeconds`. Returns the request id (0 if nothing was sent).
 
 ### ClientRpc [#clientrpc]
 

@@ -4215,6 +4215,7 @@ namespace Nebula
                 case MsgId.ForwardInput: OnClientInput(peer, ClientInputMsg.Read(r)); break;
                 case MsgId.DriveInput: OnDriveInput(peer, DriveInputMsg.Read(r)); break;
                 case MsgId.ServerRpc: OnServerRpc(peer, EntityRpcMsg.Read(r)); break;
+                case MsgId.ClientRequestRouted: OnClientRequestRouted(peer, ClientRequestRoutedMsg.Read(r)); break;
                 case MsgId.InterestSubscribe: OnInterestSubscribe(peer, InterestSubscribeMsg.Read(r)); break;
                 case MsgId.GhostSpawn: OnGhostSpawn(peer, EntitySpawnMsg.Read(r)); break;
                 case MsgId.GhostState: OnGhostState(peer, r); break;

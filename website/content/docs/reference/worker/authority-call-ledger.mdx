@@ -16,8 +16,13 @@ The call ids a worker has applied, so a call that arrives twice runs once (desig
 ### AuthorityCallLedger [#authoritycallledger]
 
 ```csharp
-public AuthorityCallLedger(int capacity = DefaultCapacity, uint ttlTicks = DefaultTtlTicks);
+public AuthorityCallLedger(int capacity = DefaultCapacity, uint ttlTicks = 0);
 ```
+
+| Parameter | Description |
+| --- | --- |
+| `capacity` | The most ids remembered at once. |
+| `ttlTicks` | How many ticks an id stays remembered; 0 is [`DefaultTtlTicks`](#defaultttlticks) at the running rate. |
 
 ## Fields
 
@@ -29,15 +34,23 @@ public const int DefaultCapacity = 4096;
 
 Ids remembered per worker by default: 4096, a few seconds of busy cross-worker traffic.
 
+### DefaultTtlSeconds [#defaultttlseconds]
+
+```csharp
+public const float DefaultTtlSeconds = 10f;
+```
+
+Seconds an id is remembered by default: ten.
+
+## Properties
+
 ### DefaultTtlTicks [#defaultttlticks]
 
 ```csharp
-public const uint DefaultTtlTicks = 600;
+public static uint DefaultTtlTicks { get; }
 ```
 
-Ticks an id is remembered by default: 600, ten seconds at 60 ticks per second.
-
-## Properties
+[`DefaultTtlSeconds`](#defaultttlseconds) in ticks at the running rate: 600 at 60 Hz.
 
 ### Capacity [#capacity]
 

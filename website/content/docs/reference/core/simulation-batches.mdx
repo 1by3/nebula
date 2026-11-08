@@ -1,0 +1,36 @@
+---
+title: "SimulationBatches"
+description: ""
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/SimulationBatches.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/SimulationBatches.cs)</div>
+
+```csharp
+public static class SimulationBatches
+```
+
+## Properties
+
+### Deferring [#deferring]
+
+```csharp
+public static bool Deferring { get; }
+```
+
+True only inside the worker's simulate pass: an entity's step may be enqueued in a batch that is flushed at the end of its depth.
+
+## Methods
+
+### Register [#register]
+
+```csharp
+public static void Register(ISimulationBatch batch);
+```
+
+Flush `batch` with the others at the end of each depth of the worker's simulate pass. Registering twice is a no-op.
+
+### Unregister [#unregister]
+
+```csharp
+public static void Unregister(ISimulationBatch batch);
+```

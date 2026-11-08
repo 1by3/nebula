@@ -89,6 +89,12 @@ namespace Nebula
         /// <summary>The mesh's simulation rate (docs/tick-rate.md). Mirrors the Unity-side field; -nebula-tick-rate or NEBULA_TICK_RATE overrides.</summary>
         public int TickRate = NetworkTime.DefaultTickRate;
         public int AuthorityCallMaxHops = 3;
+        /// <summary>Client requests (<c>[ClientRequestRpc]</c>): the gateway's admission limits. Mirror the Unity-side fields.</summary>
+        public int ClientRequestMaxBytes = 1024;
+        public float ClientRequestsPerSecond = 10f;
+        public int ClientRequestBurst = 20;
+        public float EntityRequestsPerSecond = 40f;
+        public int EntityRequestBurst = 80;
         public string PersistenceMode = "auto";
         public string PersistenceLocalFile = "";
         public float PersistenceCheckpointSeconds = 5f;

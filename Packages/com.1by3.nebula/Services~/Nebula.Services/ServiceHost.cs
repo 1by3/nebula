@@ -169,6 +169,11 @@ namespace Nebula
             c.EncryptionKeyPem = Environment.GetEnvironmentVariable("NEBULA_ENCRYPTION_KEY") is { Length: > 0 } certKeyPem ? certKeyPem : c.EncryptionKeyPem;
             c.EncryptionSelfSignedPath = CommandLine.Get("nebula-encryption-store", c.EncryptionSelfSignedPath);
             c.SingleSessionPerPlayer = CommandLine.GetBool("nebula-single-session", c.SingleSessionPerPlayer);
+            c.ClientRequestMaxBytes = CommandLine.GetInt("nebula-client-request-bytes", c.ClientRequestMaxBytes);
+            c.ClientRequestsPerSecond = CommandLine.GetFloat("nebula-client-request-rate", c.ClientRequestsPerSecond);
+            c.ClientRequestBurst = CommandLine.GetInt("nebula-client-request-burst", c.ClientRequestBurst);
+            c.EntityRequestsPerSecond = CommandLine.GetFloat("nebula-entity-request-rate", c.EntityRequestsPerSecond);
+            c.EntityRequestBurst = CommandLine.GetInt("nebula-entity-request-burst", c.EntityRequestBurst);
             c.GameContentVersion = CommandLine.GetUInt("nebula-content-version", c.GameContentVersion);
             c.MinGameContentVersion = CommandLine.GetUInt("nebula-min-content-version", c.MinGameContentVersion);
             c.WorkerCount = CommandLine.GetInt("nebula-workers", c.WorkerCount);

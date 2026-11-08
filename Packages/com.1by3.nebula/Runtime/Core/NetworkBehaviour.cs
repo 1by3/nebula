@@ -394,6 +394,72 @@ namespace Nebula
             return sink.SendAuthorityRpc(Identity, BehaviourIndex, m.Hash, payload, onDone, timeoutSeconds);
         }
 
+        /// <summary>The default wait for a <c>ClientRequestWithReply</c> outcome before it settles as <see cref="ClientRequestOutcome.TimedOut"/>.</summary>
+        public const float DefaultClientRequestTimeoutSeconds = 5f;
+
+        /// <summary>
+        /// Send a client request: run <paramref name="method"/> (a <see cref="ClientRequestRpcAttribute"/> method) on the worker with
+        /// authority over this entity, wherever that is. Any client may send it to any entity it holds a replica of, owned or not. The
+        /// method's first parameter, a <see cref="ClientRequestContext"/>, is filled in by Nebula with who sent it; pass only the
+        /// arguments after it. Fire and forget: no reply, and a refusal (too large, over the rate limit, not in your interest) is logged by the gateway.
+        /// See <see cref="ClientRequestWithReply(Action{ClientRequestContext}, Action{ClientRequestResult}, float)"/> to hear what became of it.
+        /// </summary>
+        protected void ClientRequest(Action<ClientRequestContext> method) => SendClientRequest(method.Method.Name, Array.Empty<object>(), null, 0f);
+        /// <inheritdoc cref="ClientRequest(Action{ClientRequestContext})"/>
+        protected void ClientRequest<T1>(Action<ClientRequestContext, T1> method, T1 a1) => SendClientRequest(method.Method.Name, new object[] { a1 }, null, 0f);
+        /// <inheritdoc cref="ClientRequest(Action{ClientRequestContext})"/>
+        protected void ClientRequest<T1, T2>(Action<ClientRequestContext, T1, T2> method, T1 a1, T2 a2) => SendClientRequest(method.Method.Name, new object[] { a1, a2 }, null, 0f);
+        /// <inheritdoc cref="ClientRequest(Action{ClientRequestContext})"/>
+        protected void ClientRequest<T1, T2, T3>(Action<ClientRequestContext, T1, T2, T3> method, T1 a1, T2 a2, T3 a3) => SendClientRequest(method.Method.Name, new object[] { a1, a2, a3 }, null, 0f);
+        /// <inheritdoc cref="ClientRequest(Action{ClientRequestContext})"/>
+        protected void ClientRequest<T1, T2, T3, T4>(Action<ClientRequestContext, T1, T2, T3, T4> method, T1 a1, T2 a2, T3 a3, T4 a4) => SendClientRequest(method.Method.Name, new object[] { a1, a2, a3, a4 }, null, 0f);
+
+        /// <summary>
+        /// As <see cref="ClientRequest(Action{ClientRequestContext})"/>, and also tells you what became of the request.
+        /// <paramref name="onDone"/> runs exactly once: with <see cref="ClientRequestOutcome.Accepted"/> after the handler ran (and
+        /// <see cref="ClientRequestResult.Code"/> if it set one), with the reason it was dropped, or with
+        /// <see cref="ClientRequestOutcome.TimedOut"/> after <paramref name="timeoutSeconds"/>. Returns the request id (0 if nothing was sent).
+        /// </summary>
+        protected uint ClientRequestWithReply(Action<ClientRequestContext> method, Action<ClientRequestResult> onDone, float timeoutSeconds = DefaultClientRequestTimeoutSeconds) =>
+            SendClientRequest(method.Method.Name, Array.Empty<object>(), onDone, timeoutSeconds);
+        /// <inheritdoc cref="ClientRequestWithReply(Action{ClientRequestContext}, Action{ClientRequestResult}, float)"/>
+        protected uint ClientRequestWithReply<T1>(Action<ClientRequestContext, T1> method, T1 a1, Action<ClientRequestResult> onDone, float timeoutSeconds = DefaultClientRequestTimeoutSeconds) =>
+            SendClientRequest(method.Method.Name, new object[] { a1 }, onDone, timeoutSeconds);
+        /// <inheritdoc cref="ClientRequestWithReply(Action{ClientRequestContext}, Action{ClientRequestResult}, float)"/>
+        protected uint ClientRequestWithReply<T1, T2>(Action<ClientRequestContext, T1, T2> method, T1 a1, T2 a2, Action<ClientRequestResult> onDone, float timeoutSeconds = DefaultClientRequestTimeoutSeconds) =>
+            SendClientRequest(method.Method.Name, new object[] { a1, a2 }, onDone, timeoutSeconds);
+        /// <inheritdoc cref="ClientRequestWithReply(Action{ClientRequestContext}, Action{ClientRequestResult}, float)"/>
+        protected uint ClientRequestWithReply<T1, T2, T3>(Action<ClientRequestContext, T1, T2, T3> method, T1 a1, T2 a2, T3 a3, Action<ClientRequestResult> onDone, float timeoutSeconds = DefaultClientRequestTimeoutSeconds) =>
+            SendClientRequest(method.Method.Name, new object[] { a1, a2, a3 }, onDone, timeoutSeconds);
+        /// <inheritdoc cref="ClientRequestWithReply(Action{ClientRequestContext}, Action{ClientRequestResult}, float)"/>
+        protected uint ClientRequestWithReply<T1, T2, T3, T4>(Action<ClientRequestContext, T1, T2, T3, T4> method, T1 a1, T2 a2, T3 a3, T4 a4, Action<ClientRequestResult> onDone, float timeoutSeconds = DefaultClientRequestTimeoutSeconds) =>
+            SendClientRequest(method.Method.Name, new object[] { a1, a2, a3, a4 }, onDone, timeoutSeconds);
+
+        /// <summary>
+        /// The one path a client request leaves by. Refused before it leaves the process (not a client, not spawned, no sink, not a
+        /// <see cref="ClientRequestRpcAttribute"/> method) it still settles <paramref name="onDone"/>, so a caller hears exactly once.
+        /// </summary>
+        private uint SendClientRequest(string methodName, object[] args, Action<ClientRequestResult> onDone, float timeoutSeconds)
+        {
+            var m = RpcRegistry.Require(GetType(), methodName);
+            if (m.Kind != RpcKind.ClientRequest)
+                throw new InvalidOperationException($"{GetType().Name}.{methodName} is a {m.Kind} RPC, sent as {RpcKind.ClientRequest}");
+            string refusal = null;
+            if (!IsClient) refusal = "client requests can only be sent from a client";
+            else if (!IsSpawned) refusal = "the entity is not spawned";
+            var sink = NebulaRuntime.RpcSink;
+            if (refusal == null && sink == null) refusal = "there is no connection";
+            if (refusal != null)
+            {
+                NebulaLog.Warn($"ClientRequest {methodName} on {GetType().Name} {NetId}: {refusal}; discarded");
+                onDone?.Invoke(new ClientRequestResult(0, ClientRequestOutcome.Disconnected));
+                return 0;
+            }
+            RpcWriter.Reset();
+            RpcRegistry.WriteArgs(RpcWriter, m, args);
+            return sink.SendClientRequest(Identity, BehaviourIndex, m.Hash, RpcWriter.ToSegment(), onDone, timeoutSeconds);
+        }
+
         protected void ClientRpc(Action method) => SendRpc(RpcKind.Client, method.Method.Name, Array.Empty<object>());
         protected void ClientRpc<T1>(Action<T1> method, T1 a1) => SendRpc(RpcKind.Client, method.Method.Name, new object[] { a1 });
         protected void ClientRpc<T1, T2>(Action<T1, T2> method, T1 a1, T2 a2) => SendRpc(RpcKind.Client, method.Method.Name, new object[] { a1, a2 });

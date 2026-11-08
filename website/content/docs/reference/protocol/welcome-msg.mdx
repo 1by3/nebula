@@ -27,6 +27,8 @@ The client's session id: unique across every gateway of the mesh and stable for 
 public byte TickRate;
 ```
 
+The mesh's simulation rate in ticks per second ([`NetworkTime.TickRate`](/docs/reference/core/network-time#tickrate)). Clients of [`HelloMsg.TickRateVersion`](/docs/reference/protocol/hello-msg#tickrateversion) and later run at it.
+
 ### ServerTick [#servertick]
 
 ```csharp

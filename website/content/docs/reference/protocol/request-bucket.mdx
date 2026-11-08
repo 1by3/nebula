@@ -1,0 +1,56 @@
+---
+title: "RequestBucket"
+description: "A client's token bucket: burst requests at once, refilled at rate per second."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/ClientRequestContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/ClientRequestContract.cs)</div>
+
+```csharp
+public struct RequestBucket
+```
+
+A client's token bucket: `burst` requests at once, refilled at `rate` per second. A plain struct so a gateway keeps one in every client's record and one per entity without allocating.
+
+## Fields
+
+### Tokens [#tokens]
+
+```csharp
+public double Tokens;
+```
+
+Tokens left as of [`Updated`](#updated).
+
+### Updated [#updated]
+
+```csharp
+public double Updated;
+```
+
+The time of the last refill, in the caller's seconds.
+
+### Started [#started]
+
+```csharp
+public bool Started;
+```
+
+False until the first take, which starts the bucket full.
+
+## Methods
+
+### TryTake [#trytake]
+
+```csharp
+public bool TryTake(double now, double rate, double burst);
+```
+
+Take one token at time `now`. A `rate` of zero or less is "no limit" and always succeeds. A `burst` under 1 is treated as 1.
+
+### IsIdle [#isidle]
+
+```csharp
+public bool IsIdle(double now, double rate, double burst, double idleSeconds);
+```
+
+Whether the bucket would be full again at `now`: nothing to remember about it.

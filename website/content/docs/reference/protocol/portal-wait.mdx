@@ -25,3 +25,4 @@ Why a link is not [`PortalState.Open`](/docs/reference/protocol/portal-state#ope
 | <span id="farscoperetired"></span>`FarScopeRetired` | `7` | The far scope is retiring or retired, so the link reads closed. |
 | <span id="nearcontainermoving"></span>`NearContainerMoving` | `8` | The near container is being reassigned to another worker. |
 | <span id="closehold"></span>`CloseHold` | `9` | The link is closing with its band empty and holds a moment longer ([`Portal.CloseHoldSeconds`](/docs/reference/containers/portal#closeholdseconds)), still observed. |
+| <span id="farcontentheld"></span>`FarContentHeld` | `10` | The application holds a container of the far window not ready yet ([`ReadinessHolds`](/docs/reference/containers/readiness-holds), `docs/portals.md` D10 condition 6): on this worker, or on the far worker that owns it, which says so in its interim answer to the link's preparation. |

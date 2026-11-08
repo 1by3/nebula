@@ -6,7 +6,7 @@ The policy itself, and why it is shaped this way, is `docs/compatibility-policy.
 ## The rule, in one paragraph
 
 A **client** may talk to a **gateway** that accepts its protocol: the accepted range is
-`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 31..32; protocols 30 and older are not supported. Anything outside that is refused
+`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 32..33; protocols 31 and older are not supported. Anything outside that is refused
 with `JoinRejectReason.ProtocolUnsupported` and the gateway's range, so the client can tell "update the game"
 from "this server has not been upgraded yet". A **gateway, worker and orchestrator of one mesh** must speak the
 **same** protocol, exactly; a mismatch is refused with a logged reason. The game's own content version is a
@@ -44,6 +44,7 @@ Protocol numbers are read from `HelloMsg.ProtocolVersion` at each release tag (`
 | unreleased | 30 | motion fidelity on the identity stream (NEB-406): an extension byte, angular velocity and precise rotation in `EntityStateEntry`; **additive**, so the window is 29..30. Also: a client of 30 runs at `WelcomeMsg.TickRate` (NEB-381, `docs/tick-rate.md`); a gateway whose mesh is not at 60 Hz narrows the window to 30..30 |
 | unreleased | 31 | the ticks a worker dropped (NEB-484): a trailing range on `OwnerState`, after its events section; **additive**, so the window is 30..31 |
 | unreleased | 32 | far classes, compact far updates and the replica hand-over (`docs/interest-management.md` D110 to D112): optional fields behind new `FarEntry` flag bits and a new message, `FarPoses` (53); **additive**, so the window is 31..32 |
+| unreleased | 33 | client requests (FND-50, `docs/client-requests.md`): messages `ClientRequest` (54), `ClientRequestRouted` (55), `ClientRequestReply` (56); **additive**, so the window is 32..33 |
 
 Every step in that table was breaking, because until now there was no window to be additive inside: a gateway
 required an exact match, and `HelloMsg.Write` could not even announce a version other than the one it was built
@@ -172,12 +173,14 @@ record a protocol-31 fixture or raise the replay; 32 did both, recording `protoc
 sends changes. A far entry gains an optional class, slot and age and a hand-over flag behind new `flags` bits, and a new message, `FarPoses`
 (53), carries compact updates. A gateway writes neither to a client of 31 (`HelloMsg.FarClassesVersion`): it is sent every far update as the
 protocol-26 entry it always read, its far marker just after the despawn as before, and its own protocol's dropped-tick range
-(`ConformanceProtocolCompatibilityTests.AProtocol31ClientIsSentBytesItCanRead`). Workers match exactly. The window is 31..32:
+(`ConformanceProtocolCompatibilityTests.AProtocol31ClientIsSentBytesItCanRead`, replaced when 33 moved the window by `AProtocol32ClientIsSentBytesItCanRead`). Workers match exactly. The window is 31..32:
 `MinProtocolVersion` moves to 31 (N-1, D1), so clients of 30 are refused, which the protocol-30 recording proves
 (`ARecordedProtocol30ClientIsRefusedWithTheGatewaysRange`). The protocol-31 recording replays as N-1 through a frozen protocol-31 decoder
 (`Fixtures/Protocol31GatewayDecoder.cs`, the protocol-30 reader with its literals raised, which also reads `FarEntities` and `OwnerState` in
 full so that a field of 32 fails instead of being skipped), and `protocol-32-handshake.json` was recorded for the next bump. With the window
 at 31 the rate check of `ProtocolCompatibility.MinClientProtocol` narrows nothing: every client a gateway admits honours the rate.
+
+33 is additive: client requests (`[ClientRequestRpc]`, FND-50, `docs/client-requests.md`). Three new message ids and no change to any existing message: `ClientRequest` (54, client to gateway), `ClientRequestRouted` (55, gateway to worker, or worker to worker when the entity has moved) and `ClientRequestReply` (56, worker or gateway to client). A client of 32 never sends 54 and is never sent 56, so it is sent exactly the bytes it was and nothing is gated on the negotiated version (`HelloMsg.ClientRequestVersion` names the first protocol that has them). Workers and gateways match exactly. The window is 32..33: `MinProtocolVersion` moves to 32 (N-1, D1), so clients of 31 are refused, which the protocol-31 recording proves (`ARecordedProtocol31ClientIsRefusedWithTheGatewaysRange`). The protocol-32 recording replays as N-1 through a frozen protocol-32 decoder (`Fixtures/Protocol32GatewayDecoder.cs`, which reads far classes and `FarPoses` and fails on anything after them), `AProtocol32ClientIsSentBytesItCanRead` checks that a client of 32 is sent none of messages 54 to 56 while a client of 33 sends a request, and `protocol-33-handshake.json` was recorded for the next bump.
 
 ## Bumping the protocol
 

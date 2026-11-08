@@ -1,0 +1,17 @@
+---
+title: "ClientRequestRpcAttribute"
+description: "Sent by any client to any entity in its interest set, owned or not, and run on the worker with authority over the entity: the way a player touches, sits on, takes or edits an object that is not theirs."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/Rpc.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/Rpc.cs)</div>
+
+```csharp
+[AttributeUsage(AttributeTargets.Method)]
+public sealed class ClientRequestRpcAttribute : Attribute
+```
+
+Sent by any client to any entity in its interest set, owned or not, and run on the worker with authority over the entity: the way a player touches, sits on, takes or edits an object that is not theirs. The first parameter of the method must be a [`ClientRequestContext`](/docs/reference/core/client-request-context), which Nebula fills in with who sent the call; the rest are the arguments the client sent.
+
+**Everything the client sent is untrusted.** Nebula only guarantees who the sender is (the gateway stamped it from the connection), that the entity was in the sender's interest set when the gateway admitted it, and that the call was within the size and rate limits. Whether the sender may do this, is near enough, owns what they say they own, and sent sane numbers is the handler's to check, every time. A handler that trusts an argument is an exploit.
+
+Send it with `ClientRequest` or `ClientRequestWithReply` from a [`NetworkBehaviour`](/docs/reference/core/network-behaviour) on the client. See the Client requests guide.

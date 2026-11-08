@@ -234,6 +234,14 @@ public static void RefreshCaches();
 
 Re-read every container's transform (the worker does this once per tick; see [`Container.RefreshCache`](/docs/reference/containers/container#refreshcache)).
 
+### RefreshMovingCaches [#refreshmovingcaches]
+
+```csharp
+public static void RefreshMovingCaches();
+```
+
+[`RefreshCaches`](#refreshcaches) for the boxes that can have moved since the last tick: carried containers and what is fixed in them. A box fixed inside a physics frame moves only with the frame's root, which is refreshed where it is shifted; it is read again on first use in a frame anyway ([`Container.WorldBounds`](/docs/reference/containers/container#worldbounds)), so the eager read is spared for the hundreds of chunks nobody stands in this tick.
+
 ### FindById [#findbyid]
 
 ```csharp

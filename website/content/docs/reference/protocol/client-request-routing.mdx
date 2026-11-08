@@ -1,0 +1,36 @@
+---
+title: "ClientRequestRouting"
+description: "The rule a worker applies to a routed client request, with no engine types."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/ClientRequestContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/ClientRequestContract.cs)</div>
+
+```csharp
+public static class ClientRequestRouting
+```
+
+The rule a worker applies to a routed client request, with no engine types. The gateway sends a request to the worker it believes owns the entity; after a handover that worker holds a ghost and passes the request on, at most `maxHops` times ([`NebulaConfig.AuthorityCallMaxHops`](/docs/reference/core/nebula-config#authoritycallmaxhops)), exactly as an `AuthorityRpc` is.
+
+## Methods
+
+### Decide [#decide]
+
+```csharp
+public static AuthorityCallDecision Decide(bool known, bool hasAuthority, bool canForward, byte hops, int maxHops);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `known` | This worker holds a copy of the entity (authoritative or ghost). |
+| `hasAuthority` | This worker has authority over it. |
+| `canForward` | There is a connected worker to pass the request to, other than the sender. |
+| `hops` | How many workers have forwarded the request before this one. |
+| `maxHops` | The forwards allowed. |
+
+### OutcomeOf [#outcomeof]
+
+```csharp
+public static ClientRequestOutcome OutcomeOf(AuthorityCallOutcome rejection);
+```
+
+The wire outcome for a worker's rejection from [`Decide`](#decide).

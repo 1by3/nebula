@@ -15,6 +15,7 @@ Nebula finds RPC methods through reflection when it initializes the behavior.
 | `OwnerRpc` | `[ClientRpc]` | The worker with authority | Only the client that owns the entity |
 | `ServerRpc` | `[ServerRpc]` | The client that owns the entity | The worker with authority |
 | `AuthorityRpc` | `[AuthorityRpc]` | Any worker with an authoritative or ghost copy | The worker with authority |
+| `ClientRequest` | `[ClientRequestRpc]` | Any client, for any entity in its interest set | The worker with authority, which learns who sent it |
 
 `OwnerRpc` uses `[ClientRpc]`; it is a targeted form of the same message.
 
@@ -169,6 +170,8 @@ private void RpcRequestRename(string requestedName)
 The gateway routes the request to the worker that it believes has authority. If that worker has already transferred the entity, it forwards the request to the new worker.
 
 Treat values from a `ServerRpc` as untrusted client input. Check ranges, permissions, cooldowns, and relevant game state on the worker before you apply them.
+
+`ServerRpc` works only for the client that owns the entity. To let any client ask the worker to act on an entity it does not own, use a [client request](/docs/guides/client-requests).
 
 ## Call the worker that controls another entity
 
@@ -354,6 +357,8 @@ Use `ClientRpc` or `OwnerRpc` for a one-time client event that does not need to 
 Use `ServerRpc` for an owner request that the authoritative worker must validate.
 
 Use `AuthorityRpc` for an interaction with an entity that the local worker can see but may not control.
+
+Use a client request when a client that does not own an entity needs the worker with authority to act on it. See [Client requests](/docs/guides/client-requests).
 
 Use a worker message or `WorkerQuery` when the target is a worker or when the local worker has no copy of the relevant entity.
 

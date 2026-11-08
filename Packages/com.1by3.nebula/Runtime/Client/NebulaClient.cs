@@ -838,6 +838,8 @@ namespace Nebula
             if (_gatewayPeer < 0) return;
             try { _transport?.Disconnect(_gatewayPeer); } catch { }
             _gatewayPeer = -1;
+            // A reply wanted over this link will not come; a reconnect is a new session.
+            FailClientRequests();
         }
 
         private void OnDestroy()
@@ -1027,6 +1029,7 @@ namespace Nebula
             }
 
             TickConnection();
+            _requests.Expire(Time.unscaledTimeAsDouble);
             TickStallWatch();
             TickInstancePreparations();
             TickPortalWarm();
@@ -1776,6 +1779,7 @@ namespace Nebula
                 case MsgId.OwnerState: OnOwnerState(OwnerStateMsg.Read(r)); break;
                 case MsgId.FarEntities: OnFarEntities(r); break;
                 case MsgId.FarPoses: OnFarPoses(r); break;
+                case MsgId.ClientRequestReply: OnClientRequestReply(ClientRequestReplyMsg.Read(r)); break;
                 case MsgId.Portals: Portals.ApplyRecords(PortalsMsg.Read(r)); break;
                 case MsgId.PortalLinks: OnPortalLinks(PortalLinksMsg.Read(r)); break;
                 default: NebulaLog.Warn($"client got unexpected {id}"); break;

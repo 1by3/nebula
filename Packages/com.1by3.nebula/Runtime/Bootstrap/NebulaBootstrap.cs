@@ -656,6 +656,11 @@ namespace Nebula
             cfg.GhostBandMargin = CommandLine.GetFloat("nebula-ghost-band", cfg.GhostBandMargin);
             cfg.HandoverHysteresis = CommandLine.GetFloat("nebula-hysteresis", cfg.HandoverHysteresis);
             cfg.AuthorityCallMaxHops = CommandLine.GetInt("nebula-authority-call-hops", cfg.AuthorityCallMaxHops);
+            cfg.ClientRequestMaxBytes = CommandLine.GetInt("nebula-client-request-bytes", cfg.ClientRequestMaxBytes);
+            cfg.ClientRequestsPerSecond = CommandLine.GetFloat("nebula-client-request-rate", cfg.ClientRequestsPerSecond);
+            cfg.ClientRequestBurst = CommandLine.GetInt("nebula-client-request-burst", cfg.ClientRequestBurst);
+            cfg.EntityRequestsPerSecond = CommandLine.GetFloat("nebula-entity-request-rate", cfg.EntityRequestsPerSecond);
+            cfg.EntityRequestBurst = CommandLine.GetInt("nebula-entity-request-burst", cfg.EntityRequestBurst);
             cfg.ServerFrameRate = CommandLine.GetInt("nebula-server-fps", cfg.ServerFrameRate);
             cfg.WorkerPollBeforeTick = CommandLine.GetBool("nebula-poll-before-tick", cfg.WorkerPollBeforeTick);
             if (System.Environment.GetEnvironmentVariable("NEBULA_REPORT_DROPPED_TICKS") == "0") cfg.ReportDroppedTicks = false;

@@ -13,12 +13,12 @@ The extra render delay a client gives one remote entity whose state arrives furt
 
 The gap is measured, not configured: the larger of the last two gaps between states, in ticks, so the staggered windows of a gateway divisor (an entity updated every 6 ticks, sent in 20-tick windows, arrives 18 and 24 ticks apart) settle on the longer one. A gap longer than [`MaxGapTicks`](#maxgapticks) is taken for an entity at rest (a resting entity is not sent) and ignored. The delay moves toward its target at half the tick rate, so the entity plays at between half and one and a half times real speed while it changes, and never jumps.
 
-## Fields
+## Properties
 
 ### SlewTicksPerSecond [#slewtickspersecond]
 
 ```csharp
-public const double SlewTicksPerSecond = NetworkTime.TickRate * 0.5;
+public static double SlewTicksPerSecond { get; }
 ```
 
 How fast the delay moves toward its target, in ticks per second: half the tick rate.
@@ -26,12 +26,10 @@ How fast the delay moves toward its target, in ticks per second: half the tick r
 ### MaxGapTicks [#maxgapticks]
 
 ```csharp
-public const int MaxGapTicks = NetworkTime.TickRate;
+public static int MaxGapTicks { get; }
 ```
 
-Gaps longer than this, in ticks (one second), are an entity at rest, not its rate. It stays under the 64 ticks a [`RemoteInterpolator`](/docs/reference/core/remote-interpolator) buffers, so the older state of a gap is still there to interpolate from.
-
-## Properties
+Gaps longer than this, in ticks (one second at the running rate), are an entity at rest, not its rate. It stays under the 64 states a [`RemoteInterpolator`](/docs/reference/core/remote-interpolator) buffers, so the older state of a gap is still there to interpolate from.
 
 ### GapTicks [#gapticks]
 
