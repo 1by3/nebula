@@ -1,3 +1,7 @@
+using System.Text;
+
+namespace Nebula.ServiceTests;
+
 // Frozen protocol-32 oracle: do not replace literals or readers with production protocol types.
 // Protocol 32 (far classes) added optional class, slot, age and hand-over fields to a far entry, behind flag bits 4, 8, 16 and 32,
 // and a message, FarPoses (53), of compact updates. This reader reads all of them. Protocol 33 (client requests) changed no frame

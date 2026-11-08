@@ -348,16 +348,16 @@ public class ConformanceClientRequestGatewayTests
     }
 
     [Test]
-    public void AClientOfProtocol31StillJoinsAndAProtocol30ClientIsRefused()
+    public void AClientOfProtocol32StillJoinsAndAProtocol31ClientIsRefused()
     {
         using var fleet = Mesh();
-        var old = fleet.Connect(0, "protocol-31");
-        old.AnnounceVersion = 31;
-        var older = fleet.Connect(0, "protocol-30");
-        older.AnnounceVersion = 30;
+        var old = fleet.Connect(0, "protocol-32");
+        old.AnnounceVersion = 32;
+        var older = fleet.Connect(0, "protocol-31");
+        older.AnnounceVersion = 31;
         Assert.That(fleet.Run(() => old.Join == JoinState.Joined && older.Rejected != null, seconds: 15), Is.True);
-        Assert.That(old.Welcome!.Value.NegotiatedVersion, Is.EqualTo((ushort)31));
+        Assert.That(old.Welcome!.Value.NegotiatedVersion, Is.EqualTo((ushort)32));
         Assert.That(older.Rejected!.Value.Code, Is.EqualTo(JoinRejectReason.ProtocolUnsupported));
-        Assert.That(older.Rejected!.Value.SupportedMinVersion, Is.EqualTo((ushort)31));
+        Assert.That(older.Rejected!.Value.SupportedMinVersion, Is.EqualTo((ushort)32));
     }
 }

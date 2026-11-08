@@ -1,6 +1,6 @@
 ---
 title: "ClientRequestRoutedMsg"
-description: "A client request stamped by the gateway (MsgId.ClientRequestRouted, protocol 32): the request as the client sent it, beside who the gateway knows the sender to be."
+description: "A client request stamped by the gateway (MsgId.ClientRequestRouted, protocol 33): the request as the client sent it, beside who the gateway knows the sender to be."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
@@ -9,7 +9,7 @@ description: "A client request stamped by the gateway (MsgId.ClientRequestRouted
 public struct ClientRequestRoutedMsg
 ```
 
-A client request stamped by the gateway ([`MsgId.ClientRequestRouted`](/docs/reference/protocol/msg-id#clientrequestrouted), protocol 32): the request as the client sent it, beside who the gateway knows the sender to be. The stamp is the gateway's, never the client's: it is built from the connection, and a worker accepts it only from a gateway or a worker of the mesh. The worker with authority over the entity decodes it and hands the handler a [`ClientRequestContext`](/docs/reference/core/client-request-context).
+A client request stamped by the gateway ([`MsgId.ClientRequestRouted`](/docs/reference/protocol/msg-id#clientrequestrouted), protocol 33): the request as the client sent it, beside who the gateway knows the sender to be. The stamp is the gateway's, never the client's: it is built from the connection, and a worker accepts it only from a gateway or a worker of the mesh. The worker with authority over the entity decodes it and hands the handler a [`ClientRequestContext`](/docs/reference/core/client-request-context).
 
 ## Fields
 

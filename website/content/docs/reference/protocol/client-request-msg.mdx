@@ -1,6 +1,6 @@
 ---
 title: "ClientRequestMsg"
-description: "A [ClientRequestRpc] as the client sends it to its gateway (MsgId.ClientRequest, protocol 32)."
+description: "A [ClientRequestRpc] as the client sends it to its gateway (MsgId.ClientRequest, protocol 33)."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
@@ -9,7 +9,7 @@ description: "A [ClientRequestRpc] as the client sends it to its gateway (MsgId.
 public struct ClientRequestMsg
 ```
 
-A `[ClientRequestRpc]` as the client sends it to its gateway ([`MsgId.ClientRequest`](/docs/reference/protocol/msg-id#clientrequest), protocol 32). It says nothing about who sent it: the gateway knows that from the connection, and what it forwards is a [`ClientRequestRoutedMsg`](/docs/reference/protocol/client-request-routed-msg) it built itself. Everything in it is untrusted.
+A `[ClientRequestRpc]` as the client sends it to its gateway ([`MsgId.ClientRequest`](/docs/reference/protocol/msg-id#clientrequest), protocol 33). It says nothing about who sent it: the gateway knows that from the connection, and what it forwards is a [`ClientRequestRoutedMsg`](/docs/reference/protocol/client-request-routed-msg) it built itself. Everything in it is untrusted.
 
 ## Fields
 

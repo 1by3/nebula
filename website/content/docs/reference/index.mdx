@@ -377,11 +377,11 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [ClientInputMsg](/docs/reference/protocol/client-input-msg) | Struct. A short run of recent inputs (redundant against loss). |
 | [ClientRequestFlags](/docs/reference/protocol/client-request-flags) | Enum. Flags on a ClientRequestMsg and a ClientRequestRoutedMsg. |
 | [ClientRequestGate](/docs/reference/protocol/client-request-gate) | Class. The gateway's admission rules for a client request, in one place and with no engine types, so the gateway, the standalone services and the tests run the same code. |
-| [ClientRequestMsg](/docs/reference/protocol/client-request-msg) | Struct. A \[ClientRequestRpc\] as the client sends it to its gateway (MsgId.ClientRequest, protocol 32). |
+| [ClientRequestMsg](/docs/reference/protocol/client-request-msg) | Struct. A \[ClientRequestRpc\] as the client sends it to its gateway (MsgId.ClientRequest, protocol 33). |
 | [ClientRequestOutcome](/docs/reference/protocol/client-request-outcome) | Enum. Where a \[ClientRequestRpc\] call ended up. |
-| [ClientRequestReplyMsg](/docs/reference/protocol/client-request-reply-msg) | Struct. What became of a client request that asked for a reply (MsgId.ClientRequestReply, protocol 32). |
+| [ClientRequestReplyMsg](/docs/reference/protocol/client-request-reply-msg) | Struct. What became of a client request that asked for a reply (MsgId.ClientRequestReply, protocol 33). |
 | [ClientRequestResult](/docs/reference/protocol/client-request-result) | Struct. The outcome of one ClientRequestWithReply call, handed to its callback exactly once. |
-| [ClientRequestRoutedMsg](/docs/reference/protocol/client-request-routed-msg) | Struct. A client request stamped by the gateway (MsgId.ClientRequestRouted, protocol 32): the request as the client sent it, beside who the gateway knows the sender to be. |
+| [ClientRequestRoutedMsg](/docs/reference/protocol/client-request-routed-msg) | Struct. A client request stamped by the gateway (MsgId.ClientRequestRouted, protocol 33): the request as the client sent it, beside who the gateway knows the sender to be. |
 | [ClientRequestRouting](/docs/reference/protocol/client-request-routing) | Static class. The rule a worker applies to a routed client request, with no engine types. |
 | [ClientRequestTracker](/docs/reference/protocol/client-request-tracker) | Class. The sender's side of the reply channel: the requests a client made with a reply wanted and has not heard back about. |
 | [ContainerOwnershipEntry](/docs/reference/protocol/container-ownership-entry) | Struct. Stores the values used by container ownership entry. |
