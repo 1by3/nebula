@@ -3779,7 +3779,7 @@ namespace Nebula
                     NebulaLog.Warn($"ServerRpc on {e} from client {msg.ClientId} which does not own it");
                     return;
                 }
-                InvokeRpc(e, msg);
+                InvokeRpc(e, msg, RpcKind.Server);
             }
             else if (_handedOff.TryGetValue(e.NetId, out var to) && _workerPeersById.TryGetValue(to, out var peer) && peer != from)
             {
@@ -3810,7 +3810,7 @@ namespace Nebula
             switch (decision.Action)
             {
                 case AuthorityCallAction.Apply:
-                    InvokeRpc(e, msg.BehaviourIndex, msg.MethodHash, msg.Args);
+                    InvokeRpc(e, msg.BehaviourIndex, msg.MethodHash, msg.Args, RpcKind.Authority);
                     if (msg.WantsReply) ReplyToCall(msg.CallId, AuthorityCallOutcome.Accepted, e.Epoch, msg.Hops);
                     break;
                 case AuthorityCallAction.Forward:
@@ -3862,13 +3862,13 @@ namespace Nebula
                 NebulaLog.Info($"late AuthorityRpc reply {msg.CallId:x} ({msg.Outcome}) from {from.Id}; the call had already settled");
         }
 
-        private void InvokeRpc(NetworkIdentity e, EntityRpcMsg msg) => InvokeRpc(e, msg.BehaviourIndex, msg.MethodHash, msg.Args);
+        private void InvokeRpc(NetworkIdentity e, EntityRpcMsg msg, RpcKind expected) => InvokeRpc(e, msg.BehaviourIndex, msg.MethodHash, msg.Args, expected);
 
-        private void InvokeRpc(NetworkIdentity e, byte behaviourIndex, uint methodHash, byte[] args)
+        private void InvokeRpc(NetworkIdentity e, byte behaviourIndex, uint methodHash, byte[] args, RpcKind expected)
         {
             if (behaviourIndex >= e.Behaviours.Length) return;
             _reader.Set(new ArraySegment<byte>(args));
-            RpcRegistry.Invoke(e.Behaviours[behaviourIndex], methodHash, _reader);
+            RpcRegistry.Invoke(e.Behaviours[behaviourIndex], methodHash, _reader, expected);
         }
 
         // ---------------------------------------------------------------------------------------- IRpcSink

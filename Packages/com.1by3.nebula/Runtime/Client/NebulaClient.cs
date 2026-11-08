@@ -2228,7 +2228,7 @@ namespace Nebula
             if (!_entities.TryGetValue(msg.NetId, out var e) || msg.Epoch < e.Epoch) return;
             if (msg.BehaviourIndex >= e.Behaviours.Length) return;
             _reader.Set(new ArraySegment<byte>(msg.Args));
-            RpcRegistry.Invoke(e.Behaviours[msg.BehaviourIndex], msg.MethodHash, _reader);
+            RpcRegistry.Invoke(e.Behaviours[msg.BehaviourIndex], msg.MethodHash, _reader, RpcKind.Client);
         }
 
         private void OnWorldState(NetworkReader r)

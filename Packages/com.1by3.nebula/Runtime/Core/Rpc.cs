@@ -193,19 +193,30 @@ namespace Nebula
             }
         }
 
-        public static void Invoke(NetworkBehaviour target, uint hash, NetworkReader args)
+        /// <summary>
+        /// Run an RPC that arrived from the network or from a local authority call. <paramref name="expected"/> is the kind the
+        /// message that carried it allows: a <c>ServerRpc</c> message reaches only <c>[ServerRpc]</c> methods, an
+        /// <c>AuthorityRpc</c> only <c>[AuthorityRpc]</c>, an <c>EntityRpc</c> on a client only <c>[ClientRpc]</c>. The hash comes
+        /// off the wire, so without this check a client could name any RPC of an entity it owns (a <c>[ClientRpc]</c> body that
+        /// should only ever run on clients) by sending its hash in a <c>ServerRpc</c>. A method of another kind is dropped
+        /// without running, counted in <see cref="NebulaDiagnostics.WrongKindRpcsDropped"/>, and logged on a power-of-two
+        /// schedule (1st, 2nd, 4th, 8th, ...) so a client cannot flood the log. Returns whether the method ran.
+        /// </summary>
+        public static bool Invoke(NetworkBehaviour target, uint hash, NetworkReader args, RpcKind expected)
         {
+            if (expected == RpcKind.ClientRequest) throw new ArgumentException("A client request runs through InvokeClientRequest, which supplies the sender", nameof(expected));
             var m = Lookup(target.GetType(), hash);
             if (m == null)
             {
                 NebulaLog.Warn($"Unknown RPC hash {hash} on {target.GetType().Name}");
-                return;
+                return false;
             }
-            if (m.Kind == RpcKind.ClientRequest)
+            if (m.Kind != expected)
             {
-                // Its first parameter is the sender, which only InvokeClientRequest supplies. Reaching it through ServerRpc or AuthorityRpc would skip that.
-                NebulaLog.Warn($"RPC {target.GetType().Name}.{m.Name} is a [ClientRequestRpc] and cannot be called as another kind; dropped");
-                return;
+                int n = ++NebulaDiagnostics.WrongKindRpcsDropped;
+                if ((n & (n - 1)) == 0)
+                    NebulaLog.Warn($"RPC {target.GetType().Name}.{m.Name} is a {m.Kind} RPC and arrived as a {expected} call; dropped without running ({n} such calls so far)");
+                return false;
             }
             var values = new object[m.ParameterTypes.Length];
             for (int i = 0; i < values.Length; i++)
@@ -220,6 +231,7 @@ namespace Nebula
             {
                 NebulaLog.Error($"RPC {target.GetType().Name}.{m.Name} threw: {e.InnerException}");
             }
+            return true;
         }
     }
 }

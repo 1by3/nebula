@@ -101,7 +101,7 @@ namespace Nebula.Tests
             var rpc = RpcRegistry.Require(typeof(NetworkTransform), "RpcOwnerSyncState");
             var args = new NetworkWriter();
             RpcRegistry.WriteArgs(args, rpc, new object[] { w.ToArray(), true });
-            RpcRegistry.Invoke(receiver.RootTransform, rpc.Hash, new NetworkReader(args.ToSegment()));
+            RpcRegistry.Invoke(receiver.RootTransform, rpc.Hash, new NetworkReader(args.ToSegment()), RpcKind.Server);
             Assert.Less(Vector3.Distance(sender.transform.position, receiver.transform.position), 0.001f);
             Assert.AreSame(b, receiver.Container, "decoding a frame must not change authoritative membership");
             Assert.IsNull(receiver.SyncContainer, "RPC frame context must not leak into another message");
@@ -118,7 +118,7 @@ namespace Nebula.Tests
             var rpc = RpcRegistry.Require(typeof(NetworkTransform), "RpcOwnerSyncState");
             var args = new NetworkWriter();
             RpcRegistry.WriteArgs(args, rpc, new object[] { w.ToArray(), true });
-            RpcRegistry.Invoke(receiver.RootTransform, rpc.Hash, new NetworkReader(args.ToSegment()));
+            RpcRegistry.Invoke(receiver.RootTransform, rpc.Hash, new NetworkReader(args.ToSegment()), RpcKind.Server);
             Assert.AreEqual(new Vector3(10, 2, 3), receiver.transform.position);
             Assert.IsNull(receiver.SyncContainer);
         }

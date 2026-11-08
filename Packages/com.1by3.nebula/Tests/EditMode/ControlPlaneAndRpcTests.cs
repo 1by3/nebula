@@ -59,7 +59,7 @@ namespace Nebula.Tests
                 Assert.AreEqual(2, m.ParameterTypes.Length);
                 var w = new NetworkWriter();
                 RpcRegistry.WriteArgs(w, m, new object[] { 42, "hi" });
-                RpcRegistry.Invoke(d, m.Hash, new NetworkReader(w.ToSegment()));
+                RpcRegistry.Invoke(d, m.Hash, new NetworkReader(w.ToSegment()), RpcKind.Client);
                 Assert.AreEqual(42, d.Received);
                 Assert.AreEqual("hi", d.Text);
                 Assert.IsNotNull(RpcRegistry.Lookup(typeof(Dummy), RpcRegistry.Hash("TakeHit")));

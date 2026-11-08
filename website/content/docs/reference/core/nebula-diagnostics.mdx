@@ -21,6 +21,14 @@ public static int RejectedAuthorityRpcSends { get; }
 
 How many `AuthorityRpc` sends this process discarded because the caller held neither an authoritative nor a ghost copy of the entity (a client, an unspawned entity). Each one is also logged through [`NebulaLog.Warn`](/docs/reference/core/nebula-log#warn). [`NebulaWorker.RejectedAuthorityRpcSends`](/docs/reference/worker/nebula-worker#rejectedauthorityrpcsends) reads it.
 
+### WrongKindRpcsDropped [#wrongkindrpcsdropped]
+
+```csharp
+public static int WrongKindRpcsDropped { get; }
+```
+
+How many incoming RPC calls this process dropped because they named a method of a different kind than the message that carried them allows (a `ServerRpc` message naming a `[ClientRpc]` method, for example). A well-behaved peer never causes one, so a non-zero count means a modified client or a bug. The log line for them is rate-limited.
+
 ### SplitCohesionGroups [#splitcohesiongroups]
 
 ```csharp
