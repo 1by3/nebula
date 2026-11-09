@@ -157,8 +157,8 @@ namespace Nebula.Tests
             Assert.AreEqual(0, probe.OwnerOnlyCalls);
 
             // And the other way: the old paths cannot reach a client request (its first parameter is the sender, which they cannot supply).
-            LogAssert.Expect(LogType.Warning, new Regex("cannot be called as another kind"));
-            RpcRegistry.Invoke(probe, poke.Hash, new NetworkReader(PokeArgs(1, "x")));
+            LogAssert.Expect(LogType.Warning, new Regex("is a ClientRequest RPC and arrived as a Server call; dropped without running"));
+            Assert.IsFalse(RpcRegistry.Invoke(probe, poke.Hash, new NetworkReader(PokeArgs(1, "x")), RpcKind.Server));
             Assert.AreEqual(0, probe.Pokes.Count);
         }
 

@@ -68,6 +68,8 @@ Nebula checks the caller before it sends an RPC:
 
 Nebula logs a warning and discards a call that violates these rules.
 
+Nebula also checks the receiver. An incoming call runs only a method of the kind its message carries: a `ServerRpc` message runs only `[ServerRpc]` methods, an `AuthorityRpc` message only `[AuthorityRpc]` methods, and a call that reaches a client runs only `[ClientRpc]` methods. A client therefore cannot run another RPC body on an entity it owns by sending that method's hash. Nebula drops a call of the wrong kind without running anything, counts it in `NebulaDiagnostics.WrongKindRpcsDropped`, and logs it with a warning. The warning appears for the 1st, 2nd, 4th, 8th, and every later power-of-two call, so a misbehaving client cannot flood the log.
+
 The gateway adds the sending client ID to a `ServerRpc` and verifies that the client owns the entity. The receiving worker verifies ownership again. Because the handler has no sender argument, use `OwnerClientId` when it needs the caller's client ID.
 
 ## Send an event to clients

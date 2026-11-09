@@ -14,6 +14,13 @@ namespace Nebula
         public static int RejectedAuthorityRpcSends { get; internal set; }
 
         /// <summary>
+        /// How many incoming RPC calls this process dropped because they named a method of a different kind than the message
+        /// that carried them allows (a <c>ServerRpc</c> message naming a <c>[ClientRpc]</c> method, for example). A well-behaved peer
+        /// never causes one, so a non-zero count means a modified client or a bug. The log line for them is rate-limited.
+        /// </summary>
+        public static int WrongKindRpcsDropped { get; internal set; }
+
+        /// <summary>
         /// How many handovers this worker could not carry out as a unit because a member of the entity's
         /// <see cref="NetworkIdentity.CohesionGroup"/> was not owned here (<c>docs/cohesion-hints.md</c>, D4). Each
         /// one is also logged through <see cref="NebulaLog.Warn"/>. A group is never split silently.
@@ -79,6 +86,7 @@ namespace Nebula
             PortalSplitRefusals = 0;
             PortalHandoffs = 0;
             RejectedAuthorityRpcSends = 0;
+            WrongKindRpcsDropped = 0;
             SplitCohesionGroups = 0;
         }
     }

@@ -338,7 +338,7 @@ namespace Nebula
                     if (HasAuthority)
                     {
                         // We are the authority: run it right here.
-                        RpcRegistry.Invoke(this, m.Hash, new NetworkReader(payload));
+                        RpcRegistry.Invoke(this, m.Hash, new NetworkReader(payload), RpcKind.Authority);
                     }
                     else
                     {
@@ -381,7 +381,7 @@ namespace Nebula
             {
                 // We are the authority: run it right here, once. No call id is minted for a call that never
                 // reaches the wire.
-                RpcRegistry.Invoke(this, m.Hash, new NetworkReader(payload));
+                RpcRegistry.Invoke(this, m.Hash, new NetworkReader(payload), RpcKind.Authority);
                 onDone(new AuthorityCallResult(0, AuthorityCallOutcome.Accepted, Identity.Epoch, 0));
                 return 0;
             }
