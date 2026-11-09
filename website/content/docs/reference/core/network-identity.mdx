@@ -350,7 +350,7 @@ How the current container is named on the wire (see `Nebula.ContainerRef`).
 public Container Carried { get; }
 ```
 
-The container this entity carries: the `Nebula.Container` on its root, which registers when the entity spawns on this process and unregisters when it despawns (a ship's interior, a lift). Null when the root has none. Not to be confused with [`Container`](/docs/reference/containers/container), the container this entity is in.
+The container this entity carries: the `Nebula.Container` on its root, which registers when the entity spawns on this process and unregisters when it despawns (a ship's interior, a lift). Null when the root has none, or while it is switched off ([`SetCarriedActive`](#setcarriedactive)). Not to be confused with [`Container`](/docs/reference/containers/container), the container this entity is in.
 
 ### IsSpawned [#isspawned]
 
@@ -727,6 +727,16 @@ Authority: put the entity at a pose given in `frame`'s frame-local coordinates (
 | `frame` | The framed container ([`Container.OwnPhysicsFrame`](/docs/reference/containers/container#ownphysicsframe)) whose coordinates the pose is in, or null for the scope's own space. |
 | `localPosition` | The position in the frame's own coordinates ([`PhysicsFrame.SimulationToLocal`](/docs/reference/containers/physics-frame#simulationtolocal), independent of its floating origin). |
 | `localRotation` | The rotation in the frame's coordinates. |
+
+### SetCarriedActive [#setcarriedactive]
+
+```csharp
+public bool SetCarriedActive(bool active);
+```
+
+Switch the `Nebula.Container` on this entity's root on or off while the entity lives, without respawning it. A container whose component is disabled in the prefab is not carried: it never registers, [`Carried`](#carried) is null, it costs no lease row and no interest, and nothing can be placed in it. Switching it on registers it as the box carried by this entity, exactly as a spawn would; switching it off unregisters it and puts whatever rides in it down in the container around the entity.
+
+This is local to the process: Nebula does not replicate the switch. Replicate your own flag (a [`NetworkVariable<T>`](/docs/reference/core/network-variable) with `[Persist]`) and call this on every process that holds the entity, from the variable's `OnValueChanged` and from [`NetworkBehaviour.OnNetworkSpawn`](/docs/reference/core/network-behaviour#onnetworkspawn), which sees the value a spawn snapshot, a handover or a persistence restore applied. Change the box's `Size`, `Center` and `OwnPhysicsFrame` while it is off, and on every process before it goes on. A box that names itself in the wire before its carrier does (a rider's update) waits for it, as for any carrier that arrives late. Returns false when the root has no `Nebula.Container`.
 
 ### SetDriver [#setdriver]
 

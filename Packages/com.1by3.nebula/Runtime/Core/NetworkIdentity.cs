@@ -784,10 +784,62 @@ namespace Nebula
         /// <summary>
         /// The container this entity carries: the <see cref="Nebula.Container"/> on its root, which registers when the
         /// entity spawns on this process and unregisters when it despawns (a ship's interior, a lift). Null when the root
-        /// has none. Not to be confused with <see cref="Container"/>, the container this entity is in.
+        /// has none, or while it is switched off (<see cref="SetCarriedActive"/>). Not to be confused with
+        /// <see cref="Container"/>, the container this entity is in.
         /// </summary>
         public Container Carried => _carried;
         private Container _carried;
+
+        /// <summary>
+        /// Raised on this process when <see cref="SetCarriedActive"/> registers or unregisters the carried box of a
+        /// spawned entity (the entity, its box, then whether the box is now carried). The worker keeps the control-plane
+        /// lease row of the box in step; nothing else listens.
+        /// </summary>
+        internal static event Action<NetworkIdentity, Container, bool> CarriedActivationChanged;
+
+        /// <summary>
+        /// Switch the <see cref="Nebula.Container"/> on this entity's root on or off while the entity lives, without
+        /// respawning it. A container whose component is disabled in the prefab is not carried: it never registers,
+        /// <see cref="Carried"/> is null, it costs no lease row and no interest, and nothing can be placed in it.
+        /// Switching it on registers it as the box carried by this entity, exactly as a spawn would; switching it off
+        /// unregisters it and puts whatever rides in it down in the container around the entity.
+        /// <para>
+        /// This is local to the process: Nebula does not replicate the switch. Replicate your own flag (a
+        /// <see cref="NetworkVariable{T}"/> with <c>[Persist]</c>) and call this on every process that holds the
+        /// entity, from the variable's <c>OnValueChanged</c> and from <see cref="NetworkBehaviour.OnNetworkSpawn"/>,
+        /// which sees the value a spawn snapshot, a handover or a persistence restore applied. Change the box's
+        /// <c>Size</c>, <c>Center</c> and <c>OwnPhysicsFrame</c> while it is off, and on every process before it goes
+        /// on. A box that names itself in the wire before its carrier does (a rider's update) waits for it, as for any
+        /// carrier that arrives late. Returns false when the root has no <see cref="Nebula.Container"/>.
+        /// </para>
+        /// </summary>
+        public bool SetCarriedActive(bool active)
+        {
+            var box = GetComponent<Container>();
+            if (box == null) return false;
+            if (active == (_carried != null) && box.enabled == active) return true;
+            if (active)
+            {
+                box.enabled = true;
+                _carried = box;
+                if (IsSpawned)
+                {
+                    RegisterCarried();
+                    CarriedActivationChanged?.Invoke(this, box, true);
+                }
+            }
+            else
+            {
+                if (IsSpawned)
+                {
+                    UnregisterCarried();
+                    CarriedActivationChanged?.Invoke(this, box, false);
+                }
+                _carried = null;
+                box.enabled = false;
+            }
+            return true;
+        }
         // The carrier's Rigidbody while its box is registered, so Container.OfRigidbody finds the box from a hit collider.
         private Rigidbody _carriedBody;
         public bool IsSpawned { get; internal set; }
@@ -1258,7 +1310,8 @@ namespace Nebula
             // Deterministic order on every process: the same prefab yields the same component order.
             Behaviours = found;
             RootTransform = GetComponent<NetworkTransform>();
-            _carried = GetComponent<Container>();
+            var carriedBox = GetComponent<Container>();
+            _carried = carriedBox != null && carriedBox.enabled ? carriedBox : null; // a switched-off box is not carried (SetCarriedActive)
             var vars = new List<NetworkVariableBase>();
             for (int i = 0; i < Behaviours.Length; i++)
             {
@@ -2069,8 +2122,12 @@ namespace Nebula
 
         private void RegisterCarried()
         {
-            if (_carried == null) _carried = GetComponent<Container>();
-            if (_carried == null) return;
+            if (_carried == null)
+            {
+                var box = GetComponent<Container>();
+                if (box == null || !box.enabled) return;
+                _carried = box;
+            }
             ContainerRegistry.RegisterDynamic(_carried, this);
             if (!_carried.IsDynamic) return; // refused (no net id yet)
             _carriedBody = GetComponent<Rigidbody>();

@@ -485,6 +485,7 @@ namespace Nebula
             ContainerRegistry.LeasesChanged += OnLeasesChanged;
             ContainerRegistry.DynamicRegistered += OnLateContainerRegistered;
             ContainerRegistry.RuntimeRegistered += OnLateContainerRegistered;
+            NetworkIdentity.CarriedActivationChanged += OnCarriedActivationChanged;
             ContainerRegistry.RuntimeUnregistering += OnRuntimeUnregistering;
             ContainerRegistry.WorkerIdByIndex = ResolveWorkerId;
             SceneEntities.Registered += OnSceneEntityRegistered;
@@ -812,6 +813,7 @@ namespace Nebula
             ContainerRegistry.LeasesChanged -= OnLeasesChanged;
             ContainerRegistry.DynamicRegistered -= OnLateContainerRegistered;
             ContainerRegistry.RuntimeRegistered -= OnLateContainerRegistered;
+            NetworkIdentity.CarriedActivationChanged -= OnCarriedActivationChanged;
             ContainerRegistry.RuntimeUnregistering -= OnRuntimeUnregistering;
             SceneEntities.Registered -= OnSceneEntityRegistered;
             SceneEntities.Unregistering -= OnSceneEntityUnregistering;
@@ -2828,6 +2830,18 @@ namespace Nebula
                 if (e == null || !e.IsSpawned || !e.HasAuthority || e.Persistent == null) continue;
                 NebulaLog.Warn($"{e} ({e.Persistent.Key}) is authoritative here but filed in {container.ContainerId}, which {container.OwnerWorkerId} released; it was not checkpointed with the box and moves to the nearest container instead");
             }
+        }
+
+        /// <summary>
+        /// A carrier this worker simulates switched its box on or off while it lived (<see cref="NetworkIdentity.SetCarriedActive"/>):
+        /// the box's lease row appears or goes, as it would have at the spawn or the despawn.
+        /// </summary>
+        private void OnCarriedActivationChanged(NetworkIdentity identity, Container box, bool active)
+        {
+            if (identity == null || !identity.HasAuthority || !ReferenceEquals(Find(identity.NetId), identity)) return;
+            if (!_registered || !ControlPlane.IsConnected) return;
+            if (active) SyncCarriedLeases();
+            else ControlPlane.RemoveContainer(box.ContainerId);
         }
 
         private void OnLateContainerRegistered(Container container)
