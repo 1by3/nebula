@@ -17,7 +17,7 @@ Add these components to the root of a spawnable prefab:
 | `NetworkTransform` | Replicates the carrier's root pose to clients and ghost workers. |
 | `Container` | Defines the box in the carrier's local space with `Center` and `Size`. |
 
-A `Container` next to a `NetworkIdentity` is carried by that entity: Nebula registers the box when the entity spawns on a process and removes it when the entity despawns there. You don't set anything to make this happen. `NetworkIdentity.Carried` returns the box.
+A `Container` next to a `NetworkIdentity` is carried by that entity: Nebula registers the box when the entity spawns on a process and removes it when the entity despawns there. You don't set anything to make this happen, unless you want the box off until later: see [Turn a carried container on and off](#turn-a-carried-container-on-and-off-while-the-carrier-lives). `NetworkIdentity.Carried` returns the box.
 
 Keep all three components on the root. Nebula reconstructs positions from the carrier's root pose, so a `Container` on a child object of an entity does not move with the entity: Nebula treats it as a fixed container, and the Editor warns about it.
 
@@ -58,6 +58,31 @@ For example, when two ships spawn with overlapping interiors, one ship moves int
 Nebula ignores a placement that would make an entity ride inside itself. The entity stays in its current container, and Nebula logs a warning once for that entity. This can happen when two workers place overlapping carriers during the same tick. On its next tick, the authoritative worker resolves the entity's position again.
 
 To check a placement in your own code, call `container.IsCarriedBy(entity)`. It returns `true` when `entity` carries `container`, directly or through a chain of carriers.
+
+## Turn a carried container on and off while the carrier lives
+
+Use this when one prefab serves many kinds of object and only some of them need an interior. Leave the `Container` on the root and disable the component in the prefab. A disabled `Container` is not carried: Nebula does not register it, `NetworkIdentity.Carried` is null, and it adds no lease row, interest work or physics frame.
+
+To turn the box on or off without respawning the entity, call `SetCarriedActive` on every process that holds the entity:
+
+```csharp
+public sealed class Prop : NetworkBehaviour
+{
+    [Persist] public NetworkVariable<bool> HasInterior = new NetworkVariable<bool>();
+
+    public override void OnNetworkSpawn()
+    {
+        HasInterior.OnValueChanged += (_, on) => Identity.SetCarriedActive(on);
+        Identity.SetCarriedActive(HasInterior.Value);
+    }
+}
+```
+
+`SetCarriedActive(true)` registers the box as a spawn would. `SetCarriedActive(false)` unregisters it and puts whatever rides in it down in the container around the entity, as [removing a container](#handle-container-removal) does. The entity keeps its network ID and epoch.
+
+Nebula does not replicate the switch, so replicate your own flag as shown. Because the flag is a persisted `NetworkVariable`, a ghost, a worker that receives a handover, a late-joining client and a restored entity all apply the same value in `OnNetworkSpawn`. Set `Size`, `Center` and `OwnPhysicsFrame` while the box is off.
+
+A box with `OwnPhysicsFrame` builds its frame from the colliders on the carrier when you switch it on. A collider added later is not in the frame until you switch the box off and on again.
 
 ## Let ownership follow the carrier
 
