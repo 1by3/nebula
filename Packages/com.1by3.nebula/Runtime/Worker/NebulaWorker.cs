@@ -240,6 +240,8 @@ namespace Nebula
         private static readonly ProfileSection ProfSimulate = NebulaProfiler.Section("simulate");
         /// <summary>NEB-501: the simulation batches flushed at the end of each depth (nested in 'simulate', like sim.*).</summary>
         private static readonly ProfileSection ProfBatches = NebulaProfiler.Section("sim.batches");
+        /// <summary>The handlers of <see cref="Ticked"/> (nested in 'simulate', like sim.*): what a game's once-per-tick work costs.</summary>
+        private static readonly ProfileSection ProfTicked = NebulaProfiler.Section("sim.ticked");
         private static readonly ProfileSection ProfRecordPose = NebulaProfiler.Section("poses");
         private static readonly ProfileSection ProfContainers = NebulaProfiler.Section("containers");
         // What the containers pass spends, per entity gathered in locals and added once per pass; they add up to "containers".
@@ -320,6 +322,63 @@ namespace Nebula
         public event Action<NetworkIdentity> EntityDespawned;
         public event Action<NetworkIdentity, string> AuthorityHandedOff;
         public event Action<NetworkIdentity, string> AuthorityReceived;
+
+        /// <summary>
+        /// Raised once per simulation tick on a worker, with the tick number and the tick's length in seconds
+        /// (<see cref="NetworkTime.TickInterval"/>). Use it for work that belongs to the worker as a whole instead of
+        /// to one entity: a scheduler that shares a time budget between many entities, a spatial index, a queue to drain.
+        /// <para>
+        /// Order within a tick: every authoritative entity that is due has had its <see cref="NetworkBehaviour.NetworkTick"/>
+        /// and the simulation batches have been flushed; the physics scenes have not stepped yet, and nothing of this tick
+        /// has been recorded, handed over or sent. What a handler moves or writes is therefore part of this tick, exactly as
+        /// if a <c>NetworkTick</c> had done it. Handlers run in the order they subscribed.
+        /// </para>
+        /// <para>
+        /// It is raised exactly once for every tick the worker simulates, including each tick of a catch-up after a slow
+        /// frame, and not for tick numbers the worker skips when it has fallen too far behind (<see cref="MaxLagTicks"/>).
+        /// It is raised on the main thread, on workers only: never on a client, a gateway or an orchestrator.
+        /// </para>
+        /// <para>
+        /// The event is static, like <see cref="NebulaLifecycle"/>'s hooks: subscribe once at boot, before a worker exists.
+        /// A handler that throws is logged and ignored, and the other handlers still run. Every handler is forgotten when
+        /// a play session starts, so subscribe from a <c>[RuntimeInitializeOnLoadMethod]</c> or a component's <c>Awake</c>,
+        /// not from a static constructor.
+        /// </para>
+        /// </summary>
+        public static event Action<uint, float> Ticked;
+
+        /// <summary>The handlers of <see cref="Ticked"/> as an array, rebuilt only when a handler was added or removed, so a tick allocates nothing for it.</summary>
+        private static Action<uint, float> _tickedSource;
+        private static Delegate[] _tickedHandlers;
+
+        private static void RaiseTicked(uint tick, float deltaTime)
+        {
+            var handlers = Ticked;
+            if (handlers == null) return;
+            if (!ReferenceEquals(handlers, _tickedSource))
+            {
+                _tickedSource = handlers;
+                _tickedHandlers = handlers.GetInvocationList();
+            }
+            var list = _tickedHandlers;
+            for (int i = 0; i < list.Length; i++)
+            {
+                try { ((Action<uint, float>)list[i])(tick, deltaTime); }
+                catch (Exception e) { NebulaLog.Error($"a NebulaWorker.Ticked handler threw on tick {tick}: {e}"); }
+            }
+        }
+
+        /// <summary>
+        /// Forget every <see cref="Ticked"/> handler. Called when a play session starts (<c>NebulaStatics</c>), because with
+        /// "enter play mode without domain reload" the static event would otherwise still hold the previous session's
+        /// subscribers, and by tests that register one.
+        /// </summary>
+        public static void ResetTicked()
+        {
+            Ticked = null;
+            _tickedSource = null;
+            _tickedHandlers = null;
+        }
 
         // ---------------------------------------------------------------------------------------- worker messages
         //
@@ -1441,6 +1500,13 @@ namespace Nebula
                 }
             }
             } finally { SimulationBatches.Deferring = false; }
+            // The game's once-per-tick work (NebulaWorker.Ticked): after every entity's NetworkTick, before the scenes step.
+            if (Ticked != null)
+            {
+                ProfTicked.Begin();
+                RaiseTicked(tick, dt);
+                ProfTicked.End();
+            }
             ProfSimulate.End();
             ProfFrameSim.Begin();
             // Proxies across portals are posed before the scenes step (docs/portals.md D26), so contacts get their velocity.

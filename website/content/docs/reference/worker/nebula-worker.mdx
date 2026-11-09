@@ -565,7 +565,29 @@ public event Action<NetworkIdentity, string> AuthorityHandedOff;
 public event Action<NetworkIdentity, string> AuthorityReceived;
 ```
 
+### Ticked [#ticked]
+
+```csharp
+public static event Action<uint, float> Ticked;
+```
+
+Raised once per simulation tick on a worker, with the tick number and the tick's length in seconds ([`NetworkTime.TickInterval`](/docs/reference/core/network-time#tickinterval)). Use it for work that belongs to the worker as a whole instead of to one entity: a scheduler that shares a time budget between many entities, a spatial index, a queue to drain.
+
+Order within a tick: every authoritative entity that is due has had its [`NetworkBehaviour.NetworkTick`](/docs/reference/core/network-behaviour#networktick) and the simulation batches have been flushed; the physics scenes have not stepped yet, and nothing of this tick has been recorded, handed over or sent. What a handler moves or writes is therefore part of this tick, exactly as if a `NetworkTick` had done it. Handlers run in the order they subscribed.
+
+It is raised exactly once for every tick the worker simulates, including each tick of a catch-up after a slow frame, and not for tick numbers the worker skips when it has fallen too far behind ([`MaxLagTicks`](#maxlagticks)). It is raised on the main thread, on workers only: never on a client, a gateway or an orchestrator.
+
+The event is static, like [`NebulaLifecycle`](/docs/reference/worker/nebula-lifecycle)'s hooks: subscribe once at boot, before a worker exists. A handler that throws is logged and ignored, and the other handlers still run. Every handler is forgotten when a play session starts, so subscribe from a `[RuntimeInitializeOnLoadMethod]` or a component's `Awake`, not from a static constructor.
+
 ## Methods
+
+### ResetTicked [#resetticked]
+
+```csharp
+public static void ResetTicked();
+```
+
+Forget every [`Ticked`](#ticked) handler. Called when a play session starts (`NebulaStatics`), because with "enter play mode without domain reload" the static event would otherwise still hold the previous session's subscribers, and by tests that register one.
 
 ### RegisterEntityRequestHandler [#registerentityrequesthandler]
 
