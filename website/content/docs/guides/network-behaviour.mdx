@@ -100,6 +100,36 @@ During a cross-worker handover, the previous worker calls `OnContainerChanged`, 
 
 Two more pairs of hooks exist for state that is not a `NetworkVariable`: `WriteHandoverState` / `ReadHandoverState` for state only the next simulating worker needs, and `WriteSyncState` / `ReadSyncState` for per-tick delta channels. Both are described in [/docs/guides/physics-and-handover-state](/docs/guides/physics-and-handover-state).
 
+### Run code once per tick for the whole worker
+
+`NetworkTick` runs once per entity. To run code once per tick for the worker as a whole, subscribe to `NebulaWorker.Ticked`. Use it for work that many entities share, such as a scheduler that divides a time budget between them, a spatial index, or a queue to drain.
+
+```csharp
+public static class ExampleScheduler
+{
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    static void Register() => NebulaWorker.Ticked += OnTicked;
+
+    static void OnTicked(uint tick, float deltaTime)
+    {
+        // Runs on the worker, once for each simulated tick.
+    }
+}
+```
+
+The handler receives the tick number and the length of the tick in seconds. Nebula guarantees the following:
+
+- **Order within a tick.** The event is raised after every due authoritative entity has received `NetworkTick`, and before the physics scenes step. Nothing from this tick has been recorded, handed over, or sent yet, so a change a handler makes to an authoritative entity is part of the same tick, as if `NetworkTick` had made it.
+- **Exactly once per simulated tick.** After a slow frame, the worker simulates the ticks it missed one after another. The event is raised once for each of them, in order. If the worker falls more than `NebulaWorker.MaxLagTicks` behind, it skips tick numbers, and the event is not raised for a skipped tick.
+- **Workers only.** The event is raised on the main thread of a worker. Clients, gateways, and orchestrators never raise it.
+- **Handler order.** Handlers run in the order they subscribed.
+
+A handler that throws is logged and ignored, and the remaining handlers still run. The time handlers take counts toward the tick and appears as `sim.ticked` in the worker's profile line.
+
+The event is static, so you can subscribe before a worker exists. Nebula removes every handler when a play session starts, because the Editor can enter Play mode without reloading the domain. Subscribe from a `[RuntimeInitializeOnLoadMethod]` method or a component's `Awake`, not from a static constructor.
+
+A handler runs for the whole worker, not for one entity, so check `HasAuthority` before you change an entity from it.
+
 ### Ghost semantics
 
 A **ghost** is a non-authoritative copy of an entity on another worker. Nebula creates one near a container boundary so the next worker has the entity's state before a handover. On a ghost:

@@ -24,6 +24,7 @@ namespace Nebula
             PhysicsIslands.ResetForNewSession();
             NebulaDiagnostics.ResetForNewSession();
             NebulaLifecycle.Reset();
+            NebulaWorker.ResetTicked();
             NebulaWorld.ResetForNewSession();
             Nebula.World.NebulaChunks.ResetForNewSession();
             Nebula.World.ChunkState.ResetForNewSession();
