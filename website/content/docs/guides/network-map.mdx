@@ -100,6 +100,8 @@ Each entry takes 5 bytes plus its encoded key and value. `EncodedBytes` tells yo
 
 A `[Persist]` map must stay under 64 KB to be saved. Split large collections across several entities.
 
+The limit is per map, not per entity. A client that starts holding an entity receives all of its maps in one reliable message, so an entity with several large maps costs their combined size for each client that joins. That message can be longer than 64 KB. A browser client receives at most 1 MiB in one message: the gateway logs an error and does not send a longer one, so that client does not get the entity. Keep an entity's maps well under 1 MiB in total if browsers join your game.
+
 ## Current limitations
 
 - **A map is not ordered.** Enumeration order is not the same on every copy. For an ordered list, key the entries by index or by a stable ID.

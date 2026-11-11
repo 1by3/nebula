@@ -154,7 +154,13 @@ namespace Nebula.WebRtc
                 if (s.Closed) return;
                 if (delivery != Delivery.Sequenced)
                 {
-                    s.Sctp.Send(ReliableStream, false, true, SctpAssociation.PpidBinary, data);
+                    // A data channel message has a size limit, announced in the offer's answer. A reliable message
+                    // past it cannot be sent, and dropping it without a word would leave the browser without
+                    // something every other client holds.
+                    if (payload.Count > SctpAssociation.MaxMessageSize)
+                        NebulaLog.Error($"[{Name}] a reliable message of {payload.Count} bytes to browser session {s.PeerId} is over the data channel limit of {SctpAssociation.MaxMessageSize} bytes and was not sent");
+                    else
+                        s.Sctp.Send(ReliableStream, false, true, SctpAssociation.PpidBinary, data);
                     return;
                 }
                 int length = payload.Count + SequenceBytes;
