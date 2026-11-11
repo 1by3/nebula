@@ -143,6 +143,64 @@ public class ConformanceNetworkMapTests
         Assert.That(ann.LastError + bob.LastError + cid.LastError, Is.Empty);
     }
 
+    /// <summary>A full section of <paramref name="maps"/> maps, each with <paramref name="entries"/> entries of <paramref name="valueBytes"/> bytes.</summary>
+    private static byte[] BigSection(bool clear, int maps, int entries, int valueBytes, char fill)
+    {
+        var w = new NetworkWriter();
+        int countAt = NetworkMapCodec.BeginSection(w);
+        for (int m = 0; m < maps; m++)
+        {
+            int lengthAt = NetworkMapCodec.BeginMap(w, (byte)m);
+            int bodyAt = NetworkMapCodec.BeginBody(w, clear);
+            for (int i = 0; i < entries; i++)
+            {
+                var v = new NetworkWriter();
+                v.WriteString(new string(fill, valueBytes));
+                NetworkMapCodec.WriteSet(w, new ArraySegment<byte>(Key($"m{m}k{i}")), v.ToSegment());
+            }
+            NetworkMapCodec.EndBody(w, bodyAt, entries);
+            NetworkMapCodec.EndMap(w, lengthAt);
+        }
+        NetworkMapCodec.EndSection(w, countAt, (byte)maps);
+        return w.ToArray();
+    }
+
+    /// <summary>
+    /// NEB-502: a reliable message to a client that is longer than 65,535 bytes (here an entity whose maps together
+    /// hold about 92 KB, each under its own cap) must reach it whole. The gateway's reliable batch frames each message
+    /// with a 16-bit length, so such a message travels on its own, in order with the batches around it.
+    /// </summary>
+    [Test]
+    public void MapsLargerThanABatchFrameReachAClientPresentAndALateJoiner()
+    {
+        using var fleet = Mesh();
+        var ann = Join(fleet, "ann");
+        var crate = fleet.Worker.Spawn(7003, new Vector3(3, 0, 0), alwaysRelevant: true);
+        crate.Maps = BigSection(true, maps: 2, entries: 46, valueBytes: 1000, fill: 'x');
+        Assert.That(crate.Maps.Length, Is.GreaterThan(ushort.MaxValue), "the section is longer than a 16-bit length can say");
+        fleet.Worker.Reannounce(7003, newEpoch: false);
+        Assert.That(fleet.Run(() => Held(ann, 7003).Count == 92), Is.True, "a client present gets the full copy with the spawn: " + ann.LastError);
+
+        // What is queued before and after the long message still arrives in order: a small change, then every entry
+        // again in one update (itself longer than a frame), then another small change.
+        fleet.Worker.SendMaps(7003, Section(false, ("before", "1")));
+        fleet.Worker.SendMaps(7003, BigSection(false, maps: 2, entries: 46, valueBytes: 1000, fill: 'y'));
+        fleet.Worker.SendMaps(7003, Section(false, ("before", "2"), ("after", "3")));
+        Assert.That(fleet.Run(() => Held(ann, 7003).Count == 94 && Held(ann, 7003)["before"] == "2"), Is.True, "the updates arrive in order: " + ann.LastError);
+        Assert.That(Held(ann, 7003)["m1k45"], Is.EqualTo(new string('y', 1000)));
+
+        var bob = Join(fleet, "bob");
+        Assert.That(fleet.Run(() => bob.Replicas.Contains(7003)), Is.True, "the late joiner is sent the entity: " + bob.LastError);
+        Assert.That(fleet.Run(() => Held(bob, 7003).Count == 94), Is.True, "with every entry of both maps: " + bob.LastError);
+        Assert.That(Held(bob, 7003)["m0k0"], Is.EqualTo(new string('y', 1000)));
+        Assert.That(Held(bob, 7003)["before"], Is.EqualTo("2"));
+
+        // Both keep receiving increments afterwards.
+        fleet.Worker.SendMaps(7003, Section(false, ("last", "4")));
+        Assert.That(fleet.Run(() => Held(ann, 7003).ContainsKey("last") && Held(bob, 7003).ContainsKey("last")), Is.True);
+        Assert.That(ann.LastError + bob.LastError, Is.Empty);
+    }
+
     [Test]
     public void AStaleUpdateIsIgnoredAndANewOwnersSpawnReplacesTheCopy()
     {

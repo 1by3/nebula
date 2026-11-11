@@ -2678,10 +2678,19 @@ namespace Nebula
         /// <summary>
         /// Reliable messages for a client are coalesced into MsgId.Batch packets: appended here, sent when the
         /// batch is full or after the transport poll (see Update), so nothing waits longer than a frame and order is
-        /// preserved (everything reliable to a client goes through this one path).
+        /// preserved (everything reliable to a client goes through this one path). A batch frames each message with a
+        /// 16-bit length, so a message longer than that (an entity whose maps together pass 64 KB, in its spawn or in
+        /// one update) is sent on its own, after what is already queued: the client reads a message the same way in a
+        /// batch or outside one, and the channel keeps the order.
         /// </summary>
         private void AppendReliable(ClientConn c, ArraySegment<byte> message)
         {
+            if (message.Count > ushort.MaxValue)
+            {
+                FlushReliable(c);
+                Send(c.PeerId, Delivery.ReliableOrdered, message);
+                return;
+            }
             if (c.ReliableSlot < 0)
             {
                 c.Reliable ??= new NetworkWriter(ReliableBatchBytes + 512);

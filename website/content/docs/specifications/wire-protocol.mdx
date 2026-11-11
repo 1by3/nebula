@@ -644,6 +644,8 @@ BatchedMessage := u16 byte_length, raw_message[byte_length]
 
 Each `raw_message` is a complete Nebula message, including its `u8 msg_id`, and its length MUST fit in a `u16`. The gateway uses `Batch` only for reliable gateway-to-client traffic. It flushes at about 1,100 bytes or by the end of the current transport poll, preserving reliable-message order.
 
+A reliable message longer than 65,535 bytes does not fit in a batch, for example an `EntitySpawn` whose maps together pass 64 KB. The gateway MUST flush the batch it has queued, then send that message on its own as one reliable ordered transport message. A client MUST accept any gateway-to-client message either inside a `Batch` or on its own.
+
 ### Player lifecycle
 
 ```text

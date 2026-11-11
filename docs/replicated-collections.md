@@ -100,6 +100,17 @@ and always written in a handover's embedded spawn. So the entity spawn a gateway
 the new owner's re-announcement all carry the complete maps, with no new path. The field is `int`-length-prefixed;
 the maps are bounded by D11, not by the 64 KB of `WriteBytes`.
 
+D11 bounds one map, so an entity's maps together can pass 64 KB (two maps of 46 KB, or one map built with a larger
+`capacityBytes`), and so can one `EntityMaps` update that resends them. Worker to gateway and worker to worker, each
+message is one transport send, which the transport fragments. Gateway to client, reliable messages are coalesced into
+`MsgId.Batch`, which frames each message with a `ushort` length: `NebulaGateway.AppendReliable` therefore sends a
+message longer than 65,535 bytes on its own, after flushing the batch queued before it, so order holds and the wire
+format does not change (a client reads a message the same way inside a batch or outside one). Before NEB-502 the
+length wrapped and the client threw on the spawn, so it never held the entity. What remains is the transport's own
+limit: LiteNetLib fragments a reliable message into up to 65,535 packets; a WebRTC data channel carries at most
+`SctpAssociation.MaxMessageSize` (1 MiB), and `WebRtcServerTransport` logs an error for a reliable message past it
+instead of dropping it silently.
+
 **D6 The gateway keeps the current contents.** Each `EntityRecord` holds a decoded copy of every map (`NetworkMapCache`,
 entries keyed by key bytes). A spawn from the owning worker replaces it; an `EntityMaps` from the owning worker
 (epoch and owner checked like `EntityVars`, held behind a held spawn like every other update) is applied to it and
@@ -178,5 +189,6 @@ still load. This revises `docs/chunk-state.md` D6.
 - `Services~/Nebula.Services.Tests/ConformanceNetworkMapTests.cs` (a real gateway over UDP): a client gets the full copy
   in its spawn and then each delta; a late joiner gets the current contents (not the spawn-time contents) and then
   the same deltas; a stale-epoch delta is ignored; a new owner's spawn replaces the cache; a protocol-20 client is
-  never sent `EntityMaps`.
+  never sent `EntityMaps`; an entity whose maps together hold 92 KB reaches a client present and a late joiner, with
+  the updates around a 92 KB update in order (NEB-502).
 - `Tests/EditMode/ChunkStateTests.cs`: unchanged expectations, now over the map.
